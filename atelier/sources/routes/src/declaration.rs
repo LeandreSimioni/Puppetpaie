@@ -92,6 +92,7 @@ formes! {
         droit::fiche::Nir,
         droit::fiche::CodePcsEse,
         droit::fiche::Courriel,
+        droit::fiche::CaseDeFiche,
         droit::emplois::CodeEmploi,
         droit::natures::IdentifiantDeDeclaration,
         engagement::numeros::NumeroContrat,
@@ -123,7 +124,7 @@ formes! {
         droit::permanents::MotifDeSuspension,
         droit::natures::NatureDeContrat,
     ],
-    Forme::Objet => [engagement::carte::Changements, compagnie::problemes::CaptureDeLaPage],
+    Forme::Objet => [engagement::carte::Changements, compagnie::problemes::CaptureDeLaPage, socle::forme::Liste],
 }
 
 /// CE QUE LE TYPE D'UN CHAMP NE PEUT PAS SAVOIR : son libelle (ce que l'ecran montre), son sens (ce que le LLM lit), s'il

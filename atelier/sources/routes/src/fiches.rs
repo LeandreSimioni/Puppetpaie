@@ -9,8 +9,8 @@ use droit::fiche::Lue as _;
 use std::path::Path;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
-use crate::declaration::{charge, dit, ParSaForme, ValeurDeLaCharge};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, ChampDuType, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::documents::client_courriel;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
@@ -41,9 +41,47 @@ mod rendue;
 pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, HistoireDUneCase, ListesDuSalarie, PartieDeLaFiche};
 pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, Forcer, SorteDeFiche};
 
-const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<droit::fiche::NomDeFiche>()), sens: "la fiche ; seuls un salarié et un spectacle s'archivent", avance: false };
-const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
-const CHANGEMENTS: Champ = Champ { nom: "changements", libelle: Affiche::new("Cases qui changent"), forme: Forme::Objet, sens: "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur", avance: false };
+const NOM_FICHE: Legende = dit("Fiche", "la fiche ; seuls un salarié et un spectacle s'archivent");
+const CLE_FICHE: Legende = dit("Clé", "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise");
+
+// Les charges de `fiche`, `enregistrer-fiche` et `activer-fiche`, champ par champ : chacune est une enumeration etiquetee
+// par `nom` (`FicheARendre`, `ecriture::ChargeEnregistrer`, `ChargeActiver`), que `charge!` ne declare pas. La cle d'un
+// salarie et celle d'un spectacle ont la meme forme : `IdSalarie` les dit.
+const CHARGE_FICHE: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
+        ChampDuType::du_type::<_, Option<IdSalarie>>("cle", dit("Clé", "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise")),
+        ChampDuType::du_type::<_, Option<socle::forme::Liste>>(
+            "changements",
+            dit("Cases saisies", "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée"),
+        ),
+        ChampDuType::du_type::<_, Option<Vec<CaseDeFiche>>>(
+            "changees",
+            dit("Cases qui viennent de changer", "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune").avancee(),
+        ),
+    ],
+};
+const CHARGE_ENREGISTRER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
+        ChampDuType::du_type::<_, Option<IdSalarie>>("cle", CLE_FICHE),
+        ChampDuType::du_type::<_, socle::forme::Liste>(
+            "changements",
+            dit("Cases qui changent", "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur"),
+        ),
+        ChampDuType::du_type::<_, Option<bool>>("confirme", dit("Avertissement lu", "vrai : l'avertissement rendu (ce qui change) a été lu ; la fiche s'écrit")),
+        ChampDuType::du_type::<_, Option<Jour>>("depuis", dit("Depuis le", "la date d'effet de ce qui change, AAAA-MM-JJ ; la date proposée sinon")),
+        ChampDuType::du_type::<_, Option<String>>("note", dit("Pourquoi", "pourquoi cela change (correction, déménagement…)").avancee()),
+        ChampDuType::du_type::<_, Option<bool>>("forcer", dit("Écrire malgré une erreur de forme", "vrai : écrire malgré une erreur de forme").avancee()),
+    ],
+};
+const CHARGE_ACTIVER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
+        ChampDuType::du_type::<_, IdSalarie>("cle", CLE_FICHE),
+        ChampDuType::du_type::<_, bool>("actif", dit("Active", "vrai : réactiver ; faux : archiver")),
+    ],
+};
 pub(crate) const REFUSEE: Refus = Refus { classe: Classe::FicheRefusee, corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est envoyé" };
 const BOITE: Refus = Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe)" };
@@ -57,12 +95,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Fiche,
         geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes et leurs fautes.",
-        charge: &[
-            NOM_FICHE,
-            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
-            Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
-            Champ { nom: "changees", libelle: Affiche::new("Cases qui viennent de changer"), forme: Forme::Objet, sens: "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune", avance: true },
-        ],
+        charge: &CHARGE_FICHE,
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}],"changees":["titre"]}"#,
         rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
@@ -86,15 +119,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EnregistrerFiche,
         geste: "Écrire une fiche (entreprise, salarié, spectacle) ; ce qui change se date.",
-        charge: &[
-            NOM_FICHE,
-            CLE_FICHE,
-            CHANGEMENTS,
-            Champ { nom: "confirme", libelle: Affiche::new("Avertissement lu"), forme: Forme::OuiNon, sens: "vrai : l'avertissement rendu (ce qui change) a été lu ; la fiche s'écrit", avance: false },
-            Champ { nom: "depuis", libelle: Affiche::new("Depuis le"), forme: Forme::Date, sens: "la date d'effet de ce qui change, AAAA-MM-JJ ; la date proposée sinon", avance: false },
-            Champ { nom: "note", libelle: Affiche::new("Pourquoi"), forme: Forme::Texte, sens: "pourquoi cela change (correction, déménagement…)", avance: true },
-            Champ { nom: "forcer", libelle: Affiche::new("Écrire malgré une erreur de forme"), forme: Forme::OuiNon, sens: "vrai : écrire malgré une erreur de forme", avance: true },
-        ],
+        charge: &CHARGE_ENREGISTRER,
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"},{"case":"numero_objet","valeur":"266Z00952012"}]}"#,
         rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, metier : une case que le métier décide ; depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
         refus: &[REFUSEE, OPERATION, MANQUE, FORME, ILLISIBLE],
@@ -107,7 +132,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ActiverFiche,
         geste: "Archiver une fiche de salarié ou de spectacle, ou la réactiver.",
-        charge: &[NOM_FICHE, CLE_FICHE, Champ { nom: "actif", libelle: Affiche::new("Active"), forme: Forme::OuiNon, sens: "vrai : réactiver ; faux : archiver", avance: false }],
+        charge: &CHARGE_ACTIVER,
         exemple: r#"{"nom":"spectacle","cle":"le-banc-des-menteurs","actif":true}"#,
         rend: ETAT_REND,
         refus: &[OPERATION, MANQUE],
@@ -206,10 +231,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CompagnieSupprimer,
         geste: "Supprimer la compagnie de ce poste : avertir, puis effacer tout son dossier.",
-        charge: &[
-            Champ { nom: "confirme", libelle: Affiche::new("Effacer"), forme: Forme::OuiNon, sens: "vrai : effacer ; sans lui, la route dit seulement ce qui sera effacé et ce qu'elle demande", avance: false },
-            Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "une compagnie réelle : le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain", avance: false },
-        ],
+        charge: &crate::accueil::suppression::ChargeSupprimer::CHARGE,
         exemple: r#"{"confirme": true}"#,
         rend: "sans confirme : nom, genre (ajoutee ou reelle), avertissement, conservation et sauvegarde à proposer, ou la phrase qui dit pourquoi elle ne se supprime pas ; avec : supprimee, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (une fictive livrée se remet à zéro, le mot de passe du logiciel refusé, un dossier tenu ouvert) ; rien n'est effacé" }],

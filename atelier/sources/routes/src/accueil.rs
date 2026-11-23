@@ -27,7 +27,7 @@ use compagnie::installation as compagnies;
 use compagnie::installation::{entree, nom_de_dossier, Compagnie, CouleurDeCompagnie, Creation, IdDeCompagnie, Marqueur, Venue, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
 use socle::fichiers::NomDeFichier;
 use crate::gestes::administrateur;
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::declaration::{charge, dit, Legende};
 use crate::enveloppe::{en_json, Charge, Dite, Options, Phrase, Rendu};
@@ -116,10 +116,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AdministrateurDeposer,
         geste: "Déposer d'un geste ce qui est prêt dans chaque compagnie de l'administrateur.",
-        charge: &[
-            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<socle::mode::Mode>()), sens: "le réel ne dépose que les fichiers testés conformes", avance: false },
-            Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur ; sans lui, le moteur le demande à un humain", avance: false },
-        ],
+        charge: &ChargeDeposer::CHARGE,
         exemple: r#"{"mode":"test"}"#,
         rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus, et suivre pour un dépôt réel), tableau ; rien de prêt : phrase",
         refus: &[Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
@@ -220,11 +217,13 @@ charge! {
     }
 }
 
-/// La charge de `administrateur-deposer` : en reel, ou en test (le mot de passe est a l'enveloppe).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDeposer {
-    mode: socle::mode::Mode,
+charge! {
+    motdepasse = dit("Mot de passe de l'administrateur", "le mot de passe de l'administrateur ; sans lui, le moteur le demande à un humain");
+    /// La charge de `administrateur-deposer` : en reel, ou en test.
+    #[derive(Debug)]
+    struct ChargeDeposer {
+        mode: socle::mode::Mode = dit("Test ou réel", "le réel ne dépose que les fichiers testés conformes"),
+    }
 }
 
 charge! {
