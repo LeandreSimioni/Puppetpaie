@@ -230,8 +230,15 @@ function carteImportee(p, i, moisCourt) {
     </div>`;
 }
 
-/* Changer de mois : les écritures en route finissent (chaque case changée part tout de suite), le nouveau mois se lit. */
-document.getElementById("mois").onchange = (e) => {
+/* Changer de mois : un écran qui porte une saisie non enregistrée se quitte d'abord (`quitterLEcran` : rester garde le
+ * mois montré) ; les écritures en route finissent (chaque case changée part tout de suite), le nouveau mois se lit. */
+document.getElementById("mois").onchange = async (e) => {
+  if (!(await quitterLEcran())) {
+    e.target.value = MOIS_AFFICHE;
+    afficherMoisChoisi();
+    document.getElementById("engagements").classList.remove("en-lecture");
+    return;
+  }
   fermerLesCalendriers();
   chargerMois(e.target.value);
 };
@@ -372,10 +379,10 @@ function metierDe(code) {
 }
 
 /** Une fiche neuve : le formulaire complet de Configuration, avec ses vérifications. Une seule façon de créer une
- *  fiche, et c'est là. Une fiche ouverte et modifiée demande d'abord, comme toute sortie de la fiche (`quitterLaFiche`). */
+ *  fiche, et c'est là. Une fiche ouverte et modifiée demande d'abord, comme toute sortie d'un écran (`quitterLEcran`). */
 async function nouvelleFiche(nom) {
-  if (!(await quitterLaFiche())) return;
-  // Les onglets redessinent APRES coup (leurs gestionnaires attendent `quitterLaFiche`) : sans cette marque,
+  if (!(await quitterLEcran())) return;
+  // Les onglets redessinent APRES coup (leurs gestionnaires attendent `quitterLEcran`) : sans cette marque,
   // `dessinerConfig` effacait la fiche neuve qu'on venait d'ouvrir.
   const onglet = document.querySelector('.onglets button[data-vue="configuration"]');
   const sous = document.querySelector(`.sous-onglets button[data-fiche="${nom}"]`);

@@ -126,6 +126,8 @@ async function dessinerMoisHistorique(d) {
   };
   vue.querySelectorAll("[data-faire]").forEach((b) => {
     b.onclick = async () => {
+      // Quitter d'abord ce qui porte une saisie non enregistrée : l'onglet Paie, ensuite, ne redemande rien.
+      if (!(await quitterLEcran())) return;
       document.querySelector('.onglets button[data-vue="paie"]').click();
       await chargerMois(mois);
       // Un mois dont la DSN est en retard : elle se fabrique et part, en retard.

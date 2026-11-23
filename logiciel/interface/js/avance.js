@@ -514,14 +514,18 @@ function grilleDesCases(base, avancees, ouvert, classe = "") {
  *  ne dit rien de plus que ce qu'elle montrait ne se nomme pas, et la route garde sa valeur : un oui-non qu'on n'a pas
  *  changé (`modifiable`), une valeur composée qui ne se saisit pas. */
 function lireLesCases(bloc) {
-  const lu = {};
-  bloc.querySelectorAll(".case[data-cle]").forEach((c) => {
+  return Object.fromEntries(lesCasesLues(bloc));
+}
+
+/** Chaque case de `bloc` qui dit quelque chose, dans l'ordre de l'écran : `[clé, valeur]`, une paire par case, même
+ *  quand deux cases ont la même clé (« Pour démarrer » en pose une par fiche). */
+function lesCasesLues(bloc) {
+  return [...bloc.querySelectorAll(".case[data-cle]")].flatMap((c) => {
     const x = c.querySelector(":scope > [data-case]");
     const v = lireLaCase(x);
-    if (v === undefined || (v === null && x.dataset.prerempli != null)) return;
-    lu[c.dataset.cle] = v;
+    if (v === undefined || (v === null && x.dataset.prerempli != null)) return [];
+    return [[c.dataset.cle, v]];
   });
-  return lu;
 }
 
 /** LES FAUTES DES CASES de `cible`, telles que la route les rend (`anomalie` de chaque case de `cases`) : la case marquée,
@@ -672,25 +676,83 @@ async function faireLeGeste(g, entete, apres) {
 
 /* ------------------------------------------------ quitter un écran posé */
 
-/** L'ÉCRAN QUE LE DESSINATEUR A POSÉ, quand il se saisit : le bloc de ses cases, ce qu'elles disaient à l'ouverture
- *  (`lireLesCases`), et ce qui l'enregistre (`enregistrer` : vrai quand c'est écrit). */
-let ECRAN_RETENU = null;
+/** LES ÉCRANS QUI SE SAISISSENT, tels qu'ils sont posés (une fiche, « Pour démarrer », un écran rendu) : chacun le bloc
+ *  de ses cases, ce qu'elles disaient à l'ouverture (`lesCasesLues`), ce qui l'enregistre (`enregistrer` : vrai quand
+ *  c'est écrit), ce qui le reprend tel qu'il est enregistré quand on jette (`jeter`, s'il en a), et ce qui montre, à
+ *  chaque frappe, s'il a changé (`quandChange`, s'il en a). Plusieurs peuvent être à l'écran ensemble : la fiche
+ *  Entreprise et « Pour démarrer » au-dessus d'elle. */
+let ECRANS_RETENUS = [];
 
-/** Retient l'écran dont les cases sont dans `bloc`, tel qu'il s'ouvre. */
-function retenirLEcran(bloc, enregistrer) {
-  ECRAN_RETENU = { bloc, depart: JSON.stringify(lireLesCases(bloc)), enregistrer };
+/** Ce que disent les cases d'un bloc, tel qu'on le compare. */
+const casesDuBloc = (bloc) => JSON.stringify(lesCasesLues(bloc));
+
+/** Un écran retenu a changé : il est à l'écran et ses cases ne disent plus ce qu'elles disaient à l'ouverture. */
+const aChange = (e) => e.bloc.isConnected && casesDuBloc(e.bloc) !== e.depart;
+
+/** Retient l'écran dont les cases sont dans `bloc`, tel qu'il s'ouvre (`o` : `enregistrer`, `jeter`, `quandChange`). */
+function retenirLEcran(bloc, o) {
+  ECRANS_RETENUS = ECRANS_RETENUS.filter((e) => e.bloc !== bloc && e.bloc.isConnected);
+  ECRANS_RETENUS.push({ bloc, depart: casesDuBloc(bloc), enregistrer: o.enregistrer, jeter: o.jeter || null, quandChange: o.quandChange || null });
 }
 
-/** QUITTER L'ÉCRAN RETENU : rien à demander s'il n'est plus à l'écran, si l'on n'a rien changé ou si l'on est revenu à ce
- *  qui était ; sinon la boîte des changements non enregistrés (`demanderSiEnregistrer`) : enregistrer, jeter, ou rester.
- *  Rend `true` si l'on peut partir. */
-async function quitterLEcran() {
-  const e = ECRAN_RETENU;
-  if (!e || !e.bloc.isConnected || JSON.stringify(lireLesCases(e.bloc)) === e.depart) { ECRAN_RETENU = null; return true; }
-  const choix = await demanderSiEnregistrer();
-  if (choix === "rester") return false;
-  if (choix === "jeter") { ECRAN_RETENU = null; return true; }
-  return e.enregistrer();
+/** Oublie l'écran de `bloc` : ce qu'il porte vient d'être écrit, ou abandonné d'un geste (« Annuler »). */
+function oublierLEcran(bloc) {
+  ECRANS_RETENUS = ECRANS_RETENUS.filter((e) => e.bloc !== bloc);
+}
+
+/** L'écran de `bloc` porte une saisie qui n'est pas enregistrée. */
+function ecranModifie(bloc) {
+  const e = ECRANS_RETENUS.find((x) => x.bloc === bloc);
+  return !!e && aChange(e);
+}
+
+// Chaque frappe dans un écran retenu lui dit s'il a changé (la mention « modifié » d'une fiche, son « Annuler »).
+["input", "change"].forEach((type) => document.addEventListener(type, (ev) => {
+  ECRANS_RETENUS.filter((e) => e.quandChange && e.bloc.contains(ev.target)).forEach((e) => e.quandChange(aChange(e)));
+}));
+
+/** LA BOÎTE DES CHANGEMENTS NON ENREGISTRÉS, la même pour tout écran retenu : « enregistrer », « jeter », ou « rester »
+ *  quand on la ferme d'un clic à côté. La boîte ouverte dessous (celle de l'ouverture) est mise de côté, et revient sauf
+ *  si l'on jette. */
+async function demanderSiEnregistrer() {
+  const rendre = mettreDeCote();
+  const choix = await new Promise((resoudre) => {
+    let repondu = false;
+    const repondre = (v) => { if (!repondu) { repondu = true; resoudre(v); } };
+    ouvrirBoite(`<h3>${aideDe("non_enregistres_titre")}</h3>
+      <p>${aideDe("non_enregistres")}</p>
+      <div class="actions">
+        <button class="primaire" id="q-enregistrer">${aideDe("garder_changements")}</button>
+        <button class="secondaire" id="q-jeter">${aideDe("jeter_changements")}</button>
+      </div>`, () => repondre("rester"));
+    // Répondre d'abord, fermer ensuite : dans l'autre ordre, `fermerBoite` appellerait le rappel de fermeture
+    // (« rester ») avant le bouton.
+    document.getElementById("q-enregistrer").onclick = () => { repondre("enregistrer"); fermerBoite(); };
+    document.getElementById("q-jeter").onclick = () => { repondre("jeter"); fermerBoite(); };
+  });
+  if (rendre && choix !== "jeter") rendre();
+  return choix;
+}
+
+/** QUITTER LES ÉCRANS RETENUS (ceux de `dans` : la page entière, ou une boîte qui se ferme) : rien à demander pour un
+ *  écran qui n'est plus à l'écran, où l'on n'a rien changé ou où l'on est revenu à ce qui était ; pour chacun des autres,
+ *  la boîte des changements non enregistrés (`demanderSiEnregistrer`) : enregistrer, jeter (l'écran se reprend tel
+ *  qu'il est enregistré), ou rester. Rend `true` si l'on peut partir. */
+async function quitterLEcran(dans = document) {
+  ECRANS_RETENUS = ECRANS_RETENUS.filter((e) => e.bloc.isConnected);
+  for (const e of ECRANS_RETENUS.filter((x) => dans.contains(x.bloc))) {
+    if (!aChange(e)) continue;
+    const choix = await demanderSiEnregistrer();
+    if (choix === "rester") return false;
+    if (choix === "jeter") {
+      oublierLEcran(e.bloc);
+      if (e.jeter) await e.jeter();
+      continue;
+    }
+    if (!(await e.enregistrer())) return false;
+    oublierLEcran(e.bloc);
+  }
+  return true;
 }
 
 /* ------------------------------------------------ un écran que la route rend */
@@ -757,7 +819,7 @@ function poserLEcranRendu(cible, r, relire) {
     return true;
   };
   cible.querySelector("[data-enregistrer]").onclick = enregistrer;
-  retenirLEcran(bloc, enregistrer);
+  retenirLEcran(bloc, { enregistrer });
 }
 
 /* ------------------------------------------------ une fiche que la route rend */

@@ -229,7 +229,9 @@ async function avantDeQuitter() {
 window.avantDeQuitter = avantDeQuitter;
 function boutonAccueil(api) {
   document.body.classList.add("accueil-possible");
+  // Revenir aux compagnies quitte la page : un écran qui porte une saisie non enregistrée se quitte d'abord.
   document.getElementById("fenetre-accueil").onclick = async () => {
+    if (!(await quitterLEcran())) return;
     if (!(await avantDeQuitter())) return;
     api.accueil();
   };

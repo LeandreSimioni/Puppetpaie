@@ -2142,9 +2142,15 @@ l'onglet Paie quand sa fiche prend un `mois`. Un fichier que la personne choisit
 (`Forme::Fichier`, les types qu'elle admet dans la fiche) : il part en base64, comme la ligne de commande le donne.
 Configuration › Signature & tampon a des rangs (route `identite`, l'image par `identite-image`) ; Configuration ›
 Organismes et contrats a des cases : un contrat par case, ses parties à saisir (l'organisme, la référence), ce que les
-textes en donnent dit dessous. **Quitter sans enregistrer** se demande pour tout écran rendu qui a des cases
-(`retenirLEcran`, `quitterLEcran`, `js/avance.js`), depuis ses cases et leur valeur à l'ouverture. Les autres écrans
-passeront par le même dessinateur.
+textes en donnent dit dessous ; un écran où rien ne se saisit n'a pas de geste qui enregistre. **Quitter sans
+enregistrer** se demande d'un seul mécanisme, celui du dessinateur (`js/avance.js`) : chaque écran qui se saisit est
+retenu tel qu'il s'ouvre (`retenirLEcran` : le bloc de ses cases, ce qu'elles disent à l'ouverture, ce qui l'enregistre,
+ce qui le reprend quand on jette), et chaque sortie de la page (un onglet, un sous-onglet, une autre fiche, le mois,
+« Les compagnies », le geste d'un rappel, la boîte de l'ouverture qui se ferme) passe par `quitterLEcran`, qui ne
+demande (`demanderSiEnregistrer` : enregistrer, jeter, ou rester) que pour un écran dont les cases ne disent plus ce
+qu'elles disaient. Sont retenus : un écran rendu qui a un geste qui enregistre, les trois fiches (où la frappe montre
+aussi « modifié » et « Annuler », `quandChange`) et chaque liste de « Pour démarrer ». La boîte d'un geste ne l'est
+pas : elle a son « Annuler ». Fermer la fenêtre et redémarrer pour la mise à jour ne passent pas par `quitterLEcran`.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois
 
