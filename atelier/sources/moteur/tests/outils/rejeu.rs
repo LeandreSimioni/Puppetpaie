@@ -209,7 +209,7 @@ pub fn sorties(racine: &Path, jour: socle::date::Jour) -> Value {
     }
     // Les paies de chaque mois saisi, calculees au dernier jour du scenario.
     let mut paies = Map::new();
-    let ctx = engagement::stock::contexte(&racine, Some(jour)).unwrap();
+    let ctx = droit::contexte::Contexte::nouveau(&racine, Some(jour)).unwrap();
     for mois in engagement::stock::mois_saisis(&racine).unwrap() {
         let calcul = engagement::vue_requise(&racine, mois)
             .and_then(|d| engagement::pour_l_ecran(&ctx, &d))

@@ -159,7 +159,7 @@ fn un_engagement_non_actif_fait_annuler_ce_qui_a_ete_declare_pour_lui() {
     outils::reussi(&outils::route(&racine, "retirer-engagement", charge, "2026-12-16"));
     assert_eq!(dsn_de_decembre(), ["a_faire"], "la DSN de decembre porte la correction de novembre");
 
-    let ctx = |j: socle::date::Jour| engagement::stock::contexte(&racine, Some(j)).unwrap();
+    let ctx = |j: socle::date::Jour| droit::contexte::Contexte::nouveau(&racine, Some(j)).unwrap();
     let na = engagement::etats::non_actifs_du_mois(&ctx(le_jour("2026-12-16")), novembre()).unwrap().pop().expect("l'engagement non actif");
     let a_refaire = na.a_refaire(&envois::journal::lu(&racine).map(|j| j.departs).unwrap());
     assert!(a_refaire.iter().any(|a| matches!(a, ARefaire::Dsn { mois, .. } if mois.to_string() == "2026-11")), "{:?}", a_refaire);
@@ -295,12 +295,12 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     };
     let relever = || {
         socle::temps::pendant(fin, || {
-            let ctx = engagement::stock::contexte(&racine, None).unwrap();
+            let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
             let (_, dit) = routes::gestes::releve::rattacher_simulation(&ctx).unwrap();
             assert!(dit.incidents.is_empty(), "{:?}", dit.incidents);
         })
     };
-    let ctx = engagement::stock::contexte(&racine, None).unwrap();
+    let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
     let (salarie, fiche) = ctx.salaries.iter().next().map(|(c, f)| (c.clone(), f.clone())).unwrap();
     assert!(fiche.nir.is_some(),"la fiche de la comedienne porte son NIR");
 

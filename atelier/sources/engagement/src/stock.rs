@@ -750,32 +750,6 @@ impl Objet {
     }
 }
 
-/// LE CONTEXTE D'UNE COMPAGNIE (`Contexte::nouveau`), a la date `date` (sans elle, celle de l'horloge du moteur), avec
-/// le dernier jour ou chaque spectacle est engage (`spectacles_joues`), qui archive celui que le temps endort.
-pub fn contexte(racine: &Path, date: Option<Jour>) -> R<Contexte> {
-    Contexte::nouveau(racine, date, spectacles_joues(racine)?)
-}
-
-/// LE DERNIER JOUR OU CHAQUE SPECTACLE EST ENGAGE : la fin la plus tardive des engagements qui le nomment (sa carte, ses
-/// avenants), importes ou faits ici ; `None` quand l'un d'eux n'a pas encore de fin (`Carte::fin_lue`). Un engagement qui
-/// n'est plus actif ne compte pas.
-fn spectacles_joues(racine: &Path) -> R<BTreeMap<droit::contexte::IdSpectacle, Option<Jour>>> {
-    let mut out: BTreeMap<droit::contexte::IdSpectacle, Option<Jour>> = BTreeMap::new();
-    for o in tous(racine)?.1.objets.iter().filter(|o| !o.est_non_actif()) {
-        let fin = o.carte().fin_lue();
-        let nommes = std::iter::once(&o.carte().spectacle).chain(o.avenants().iter().map(|a| &a.termes.spectacle)).flatten();
-        for s in nommes {
-            let plus_tard = match (out.get(s), fin) {
-                (None, f) => f,
-                (Some(None), _) | (Some(_), None) => None,
-                (Some(Some(a)), Some(b)) => Some((*a).max(b)),
-            };
-            out.insert(s.clone(), plus_tard);
-        }
-    }
-    Ok(out)
-}
-
 /// Tous les engagements, fichier par fichier, du plus ancien au plus recent, dans l'ordre de chaque fichier.
 pub fn objets(racine: &Path) -> R<Vec<Objet>> {
     Ok(tous(racine)?.1.objets.clone())

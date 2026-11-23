@@ -20,7 +20,7 @@ fn colonne(numero: &str, debut: &str, fin: &str, cachets: u32) -> Ligne {
 #[test]
 fn l_attestation_se_compare_a_la_paie_de_son_contrat() {
     let (r, c) = rejouer("treteaux-du-banc", &crate::outils::dossier_de_test("aer", "treteaux"));
-    let ctx = engagement::stock::contexte(&c, Some(r.fin.expect("un scenario sans geste").jour_de_paris())).unwrap();
+    let ctx = droit::contexte::Contexte::nouveau(&c, Some(r.fin.expect("un scenario sans geste").jour_de_paris())).unwrap();
     let departs = envois::journal::lu(&c).unwrap().departs;
     let Ok((_, paies)) = documents::ecrire_documents::paies_aux_numeros_declares(&ctx, crate::outils::le_mois("2026-11"), None, &departs) else {
         panic!("les paies de novembre ne se lisent pas")

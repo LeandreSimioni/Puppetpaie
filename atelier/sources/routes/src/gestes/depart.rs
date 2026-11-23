@@ -1218,7 +1218,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
 
 /// Le contexte de la compagnie au jour `jour`, ce jour-la etant aujourd'hui : celui de la route qui a fabrique une piece.
 fn contexte_du_jour(ctx: &Contexte, jour: socle::date::Jour) -> R<Contexte> {
-    let mut c = engagement::stock::contexte(&ctx.racine, Some(jour))?;
+    let mut c = Contexte::nouveau(&ctx.racine, Some(jour))?;
     c.aujourdhui = jour;
     Ok(c)
 }

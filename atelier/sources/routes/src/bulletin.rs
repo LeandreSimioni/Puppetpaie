@@ -8,6 +8,7 @@ use crate::catalogue::{Acte, Ecran, Fiche, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::declaration::{charge, dit};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
+use droit::contexte::Contexte;
 use documents::bulletin::jeux_et_description;
 use droit::fiche::ModeleBulletin;
 use socle::fichiers::dossier_du_code;
@@ -102,7 +103,7 @@ pub(crate) fn apercu_description(modele: ModeleBulletin) -> R<fabrique_pdf::Desc
     let lue: SaisieDeLApercu = socle::forme::lire_fichier(&racine.join("saisie.json"), "La paie de l'aperçu ne se lit pas.")?;
     let saisie = engagement::saisie::VueDuMois { mois: lue.mois, taux_cachet: None, engagements: lue.engagements };
     let le_mois = saisie.mois;
-    let ctx = engagement::stock::contexte(&racine, Some(saisie.mois.dernier_jour()))?;
+    let ctx = Contexte::nouveau(&racine, Some(saisie.mois.dernier_jour()))?;
     let s = engagement::pour_l_ecran(&ctx, &saisie)?;
     let mut fiche = ctx.entreprise.clone();
     fiche.modele_bulletin = Some(modele);

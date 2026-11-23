@@ -39,7 +39,7 @@ pub fn enregistrer(ctx: &Contexte, releves: &[(IdSalarie, TauxRecu)], source: &s
 /// l'empreinte ne tient plus (le taux de leur salarie au jour de leur paiement, `droit::pas::taux_dgfip`) se reecrivent.
 /// Un mois dont les documents sont partis ne bouge pas.
 fn refaire_les_engagements(ctx: &Contexte) -> Result<(), Echec> {
-    let ctx = engagement::stock::contexte(&ctx.racine, Some(ctx.date))?;
+    let ctx = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;
     let departs = envois::journal::lu(&ctx.racine)?.departs;
     for mois in engagement::stock::mois_saisis(&ctx.racine)? {
         engagement::etats::du_mois(&ctx, mois, &departs)?;

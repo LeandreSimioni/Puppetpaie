@@ -50,7 +50,7 @@ pub(crate) fn compagnie_nommee(o: &Options) -> bool {
 
 /// La compagnie de la route, au jour de la route.
 pub(crate) fn contexte(o: &Options) -> R<Contexte> {
-    engagement::stock::contexte(&racine_de(o), o.date)
+    Contexte::nouveau(&racine_de(o), o.date)
 }
 
 /// LA COMPAGNIE QU'OUVRE LA ROUTE `route` (servie par la porte, `servir`, ou par l'etat garde de la fenetre,

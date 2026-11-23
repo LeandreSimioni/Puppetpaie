@@ -109,7 +109,7 @@ impl<'a> HorlogeFictive<'a> {
 
     /// Un contexte lu a `date` (la fin du mois qu'on ecrit), dont `aujourdhui` reste le jour joue.
     fn contexte_a(&self, date: Jour) -> R<Contexte> {
-        let mut ctx = engagement::stock::contexte(self.racine, Some(date))?;
+        let mut ctx = Contexte::nouveau(self.racine, Some(date))?;
         ctx.aujourdhui = self.jour;
         Ok(ctx)
     }

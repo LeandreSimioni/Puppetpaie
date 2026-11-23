@@ -768,7 +768,7 @@ pub(crate) fn ecrire<T: serde::Serialize + ?Sized>(chemin: &Path, v: &T) -> R<()
 /// La configuration, relue apres l'ecriture (`web._configuration(Contexte(racine))`).
 /// Ce que la page lit de la compagnie (la route `etat`), relu apres une ecriture : la page n'a rien d'autre a relire.
 pub(crate) fn etat_relu(ctx: &Contexte) -> R<crate::ouverture::EtatDeLaPage> {
-    let neuf = engagement::stock::contexte(&ctx.racine, None)?;
+    let neuf = Contexte::nouveau(&ctx.racine, None)?;
     crate::ouverture::etat(&neuf)
 }
 
@@ -780,20 +780,12 @@ pub(crate) fn aujourd_hui() -> Jour {
 // --------------------------------------------------------------- activer-fiche
 
 /// Seul `actif` change, a partir d'aujourd'hui (archiver, c'est ne plus proposer a partir de ce jour ; ce qui precede
-/// reste ce qu'il etait), par l'ecrivain de la fiche (`poser`). REACTIVER UN SPECTACLE FAIT REPARTIR SES 24 MOIS DE CE
-/// JOUR (`droit::contexte`, `endormi`, ticket #621) : `actif` vaut vrai a partir d'aujourd'hui, ecrit date meme quand
-/// la fiche le disait deja (un spectacle que le temps avait archive).
+/// reste ce qu'il etait), par l'ecrivain de la fiche (`poser`).
 pub(crate) fn activer_fiche(ctx: &Contexte, c: &ChargeActiver) -> R<()> {
     let jour = Some(ctx.aujourdhui);
     match c {
         ChargeActiver::Salarie { cle, actif } => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::Actif(Some(*actif))], jour, None),
-        ChargeActiver::Spectacle { cle, actif: false } => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::Actif(Some(false))], jour, None),
-        ChargeActiver::Spectacle { cle, actif: true } => {
-            let mut contenu = lire_fichier::<FicheSpectacleDatee>(ctx)?;
-            let brute = contenu.fiches.get_mut(cle).ok_or_else(|| refus(format!("Spectacle inconnu : {}.", socle::fichiers::repr(cle.as_str()))))?;
-            droit::fiche::FicheDatee::changer(brute, ChangementSpectacle::Actif(Some(true)), jour.as_ref(), true, None);
-            ecrire_fichier::<FicheSpectacleDatee>(ctx, &contenu)
-        }
+        ChargeActiver::Spectacle { cle, actif } => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::Actif(Some(*actif))], jour, None),
     }
 }
 
@@ -1065,7 +1057,7 @@ pub fn exemple_dfs() -> R<Option<fq::ExempleDfs>> {
         }
     }
     let saisie = engagement::saisie::VueDuMois { mois, taux_cachet: None, engagements };
-    let ctx = engagement::stock::contexte(&racine, Some(jour))?;
+    let ctx = Contexte::nouveau(&racine, Some(jour))?;
     let paies = engagement::pour_l_ecran(&ctx, &saisie)?.paies;
     let (avec, sans): (Vec<_>, Vec<_>) = paies.iter().partition(|p| p.deduction_forfaitaire.is_some());
     // Deux paies du meme cachet, l'une sans la deduction, l'autre avec : le gabarit ne dit rien d'autre.
