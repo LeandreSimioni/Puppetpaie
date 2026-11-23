@@ -57,21 +57,13 @@ use socle::echec::erreur;
 use socle::fichiers::{repr, CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, OPERATION};
-use crate::declaration::{charge, dit, ChampDuType, Legende};
+use crate::catalogue::{Acte, Fiche, Refus, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, Legende};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 
 const SALARIE_ARRETE: Legende = dit("Salarié", "la clé de la fiche du salarié arrêté");
 const DERNIER_JOUR: Legende = dit("Dernier jour travaillé", "le dernier jour travaillé de l'arrêt, AAAA-MM-JJ (il désigne l'arrêt)");
-const FAITE: &[Champ; 6] = &[
-    ChampDuType::du_type::<_, SalarieDesigne>("salarie", SALARIE_ARRETE).champ,
-    ChampDuType::du_type::<_, Jour>("dernier_jour", DERNIER_JOUR).champ,
-    Champ { nom: "le", libelle: Affiche::new("Fait le"), forme: Forme::Date, sens: "le jour où elle a été faite ; vide : la retirer", avance: false },
-    Champ { nom: "depot", libelle: Affiche::new("Où"), forme: Forme::ChoixRendu, sens: "où elle a été faite : un des lieux que l'obligation propose (ou, dans ce que rend obligations)", avance: false },
-    Champ { nom: "heure", libelle: Affiche::new("Heure"), forme: Forme::Texte, sens: "l'heure, HH:MM", avance: true },
-    Champ { nom: "reference", libelle: Affiche::new("Référence de l'accusé"), forme: Forme::Texte, sens: "la référence de l'accusé", avance: true },
-];
 const OBLIGATIONS_REND: &str = "obligations (chacune son échéance, son état et ce qui reste à faire)";
 const NON_ECRIT: Refus = Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (l'arrêt, le jour, le lieu) ; rien n'est écrit" };
 
@@ -107,7 +99,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AccidentDeclare,
         geste: "Dire faite la déclaration d'un accident du travail ou de trajet.",
-        charge: FAITE,
+        charge: &ChargeFaite::CHARGE,
         exemple: r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","le":"2026-11-02","depot":"net-entreprises"}"#,
         rend: OBLIGATIONS_REND,
         refus: &[NON_ECRIT, MANQUE],
@@ -119,7 +111,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AttestationDeclare,
         geste: "Dire faite l'attestation de salaire d'un arrêt que la DSN ne porte pas.",
-        charge: FAITE,
+        charge: &ChargeFaite::CHARGE,
         exemple: r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-16","le":null}"#,
         rend: OBLIGATIONS_REND,
         refus: &[NON_ECRIT, MANQUE],
@@ -1454,19 +1446,20 @@ struct Faite {
     accident: bool,
 }
 
-/// La charge de `accident-declare` et de `attestation-declare` : l'arret (le salarie et son dernier jour travaille, comme
-/// `etapes::ChargeObligationDArret` les ecrit), le jour ou l'obligation a ete faite (vide : la note se retire), ou, a
-/// quelle heure, et la reference de l'accuse.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeFaite {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
-    le: Option<Jour>,
-    depot: Option<LieuHorsDsn>,
-    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
-    heure: Option<HeureDuJour>,
-    reference: Option<TexteDit>,
+charge! {
+    /// La charge de `accident-declare` et de `attestation-declare` : l'arret (le salarie et son dernier jour travaille,
+    /// comme `etapes::ChargeObligationDArret` les ecrit), le jour ou l'obligation a ete faite (vide : la note se retire),
+    /// ou, a quelle heure, et la reference de l'accuse.
+    #[derive(Debug)]
+    pub(crate) struct ChargeFaite {
+        salarie: SalarieDesigne = SALARIE_ARRETE,
+        dernier_jour: Jour = DERNIER_JOUR,
+        le: Option<Jour> = dit("Fait le", "le jour où elle a été faite ; vide : la retirer"),
+        depot: Option<LieuHorsDsn> = dit("Où", "où elle a été faite : un des lieux que l'obligation propose (ou, dans ce que rend obligations)"),
+        #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+        heure: Option<HeureDuJour> = dit("Heure", "l'heure, HH:MM").avancee(),
+        reference: Option<TexteDit> = dit("Référence de l'accusé", "la référence de l'accusé").avancee(),
+    }
 }
 
 /// Une obligation hors DSN dite faite, telle que la fiche de suivi de l'arret la garde.

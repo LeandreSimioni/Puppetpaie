@@ -125,6 +125,7 @@ formes! {
         droit::permanents::MotifDeSuspension,
         droit::natures::NatureDeContrat,
         droit::fiche::StatutConventionnel,
+        declarations::obligations::LieuHorsDsn,
     ],
     Forme::Objet => [engagement::carte::Changements, compagnie::problemes::CaptureDeLaPage, socle::forme::Liste],
 }
