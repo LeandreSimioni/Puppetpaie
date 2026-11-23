@@ -272,6 +272,12 @@ impl<K> CaseDeLaFiche<K> {
     pub(crate) fn de_rangees(cle: K, libelle: crate::catalogue::Affiche, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>, ajouter: crate::catalogue::Affiche) -> CaseDeLaFiche<K> {
         CaseDeLaFiche { forme: Forme::Rangees, parties: Some(parties), ajouter: Some(ajouter.texte().to_string()), ..CaseDeLaFiche::simple(cle, libelle, Forme::Rangees, valeur) }
     }
+
+    /// DES RANGEES QUI NE S'AJOUTENT NI NE SE RETIRENT (l'avenant que son envoi fait partir) : seules leurs parties se
+    /// saisissent ; sa cle, son libelle, sa valeur (la liste de ses rangees) et les parties de chaque rangee.
+    pub(crate) fn de_rangees_fixes(cle: K, libelle: crate::catalogue::Affiche, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { parties: Some(parties), ..CaseDeLaFiche::simple(cle, libelle, Forme::Rangees, valeur) }
+    }
 }
 
 impl PartieDeLaFiche {

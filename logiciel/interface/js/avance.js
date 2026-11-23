@@ -194,8 +194,10 @@ const CASES = {
     lire: (x) => { const lu = lireLesParties(x); return rienDit(lu) ? null : lu; },
   },
   // DES RANGÉES (les autres établissements) : chacune ses parties (`o.parties`), une croix qui la retire, et sous elle
-  // ses temps (`o.temps.lignes`, par la clé de la rangée) ; « + » en ajoute une (`o.ajouter`). Une rangée qui ne dit rien
-  // ne part pas ; plus aucune rangée, la valeur est vide.
+  // ses temps (`o.temps.lignes`, par la clé de la rangée) ; le bouton que la route nomme en ajoute une (`o.ajouter`). Des
+  // rangées que la route ne fait pas ajouter (aucun `ajouter` : l'avenant qu'un envoi fait partir) ne se retirent pas
+  // non plus : seules leurs parties se saisissent. Une rangée qui ne dit rien ne part pas ; plus aucune rangée, la valeur
+  // est vide.
   rangees: {
     html: (v, o) => {
       const tempsDe = (l) => {
@@ -203,10 +205,11 @@ const CASES = {
         return t ? t.cases.flatMap((c) => [c.avant, c.a_venir]).filter(Boolean)
           .map((x) => `<small class="case-dit">${echapper(x.valeur)} · ${echapper(x.dit)}</small>`).join("") : "";
       };
+      const retirer = o.ajouter ? `<button type="button" class="lien retirer-rangee" title="retirer" aria-label="retirer">&times;</button>` : "";
       const rangee = (l) => `<div class="rangee"><span class="case-parties" data-rangee${attributsDesParties(l, o)}>${partiesDe(l || {}, o)}</span>
-        <button type="button" class="lien retirer-rangee" title="retirer" aria-label="retirer">&times;</button>${tempsDe(l)}</div>`;
-      return `<div class="case-rangees" data-case>${(Array.isArray(v) ? v : []).map(rangee).join("")}
-        <template>${rangee(null)}</template><button type="button" class="secondaire" data-rangee-plus>${echapper(o.ajouter || "+")}</button></div>`;
+        ${retirer}${tempsDe(l)}</div>`;
+      return `<div class="case-rangees" data-case>${(Array.isArray(v) ? v : []).map(rangee).join("")}${o.ajouter
+        ? `<template>${rangee(null)}</template><button type="button" class="secondaire" data-rangee-plus>${echapper(o.ajouter)}</button>` : ""}</div>`;
     },
     lire: (x) => {
       const l = [...x.querySelectorAll(":scope > .rangee > [data-rangee]")].map(lireLesParties).filter((r) => !rienDit(r));
