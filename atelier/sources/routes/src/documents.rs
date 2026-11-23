@@ -813,6 +813,7 @@ pub(super) fn expediteur_de(client: &dyn Courriel) -> R<droit::fiche::Courriel> 
 // ------------------------------------------------------------------ envoyer-documents
 
 charge! {
+    motdepasse = crate::declaration::dit("Mot de passe du logiciel", "le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
     /// La charge de `envoyer-documents` : le mois, les salaries choisis (tous sinon), et le mot de passe du logiciel tape
     /// pour l'envoi.
     #[derive(Debug)]

@@ -194,6 +194,7 @@ impl Designation {
 }
 
 charge! {
+    motdepasse = crate::declaration::dit("Mot de passe du logiciel", "pour un dépôt réel : le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
     /// La charge de `deposer` : la designation, et ce que le depot demande (le reel, l'annule-et-remplace voulu, le
     /// motif d'un reel sans test) ; absents, ils ne sont pas demandes. Le mot de passe du logiciel est a l'enveloppe.
     #[derive(Debug, Clone, Serialize)]

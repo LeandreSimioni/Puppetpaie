@@ -194,6 +194,7 @@ impl ValeurDeLaCharge<ParSaForme> for AvenantVoulu {
 }
 
 charge! {
+    motdepasse = crate::declaration::dit("Mot de passe du logiciel", "le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
     /// La charge de `demander-signature` : le mois, les contrats choisis (`contrats` ; `salaries` : tous les contrats de
     /// ces salaries ; rien : tous ceux du mois), les avenants coches, un contrat refait (`remplace`) ; absents, ils ne sont
     /// pas demandes. Ce qui part en rappel, le journal le dit, pas la charge. Le mot de passe du logiciel tape pour l'envoi

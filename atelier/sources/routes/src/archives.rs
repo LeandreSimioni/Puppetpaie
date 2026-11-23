@@ -964,6 +964,7 @@ const CORPS_DOSSIER: &str = "Bonjour {prenom},\n\nTu trouveras ci-joint ton doss
 const REEDITION_CONTRATS: &str = "Les contrats ont été réédités par notre logiciel de paie depuis les données\nd'origine : les numéros et les montants sont ceux des contrats qui t'ont été\nremis ; seule la mise en page peut avoir changé depuis.\n\n";
 
 charge! {
+    motdepasse = crate::declaration::dit("Mot de passe du logiciel", "le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
     /// La charge de `dossier-envoyer` : les salaries (aucun : chacun), la periode, ce que le dossier porte (tout sinon).
     /// L'envoi refait le dossier de chacun : ni apercu, ni dossier d'ensemble.
     #[derive(Debug)]
