@@ -33,29 +33,30 @@ async function dessinerExports() {
   }
   const opt = (v, t, sel) =>
     `<option value="${echapper(v)}"${sel ? " selected" : ""}>${echapper(t)}</option>`;
-  // D'ABORD LA CATEGORIE, PUIS L'ETAT, PUIS SES QUESTIONS : rien n'est choisi d'office, et chaque choix deroule le
-  // suivant. Une categorie d'un seul etat le choisit d'elle-meme.
-  const fams = familles(p.etats);
+  // D'ABORD LA FAMILLE, PUIS L'ETAT, PUIS SES QUESTIONS : rien n'est choisi d'office, et chaque choix deroule le
+  // suivant. Une famille d'un seul etat le choisit d'elle-meme.
+  const fams = p.familles;
+  const choisir = `<option value="" selected disabled>${echapper(p.ecran.choisir)}</option>`;
   cible.innerHTML = `
     <div class="champs">
       <div class="champ">
-        <label for="x-famille">Quoi</label>
+        <label for="x-famille">${echapper(p.ecran.quoi)}</label>
         <select id="x-famille">
-          <option value="" selected disabled>— choisir —</option>
-          ${fams.map(([f], i) => opt(String(i), f)).join("")}
+          ${choisir}
+          ${fams.map((f, i) => opt(String(i), f.libelle)).join("")}
         </select>
       </div>
       <div class="champ cachee" id="x-etat-champ">
-        <label for="x-etat">Lequel</label>
+        <label for="x-etat">${echapper(p.ecran.lequel)}</label>
         <select id="x-etat"></select>
       </div>
     </div>
     <div id="x-suite"></div>`;
   const choixEtat = document.getElementById("x-etat");
   document.getElementById("x-famille").onchange = () => {
-    const [, liste] = fams[Number(document.getElementById("x-famille").value)];
+    const liste = fams[Number(document.getElementById("x-famille").value)].etats;
     document.getElementById("x-etat-champ").classList.remove("cachee");
-    choixEtat.innerHTML = (liste.length > 1 ? `<option value="" selected disabled>— choisir —</option>` : "")
+    choixEtat.innerHTML = (liste.length > 1 ? choisir : "")
       + liste.map((e) => opt(e.etat, e.quoi)).join("");
     document.getElementById("x-suite").innerHTML = "";
     document.getElementById("exports-resultat").innerHTML = "";
@@ -139,80 +140,66 @@ async function lancerDossier(g, bloc) {
     ${r.envoi ? `<div class="encart ok">${echapper(r.phrase)}</div>` : ""}`;
 }
 
-/** Les états rangés par famille, dans l'ordre que le moteur donne : une
- *  vingtaine d'états ne se lisent pas en vrac. */
-function familles(etats) {
-  const out = [];
-  for (const e of etats) {
-    const f = e.famille || "Autres";
-    if (!out.length || out[out.length - 1][0] !== f) out.push([f, []]);
-    out[out.length - 1][1].push(e);
-  }
-  return out;
-}
-
 /** LES QUESTIONS DE L'ÉTAT CHOISI, et rien d'autre. L'éditeur :
  *  « quand on arrive sur les exports on n'a qu'une case, et selon ce qu'on
- *  choisit on arrive sur ce qui est pertinent ». Quelles questions, quel
- *  bouton, un aperçu ou non : c'est le moteur qui le dit (`FORMES`). */
+ *  choisit on arrive sur ce qui est pertinent ». Quelles questions, leurs mots,
+ *  ce qu'elles offrent et montrent d'abord, quel bouton, un aperçu ou non :
+ *  c'est le moteur qui le dit (`exports-periodes`). */
 function dessinerQuestions(opt) {
   const p = EXPORTS;
-  const forme = p.etats.find((e) => e.etat === document.getElementById("x-etat").value);
+  const e = p.ecran;
+  const forme = p.familles.flatMap((f) => f.etats).find((x) => x.etat === document.getElementById("x-etat").value);
   const q = new Set(forme.questions);
   document.getElementById("exports-resultat").innerHTML = "";
   document.getElementById("x-suite").innerHTML = `
     <div class="champs">
       ${q.has("periode") ? `<div class="champ pleine">
-        <label>Quand <span class="discret" id="x-quand-dit"></span></label>
+        <label>${echapper(e.quand)} <span class="discret" id="x-quand-dit"></span></label>
         <input type="hidden" id="x-quand"><input type="hidden" id="x-periode">
         <div class="calendrier" id="x-calendrier"></div>
       </div>` : ""}
       ${q.has("regroupement") ? `<div class="champ">
-        <label for="x-par">Regroupement</label>
+        <label for="x-par">${echapper(e.regroupement_libelle)}</label>
         <select id="x-par">
-          ${p.regroupements.filter((r) => forme.regroupements.includes(r.regroupement))
-              .map((r) => opt(r.regroupement, r.quoi,
-                              r.regroupement === forme.regroupements[0])).join("")}
+          ${forme.regroupements_offerts.map((r) => opt(r.code, r.libelle, r.code === forme.regroupement_propose)).join("")}
         </select>
-        <div class="aide">${echapper(forme.etat === "livre-de-paie" ? p.ecran.regroupement_livre : p.ecran.regroupement)}</div>
+        <div class="aide">${echapper(forme.regroupement_dit)}</div>
       </div>` : ""}
       ${q.has("logiciel") ? `<div class="champ pleine">
-        <label for="x-logiciel">Logiciel du comptable</label>
+        <label for="x-logiciel">${echapper(e.logiciel_libelle)}</label>
         <select id="x-logiciel">
           ${p.compta.logiciels.map((l) => opt(l.logiciel,
             `${l.nom} — ${l.format_lisible}`,
             l.logiciel === p.compta.logiciel)).join("")}
-          ${opt("", "Aucun", !p.compta.logiciel)}
+          ${opt("", e.aucun_logiciel, !p.compta.logiciel)}
         </select>
         <div class="aide" id="x-logiciel-aide"></div>
         <label class="choix" id="x-analytique-champ">
           <input type="checkbox" id="x-analytique"${p.compta.analytique ? " checked" : ""}>
-          <span>Analytique par spectacle</span>
+          <span>${echapper(e.analytique_libelle)}</span>
         </label>
-        <div class="aide">${echapper(p.ecran.analytique)}</div>
+        <div class="aide">${echapper(e.analytique)}</div>
         <div id="x-controle"></div>
       </div>` : ""}
       ${q.has("format") ? `<div class="champ" id="x-format-champ">
-        <label for="x-format">Format</label>
+        <label for="x-format">${echapper(e.format_libelle)}</label>
         <select id="x-format">
-          ${p.formats.filter((f) => forme.formats.includes(f.format)).map((f) => opt(f.format,
-            f.quoi,
-            f.format === "csv")).join("")}
+          ${forme.formats_offerts.map((f) => opt(f.code, f.libelle, f.code === forme.format_propose)).join("")}
         </select>
       </div>` : ""}
       ${q.has("coordonnees") ? `<div class="champ pleine">
-        <label class="coche" title="${echapper(p.ecran.coordonnees)}">
+        <label class="coche" title="${echapper(e.coordonnees)}">
           <input type="checkbox" id="x-coordonnees">
-          Coordonnées des salariés
+          ${echapper(e.coordonnees_libelle)}
         </label>
       </div>` : ""}
     </div>
     <div class="actions">
-      ${forme.apercu ? `<button class="secondaire" id="x-apercu">Aperçu</button>` : ""}
+      ${forme.apercu ? `<button class="secondaire" id="x-apercu">${echapper(e.apercu)}</button>` : ""}
       <button class="primaire" id="x-ecrire">${echapper(forme.bouton)}</button>
-      <button class="lien" id="x-dossier" title="${echapper(p.ecran.dossier)}">Ouvrir le dossier</button>
+      <button class="lien" id="x-dossier" title="${echapper(e.dossier)}">${echapper(e.dossier_dit)}</button>
     </div>`;
-  if (q.has("periode")) dessinerCalendrier(forme.periodes || ["annee", "mois", "toutes"]);
+  if (q.has("periode")) dessinerCalendrier(forme.periodes, forme.periode_proposee);
   if (q.has("logiciel")) {
     const retenir = async () => {
       document.getElementById("exports-resultat").innerHTML = "";
@@ -313,15 +300,17 @@ async function ouvrirCourts(format, phrase) {
  *  ses douze mois ; on clique une année, un mois, ou « Tout ». Seuls les
  *  mois que des engagements touchent se cliquent, et ce que l'état admet (`periodes`,
  *  dit par le moteur) : un état annuel n'offre pas les mois. Le moteur prend
- *  UNE période ; le choix se range dans `x-quand` / `x-periode`. */
-function dessinerCalendrier(periodes) {
+ *  UNE période ; le choix se range dans `x-quand` / `x-periode`. D'abord, celle
+ *  que le moteur propose (`propose`). */
+function dessinerCalendrier(periodes, propose) {
   const cal = document.getElementById("x-calendrier");
   const dispo = new Set(EXPORTS.mois);
-  const annees = [...new Set(EXPORTS.mois.map((m) => m.slice(0, 4)))].sort().reverse();
+  const annees = EXPORTS.annees.map(String);
   const peutMois = periodes.includes("mois");
   const peutAn = periodes.includes("annee");
   cal.innerHTML = `
-    ${periodes.includes("toutes") ? `<div class="rangee"><button type="button" data-quand="toutes" data-periode="" data-dit="toutes les années">Tout</button></div>` : ""}
+    ${periodes.includes("toutes") ? `<div class="rangee"><button type="button" data-quand="toutes" data-periode="" data-dit="${
+      echapper(EXPORTS.ecran.toutes_dit)}">${echapper(EXPORTS.ecran.tout)}</button></div>` : ""}
     ${annees.map((a) => `<div class="rangee">
       <button type="button" class="an" data-quand="annee" data-periode="${a}" data-dit="${a}"${peutAn ? "" : " disabled"}>${a}</button>
       ${MOIS_ABR.map((n, i) => {
@@ -347,14 +336,7 @@ function dessinerCalendrier(periodes) {
   cal.querySelectorAll("button").forEach((b) => {
     b.onclick = () => choisir(b.dataset.quand, b.dataset.periode, b.dataset.dit);
   });
-  // Par défaut, le plus récent que l'état admet : le dernier mois, sinon la dernière année, sinon tout.
-  const dernier = EXPORTS.mois[EXPORTS.mois.length - 1];
-  if (peutMois && dernier) choisir("mois", dernier, moisEnClair(dernier));
-  else if (peutAn && annees.length) choisir("annee", annees[0], annees[0]);
-  else {
-    const tout = cal.querySelector("[data-quand=toutes]");
-    choisir("toutes", "", tout && tout.dataset.dit);
-  }
+  choisir(propose.quand, propose.periode || "", propose.dit);
 }
 
 async function lancerExport(apercu) {
