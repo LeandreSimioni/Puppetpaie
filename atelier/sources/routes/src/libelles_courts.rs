@@ -16,11 +16,7 @@ use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OP
 use crate::declaration::{charge, dit, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
-const FORMAT: Legende = dit(
-    "Format",
-    "le format des écritures, celui d'un logiciel du comptable ; absent : celui du logiciel retenu (exports-periodes, compta)",
-)
-.avancee();
+const FORMAT: Legende = dit("Format", "le format des écritures, celui d'un logiciel du comptable ; absent : celui du logiciel retenu (exports-periodes, compta)").avancee();
 
 const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 
@@ -85,10 +81,7 @@ charge! {
     struct ChargeEnregistrer {
         #[serde(default, deserialize_with = "format_ou_aucun")]
         format: Option<FormatDExport> = FORMAT,
-        libelles: Vec<Valide> = dit(
-            "Libellés courts",
-            "[{quoi, cle, court}] : quoi et cle tels que libelles-courts les rend, court la valeur validée (la proposition, ou une autre), de largeur caractères au plus",
-        ),
+        libelles: Vec<Valide> = dit("Libellés courts", "[{quoi, cle, court}] : quoi et cle tels que libelles-courts les rend, court la valeur validée (la proposition, ou une autre), de largeur caractères au plus"),
     }
 }
 

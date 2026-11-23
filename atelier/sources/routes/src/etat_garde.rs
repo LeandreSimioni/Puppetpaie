@@ -584,11 +584,7 @@ impl<'a> Demarrage<'a> {
 charge! {
     /// La charge de `demarrage` : ce que la fenetre attend un etat juste, en millisecondes.
     pub(crate) struct ChargeDemarrage {
-        patienter: u64 = dit(
-            "Patienter",
-            "les millisecondes que la fenêtre attend un état juste (5000 au plus) ; hors de la fenêtre, l'état se refait",
-        )
-        .avancee(),
+        patienter: u64 = dit("Patienter", "les millisecondes que la fenêtre attend un état juste (5000 au plus) ; hors de la fenêtre, l'état se refait").avancee(),
     }
 }
 
@@ -596,11 +592,7 @@ charge! {
     /// La charge de `mois` : le mois, et si la page veut l'etat juste (`attendre`).
     pub(crate) struct ChargeEcranDuMois {
         mois: Mois = legendes::MOIS,
-        attendre: Option<bool> = dit(
-            "État frais",
-            "vrai : l'état juste, refait s'il le faut ; sinon, dans la fenêtre, le dernier état connu, marqué perime",
-        )
-        .avancee(),
+        attendre: Option<bool> = dit("État frais", "vrai : l'état juste, refait s'il le faut ; sinon, dans la fenêtre, le dernier état connu, marqué perime").avancee(),
     }
 }
 
