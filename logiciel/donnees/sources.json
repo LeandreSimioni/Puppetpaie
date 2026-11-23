@@ -465,7 +465,8 @@
       "transcription": "casc-svp-fiche-codification-dsn-202606.txt",
       "verification": "telechargement",
       "nourrit": [
-        "casc-svp-base.json"
+        "casc-svp-base.json",
+        "ecarts-connus-base.json"
       ]
     },
     "casc-svp-modele-liste-nominative": {
@@ -500,7 +501,8 @@
       "verification_comment": "La copie est extraite des archives open data de la DILA, qui se relisent sans compte (`moteur/src/atelier/releve/kali.rs`). La veille KALI (bloc `kali`) dit si la convention bouge apres le releve ; un article 4.22, 5.1 ou 13 de l'accord de 2024 modifie veut dire relire casc-svp-base.json et prevoyance-conventionnelle-base.json.",
       "nourrit": [
         "prevoyance-conventionnelle-base.json",
-        "casc-svp-base.json"
+        "casc-svp-base.json",
+        "ecarts-connus-base.json"
       ],
       "kali": {
         "idcc": "3090",
@@ -538,7 +540,8 @@
       "transcription": "audiens-parametres-2026/Audiens-Parametres-2026.txt",
       "verification": "telechargement",
       "nourrit": [
-        "baremes/2026.json"
+        "baremes/2026.json",
+        "ecarts-connus-base.json"
       ]
     },
     "audiens-webconference-nouveautes-2026": {

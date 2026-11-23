@@ -22,7 +22,10 @@ du conteneur). URL (celle que cite Service Public, `../service-public-reduction-
 
 ## Où le moteur s'en sert
 
-Nulle part encore. Avec L. 241-13, VI, Service Public et le BOSS (§ 220-280, `../boss/`), elle fonde ce que fait déjà le
+`logiciel/donnees/ecarts-connus-base.json`, la ligne `reduction_generale` de Coolpaie (« Les règles de cumul », l. 538 :
+« taux spécifiques aux artistes ») : avec l'arrêté de 1975 et le BOSS § 220, elle fonde l'écart connu d'une réduction
+générale appliquée à la paie d'un artiste (`engagement::ecarts_connus::Constat::AbsenteDuCalcul`), que la comparaison
+des paies importées (`engagement::ecarts::confronter`) ne fait pas sonner. Avec L. 241-13, VI, Service Public et le BOSS (§ 220-280, `../boss/`), elle fonde ce que fait déjà le
 barème 2026 (l'artiste n'a pas la réduction générale : `par_statut.technicien.reduction_generale.statuts`), non cité
 dans le barème ; et le CTP 671 / 801 du technicien intermittent (`organismes-base.json`, `reduction_generale.dsn`).
 

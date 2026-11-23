@@ -146,7 +146,10 @@ Ce qu'on en lit :
 
 Où le moteur s'en sert : § 190, dans la règle du seuil des taux réduits de 2025 (`droit::reduction::au_dela_du_seuil`,
 les revenus déduction forfaitaire spécifique déduite). § 220 à 280 : ce que fait déjà le barème 2026 (l'artiste n'a pas
-la réduction générale, `par_statut.technicien.reduction_generale.statuts`), non cité dans le barème.
+la réduction générale, `par_statut.technicien.reduction_generale.statuts`), non cité dans le barème. § 220 (l. 331) :
+`logiciel/donnees/ecarts-connus-base.json`, la ligne `reduction_generale` de Coolpaie, l'écart connu d'une réduction
+générale appliquée à la paie d'un artiste (`engagement::ecarts_connus::Constat::AbsenteDuCalcul`), avec l'arrêté de 1975
+et la page Urssaf.
 
 ## Empreintes
 
