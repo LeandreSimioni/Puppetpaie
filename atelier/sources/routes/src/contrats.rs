@@ -65,7 +65,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &ChargeApercuSignature::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
+        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), coche (coché à l'ouverture), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -461,6 +461,10 @@ pub(crate) struct ContratASigner {
     /// Ce qu'il ajoute a la charge d'un depart quand il est coche (lui, ou son avenant) ; seulement a envoyer.
     #[serde(skip_serializing_if = "Option::is_none")]
     part: Option<ChargeSignature>,
+    /// COCHE A L'OUVERTURE de la boite qui fait partir les contrats : a envoyer, de ceux des salaries choisis s'il en
+    /// est ; sa part est dans ce que les departs montrent d'abord (`ValeursDesContrats`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    coche: bool,
     /// L'apercu de son avenant, quand il part en avenant.
     #[serde(skip_serializing_if = "Option::is_none")]
     voir_avenant: Option<crate::etapes::Action>,
@@ -1162,6 +1166,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
         });
         contrats.push(ContratASigner {
             part,
+            coche: false,
             voir_avenant,
             courriel,
             salarie: p.salarie.id.clone(),
@@ -1213,7 +1218,10 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
     let coches = vec![crate::declaration::cle!(ChargeSignature, contrats), crate::declaration::cle!(ChargeSignature, avenants)];
     // CE QUI PART SI L'ON NE DECOCHE RIEN : la part de chaque contrat a envoyer, de ceux des salaries choisis s'il en est.
     let mut valeurs = ValeursDesContrats::default();
-    for part in contrats.iter().filter(|c| c.a_envoyer && seulement.is_none_or(|l| l.contains(&c.salarie))).filter_map(|c| c.part.as_ref()) {
+    for c in contrats.iter_mut() {
+        c.coche = c.a_envoyer && c.part.is_some() && seulement.is_none_or(|l| l.contains(&c.salarie));
+    }
+    for part in contrats.iter().filter(|c| c.coche).filter_map(|c| c.part.as_ref()) {
         valeurs.contrats.extend(part.contrats.iter().flatten().cloned());
         valeurs.avenants.extend(part.avenants().iter().cloned());
     }

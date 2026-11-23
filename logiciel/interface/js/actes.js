@@ -544,14 +544,8 @@ async function boiteSignature(charge) {
   const contrats = a.a_envoyer;
   // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont les cases (`contrats`, `avenants`) se
   // remplissent de la part de chaque contrat coché (`part`) ; celui qui exige le mot de passe (`demande`) le fait taper.
-  // Un contrat est coché d'abord quand sa part est dans ce que ces cases montrent d'abord (`valeurs`, les mêmes pour
-  // chaque départ) ; un contrat à cocher a toujours un départ ouvert.
+  // Un contrat est coché d'abord quand la route le dit (`coche`).
   const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
-  const coche = (c) => {
-    const g = a.principal;
-    const montrees = g.cases.flatMap((k) => g.valeurs[k].map((x) => JSON.stringify(x)));
-    return g.cases.some((k) => (c.part[k] || []).some((x) => montrees.includes(JSON.stringify(x))));
-  };
   const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
     + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
   ouvrirBoite(`
@@ -564,7 +558,7 @@ async function boiteSignature(charge) {
       ${contrats.map((c, i) => `
         <label class="choix">
           <input type="checkbox" class="s-qui" value="${echapper(c.salarie)}" data-i="${i}"
-                 ${coche(c) ? "checked" : ""}>
+                 ${c.coche ? "checked" : ""}>
           <span><b>${echapper(c.nom)}</b> — ${echapper(c.spectacle)},
             ${echapper(c.periode_dit)}
             ${c.numero_dit ? `<span class="discret">(${echapper(c.numero_dit)})</span>` : ""}
