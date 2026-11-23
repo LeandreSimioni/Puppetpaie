@@ -720,8 +720,23 @@ enum EtatRendu {
 struct EcranDUnEtat {
     personnelles: Option<&'static str>,
     partiels: Option<String>,
+    /// Le titre des sources d'un tableau.
+    sources: &'static str,
+    /// Le bouton du dossier, quand le livre ou le tableau est ecrit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ouvrir: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    livre: Option<EcranDuLivre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     casc: Option<EcranDeLaCasc>,
+}
+
+/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE : ses colonnes (le mois, le salarie, le spectacle, puis les montants de
+/// `documents::etats_paie::LigneLivre`, dans cet ordre) et sa ligne du total general.
+#[derive(Debug, Serialize)]
+struct EcranDuLivre {
+    colonnes: [&'static str; 10],
+    total_general: &'static str,
 }
 
 /// CE QUE L'ECRAN DIT DE LA REGULARISATION CASC-SVP, et ce qui s'y fait : son titre ; les virements (`virement`) ; les
@@ -854,6 +869,12 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
     let ecran = EcranDUnEtat {
         personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans prive/, et ne s'envoie qu'à qui en a besoin."),
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),
+        sources: "Sources",
+        ouvrir: (casc.is_none() && !ecrits.is_empty()).then_some("Ouvrir le dossier"),
+        livre: matches!(etat, EtatRendu::Livre(_)).then_some(EcranDuLivre {
+            colonnes: ["Mois", "Salarié", "Spectacle", "Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"],
+            total_general: "TOTAL GÉNÉRAL",
+        }),
         casc,
     };
     Ok(EtatExporte { phrase, etat, phrases: avertissements, ecran })

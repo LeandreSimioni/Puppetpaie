@@ -336,9 +336,10 @@ async function lancerExport(apercu) {
     if (courts) document.getElementById("x-courts-refus").onclick = () => ouvrirCourts(courts);
     return;
   }
-  if (r.etat === "regularisation-casc-svp") { dessinerCasc(r); return; }
-  if (r.colonnes && r.sections) { dessinerTableau(r, apercu); return; }
-  dessinerLivre(r, apercu);
+  // Ce que la route dit de l'état (`ecran`) choisit son dessin : la régularisation CASC-SVP, le livre, ou un tableau.
+  if (r.ecran.casc) { dessinerCasc(r); return; }
+  if (r.ecran.livre) { dessinerLivre(r, apercu); return; }
+  dessinerTableau(r, apercu);
 }
 
 /** LA RÉGULARISATION CASC-SVP. Deux étapes, dans l'ordre où on les vit
@@ -449,10 +450,10 @@ function dessinerTableau(r, apercu) {
       ${corps}
       ${r.total ? rang(r.total, "total-general") : ""}
     </table></div>
-    ${r.sources.length ? `<details><summary>Sources</summary><ul>${
+    ${r.sources.length ? `<details><summary>${echapper(r.ecran.sources)}</summary><ul>${
       r.sources.map((x) => `<li class="discret">${echapper(x)}</li>`).join("")}</ul></details>` : ""}
-    ${r.fichier ? `<div class="actions">
-      <button class="lien" id="x-dossier-2">Ouvrir le dossier</button></div>` : ""}`;
+    ${r.ecran.ouvrir ? `<div class="actions">
+      <button class="lien" id="x-dossier-2">${echapper(r.ecran.ouvrir)}</button></div>` : ""}`;
   const o = document.getElementById("x-dossier-2");
   if (o) o.onclick = async () => {
     await ouvrirEtDire(EXPORTS.dossier);
@@ -499,14 +500,12 @@ function dessinerLivre(r, apercu) {
     ${r.avertissements.map((a) =>
         `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
-      <tr><th>Mois</th><th>Salarié</th><th>Spectacle</th><th>Brut</th>
-          <th>Part salariale</th><th>Part patronale</th><th>Net imposable</th>
-          <th>Net à payer</th><th>PAS</th><th>Coût employeur</th></tr>
+      <tr>${r.ecran.livre.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
       ${corps}
-      ${total(r.totaux, "TOTAL GÉNÉRAL", "total-general")}
+      ${total(r.totaux, r.ecran.livre.total_general, "total-general")}
     </table></div>
-    ${r.fichier ? `<div class="actions">
-      <button class="lien" id="x-dossier-2">Ouvrir le dossier</button></div>` : ""}`;
+    ${r.ecran.ouvrir ? `<div class="actions">
+      <button class="lien" id="x-dossier-2">${echapper(r.ecran.ouvrir)}</button></div>` : ""}`;
   const o = document.getElementById("x-dossier-2");
   if (o) o.onclick = async () => {
     await ouvrirEtDire(EXPORTS.dossier);
