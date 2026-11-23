@@ -23,7 +23,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
@@ -44,6 +44,7 @@ use crate::catalogue::{Acte, Fiche};
 use crate::catalogue::Route;
 use crate::catalogue::Ecran;
 use crate::SansCharge;
+use crate::declaration::{charge, legendes};
 use socle::ecran::couleur_de_l_etat;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::depots::{Designation, EmbaucheDesignee, Quoi};
@@ -56,7 +57,7 @@ const ECRAN: Ecran = Ecran::Lecture;
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::MoisAOuvrir,
     geste: "Dire quel mois ouvrir : le plus ancien dont une étape reste à faire.",
-    charge: &[],
+    charge: &SansCharge::CHARGE,
     exemple: "{}",
     rend: "mois (celui à ouvrir), courant, reste (les étapes qui restent)",
     refus: &[crate::catalogue::ILLISIBLE],
@@ -70,11 +71,12 @@ pub(crate) type Paire = (IdSalarie, NumeroContrat);
 
 // ------------------------------------------------------------------ les charges
 
-/// La charge des etats d'un mois (`etat-par-engagement`, `etat-du-mois`, `mois` : `etat_garde`) : le mois.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeMois {
-    pub(crate) mois: Mois,
+charge! {
+    /// La charge des etats d'un mois (`etat-par-engagement`, `etat-du-mois`, `mois` : `etat_garde`) : le mois.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeMois {
+        pub(crate) mois: Mois = legendes::MOIS,
+    }
 }
 
 // ------------------------------------------------------------------ les reponses

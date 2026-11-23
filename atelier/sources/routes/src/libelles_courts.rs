@@ -12,14 +12,15 @@ use documents::plan_comptable::FormatDExport;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Echec, R};
 
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OPERATION};
+use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OPERATION};
+use crate::declaration::{charge, dit, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
-const FORMAT: Champ = Champ {
-    nom: "format", libelle: Affiche::new("Format"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<documents::plan_comptable::FormatDExport>()),
-    sens: "le format des écritures, celui d'un logiciel du comptable ; absent : celui du logiciel retenu (exports-periodes, compta)",
-    avance: true,
-};
+const FORMAT: Legende = dit(
+    "Format",
+    "le format des écritures, celui d'un logiciel du comptable ; absent : celui du logiciel retenu (exports-periodes, compta)",
+)
+.avancee();
 
 const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 
@@ -28,7 +29,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::LibellesCourts,
         geste: "Dire les libellés trop longs pour le format du comptable, et leur valeur courte.",
-        charge: &[FORMAT],
+        charge: &ChargeLire::CHARGE,
         exemple: r#"{}"#,
         rend: "format, nom, libelles [quoi (libelle, compte ou compagnie), cle, zone, long, largeur, propose (la proposition du moteur), court (la valeur validée, si elle tient)], phrase ; aucun format à zone bornée : libelles vide",
         refus: &[OPERATION, FORME],
@@ -40,14 +41,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::LibellesCourtsEnregistrer,
         geste: "Valider la valeur courte de libellés trop longs pour le format du comptable.",
-        charge: &[
-            FORMAT,
-            Champ {
-                nom: "libelles", libelle: Affiche::new("Libellés courts"), forme: Forme::Objet,
-                sens: "[{quoi, cle, court}] : quoi et cle tels que libelles-courts les rend, court la valeur validée (la proposition, ou une autre), de largeur caractères au plus",
-                avance: false,
-            },
-        ],
+        charge: &ChargeEnregistrer::CHARGE,
         exemple: r#"{"format":"ximport","libelles":[]}"#,
         rend: "ce que rend libelles-courts, après l'enregistrement, et sa phrase ; une liste vide : rien n'est écrit, libelles vide",
         refus: &[
@@ -76,21 +70,26 @@ impl Dite for Libelles {
     }
 }
 
-/// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il n'est pas dit.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeLire {
-    #[serde(default, deserialize_with = "format_ou_aucun")]
-    format: Option<FormatDExport>,
+charge! {
+    /// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il n'est pas dit.
+    #[derive(Debug)]
+    struct ChargeLire {
+        #[serde(default, deserialize_with = "format_ou_aucun")]
+        format: Option<FormatDExport> = FORMAT,
+    }
 }
 
-/// La charge de « libelles-courts-enregistrer » : le format, et les valeurs courtes validees.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeEnregistrer {
-    #[serde(default, deserialize_with = "format_ou_aucun")]
-    format: Option<FormatDExport>,
-    libelles: Vec<Valide>,
+charge! {
+    /// La charge de « libelles-courts-enregistrer » : le format, et les valeurs courtes validees.
+    #[derive(Debug)]
+    struct ChargeEnregistrer {
+        #[serde(default, deserialize_with = "format_ou_aucun")]
+        format: Option<FormatDExport> = FORMAT,
+        libelles: Vec<Valide> = dit(
+            "Libellés courts",
+            "[{quoi, cle, court}] : quoi et cle tels que libelles-courts les rend, court la valeur validée (la proposition, ou une autre), de largeur caractères au plus",
+        ),
+    }
 }
 
 /// Le format d'une charge : absent, `null` ou vide (la page n'a pas de format choisi : son menu est vide), aucun ;
@@ -110,6 +109,10 @@ struct Valide {
     quoi: Quoi,
     cle: String,
     court: String,
+}
+
+impl ValeurDeLaCharge<ParSaForme> for Valide {
+    const FORME: Forme = Forme::Objet;
 }
 
 /// Ce que rend la page des libelles courts.

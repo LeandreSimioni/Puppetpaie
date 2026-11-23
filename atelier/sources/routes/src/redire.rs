@@ -26,7 +26,7 @@ use crate::fiches::CaseDeLaFiche;
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::ValeursIllisibles,
     geste: "Dire les valeurs des fiches qui ne se lisent plus, à saisir de nouveau.",
-    charge: &[],
+    charge: &crate::SansCharge::CHARGE,
     exemple: r#"{}"#,
     rend: "valeurs (chacune : la fiche, le libellé de la case, ce qui est écrit, depuis quand, la case à saisir telle que la fiche la dessine, et la charge d'enregistrer-fiche qui la redit, la case saisie ou null pour la dire vide) ; titre, vide, enregistrer, confirmer (les boutons) ; phrase",
     refus: &[OPERATION],

@@ -2,12 +2,13 @@
 //! ligne de paie de la carte. Une lecture : elle repond toujours, et un metier dont rien n'est releve, ou un code
 //! qu'aucune liste n'a (une frappe en cours), rend une liste vide.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use socle::echec::Classe;
 use socle::forme::TexteDit;
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Refus, Route, FORME, MOIS};
+use crate::catalogue::{Acte, Ecran, Fiche, Refus, Route, FORME};
+use crate::declaration::{charge, dit, legendes};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use droit::contexte::Contexte;
 use droit::emplois::CodeEmploi;
@@ -18,7 +19,7 @@ use socle::echec::R;
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::ConventionDuMetier,
     geste: "Dire ce que la convention fixe au métier, rubrique par rubrique.",
-    charge: &[MOIS, Champ { nom: "metier", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier (MAR010…)", avance: false }],
+    charge: &ChargeDuMetier::CHARGE,
     exemple: r#"{"mois":"2026-11","metier":"MAR010"}"#,
     rend: "phrase : le nom que la convention donne au métier (la tête de la bulle) ; etiquette : le nom du « i » ; rubriques : pour chacune (rubrique), les montants et ce que chacun paie (condition, montant), le texte qui les fixe ; ne_se_lit_pas : ce qui cache une rubrique, en phrases",
     refus: &[
@@ -32,12 +33,13 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     ecran: Ecran::Lecture,
 }];
 
-/// La charge : le mois de la carte, et le code de son metier, tel que la carte l'ecrit.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDuMetier {
-    mois: Mois,
-    metier: TexteDit,
+charge! {
+    /// La charge : le mois de la carte, et le code de son metier, tel que la carte l'ecrit.
+    #[derive(Debug)]
+    struct ChargeDuMetier {
+        mois: Mois = legendes::MOIS,
+        metier: TexteDit = dit("Métier", "le code du métier (MAR010…)"),
+    }
 }
 
 /// Ce que la route rend : sa phrase (le nom que la convention donne au metier, la tete de la bulle ; ou qu'elle ne fixe

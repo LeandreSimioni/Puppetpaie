@@ -49,7 +49,8 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{CheminRelatif, Empreinte};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, ILLISIBLE, MOIS};
+use crate::catalogue::{Acte, Ecran, Fiche, Route, ILLISIBLE};
+use crate::declaration::{charge, dit, legendes};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Options, Phrase, Porte, Rendu, Reponse};
 use crate::etapes::{Bilan, ChargeMois};
 
@@ -65,16 +66,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Mois,
         geste: "Lire tout l'écran d'un mois d'un coup : engagements, étapes, imprévus.",
-        charge: &[
-            MOIS,
-            Champ {
-                nom: "attendre",
-                libelle: Affiche::new("État frais"),
-                forme: Forme::OuiNon,
-                sens: "vrai : l'état juste, refait s'il le faut ; sinon, dans la fenêtre, le dernier état connu, marqué perime",
-                avance: true,
-            },
-        ],
+        charge: &ChargeEcranDuMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "lectures : la réponse de chaque route de l'écran du mois (saisie, etat-par-engagement, etat-du-mois…), perime",
         refus: &[ILLISIBLE],
@@ -86,13 +78,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Demarrage,
         geste: "Lire d'un coup ce que l'écran d'une compagnie montre en s'ouvrant.",
-        charge: &[Champ {
-            nom: "patienter",
-            libelle: Affiche::new("Patienter"),
-            forme: Forme::Nombre,
-            sens: "les millisecondes que la fenêtre attend un état juste (5000 au plus) ; hors de la fenêtre, l'état se refait",
-            avance: true,
-        }],
+        charge: &ChargeDemarrage::CHARGE,
         exemple: r#"{"patienter":400}"#,
         rend: "pret ; prêt : le mois à ouvrir et son écran, aujourdhui, les lectures de l'ouverture (etat, echeancier, rappels…), la veille, la mise à jour, les signalements ; sinon la phrase de ce que fait le moteur",
         refus: &[ILLISIBLE],
@@ -104,7 +90,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EtatParEngagement,
         geste: "Lire l'état de chaque engagement du mois : ses carrés DPAE, Contrat, Documents.",
-        charge: &[MOIS],
+        charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire), non_actifs",
         refus: &[ILLISIBLE],
@@ -116,7 +102,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EtatDuMois,
         geste: "Lire les quatre étapes du mois : DPAE, Contrats, DSN, Documents.",
-        charge: &[MOIS],
+        charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic",
         refus: &[ILLISIBLE],
@@ -595,19 +581,27 @@ impl<'a> Demarrage<'a> {
     }
 }
 
-/// La charge de `demarrage` : ce que la fenetre attend un etat juste, en millisecondes.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeDemarrage {
-    patienter: u64,
+charge! {
+    /// La charge de `demarrage` : ce que la fenetre attend un etat juste, en millisecondes.
+    pub(crate) struct ChargeDemarrage {
+        patienter: u64 = dit(
+            "Patienter",
+            "les millisecondes que la fenêtre attend un état juste (5000 au plus) ; hors de la fenêtre, l'état se refait",
+        )
+        .avancee(),
+    }
 }
 
-/// La charge de `mois` : le mois, et si la page veut l'etat juste (`attendre`).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeEcranDuMois {
-    mois: Mois,
-    attendre: Option<bool>,
+charge! {
+    /// La charge de `mois` : le mois, et si la page veut l'etat juste (`attendre`).
+    pub(crate) struct ChargeEcranDuMois {
+        mois: Mois = legendes::MOIS,
+        attendre: Option<bool> = dit(
+            "État frais",
+            "vrai : l'état juste, refait s'il le faut ; sinon, dans la fenêtre, le dernier état connu, marqué perime",
+        )
+        .avancee(),
+    }
 }
 
 // ------------------------------------------------------------------------------------------------- refaire

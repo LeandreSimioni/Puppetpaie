@@ -4,8 +4,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, FORME, OPERATION};
+use crate::catalogue::{Acte, Ecran, Fiche, FORME, OPERATION};
 use crate::catalogue::Route;
+use crate::declaration::{charge, dit};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use droit::contexte::Contexte;
 use documents::bulletin::jeux_et_description;
@@ -13,13 +14,11 @@ use droit::fiche::ModeleBulletin;
 use socle::fichiers::dossier_du_code;
 use socle::echec::{Classe, R};
 
-const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<ModeleBulletin>()), sens: "le modèle du bulletin d'exemple", avance: false };
-
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::BulletinModeleApercu,
     geste: "Montrer un bulletin d'exemple dans un modèle.",
-    charge: &[MODELE],
+    charge: &ChargeModele::CHARGE,
     exemple: r#"{"modele":"complet"}"#,
     rend: "modele, pdf (en base64)",
     refus: &[OPERATION, FORME],
@@ -56,12 +55,13 @@ impl Dite for ApercuModele {
 
 // ------------------------------------------------------------------ le modele du bulletin
 
-/// La charge de `bulletin-modele-apercu` : le modele, par sa cle (un modele connu, rien d'autre : un autre se refuse a la
-/// lecture de la charge).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeModele {
-    pub modele: ModeleBulletin,
+charge! {
+    /// La charge de `bulletin-modele-apercu` : le modele, par sa cle (un modele connu, rien d'autre : un autre se refuse a
+    /// la lecture de la charge).
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub struct ChargeModele {
+        pub modele: ModeleBulletin = dit("Modèle", "le modèle du bulletin d'exemple"),
+    }
 }
 
 /// Ce que rend `bulletin-modele-apercu` : le PDF d'exemple, en base64, et la phrase. La fenetre le lit aussi

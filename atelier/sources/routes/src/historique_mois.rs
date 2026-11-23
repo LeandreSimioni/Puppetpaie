@@ -43,7 +43,7 @@ use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 use socle::paris::Moment;
 
-use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME, MOIS};
+use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::ChargeMois;
 
@@ -54,7 +54,7 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Historique);
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::HistoriqueMois,
     geste: "Dire l'Historique d'un mois : ses documents, ses envois et ce qui en est revenu.",
-    charge: &[MOIS],
+    charge: &ChargeMois::CHARGE,
     exemple: r#"{"mois":"2026-11"}"#,
     rend: "mois, documents (chacun son chemin ; fichier : à refaire par piece-partie avant de l'ouvrir), envois (chacun ses retours, du plus récent au plus ancien)",
     refus: &[FORME, Refus { classe: Classe::Disque, corriger: "le journal des envois ou une liste des bulletins repris, que la phrase dit illisible" }],
