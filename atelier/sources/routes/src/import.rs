@@ -56,7 +56,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare) ; gestes (« Reprendre », tant que rien n'est écrit) ; mots (les titres du compte rendu) ; cloture (ce qui le clôt : titre, notes, questions) ; de chaque fiche, fautes et completer_la_fiche (le geste de la route fiche qui l'ouvre, sa charge la fiche : nom, cle)",
+        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare) ; gestes (« Reprendre », tant que rien n'est écrit) ; mots (les titres du compte rendu) ; cloture (ce qui le clôt : titre, fichiers, les fichiers écrits sous lui, notes, questions) ; de chaque fiche, fautes et completer_la_fiche (le geste de la route fiche qui l'ouvre, sa charge la fiche : nom, cle)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -858,12 +858,15 @@ struct CompteRenduDeLImport {
 }
 
 /// CE QUI CLOT LE COMPTE RENDU DE L'IMPORT, que la route tranche : ce qui est repris, quand l'import a ecrit (son titre,
-/// et ce que l'import fait des copies) ; qu'il n'y a rien a reprendre ; ou, avant d'ecrire, ce que le geste reprendrait
-/// et que rien n'est ecrit avant lui, avec les personnes que l'import mettrait de cote (`questions`).
+/// les fichiers ecrits, et ce que l'import fait des copies) ; qu'il n'y a rien a reprendre ; ou, avant d'ecrire, ce que
+/// le geste reprendrait et que rien n'est ecrit avant lui, avec les personnes que l'import mettrait de cote
+/// (`questions`).
 #[derive(Debug, Serialize)]
 struct ClotureDuCompteRendu {
     #[serde(skip_serializing_if = "Option::is_none")]
     titre: Option<&'static str>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    fichiers: Vec<PathBuf>,
     notes: Vec<String>,
     questions: Vec<Phrase>,
 }
@@ -876,10 +879,16 @@ impl CompteRenduDeLImport {
             false => Vec::new(),
         };
         let cloture = match (lu.ecrit, lu.rien_a_faire) {
-            (true, _) => ClotureDuCompteRendu { titre: Some("Repris"), notes: vec![crate::ouverture::aide("import_copies")?.to_string()], questions: Vec::new() },
-            (false, true) => ClotureDuCompteRendu { titre: None, notes: vec![crate::ouverture::aide("import_rien")?.to_string()], questions: lu.identites.iter().map(|q| q.question.clone()).collect() },
+            (true, _) => ClotureDuCompteRendu {
+                titre: Some("Repris"),
+                fichiers: std::mem::take(&mut lu.fichiers),
+                notes: vec![crate::ouverture::aide("import_copies")?.to_string()],
+                questions: Vec::new(),
+            },
+            (false, true) => ClotureDuCompteRendu { titre: None, fichiers: Vec::new(), notes: vec![crate::ouverture::aide("import_rien")?.to_string()], questions: lu.identites.iter().map(|q| q.question.clone()).collect() },
             (false, false) => ClotureDuCompteRendu {
                 titre: None,
+                fichiers: Vec::new(),
                 notes: vec![lu.reprendre.clone(), crate::ouverture::aide("import_avant_clic")?.to_string()],
                 questions: lu.identites.iter().map(|q| q.question.clone()).collect(),
             },

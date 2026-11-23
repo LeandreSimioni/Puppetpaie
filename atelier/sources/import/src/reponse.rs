@@ -798,8 +798,8 @@ pub struct Importation {
     pub avertissements: Vec<String>,
     pub rien_a_faire: bool,
     pub ecrit: bool,
-    /// Les fichiers que l'import a ecrits.
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    /// Les fichiers que l'import a ecrits, que le compte rendu de l'import rend dans ce qui le clot (`routes::import`).
+    #[serde(skip)]
     pub fichiers: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub copie: Option<Copie>,

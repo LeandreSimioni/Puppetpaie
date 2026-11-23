@@ -687,7 +687,7 @@ function vueImportation(r) {
   const c = r.cloture;
   const questions = c.questions.length
     ? `<div class="encart attention"><b>${echapper(mots.identites)}</b><ul>${c.questions.map((q) => `<li>${echapper(q)}</li>`).join("")}</ul></div>` : "";
-  const titre = c.titre ? `<b>${echapper(c.titre)}</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}` : "";
+  const titre = c.titre ? `<b>${echapper(c.titre)}</b> ${c.fichiers.map((f) => echapper(f)).join("<br>")}` : "";
   const bouton = `${questions}<div class="encart ${couleur}">${titre}${pose}${remplace}
       ${c.notes.map((n) => `<p class="note">${echapper(n)}</p>`).join("")}</div>
     <p id="import-reprendre">${boutonsDesGestes(r.gestes)}</p>`;
