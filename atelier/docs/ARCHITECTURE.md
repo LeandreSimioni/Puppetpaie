@@ -1179,7 +1179,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
 | fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, si « Avancé » s'ouvre, les cases dont la route a récrit la saisie, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
-| case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix et s'ils se cochent en boutons, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix et s'ils se cochent en boutons, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir, et la case d'un écran rendu, sous sa propre clé : un contrat de la DSN) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| écran qu'une route rend tel qu'on le saisit, hors d'une fiche (ses encarts, ses cases, l'historique de ses cases datées en mots, le geste qui l'enregistre ; la route le dit par sa fiche, `Ecran::Rendu`, et la page le pose, `poserLEcranRendu` : Configuration › Organismes et contrats) | `routes::fiches::EcranRendu` | `routes/src/fiches/rendue.rs` |
+| geste qui enregistre un écran rendu (sa route, sa charge, le champ de la charge où vont les cases de l'écran, chacune sous sa clé, son libellé) | `routes::fiches::EnregistrerLEcran` | `routes/src/fiches/rendue.rs` |
 | où une case de fiche renvoie, rendu sous elle (le sous-onglet des métiers, ou la case d'une autre fiche : l'option de la déduction forfaitaire de l'entreprise) | `routes::fiches::RenvoiDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | ce qui se fait depuis la fiche d'un salarié enregistré, dans son en-tête (sa clé, d'où ses imprévus et ses droits se lisent, et le geste vers ses documents) | `routes::fiches::SalarieDeLEntete` | `routes/src/fiches/rendue.rs` |
 | fiche d'un salarié neuf à faire remplir par la personne, dans son en-tête (ce que la demande fait, son geste `fiche-demander` ou ce qui lui manque, la demande du mot de passe) | `routes::fiches::InvitationDeLaFiche` | `routes/src/fiches/rendue.rs` |
@@ -2127,6 +2129,15 @@ la liste, la nationalité DSN s'en déduit, ne s'ouvre pas et se dit sous le pay
 fiche ; la complémentaire santé dans les niveaux du barème du jour (ou dit pourquoi elle ne se choisit pas ici) ; les
 jours travaillés se cochent dans ceux que leur forme déclare (`Declaree::valeurs`).
 Les autres écrans passeront par le même dessinateur.
+
+**Un écran rendu** : un sous-onglet dont une route a pour fiche `Ecran::Rendu(place)` (affichage `rendu`) se dessine
+depuis sa réponse, sans que la page la nomme : ses encarts, ses cases (`routes::fiches::CaseDeLaFiche`, sous la clé de
+l'écran), l'historique de ses cases datées, et le geste qui l'enregistre (`routes::fiches::EnregistrerLEcran` : la route,
+sa charge, et le champ où vont les cases, chacune sous sa clé), dont la route rend l'écran enregistré. Sa lecture reçoit
+le mois de l'onglet Paie quand sa fiche prend un `mois`. Configuration › Organismes et contrats est ainsi : un contrat
+par case, ses parties à saisir (l'organisme, la référence), ce que les textes en donnent dit dessous. **Quitter sans
+enregistrer** se demande pour tout écran que le dessinateur pose (`retenirLEcran`, `quitterLEcran`, `js/avance.js`),
+depuis ses cases et leur valeur à l'ouverture.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois
 

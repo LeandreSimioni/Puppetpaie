@@ -104,7 +104,7 @@ function etape(t) { console.log(`\n== ${t}`); }
   etape("les organismes et contrats de la DSN");
   await page.click("button[data-vue=configuration]");
   await page.click("button[data-fiche=organismes]"); await page.waitForTimeout(1500);
-  await page.click("#organismes-enregistrer"); await page.waitForTimeout(2000);
+  await page.click("#config-liste [data-enregistrer]"); await page.waitForTimeout(2000);
   await page.click("button[data-fiche=entreprise]"); await page.waitForTimeout(1500);
   t = await texte(page);
   console.log(t.includes("Pour démarrer") ? t.slice(t.indexOf("Pour démarrer"), t.indexOf("Pour démarrer") + 300) : "plus rien ne manque");

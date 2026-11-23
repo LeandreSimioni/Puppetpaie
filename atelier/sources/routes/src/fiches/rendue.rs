@@ -156,10 +156,11 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
 /// elle vide (`prerempli`), les choix d'une case qui se choisit (code et libelle), s'ils se montrent en boutons a cocher,
 /// chacun avec le document qui le montre quand il en a un (`boutons`, le modele du bulletin), ses parties (une case faite de cases,
 /// ou chaque rangee d'une liste), le bouton qui ajoute une rangee, ce que le moteur dit sous elle (`dit`) et ou elle
-/// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots) et sa faute.
+/// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots) et sa faute. Sa cle est celle d'une case
+/// de fiche, ou d'une case d'un ecran qu'une route rend (`EcranRendu` : un contrat de la DSN, par sa cle).
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct CaseDeLaFiche {
-    cle: CaseDeFiche,
+pub(crate) struct CaseDeLaFiche<K = CaseDeFiche> {
+    cle: K,
     bloc: String,
     largeur: Largeur,
     libelle: String,
@@ -212,12 +213,89 @@ pub(crate) struct PartieDeLaFiche {
     ouverte: bool,
 }
 
-/// LES VALEURS D'UNE CASE DATEE, en mots, pour l'historique replie de la fiche : son libelle et ses temps.
+impl<K> CaseDeLaFiche<K> {
+    /// UNE CASE FAITE DE CASES QU'UN ECRAN REND HORS D'UNE FICHE (`EcranRendu` : un contrat de la DSN) : sa cle, son
+    /// libelle, sa valeur, celles de ses parties qui se saisissent, ce que le moteur dit sous elle et ses temps en mots ;
+    /// de base, sur toute la ligne, sans bloc ni aide.
+    pub(crate) fn de_parties(cle: K, libelle: String, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>, dit: Vec<String>, temps: Option<TempsDeLaCase<String>>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche {
+            cle,
+            bloc: String::new(),
+            largeur: Largeur::Pleine,
+            libelle,
+            forme: Forme::Parties(&[]),
+            place: PlaceDeLaCase::Base,
+            aide: String::new(),
+            valeur,
+            exemple: None,
+            prerempli: None,
+            choix: None,
+            boutons: false,
+            parties: Some(parties),
+            ajouter: None,
+            dit,
+            renvoi: None,
+            temps,
+            anomalie: None,
+        }
+    }
+}
+
+impl PartieDeLaFiche {
+    /// Une partie texte ouverte d'une case qu'un ecran rend (`CaseDeLaFiche::de_parties`) : son chemin, son libelle, son
+    /// aide et l'exemple d'une partie vide.
+    pub(crate) fn texte(cle: &str, libelle: crate::catalogue::Affiche, aide: String, exemple: Option<String>) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle: cle.to_string(), libelle: libelle.texte().to_string(), forme: Forme::Texte, aide: Some(aide), exemple, prerempli: None, choix: None, boutons: false, ouverte: true }
+    }
+}
+
+/// LES VALEURS D'UNE CASE DATEE, en mots, pour l'historique replie de la fiche ou d'un ecran rendu : son libelle et ses
+/// temps.
 #[derive(Debug, Clone, Serialize)]
-struct HistoireDUneCase {
+pub(crate) struct HistoireDUneCase {
     libelle: String,
     #[serde(flatten)]
     temps: TempsDeLaCase<String>,
+}
+
+impl HistoireDUneCase {
+    /// Les valeurs de la case `libelle`, en mots.
+    pub(crate) fn de(libelle: String, temps: TempsDeLaCase<String>) -> HistoireDUneCase {
+        HistoireDUneCase { libelle, temps }
+    }
+}
+
+/// UN ECRAN QU'UNE ROUTE REND TEL QU'ON LE SAISIT, hors d'une fiche (Configuration › Organismes et contrats) : ses
+/// encarts, ses cases (`K` : leur cle), l'historique de ses cases datees en mots, et le geste qui l'enregistre. La page le
+/// pose comme une fiche (`js/avance.js`, `poserLEcranRendu`) et ne decide rien.
+#[derive(Debug, Serialize)]
+pub(crate) struct EcranRendu<K, C> {
+    encarts: Vec<crate::Encart>,
+    cases: Vec<CaseDeLaFiche<K>>,
+    historique: Vec<HistoireDUneCase>,
+    enregistrer: EnregistrerLEcran<C>,
+}
+
+impl<K, C> EcranRendu<K, C> {
+    pub(crate) fn de(encarts: Vec<crate::Encart>, cases: Vec<CaseDeLaFiche<K>>, historique: Vec<HistoireDUneCase>, enregistrer: EnregistrerLEcran<C>) -> EcranRendu<K, C> {
+        EcranRendu { encarts, cases, historique, enregistrer }
+    }
+}
+
+/// LE GESTE QUI ENREGISTRE UN ECRAN RENDU : sa route, sa charge (`C`), le champ de cette charge ou vont les cases de
+/// l'ecran (`dans` : chacune sous sa cle, une case vide nulle), et son libelle. Sa route rend l'ecran enregistre.
+#[derive(Debug, Serialize)]
+pub(crate) struct EnregistrerLEcran<C> {
+    route: crate::catalogue::Route,
+    charge: C,
+    dans: &'static str,
+    libelle: &'static str,
+}
+
+impl<C> EnregistrerLEcran<C> {
+    pub(crate) fn de(route: crate::catalogue::Route, charge: C, dans: &crate::catalogue::Champ, libelle: crate::catalogue::Affiche) -> EnregistrerLEcran<C> {
+        EnregistrerLEcran { route, charge, dans: dans.nom, libelle: libelle.texte() }
+    }
 }
 
 /// CE QUE REND `fiche` : la phrase de sa verification, son en-tete, l'encart de ses erreurs (son titre, aucun sans

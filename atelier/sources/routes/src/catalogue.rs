@@ -318,6 +318,9 @@ impl Place {
 pub enum Ecran {
     /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine).
     Dessine(Place),
+    /// Le chemin simple : elle rend l'ecran de cette place tel qu'on le saisit (`fiches::EcranRendu`) ; la page le pose
+    /// depuis sa reponse (`js/avance.js`), sans la nommer.
+    Rendu(Place),
     /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine), par ce bouton (viser un montant
     /// sur la carte).
     DessineAvecBouton(Place, Affiche),
@@ -340,7 +343,7 @@ pub enum Ecran {
 impl Ecran {
     pub fn place(self) -> Option<Place> {
         match self {
-            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
+            Ecran::Dessine(p) | Ecran::Rendu(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
             Ecran::Lecture | Ecran::LectureAvancee => None,
         }
     }
@@ -348,7 +351,7 @@ impl Ecran {
     /// La route est-elle « avancee » (hors du chemin simple) ?
     pub fn avance(self) -> bool {
         match self {
-            Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::Geste(_) | Ecran::Lecture => false,
+            Ecran::Dessine(_) | Ecran::Rendu(_) | Ecran::DessineAvecBouton(..) | Ecran::Geste(_) | Ecran::Lecture => false,
             Ecran::DessineAvance(_) | Ecran::GesteAvance(_) | Ecran::Auto(..) | Ecran::LectureAvancee => true,
         }
     }
@@ -356,6 +359,7 @@ impl Ecran {
     fn mot(self) -> &'static str {
         match self {
             Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::DessineAvance(_) => "dessine",
+            Ecran::Rendu(_) => "rendu",
             Ecran::Geste(_) | Ecran::GesteAvance(_) => "geste",
             Ecran::Auto(..) => "auto",
             Ecran::Lecture | Ecran::LectureAvancee => "lecture",
@@ -365,7 +369,7 @@ impl Ecran {
     /// Ce que `moteur routes` en dit.
     pub fn texte(self) -> String {
         match self {
-            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) => p.nom().to_string(),
+            Ecran::Dessine(p) | Ecran::Rendu(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) => p.nom().to_string(),
             Ecran::Geste(p) | Ecran::GesteAvance(p) => format!("{} (un geste qu'une route rend)", p.nom()),
             Ecran::Auto(p, _) => format!("{} › Avancé", p.nom()),
             Ecran::Lecture | Ecran::LectureAvancee => "(une lecture des écrans)".to_string(),
@@ -712,7 +716,7 @@ impl Fiche {
             affichage: self.ecran.mot(),
             bouton: match self.ecran {
                 Ecran::Auto(_, b) | Ecran::DessineAvecBouton(_, b) => Some(b.texte()),
-                Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
+                Ecran::Dessine(_) | Ecran::Rendu(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
             },
             servie_pendant_la_demande: self.pendant_la_demande == PendantLaDemande::Servie,
         })

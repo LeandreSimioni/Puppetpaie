@@ -630,11 +630,16 @@ pub struct Saisies(pub BTreeMap<CleDeContrat, Saisie>);
 
 impl<'de> Deserialize<'de> for Saisies {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Saisies, D::Error> {
-        let ecrites = BTreeMap::<CleDeContrat, SaisieEcrite>::deserialize(d)?;
+        // Un contrat nul ne dit rien : ses deux cases sont vides.
+        let ecrites = BTreeMap::<CleDeContrat, Option<SaisieEcrite>>::deserialize(d)?;
         let mut lues = BTreeMap::new();
         let mut fautes = Vec::new();
         for (cle, s) in ecrites {
-            match Saisie::lue(s.libelle.as_deref(), s.organisme.as_deref()) {
+            let (libelle, organisme) = match &s {
+                Some(s) => (s.libelle.as_deref(), s.organisme.as_deref()),
+                None => (None, None),
+            };
+            match Saisie::lue(libelle, organisme) {
                 Ok(lue) => {
                     lues.insert(cle, lue);
                 }
