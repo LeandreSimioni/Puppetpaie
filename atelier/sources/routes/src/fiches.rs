@@ -10,6 +10,7 @@ use std::path::Path;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::documents::client_courriel;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
@@ -73,10 +74,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::TaxeSurLesSalairesRegime,
         geste: "Dire le régime de la taxe sur les salaires d'après les réponses de la fiche.",
-        charge: &[
-            Champ { nom: "taxe_sur_les_salaires", libelle: Affiche::new("Réponses"), forme: Forme::Objet, sens: "les réponses en cours de saisie ; sans elles, celles de la compagnie", avance: false },
-            Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année des salaires (ses plafonds) ; l'année en cours sinon", avance: true },
-        ],
+        charge: &ChargeTaxeSurLesSalaires::CHARGE,
         exemple: r#"{}"#,
         rend: "franchise (la question et ses plafonds), champs à montrer, consequence en clair, complet, due, part_taxee",
         refus: &[FORME, ILLISIBLE],
@@ -121,11 +119,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::FicheDemander,
         geste: "Demander à une personne, par courriel, de remplir sa fiche.",
-        charge: &[
-            Champ { nom: "adresse", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "son courriel", avance: false },
-            Champ { nom: "prenom", libelle: Affiche::new("Prénom, pour dire bonjour"), forme: Forme::Texte, sens: "son prénom, pour lui dire bonjour dans le courriel ; absent : « Bonjour, »", avance: false },
-            Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, s'il est posé ; sans lui, le moteur le demande à un humain", avance: false },
-        ],
+        charge: &ChargeFicheDemander::CHARGE,
         exemple: r#"{"adresse":"isadora@exemple.invalid","prenom":"Isadora"}"#,
         rend: "code (celui de la demande), adresse",
         refus: &[PREUVE, BOITE, OPERATION],
@@ -137,7 +131,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::FichesRelever,
         geste: "Relever dans la boîte les fiches que les personnes ont remplies.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "attendues, recues (les fiches écrites), incidents",
         refus: &[BOITE, OPERATION],
@@ -149,7 +143,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::FicheOublierDemande,
         geste: "Renoncer aux demandes de fiche restées sans réponse d'une personne.",
-        charge: &[Champ { nom: "adresse", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "le courriel à qui la fiche a été demandée", avance: false }],
+        charge: &ChargeOublier::CHARGE,
         exemple: r#"{"adresse":"isadora@exemple.invalid"}"#,
         rend: "adresse",
         refus: &[OPERATION],
@@ -161,7 +155,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::TauxAtmp,
         geste: "Dire le taux AT/MP d'avant, en vigueur et à venir, et d'où ils viennent.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase et explication du taux de l'année, avant, maintenant et a_venir (code, taux, date, provenance, phrase), le risque tel que l'arrêté l'écrit, la date proposée pour une ligne neuve, les codes que le socle connaît, les mêmes choses pour chaque autre établissement",
         refus: &[FORME, ILLISIBLE],
@@ -173,10 +167,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Effectif,
         geste: "Dire l'effectif d'une année ; le poser quand l'Urssaf ne l'a pas renvoyé.",
-        charge: &[
-            Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année civile mesurée, AAAA ; absente : celles qui manquent pour payer cette année", avance: false },
-            Champ { nom: "valeur", libelle: Affiche::new("Effectif annuel moyen"), forme: Forme::Nombre, sens: "son effectif annuel moyen, tel que l'Urssaf l'a calculé (au centième)", avance: false },
-        ],
+        charge: &ChargeEffectif::CHARGE,
         exemple: r#"{"annee":2024,"valeur":6.5}"#,
         rend: "annee, valeur et d'où elle vient (l'Urssaf, la compagnie, la première embauche), a_dire (les années qui manquent pour payer cette année), phrase",
         refus: &[OPERATION, FORME, ILLISIBLE],
@@ -191,7 +182,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Couts,
         geste: "Dire le coût de l'année, spectacle par spectacle.",
-        charge: &[Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false }],
+        charge: &ChargeCouts::CHARGE,
         exemple: r#"{"annee":2026}"#,
         rend: "le coût de l'année par spectacle",
         refus: &[MANQUE, OPERATION],
@@ -203,7 +194,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SauvegardeMaintenant,
         geste: "Sauvegarder maintenant le dossier de la compagnie dans le Drive.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "sauvegarde (la dernière : quand, ce qui est parti), erreur (ce qui l'a empêchée) ; ne refuse jamais",
         refus: &[OPERATION],
@@ -406,15 +397,21 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
     Ok(EffectifDit { phrase, annee: Some(an), valeur, source, a_dire: a_dire(ctx)? })
 }
 
-/// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
-/// « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa case la fait saisir.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeEffectif {
-    #[serde(default)]
-    pub(crate) annee: Option<Annee>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    pub(crate) valeur: Option<Effectif>,
+/// Un effectif, dans une charge : un nombre (au centieme).
+impl ValeurDeLaCharge<ParSaForme> for Effectif {
+    const FORME: Forme = Forme::Nombre;
+}
+
+charge! {
+    /// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
+    /// « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa case la fait saisir.
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub(crate) struct ChargeEffectif {
+        #[serde(default)]
+        pub(crate) annee: Option<Annee> = dit("Année", "l'année civile mesurée, AAAA ; absente : celles qui manquent pour payer cette année"),
+        #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub(crate) valeur: Option<Effectif> = dit("Effectif annuel moyen", "son effectif annuel moyen, tel que l'Urssaf l'a calculé (au centième)"),
+    }
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les
@@ -585,14 +582,20 @@ fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
 
 // ------------------------------------------------------- taxe-sur-les-salaires-regime
 
-/// La charge de `taxe-sur-les-salaires-regime` : les reponses en cours de saisie (absentes ou nulles : celles de la
-/// compagnie ; `{}` : aucune), et l'annee des salaires (absente : l'annee en cours).
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeTaxeSurLesSalaires {
-    taxe_sur_les_salaires: Option<droit::fiche::AssujettissementALaTaxe>,
-    #[serde(default)]
-    annee: Option<Annee>,
+/// Les reponses de la taxe sur les salaires, dans une charge : un objet, tel que la fiche Entreprise l'ecrit.
+impl ValeurDeLaCharge<ParSaForme> for droit::fiche::AssujettissementALaTaxe {
+    const FORME: Forme = Forme::Objet;
+}
+
+charge! {
+    /// La charge de `taxe-sur-les-salaires-regime` : les reponses en cours de saisie (absentes ou nulles : celles de la
+    /// compagnie ; `{}` : aucune), et l'annee des salaires (absente : l'annee en cours).
+    #[derive(Debug, Default)]
+    pub(crate) struct ChargeTaxeSurLesSalaires {
+        taxe_sur_les_salaires: Option<droit::fiche::AssujettissementALaTaxe> = dit("Réponses", "les réponses en cours de saisie ; sans elles, celles de la compagnie"),
+        #[serde(default)]
+        annee: Option<Annee> = dit("Année", "l'année des salaires (ses plafonds) ; l'année en cours sinon").avancee(),
+    }
 }
 
 /// Les plafonds de la franchise en base de TVA, au bareme de l'annee.
@@ -826,11 +829,12 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
     Ok(DemandeOubliee { phrase: socle::phrase!("Demande à {} abandonnée.", adresse), adresse })
 }
 
-/// La charge de `fiche-oublier-demande` : le courriel a qui la fiche a ete demandee.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeOublier {
-    adresse: String,
+charge! {
+    /// La charge de `fiche-oublier-demande` : le courriel a qui la fiche a ete demandee.
+    #[derive(Debug)]
+    struct ChargeOublier {
+        adresse: String = dit("Courriel", "le courriel à qui la fiche a été demandée"),
+    }
 }
 
 /// Ce que rend `fiche-oublier-demande` : l'adresse, en minuscules.
@@ -1079,13 +1083,15 @@ pub fn exemple_dfs() -> R<Option<fq::ExempleDfs>> {
     }))
 }
 
-/// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire), et le mot de passe du logiciel tape pour l'envoi.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeFicheDemander {
-    /// Lue a la porte dans son type (sans blancs de bord, de 6 a 100 caracteres).
-    adresse: droit::fiche::Courriel,
-    prenom: Option<socle::forme::TexteDit>,
+charge! {
+    /// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire) ; le mot de passe du logiciel tape pour
+    /// l'envoi, l'enveloppe le prend (`Charge::mot_de_passe`).
+    #[derive(Debug)]
+    struct ChargeFicheDemander {
+        /// Lue a la porte dans son type (sans blancs de bord, de 6 a 100 caracteres).
+        adresse: droit::fiche::Courriel = dit("Courriel", "son courriel"),
+        prenom: Option<socle::forme::TexteDit> = dit("Prénom, pour dire bonjour", "son prénom, pour lui dire bonjour dans le courriel ; absent : « Bonjour, »"),
+    }
 }
 
 /// Ce que rend `fiche-demander`.
@@ -1565,11 +1571,12 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: st
     Ok(boite)
 }
 
-/// La charge de `couts` : l'annee.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCouts {
-    annee: Annee,
+charge! {
+    /// La charge de `couts` : l'annee.
+    #[derive(Debug)]
+    struct ChargeCouts {
+        annee: Annee = dit("Année", "l'année, AAAA"),
+    }
 }
 
 /// Le cout d'un spectacle ou d'un salarie (`documents::fiche_recapitulative::Cout`), et sa ligne telle que sa fiche la
