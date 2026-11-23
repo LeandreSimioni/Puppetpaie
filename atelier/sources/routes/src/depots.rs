@@ -213,7 +213,7 @@ charge! {
         #[serde(skip_serializing_if = "Option::is_none")]
         forcer: Option<bool> = dit("Annule et remplace", "vrai : l'annule-et-remplace d'une DSN déjà déposée, après l'avertissement").avancee(),
         #[serde(skip_serializing_if = "Option::is_none")]
-        contournement: Option<String> = dit("Motif d'un dépôt réel sans test", "le motif écrit d'un dépôt réel sans test").avancee(),
+        contournement: Option<String> = dit("Motif d'un dépôt réel sans test", "le motif écrit d'un dépôt réel sans test").avancee().longue(),
     }
 }
 

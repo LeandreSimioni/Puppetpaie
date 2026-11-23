@@ -385,6 +385,9 @@ impl Ecran {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Forme {
     Texte,
+    /// UN TEXTE LONG, sur plusieurs lignes (un alinea d'un modele de contrat, le motif d'un depot reel sans test) : il se
+    /// lit comme un texte ; l'ecran le fait taper dans une zone de texte.
+    TexteLong,
     OuiNon,
     Nombre,
     /// UN MONTANT (des euros, ou des euros par unite : le taux d'une ligne de paie) : il se montre comme la page ecrit un
@@ -532,6 +535,7 @@ impl Forme {
     pub fn mot(self) -> &'static str {
         match self {
             Forme::Texte => "texte",
+            Forme::TexteLong => "texte_long",
             Forme::OuiNon => "oui_non",
             Forme::Nombre => "nombre",
             Forme::Montant => "montant",
@@ -558,7 +562,7 @@ impl Forme {
     fn choix(self) -> R<Option<Vec<ChoixEcrit>>> {
         match self {
             Forme::Choix(c) | Forme::PlusieursChoix(c) => Ok(Some(c.ecrites()?)),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
+            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
         }
     }
 
@@ -566,7 +570,7 @@ impl Forme {
     fn admis(self) -> Option<&'static [&'static str]> {
         match self {
             Forme::Fichier(a) => Some(a),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
+            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
         }
     }
 
