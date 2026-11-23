@@ -776,7 +776,12 @@ impl Fiche {
                 Some(a) => format!(" (un fichier : {})", a.join(", ")),
                 None => String::new(),
             };
-            t.push_str(&format!("    {}{} : {}{}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens, admis));
+            // Une liste fermee se lit telle que l'ecran la propose : chaque code et son libelle.
+            let choix = match c.forme.choix()? {
+                Some(v) => format!(" ; au choix : {}", v.iter().map(|x| format!("{} ({})", x.code, x.libelle)).collect::<Vec<_>>().join(", ")),
+                None => String::new(),
+            };
+            t.push_str(&format!("    {}{} : {}{}{}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens, admis, choix));
         }
         for n in natures_de_la_carte(self.charge)? {
             t.push_str(&format!(
