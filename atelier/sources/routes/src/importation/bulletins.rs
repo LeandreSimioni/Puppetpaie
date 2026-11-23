@@ -683,7 +683,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
     for (nir, rangs) in &par_salarie {
         let siens: Vec<&Lu> = rangs.iter().map(|&k| &lus[k]).collect();
-        let (proposees, fautes) = fiche_salarie(nir, &siens, convention_des(rangs).as_ref())?;
+        let dfs = match profession_de_l_abattement(ctx, &siens)? {
+            Ok(p) => p,
+            Err(phrase) => {
+                reponse.avertissements.push(phrase);
+                None
+            }
+        };
+        let (proposees, fautes) = fiche_salarie(nir, &siens, convention_des(rangs).as_ref(), dfs)?;
         if let Some(cle) = par_nir.get(nir) {
             let fiche = &ctx.salaries[cle];
             let ec = ecarts_salarie(&fiche.champs, &siens, &chemin_de);
@@ -1840,8 +1847,8 @@ fn lisibles_de_la_piece_sur<F: SorteDeFiche>(fiche: &F::Plate, proposees: &F::Pl
 
 /// La fiche d'un salarie qu'aucune fiche ni aucune DSN ne porte : ce que ses bulletins impriment, champ par champ le
 /// plus recent (`ls` dans l'ordre du temps) ; et la faute de chaque case qu'ils impriment hors de son type.
-fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
-    let mut s = SalarieLu::de(nir);
+fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>, dfs: Option<droit::fiche::ProfessionDfs>) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
+    let mut s = SalarieLu { deduction_forfaitaire: dfs, ..SalarieLu::de(nir) };
     let mut fautes = Vec::new();
     for (cle, v, _) in identite(ls) {
         if let Some(case) = s.case(cle) {
@@ -1863,6 +1870,41 @@ fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
     let (fiche, f_fautes) = salarie_propose(s, &metier)?;
     fautes.extend(f_fautes);
     Ok((fiche, fautes))
+}
+
+/// LA PROFESSION DE LA DEDUCTION FORFAITAIRE SPECIFIQUE QUE L'ABATTEMENT IMPRIME DESIGNE (Léandre, 23/11/2026 : « on fait
+/// l'abattement qu'on veut » : un choix de la compagnie, salarie par salarie, que la fiche porte par la profession). Le
+/// bulletin le plus recent (`ls` dans l'ordre du temps) qui imprime un abattement non nul ; le taux de chaque profession
+/// l'annee de sa periode, au bareme livre (arrete du 4 septembre 2025, art. 9, II et III : `DfsDuBareme::taux_de`).
+/// `Ok(None)` : aucun bulletin n'imprime d'abattement, ou il est nul. Une seule profession a ce taux : elle. Plusieurs,
+/// aucune, ou une annee dont le logiciel n'a pas le bareme : rien ne se choisit, la case reste a dire, et `Err` dit
+/// pourquoi (une phrase de la reponse). L'option de la compagnie (fiche Entreprise) ne se lit sur aucun bulletin.
+fn profession_de_l_abattement(ctx: &Contexte, ls: &[&Lu]) -> R<Result<Option<droit::fiche::ProfessionDfs>, String>> {
+    let Some((l, taux)) = ls.iter().rev().find_map(|l| l.b.abattement.filter(|t| *t > socle::grandeurs::Taux::ZERO).map(|t| (*l, t))) else {
+        return Ok(Ok(None));
+    };
+    let an = l.b.periode.debut().annee();
+    let de_qui: String = l.b.salarie.nom_complet.iter().map(|n| format!(" de {}", n)).collect();
+    let debut = format!("Le bulletin{} de {} imprime un abattement de {} %", de_qui, l.mois.libelle(socle::mois::Graphie::Accentuee), socle::texte::virgule(taux));
+    let a_choisir = "la profession de la déduction forfaitaire spécifique se choisit sur la fiche du salarié, et l'option sur celle de la compagnie";
+    let pile = match ctx.socle_repris(an)? {
+        Ok(p) => p,
+        Err(_) => return Ok(Err(format!("{} : le logiciel n'a pas le barème de {} ; {}.", debut, an, a_choisir))),
+    };
+    let Some(dfs) = pile.deduction_forfaitaire.as_ref() else {
+        return Ok(Err(format!("{} : le barème de {} ne porte pas la déduction forfaitaire spécifique ; {}.", debut, an, a_choisir)));
+    };
+    Ok(match dfs.professions_au_taux(taux).as_slice() {
+        [(p, _)] => Ok(Some(*p)),
+        [] => Err(format!("{} : aucune profession n'a ce taux en {} ; {}.", debut, an, a_choisir)),
+        plusieurs => Err(format!(
+            "{} : en {}, c'est le taux de plusieurs professions ({}) ; {}.",
+            debut,
+            an,
+            plusieurs.iter().map(|(_, p)| p.libelle.to_lowercase()).collect::<Vec<_>>().join(", "),
+            a_choisir
+        )),
+    })
 }
 
 /// CE QU'UNE PIECE IMPRIME D'UN SALARIE, sous les cases de sa fiche.
@@ -1895,12 +1937,17 @@ struct SalarieLu {
     commune: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     date_anciennete: Option<Jour>,
+    /// La profession de la deduction forfaitaire specifique que l'abattement imprime designe seule
+    /// (`profession_de_l_abattement`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deduction_forfaitaire: Option<droit::fiche::ProfessionDfs>,
 }
 
 impl SalarieLu {
     /// Un salarie a son NIR, dont aucune case n'est encore lue.
     fn de(nir: &Nir) -> SalarieLu {
         SalarieLu {
+            deduction_forfaitaire: None,
             nir: nir.clone(),
             nir_cle: None,
             nom: None,
@@ -2171,6 +2218,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, lignes: Vec<engagement::imp
     ligne.lignes = lignes;
     ligne.dates = b.dates_travaillees.clone();
     ligne.duree_du_travail = b.duree_du_travail;
+    ligne.abattement = b.abattement;
     ligne.cotisations = Some(
         b.cotisations
             .iter()

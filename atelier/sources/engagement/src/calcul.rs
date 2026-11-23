@@ -806,9 +806,8 @@ silence vaut accord >>). Dire lequel ({}, {}) ou son refus ({}). Rien n'est calc
         },
     }
     let categorie = fiche_prof.categorie.clone();
-    // Le taux de l'annee : celui de la profession quand l'arrete lui donne un calendrier a part (art. 9, III, pour les
-    // professions hors spectacle vivant), sinon celui de sa categorie (art. 9, II).
-    let taux = fiche_prof.taux.or_else(|| dfs.taux.get(&categorie).copied()).ok_or_else(|| {
+    // Le taux de l'annee (`DfsDuBareme::taux_de`).
+    let taux = dfs.taux_de(fiche_prof).ok_or_else(|| {
         socle::refus!(
             "Deduction forfaitaire specifique de {} ({}) : le bareme {} n'a pas de taux pour la categorie << {} >>.",
             qui, profession, annee, categorie

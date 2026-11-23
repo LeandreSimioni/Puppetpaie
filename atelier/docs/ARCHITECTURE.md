@@ -2802,7 +2802,14 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   pourquoi. Deux contrôles sans correction (le brut vaut la somme des lignes soumises ; le net se retrouve) : un écart
   avertit, le bulletin est repris avec ce qu'il imprime. Chaque bulletin est rapproché de la paie que sa DSN déclare
   (NIR, début, fin) et la complète (`importation/bulletins.rs`) ; sans DSN, il fait foi seul. Un bulletin d'un salarié
-  qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée.
+  qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée. **L'abattement** que
+  l'en-tête imprime (« Abattement : 21 », la déduction forfaitaire spécifique appliquée, un choix de la compagnie
+  salarié par salarié ; Léandre, 23/11/2026 : « on fait l'abattement qu'on veut ») se garde dans la paie importée
+  (`PaieVersee::abattement`) et complète la fiche du salarié comme ses autres cases, sans rien écraser : la profession
+  dont le taux de l'année de la période est celui-là (`DfsDuBareme::professions_au_taux`), quand elle est seule ; un
+  taux que plusieurs professions partagent (la catégorie 25 % : dramatique, lyrique, chorégraphique) ne choisit rien,
+  et la réponse de l'import dit pourquoi (`importation::bulletins::profession_de_l_abattement`). Une paie dont le bulletin
+  imprime un abattement ne se compare qu'une fois la profession dite sur la fiche (`SorteDeNonComparaison::CaseDeLaCompagnie`).
 - **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`importation/ecrite.rs`) : les fiches à créer, par le même
   chemin que l'écran (`routes::fiches::ecrire_fiche`) ; dans une fiche qui existe, seulement ce qui y est vide ou
   « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements

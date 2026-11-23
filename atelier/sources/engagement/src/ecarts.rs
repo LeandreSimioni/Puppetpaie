@@ -502,6 +502,21 @@ fn refaire<'a>(
     let brut = imp.objet().carte();
     let salarie = brut.salarie.as_ref().ok_or_else(|| refus("l'engagement importé ne nomme pas son salarié"))?;
     let fiche = ctx.fiche_de(salarie).map_err(|m| a_refaire(c, m))?;
+    // L'ABATTEMENT QUE LE BULLETIN IMPRIME (`PaieVersee::abattement`) : la deduction forfaitaire specifique est un choix de
+    // la compagnie, salarie par salarie, que la fiche porte par sa profession (arrete du 4 septembre 2025, art. 9, I).
+    // Tant que la fiche ne la dit pas, la paie refaite sans elle ne serait pas celle du bulletin : elle se compare quand
+    // la fiche la dit.
+    if let Some(t) = p.abattement.filter(|t| *t > Taux::ZERO) {
+        if !fiche.deduction_forfaitaire.est_dite() {
+            return Err(a_refaire(
+                c,
+                socle::refus!(
+                    "le bulletin imprime un abattement de {} % (la déduction forfaitaire spécifique) et la fiche du salarié ne dit pas sa profession : la paie se compare quand elle la dit",
+                    socle::texte::virgule(t)
+                ),
+            ));
+        }
+    }
     // LE STATUT ET L'EMPLOI DE CETTE PAIE sont ceux que son bulletin imprime (`emploi_imprime`) ; ce qu'il ne dit pas
     // se lit dans la fiche. Un salarie artiste sur un contrat, non cadre au regime general sur un autre, se calcule
     // chaque fois sous le sien.

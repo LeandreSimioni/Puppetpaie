@@ -499,7 +499,7 @@ const MENTIONS: [(&str, Sorte, Section, usize, bool); 24] = [
     ("code", Sorte::Texte, Section::Entete, 1, false),
     ("emploi", Sorte::Texte, Section::Entete, 1, false),
     ("statut", Sorte::Texte, Section::Entete, 1, false),
-    // L'abattement imprime : aucun calcul ne le lit ; sa mention borne celles qui l'entourent.
+    // L'abattement imprime, en pourcent : la deduction forfaitaire specifique que le bulletin a appliquee.
     ("abattement", Sorte::Nombre, Section::Entete, 1, false),
     ("conges_spectacles", Sorte::Compact, Section::Entete, 1, false),
     ("periode", Sorte::Periode, Section::Entete, 1, false),
@@ -1115,6 +1115,10 @@ pub struct BulletinLu {
     /// (« Durée du travail : 151,67 h ») ; une ligne en heures imprime les siennes dans le tableau.
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     pub duree_du_travail: Option<Heures>,
+    /// L'abattement que l'en-tete imprime (« Abattement : 21 »), en pourcent : la deduction forfaitaire specifique
+    /// appliquee (`engagement::importe::PaieVersee::abattement`).
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub abattement: Option<socle::grandeurs::Taux>,
     pub lignes: Vec<LignePaie>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     pub brut: Montant,
@@ -1657,6 +1661,7 @@ impl<'a> Lecteur<'a> {
             dates_travaillees,
             jours_travailles,
             duree_du_travail: nombre(&valeurs, "duree_du_travail").map(|n| n.grandeur()),
+            abattement: nombre(&valeurs, "abattement").map(|n| n.grandeur()),
             lignes: corps.lu.lignes,
             brut,
             cotisations: corps.lu.cotisations,
