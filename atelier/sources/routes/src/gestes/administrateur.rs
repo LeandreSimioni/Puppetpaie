@@ -1032,6 +1032,11 @@ pub struct ASuivre {
     pub(crate) depot: crate::depots::ChargeSuivre,
 }
 
+/// Dans une charge (`administrateur-suivre`), elle se dit d'un objet.
+impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for ASuivre {
+    const FORME: crate::catalogue::Forme = crate::catalogue::Forme::Objet;
+}
+
 /// Ou en est une declaration suivie : sa compagnie, et ce que sa route `suivre-depot` rend.
 #[derive(Debug, Serialize)]
 pub struct Suivie {

@@ -30,6 +30,8 @@ use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip
 use documents::ecritures_comptables::{csv_compta, ecritures_du_mois, Ecriture};
 use documents::plan_comptable::plan_comptable;
 use crate::rappels::mois_de_l_annee;
+use crate::declaration::{charge, dit};
+use crate::historique::ANNEE;
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
@@ -261,14 +263,15 @@ pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
     Ok(compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie).map(a_jour).transpose()?.is_some_and(|oui| oui))
 }
 
-/// La charge de `export-compta` : l'annee, du mois au mois (toute l'annee sans eux), et l'apercu (rien n'est ecrit).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeExportCompta {
-    annee: Annee,
-    du: Option<u32>,
-    au: Option<u32>,
-    apercu: Option<bool>,
+charge! {
+    /// La charge de `export-compta` : l'annee, du mois au mois (toute l'annee sans eux), et l'apercu (rien n'est ecrit).
+    #[derive(Debug)]
+    pub(crate) struct ChargeExportCompta {
+        annee: Annee = ANNEE,
+        du: Option<u32> = dit("Du mois", "le premier mois, 1 à 12").avancee(),
+        au: Option<u32> = dit("Au mois", "le dernier mois, 1 à 12").avancee(),
+        apercu: Option<bool> = dit("Aperçu seulement", "vrai : dire ce qui s'écrirait, sans écrire").avancee(),
+    }
 }
 
 /// La route `export-compta` : sans `du` ni `au`, de janvier a decembre.
@@ -559,15 +562,16 @@ pub(crate) enum Cloture {
     Rouverte(ExerciceRouvert),
 }
 
-/// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la ligne
-/// de commande ecrit `cli`, la page rien (`interface`).
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeCloture {
-    annee: Annee,
-    forcer: Option<bool>,
-    rouvrir: Option<bool>,
-    qui: Option<socle::forme::TexteDit>,
+charge! {
+    /// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la
+    /// ligne de commande ecrit `cli`, la page rien (`interface`).
+    #[derive(Debug)]
+    pub(crate) struct ChargeCloture {
+        annee: Annee = ANNEE,
+        forcer: Option<bool> = dit("Clore malgré tout", "vrai : clore malgré un mois sans DSN réelle acceptée").avancee(),
+        rouvrir: Option<bool> = dit("Rouvrir l'année", "vrai : rouvrir l'année close (son archive reste)").avancee(),
+        qui: Option<socle::forme::TexteDit> = dit("Qui", "qui clôt : la ligne de commande écrit cli ; la page ne le dit pas (interface)").avancee(),
+    }
 }
 
 /// Retire la cloture. L'archive reste sur le disque : elle dit ce

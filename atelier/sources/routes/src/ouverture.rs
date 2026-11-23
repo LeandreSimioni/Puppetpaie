@@ -144,7 +144,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Etat,
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
@@ -156,7 +156,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Configuration,
         geste: "Dire les fiches de la compagnie, vérifiées.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases, pour_payer (ce qui manque encore pour payer, ou null)",
         refus: &[OPERATION],
@@ -168,7 +168,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::MajEtat,
         geste: "Dire la version du logiciel.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "la version installée et ce que la mise à jour en sait, phrase",
         refus: &[OPERATION],

@@ -2,7 +2,7 @@
 //! lisent et ecrivent par `compagnie::organismes`. La lecture rend l'ecran tel qu'on le saisit (`ecran::EcranRendu`) :
 //! un contrat par case, ses parties que la compagnie saisit, et le geste qui l'enregistre.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use socle::date::Jour;
 use socle::echec::R;
@@ -13,6 +13,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::ecran::{EcranRendu, EnregistrerLEcran};
 use crate::fiches::{CaseDeLaFiche, HistoireDUneCase, PartieDeLaFiche};
 use crate::temps::TempsDeLaCase;
+use crate::declaration::{charge, dit};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
 use crate::catalogue::Route;
@@ -31,7 +32,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::OrganismesContrats,
         geste: "Rendre l'écran des contrats de la DSN (prévoyance, santé…) d'un mois.",
-        charge: &[Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois regardé, AAAA-MM ; le mois en cours sinon", avance: false }],
+        charge: &ChargeOrganismes::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "mois, encarts, cases (un contrat par case, sa clé : ses parties à saisir, organisme et libelle ; dessous, sa période, ses bénéficiaires et ce que les textes en donnent ; ses temps), historique (les valeurs datées de chaque contrat saisi), enregistrer, quand une partie au moins se saisit (la route, la charge, le champ où vont les cases : chacune sous sa clé)",
         refus: &[OPERATION, ILLISIBLE],
@@ -57,13 +58,14 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// La charge de `organismes-contrats` : le mois regarde (le mois en cours sans lui) ; celle que l'ecran rend pour
-/// l'enregistrer, le mois qu'il regarde.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeOrganismes {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mois: Option<Mois>,
+charge! {
+    /// La charge de `organismes-contrats` : le mois regarde (le mois en cours sans lui) ; celle que l'ecran rend pour
+    /// l'enregistrer, le mois qu'il regarde.
+    #[derive(Debug, Serialize)]
+    pub(crate) struct ChargeOrganismes {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mois: Option<Mois> = dit("Mois", "le mois regardé, AAAA-MM ; le mois en cours sinon"),
+    }
 }
 
 /// CE QUE RENDENT `organismes-contrats` ET `organismes-enregistrer` : la phrase, le mois regarde, et l'ecran tel qu'on le

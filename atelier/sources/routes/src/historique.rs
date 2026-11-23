@@ -4,10 +4,12 @@
 
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
+use crate::declaration::{charge, dit, legendes, Legende};
+use crate::gestes::exercice_ecrit::{ChargeCloture, ChargeExportCompta};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::ouverture::mois_connus;
 use crate::SansCharge;
@@ -16,14 +18,14 @@ use socle::mode::Mode;
 use envois::reprise_journal::DepotVu;
 use socle::echec::{Classe, R};
 
-const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false };
+pub(crate) const ANNEE: Legende = dit("Année", "l'année, AAAA");
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Historique);
 
 /// Une lecture sans charge.
 const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche {
-    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
+    Fiche { route, geste, charge: &SansCharge::CHARGE, exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
 /// Les routes de ce module, et leurs fiches.
@@ -33,11 +35,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Cloture,
         geste: "Clore une année passée : archiver ses engagements, documents et déclarations.",
-        charge: &[
-            ANNEE,
-            Champ { nom: "forcer", libelle: Affiche::new("Clore malgré tout"), forme: Forme::OuiNon, sens: "vrai : clore malgré un mois sans DSN réelle acceptée", avance: true },
-            Champ { nom: "rouvrir", libelle: Affiche::new("Rouvrir l'année"), forme: Forme::OuiNon, sens: "vrai : rouvrir l'année close (son archive reste)", avance: true },
-        ],
+        charge: &ChargeCloture::CHARGE,
         exemple: r#"{"annee":2025}"#,
         rend: "annee, archive, fichiers, empreinte, manques (ce qui n'a pu s'archiver) ; rouverte : etait_clos_depuis",
         refus: &[OPERATION, MANQUE],
@@ -49,12 +47,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ExportCompta,
         geste: "Écrire l'export comptable d'une année, du mois du au mois au.",
-        charge: &[
-            ANNEE,
-            Champ { nom: "du", libelle: Affiche::new("Du mois"), forme: Forme::Nombre, sens: "le premier mois, 1 à 12", avance: true },
-            Champ { nom: "au", libelle: Affiche::new("Au mois"), forme: Forme::Nombre, sens: "le dernier mois, 1 à 12", avance: true },
-            Champ { nom: "apercu", libelle: Affiche::new("Aperçu seulement"), forme: Forme::OuiNon, sens: "vrai : dire ce qui s'écrirait, sans écrire", avance: true },
-        ],
+        charge: &ChargeExportCompta::CHARGE,
         exemple: r#"{"annee":2026,"apercu":true}"#,
         rend: "les fichiers de l'export, ou ce qu'ils porteraient",
         refus: &[MANQUE, OPERATION],
@@ -66,7 +59,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Archiver,
         geste: "Déposer les documents d'un mois dans le Drive de la compagnie.",
-        charge: &[MOIS],
+        charge: &ChargeArchiver::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "mois, dossier (dans le Drive), compte, fichiers (nom, octets, remplace), phrase ; une fictive joue le dépôt, rien ne part",
         refus: &[
@@ -83,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::JournalReprise,
         geste: "Reprendre le journal des envois d'après les retours relevés.",
-        charge: &[Champ { nom: "ecrire", libelle: Affiche::new("Écrire ce qui se reprend"), forme: Forme::OuiNon, sens: "vrai : écrire ce qui se reprend ; sinon, le dire seulement", avance: false }],
+        charge: &ChargeReprise::CHARGE,
         exemple: r#"{}"#,
         rend: "ce qui se reprend, ligne par ligne, et ses pastilles",
         refus: &[OPERATION],
@@ -144,11 +137,12 @@ impl Dite for RepriseDite {
     }
 }
 
-/// La charge de `journal-reprise` : `ecrire` vrai ecrit ce qui se reprend ; absent ou faux, la route le dit seulement.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeReprise {
-    ecrire: Option<bool>,
+charge! {
+    /// La charge de `journal-reprise` : `ecrire` vrai ecrit ce qui se reprend ; absent ou faux, la route le dit seulement.
+    #[derive(Debug)]
+    struct ChargeReprise {
+        ecrire: Option<bool> = dit("Écrire ce qui se reprend", "vrai : écrire ce qui se reprend ; sinon, le dire seulement"),
+    }
 }
 
 /// Ce que rend `journal-reprise` : sa phrase, ce que la reprise a trouve, ajoute (ou ajouterait, chaque depot dit pour
@@ -417,11 +411,12 @@ fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     Ok(Archive { phrase, mois: r.mois, dossier, compte: r.compte, fichiers })
 }
 
-/// La charge d'`archiver` : le mois.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeArchiver {
-    mois: socle::mois::Mois,
+charge! {
+    /// La charge d'`archiver` : le mois.
+    #[derive(Debug)]
+    struct ChargeArchiver {
+        mois: socle::mois::Mois = legendes::MOIS,
+    }
 }
 
 /// Ce que rend `archiver` : sa phrase, le mois, le dossier du Drive, le compte lie, et chaque fichier depose.

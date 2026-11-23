@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CoffreEtat,
         geste: "Dire quels mots de passe sont posés, et depuis quand ; jamais leur valeur.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: ECRAN_REND,
         refus: &[OPERATION],
@@ -74,7 +74,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::GoogleEtat,
         geste: "Essayer une fois le compte Google de la sauvegarde.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "lie, compte, et ce que la page en montre",
         refus: &[OPERATION],
@@ -170,7 +170,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AdministrateurEtat,
         geste: "Dire ce que l'administrateur est pour cette compagnie.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "compagnies (celles de l'administrateur), rattachee, autres, peut_rattacher, question (« même administrateur ? »), mot_de_passe_pose, pastille",
         refus: &[OPERATION],

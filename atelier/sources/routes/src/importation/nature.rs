@@ -35,6 +35,9 @@ use engagement::importe::Importe;
 use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, R};
 
+use crate::catalogue::Forme;
+use crate::declaration::{charge, dit, legendes, ParSaForme, ValeurDeLaCharge};
+
 /// Les natures qu'un permanent peut recevoir.
 fn natures_permanentes() -> R<Vec<std::sync::Arc<droit::natures::Nature>>> {
     let toutes = droit::natures::natures().map_err(|m| m.reclasser(Classe::Refuse))?;
@@ -485,18 +488,24 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// La charge d'`importation-nature` : le salarie, la nature, et ce que `demande` exige d'un contrat qui court encore.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeNature {
-    pub(crate) salarie: IdSalarie,
-    pub(crate) nature: droit::natures::NatureDeContrat,
-    pub(crate) debut: Option<Jour>,
-    pub(crate) fin: Option<Jour>,
-    pub(crate) numero: Option<engagement::numeros::NumeroContrat>,
-    /// Le salaire, un nombre, ou tel que la personne l'a tape (« 1 850,00 »), converti a la porte (`Charge::lire`).
-    pub(crate) salaire: Option<socle::grandeurs::MontantUnitaire>,
-    pub(crate) quotite: Option<socle::grandeurs::Heures>,
+/// Dans une charge, une duree du travail se dit d'un nombre (d'heures).
+impl ValeurDeLaCharge<ParSaForme> for socle::grandeurs::Heures {
+    const FORME: Forme = Forme::Nombre;
+}
+
+charge! {
+    /// La charge d'`importation-nature` : le salarie, la nature, et ce que `demande` exige d'un contrat qui court encore.
+    #[derive(Debug)]
+    pub(crate) struct ChargeNature {
+        pub(crate) salarie: IdSalarie = legendes::SALARIE,
+        pub(crate) nature: droit::natures::NatureDeContrat = dit("Nature du contrat", "une nature que ses pièces permettent (cdi, cdd, cddu_spectacle…)"),
+        pub(crate) debut: Option<Jour> = dit("Début", "le contrat court encore : son début").avancee(),
+        pub(crate) fin: Option<Jour> = dit("Terme", "son terme, s'il en a un").avancee(),
+        pub(crate) numero: Option<engagement::numeros::NumeroContrat> = dit("Numéro déclaré", "son numéro, tel que la DSN de l'ancien logiciel l'a déclaré").avancee(),
+        /// Le salaire, un nombre, ou tel que la personne l'a tape (« 1 850,00 »), converti a la porte (`Charge::lire`).
+        pub(crate) salaire: Option<socle::grandeurs::MontantUnitaire> = dit("Salaire mensuel", "son salaire mensuel").avancee(),
+        pub(crate) quotite: Option<socle::grandeurs::Heures> = dit("Heures par mois", "sa durée du travail, en heures par mois").avancee(),
+    }
 }
 
 /// Ce qu'`importation-nature` rend : les contrats ecrits, ce qui reste a dire, et ce que l'ecran en dit.

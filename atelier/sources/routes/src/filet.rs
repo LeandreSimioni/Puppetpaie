@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use compagnie::incidents::{self, BilanIncidents, Ligne, Nature, Paquet, PourLEditeur, DEPOSE, EN_ATTENTE};
 use compagnie::nombre_de_paies::{AnneePartie, ContenuParti};
@@ -20,16 +20,14 @@ use compagnie::problemes::{self, Apercu, BilanMessages, CaptureDeLaPage, EtatDuM
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
+use crate::declaration::{charge, dit, Legende};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use socle::echec::{Classe, R};
 use socle::paris::Moment;
 
-const TEXTE: Champ = Champ { nom: "texte", libelle: Affiche::new("Message"), forme: Forme::Texte, sens: "le message, en mots", avance: false };
-const OU: Champ = Champ { nom: "ecran", libelle: Affiche::new("Où l'on était"), forme: Forme::Texte, sens: "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)", avance: false };
-const CAPTURES: Champ = Champ { nom: "captures", libelle: Affiche::new("Captures"), forme: Forme::Objet, sens: "[{type, donnees}] : des images en base64", avance: true };
-const QUOI: Champ = Champ { nom: "quoi", libelle: Affiche::new("Nature"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<compagnie::incidents::Nature>()), sens: "une seule nature d'incident ; toutes sinon", avance: true };
+const QUOI: Legende = dit("Nature", "une seule nature d'incident ; toutes sinon").avancee();
 const DIAGNOSTIC_REND: &str = "envoi (vrai : actif), total, en_attente, groupes (ce qui part, mot pour mot), pastille";
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -40,7 +38,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementApercu,
         geste: "Montrer, mot pour mot, ce qu'un message au développeur emporterait.",
-        charge: &[TEXTE, OU, CAPTURES],
+        charge: &ChargeMessage::CHARGE,
         exemple: r#"{"texte":"La phrase de la DSN est coupée.","ecran":"Paie, novembre 2026"}"#,
         rend: "corps (ce qui part), caviarde, serveur, captures, incidents",
         refus: &[OPERATION, FORME],
@@ -52,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementEnvoyer,
         geste: "Écrire au développeur (un problème, une idée) ; le message part seul.",
-        charge: &[TEXTE, OU, CAPTURES],
+        charge: &ChargeMessage::CHARGE,
         exemple: r#"{"texte":"La phrase de la DSN est coupée.","ecran":"Paie, novembre 2026"}"#,
         rend: "signalements (chacun son état et son départ)",
         refus: &[OPERATION, FORME],
@@ -64,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Signalements,
         geste: "Dire les messages écrits au développeur, et ses réponses.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "signalements (chacun son état, sa pastille, ses réponses)",
         refus: &[OPERATION],
@@ -76,7 +74,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementsLus,
         geste: "Marquer lues les réponses du développeur.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "lues (le nombre marqué)",
         refus: &[OPERATION],
@@ -88,7 +86,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementsPartir,
         geste: "Faire partir chez le développeur les messages qui attendent.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "le bilan du passage (partis, reste, erreur, occupe), phrase ; ne refuse jamais",
         refus: &[OPERATION],
@@ -112,7 +110,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DiagnosticEtat,
         geste: "Dire ce qui est parti chez le développeur, et ce qui attend.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: DIAGNOSTIC_REND,
         refus: &[OPERATION],
@@ -124,7 +122,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DiagnosticEnvoyer,
         geste: "Envoyer au développeur les incidents qui attendent.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "ce que diagnostic-etat rend, bilan et couleur",
         refus: &[OPERATION],
@@ -136,7 +134,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DiagnosticRegler,
         geste: "Couper l'envoi des incidents au développeur, ou le rétablir.",
-        charge: &[Champ { nom: "actif", libelle: Affiche::new("Envoyer les incidents"), forme: Forme::OuiNon, sens: "vrai : les envoyer", avance: false }],
+        charge: &ChargeRegler::CHARGE,
         exemple: r#"{"actif":true}"#,
         rend: DIAGNOSTIC_REND,
         refus: &[OPERATION],
@@ -148,7 +146,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentsLire,
         geste: "Lire les incidents gardés sur le poste.",
-        charge: &[QUOI, Champ { nom: "en_attente", libelle: Affiche::new("Seulement ceux qui attendent"), forme: Forme::OuiNon, sens: "vrai : seulement ceux qui ne sont pas partis", avance: true }],
+        charge: &ChargeIncidents::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase, phrases (une par incident), lignes (les plus récentes en dernier)",
         refus: &[OPERATION],
@@ -160,7 +158,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentsRegrouper,
         geste: "Regrouper les incidents gardés, le plus fréquent en tête.",
-        charge: &[QUOI],
+        charge: &ChargeNature::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase, phrases (une par paquet), paquets",
         refus: &[OPERATION],
@@ -172,7 +170,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentsEnvoyer,
         geste: "Déposer chez le développeur les incidents qui attendent.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "envoyes, reste, erreur, occupe, phrase ; ne refuse jamais",
         refus: &[OPERATION],
@@ -184,7 +182,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentsOublier,
         geste: "Effacer les incidents gardés, tous ou d'une nature.",
-        charge: &[QUOI],
+        charge: &ChargeNature::CHARGE,
         exemple: r#"{"quoi":"logiciel"}"#,
         rend: "retires (le nombre), phrase",
         refus: &[OPERATION],
@@ -215,35 +213,39 @@ pub(crate) fn route_sans_compagnie(o: &super::enveloppe::Options, nom: Route, ch
 
 // ------------------------------------------------------------------ les charges
 
-/// La charge de `diagnostic-regler`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeRegler {
-    actif: bool,
+charge! {
+    /// La charge de `diagnostic-regler`.
+    #[derive(Debug)]
+    struct ChargeRegler {
+        actif: bool = dit("Envoyer les incidents", "vrai : les envoyer"),
+    }
 }
 
-/// La charge de `incidents-lire` : une seule nature, ou toutes ; ceux qui attendent seulement (absent : tous).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeIncidents {
-    quoi: Option<Nature>,
-    en_attente: Option<bool>,
+charge! {
+    /// La charge de `incidents-lire` : une seule nature, ou toutes ; ceux qui attendent seulement (absent : tous).
+    #[derive(Debug)]
+    struct ChargeIncidents {
+        quoi: Option<Nature> = QUOI,
+        en_attente: Option<bool> = dit("Seulement ceux qui attendent", "vrai : seulement ceux qui ne sont pas partis").avancee(),
+    }
 }
 
-/// La charge de `incidents-regrouper` et `incidents-oublier` : une seule nature, ou toutes.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeNature {
-    quoi: Option<Nature>,
+charge! {
+    /// La charge de `incidents-regrouper` et `incidents-oublier` : une seule nature, ou toutes.
+    #[derive(Debug)]
+    struct ChargeNature {
+        quoi: Option<Nature> = QUOI,
+    }
 }
 
-/// La charge d'un message au developpeur : son texte, ou l'on etait, ses captures.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeMessage {
-    texte: String,
-    ecran: Option<String>,
-    captures: Option<Vec<CaptureDeLaPage>>,
+charge! {
+    /// La charge d'un message au developpeur : son texte, ou l'on etait, ses captures.
+    #[derive(Debug)]
+    struct ChargeMessage {
+        texte: String = dit("Message", "le message, en mots"),
+        ecran: Option<String> = dit("Où l'on était", "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)"),
+        captures: Option<Vec<CaptureDeLaPage>> = dit("Captures", "[{type, donnees}] : des images en base64").avancee(),
+    }
 }
 
 impl ChargeMessage {

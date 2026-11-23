@@ -13,7 +13,8 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, DejaParti, Impression, Repris, UnAvenant};
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
+use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, MOIS, OPERATION};
+use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::documents::{client_courriel, refus, Ouvrir};
 use crate::etapes::{ChargeMois, Moteur};
 use compagnie::INTERFACE;
@@ -43,9 +44,10 @@ use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 
 
-const CONTRATS: Champ = Champ { nom: "contrats", libelle: Affiche::new("Contrats"), forme: Forme::Objet, sens: "les contrats choisis : [{salarie, debut, numero}]", avance: false };
-const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Début de l'engagement"), forme: Forme::Date, sens: "le premier jour de l'engagement, AAAA-MM-JJ", avance: false };
-const NUMERO: Champ = Champ { nom: "numero", libelle: Affiche::new("Numéro du contrat"), forme: Forme::Texte, sens: "le numéro du contrat, quand deux commencent le même jour", avance: true };
+const CONTRATS: Legende = dit("Contrats", "les contrats choisis : [{salarie, debut, numero}]");
+const AVENANTS: Legende = dit("Avenants", "les avenants cochés : [{salarie, debut, numero, mois, effet}]");
+const DEBUT: Legende = dit("Début de l'engagement", "le premier jour de l'engagement, AAAA-MM-JJ");
+const NUMERO: Legende = dit("Numéro du contrat", "le numéro du contrat, quand deux commencent le même jour").avancee();
 /// Un contrat ecrit refuse de se faire quand une case qu'il appelle est vide : elle se dit dans la saisie de l'engagement.
 const CONTRAT_ECRIT: Refus = Refus {
     classe: Classe::Refuse,
@@ -72,13 +74,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DemanderSignature,
         geste: "Faire signer par courriel les contrats et avenants cochés, même imprimés.",
-        charge: &[
-            MOIS,
-            CONTRATS,
-            Champ { nom: "avenants", libelle: Affiche::new("Avenants"), forme: Forme::Objet, sens: "les avenants cochés : [{salarie, debut, numero, mois, effet}]", avance: false },
-            Champ { nom: "salaries", libelle: Affiche::new("Salariés"), forme: Forme::Liste, sens: "tous les contrats de ces salariés", avance: true },
-            Champ { nom: "remplace", libelle: Affiche::new("Annule et remplace"), forme: Forme::OuiNon, sens: "vrai : un contrat refait qui annule et remplace le précédent", avance: true },
-        ],
+        charge: &ChargeSignature::CHARGE,
         exemple: r#"{"mois":"2026-11","contrats":[{"salarie":"FULLER","debut":"2026-11-27"}]}"#,
         rend: "phrase (un contrat ou un avenant qu'un courriel a déjà demandé part en rappel, et elle le dit), partis, contrats (les contrats et les avenants partis, tels que le journal les note), avertissements (ceux sans courriel), signatures (compagnie fictive : revenues aussitôt)",
         refus: &[
@@ -95,10 +91,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::PiecesParties,
         geste: "Lister ce qui est parti pour un contrat : DPAE, contrat envoyé, signé, preuve.",
-        charge: &[
-            Champ { nom: "numero", libelle: Affiche::new("Numéro du contrat"), forme: Forme::Texte, sens: "le numéro du contrat, tel que signature-apercu ou etat-par-engagement le rend", avance: false },
-            Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé de la fiche du salarié ; le numéro suffit", avance: true },
-        ],
+        charge: &ChargePieces::CHARGE,
         exemple: r#"{"salarie":"FULLER","numero":"FU1.26.01"}"#,
         rend: "phrase (chaque pièce partie et son jour), dpae, contrat : les fichiers partis, lus au journal",
         refus: &[MANQUE],
@@ -110,12 +103,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AvenantApercu,
         geste: "Montrer l'avenant d'un contrat : ce qui change, par article ou en clair.",
-        charge: &[
-            SALARIE,
-            DEBUT,
-            Champ { nom: "numero", libelle: Affiche::new("Numéro du contrat"), forme: Forme::Texte, sens: "le numéro du contrat, tel que signature-apercu le rend", avance: false },
-            Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois de l'écran, où se lit un contrat signé hors du logiciel (le mois présent sinon)", avance: true },
-        ],
+        charge: &ChargeAvenant::CHARGE,
         exemple: r#"{"salarie":"FULLER","debut":"2026-11-27","numero":"FU1.26.01"}"#,
         rend: "le contrat (contrat, date_contrat, signe ; ailleurs : signé hors du logiciel, et contrat_signe : chemin du dossier de son PDF, deposes, phrase), numero de l'avenant, effet, modifications (numero et article, avant, apres ; phrase en clair sans numero), avenants (et la phrase de chacun), destinataire, titre (le contrat comme l'avenant le nomme), situation, encarts, demande_envoyer et demande_remplacer (du mot de passe, avant chaque envoi)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, le début et le numéro d'un contrat parti à la signature ou signé hors du logiciel" }, MANQUE, ILLISIBLE],
@@ -127,7 +115,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ContratsImprimer,
         geste: "Réunir en un PDF les contrats et avenants cochés, à remettre en main propre.",
-        charge: &[MOIS, CONTRATS, Champ { nom: "avenants", libelle: Affiche::new("Avenants"), forme: Forme::Objet, sens: "les avenants cochés : [{salarie, debut, numero, mois, effet}]", avance: false }],
+        charge: &ChargeImprimer::CHARGE,
         exemple: r#"{"mois":"2026-11","contrats":[{"salarie":"SVOBODA","debut":"2026-11-02"}]}"#,
         rend: "impression (le PDF) et son chemin, fichiers (chaque pièce partie), contrats et avenants partis",
         refus: &[CONTRAT_ECRIT, MANQUE],
@@ -139,14 +127,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ContratRecu,
         geste: "Noter qu'un contrat (ou un avenant) est revenu signé, ou retirer la note.",
-        charge: &[
-            MOIS,
-            SALARIE,
-            DEBUT,
-            NUMERO,
-            Champ { nom: "recu", libelle: Affiche::new("Reçu"), forme: Forme::OuiNon, sens: "vrai : noter le reçu ; faux : retirer la note", avance: true },
-            Champ { nom: "avenant", libelle: Affiche::new("Avenant signé"), forme: Forme::Nombre, sens: "le numéro de l'avenant revenu signé", avance: true },
-        ],
+        charge: &ChargeRecu::CHARGE,
         exemple: r#"{"mois":"2026-11","salarie":"FULLER","debut":"2026-11-27","recu":true}"#,
         rend: "phrase, recu (quand), annuler (la route et la charge qui défont la note)",
         refus: &[OPERATION, MANQUE],
@@ -158,7 +139,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::PoserCourriel,
         geste: "Poser le courriel d'un salarié, là où il manque.",
-        charge: &[SALARIE, Champ { nom: "email", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "son adresse de courriel", avance: false }],
+        charge: &ChargeCourriel::CHARGE,
         exemple: r#"{"salarie":"FULLER","email":"loie.fuller@exemple.invalid"}"#,
         rend: "salarie, email",
         refus: &[crate::fiches::REFUSEE, OPERATION, MANQUE],
@@ -203,22 +184,31 @@ pub(crate) struct AvenantVoulu {
     pub(crate) effet: Option<Jour>,
 }
 
-/// La charge de `demander-signature` : le mois, les contrats choisis (`contrats` ; `salaries` : tous les contrats de ces
-/// salaries ; rien : tous ceux du mois), les avenants coches, un contrat refait (`remplace`) ; absents, ils ne sont pas
-/// demandes. Ce qui part en rappel, le journal le dit, pas la charge. Le mot de passe du logiciel tape pour l'envoi est a
-/// l'enveloppe.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeSignature {
-    pub(crate) mois: Mois,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) contrats: Option<Vec<ContratVise>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) avenants: Option<Vec<AvenantVoulu>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) salaries: Option<Vec<droit::contexte::IdSalarie>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) remplace: Option<bool>,
+/// Dans une charge, un contrat vise et un avenant voulu se disent d'un objet.
+impl ValeurDeLaCharge<ParSaForme> for ContratVise {
+    const FORME: Forme = Forme::Objet;
+}
+impl ValeurDeLaCharge<ParSaForme> for AvenantVoulu {
+    const FORME: Forme = Forme::Objet;
+}
+
+charge! {
+    /// La charge de `demander-signature` : le mois, les contrats choisis (`contrats` ; `salaries` : tous les contrats de
+    /// ces salaries ; rien : tous ceux du mois), les avenants coches, un contrat refait (`remplace`) ; absents, ils ne sont
+    /// pas demandes. Ce qui part en rappel, le journal le dit, pas la charge. Le mot de passe du logiciel tape pour l'envoi
+    /// est a l'enveloppe.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeSignature {
+        pub(crate) mois: Mois = legendes::MOIS,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) contrats: Option<Vec<ContratVise>> = CONTRATS,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) avenants: Option<Vec<AvenantVoulu>> = AVENANTS,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) salaries: Option<Vec<droit::contexte::IdSalarie>> = dit("Salariés", "tous les contrats de ces salariés").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) remplace: Option<bool> = dit("Annule et remplace", "vrai : un contrat refait qui annule et remplace le précédent").avancee(),
+    }
 }
 
 impl ChargeSignature {
@@ -297,13 +287,14 @@ impl ChargeSignature {
     }
 }
 
-/// La charge de `contrats-imprimer` : le mois, les contrats et les avenants coches.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeImprimer {
-    pub(crate) mois: Mois,
-    pub(crate) contrats: Option<Vec<ContratVise>>,
-    pub(crate) avenants: Option<Vec<AvenantVoulu>>,
+charge! {
+    /// La charge de `contrats-imprimer` : le mois, les contrats et les avenants coches.
+    #[derive(Debug, Clone)]
+    pub(crate) struct ChargeImprimer {
+        pub(crate) mois: Mois = legendes::MOIS,
+        pub(crate) contrats: Option<Vec<ContratVise>> = CONTRATS,
+        pub(crate) avenants: Option<Vec<AvenantVoulu>> = AVENANTS,
+    }
 }
 
 impl ChargeImprimer {
@@ -312,28 +303,30 @@ impl ChargeImprimer {
     }
 }
 
-/// La charge de `contrat-recu` : le contrat (son mois, son salarie, son premier jour, son numero), l'avenant revenu
-/// signe s'il s'agit de lui, et le mot : recu (par defaut) ou la note retiree.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeRecu {
-    pub(crate) mois: Mois,
-    pub(crate) salarie: droit::contexte::IdSalarie,
-    pub(crate) debut: Jour,
-    pub(crate) numero: Option<NumeroContrat>,
-    pub(crate) avenant: Option<NumeroDAvenant>,
-    pub(crate) recu: bool,
+charge! {
+    /// La charge de `contrat-recu` : le contrat (son mois, son salarie, son premier jour, son numero), l'avenant revenu
+    /// signe s'il s'agit de lui, et le mot : recu (par defaut) ou la note retiree.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeRecu {
+        pub(crate) mois: Mois = legendes::MOIS,
+        pub(crate) salarie: droit::contexte::IdSalarie = legendes::SALARIE,
+        pub(crate) debut: Jour = DEBUT,
+        pub(crate) numero: Option<NumeroContrat> = NUMERO,
+        pub(crate) avenant: Option<NumeroDAvenant> = dit("Avenant signé", "le numéro de l'avenant revenu signé").avancee(),
+        pub(crate) recu: bool = dit("Reçu", "vrai : noter le reçu ; faux : retirer la note").avancee(),
+    }
 }
 
-/// La charge de `avenant-apercu` : le contrat parti (son salarie, son premier jour, son numero) et le mois de l'ecran, ou
-/// se lit un contrat signe hors du logiciel (le mois present sinon).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeAvenant {
-    pub(crate) salarie: droit::contexte::IdSalarie,
-    pub(crate) debut: Jour,
-    pub(crate) numero: Option<NumeroContrat>,
-    pub(crate) mois: Option<Mois>,
+charge! {
+    /// La charge de `avenant-apercu` : le contrat parti (son salarie, son premier jour, son numero) et le mois de l'ecran,
+    /// ou se lit un contrat signe hors du logiciel (le mois present sinon).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeAvenant {
+        pub(crate) salarie: droit::contexte::IdSalarie = legendes::SALARIE,
+        pub(crate) debut: Jour = DEBUT,
+        pub(crate) numero: Option<NumeroContrat> = dit("Numéro du contrat", "le numéro du contrat, tel que signature-apercu le rend"),
+        pub(crate) mois: Option<Mois> = dit("Mois", "le mois de l'écran, où se lit un contrat signé hors du logiciel (le mois présent sinon)").avancee(),
+    }
 }
 
 impl ChargeAvenant {
@@ -343,20 +336,22 @@ impl ChargeAvenant {
     }
 }
 
-/// La charge de `pieces-parties` : le numero du contrat, et son salarie (le numero suffit).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargePieces {
-    numero: Option<NumeroContrat>,
-    salarie: Option<IdSalarie>,
+charge! {
+    /// La charge de `pieces-parties` : le numero du contrat, et son salarie (le numero suffit).
+    #[derive(Debug)]
+    struct ChargePieces {
+        numero: Option<NumeroContrat> = dit("Numéro du contrat", "le numéro du contrat, tel que signature-apercu ou etat-par-engagement le rend"),
+        salarie: Option<IdSalarie> = dit("Salarié", "la clé de la fiche du salarié ; le numéro suffit").avancee(),
+    }
 }
 
-/// La charge de `poser-courriel` : le salarie et son courriel.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCourriel {
-    salarie: IdSalarie,
-    email: droit::fiche::Courriel,
+charge! {
+    /// La charge de `poser-courriel` : le salarie et son courriel.
+    #[derive(Debug)]
+    struct ChargeCourriel {
+        salarie: IdSalarie = legendes::SALARIE,
+        email: droit::fiche::Courriel = dit("Courriel", "son adresse de courriel"),
+    }
 }
 
 // ------------------------------------------------------------------ les reponses

@@ -27,6 +27,7 @@ use socle::echec::{erreur, Classe, R};
 use socle::texte::Phrase;
 
 use crate::catalogue::{Affiche, Route};
+use crate::declaration::{charge, dit, legendes};
 
 /// LES REPONSES « UNE AUTRE PERSONNE » DE LA COMPAGNIE, sous sa racine : ce qu'elle dit, avec sa configuration (comme
 /// `config/casc-svp.json`), pas au journal, qui tient ce qui est parti.
@@ -243,13 +244,14 @@ impl socle::liste::ListeFermee for ReponseDIdentite {
     }
 }
 
-/// La charge d'`importation-identite` : le NIR que la DSN declare, la fiche sans NIR qui lui ressemble, la reponse.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeIdentite {
-    nir: Nir,
-    salarie: IdSalarie,
-    reponse: ReponseDIdentite,
+charge! {
+    /// La charge d'`importation-identite` : le NIR que la DSN declare, la fiche sans NIR qui lui ressemble, la reponse.
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub(crate) struct ChargeIdentite {
+        nir: Nir = dit("Numéro déclaré", "le numéro de sécurité sociale que la DSN déclare, sans sa clé"),
+        salarie: IdSalarie = legendes::SALARIE,
+        reponse: ReponseDIdentite = dit("Réponse", "la personne que la DSN déclare est-elle le salarié de la fiche"),
+    }
 }
 
 /// Ce qu'`importation-identite` rend : ce que l'ecran en dit.
