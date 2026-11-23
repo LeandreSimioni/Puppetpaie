@@ -2811,11 +2811,15 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée. **L'abattement** que
   l'en-tête imprime (« Abattement : 21 », la déduction forfaitaire spécifique appliquée, un choix de la compagnie
   salarié par salarié ; Léandre, 23/11/2026 : « on fait l'abattement qu'on veut ») se garde dans la paie importée
-  (`PaieVersee::abattement`) et complète la fiche du salarié comme ses autres cases, sans rien écraser : la profession
-  dont le taux de l'année de la période est celui-là (`DfsDuBareme::professions_au_taux`), quand elle est seule ; un
-  taux que plusieurs professions partagent (la catégorie 25 % : dramatique, lyrique, chorégraphique) ne choisit rien,
-  et la réponse de l'import dit pourquoi (`importation::bulletins::profession_de_l_abattement`). Une paie dont le bulletin
-  imprime un abattement ne se compare qu'une fois la profession dite sur la fiche (`SorteDeNonComparaison::CaseDeLaCompagnie`).
+  (`PaieVersee::abattement`, hors de l'empreinte de la paie : `ecarts::empreinte`). L'import n'écrit rien de la
+  déduction forfaitaire : une profession posée sans l'option de la compagnie ferait refuser chaque paie d'ici du salarié.
+  « Pour démarrer » la propose, sur la ligne du salarié dont la fiche ne la dit pas (`demarrage::abattements_a_dire`,
+  le bulletin repris le plus récent) : la profession dont le taux de l'année de ce bulletin est celui-là
+  (`DfsDuBareme::professions_au_taux`), quand elle est seule, que la compagnie valide ou corrige ; un taux que plusieurs
+  professions partagent (la catégorie 25 % : dramatique, lyrique, chorégraphique) ne choisit rien, et la phrase les
+  nomme. Une paie dont le bulletin imprime un abattement ne se compare qu'une fois la profession dite sur la fiche
+  (`SorteDeNonComparaison::CaseDeLaCompagnie`) : le calcul de la déduction lit plus que son taux (la profession, pour
+  les frais que l'annexe 2 de l'arrêté laisse hors de l'assiette, l'option de la compagnie et l'accord du salarié).
 - **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`importation/ecrite.rs`) : les fiches à créer, par le même
   chemin que l'écran (`routes::fiches::ecrire_fiche`) ; dans une fiche qui existe, seulement ce qui y est vide ou
   « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
