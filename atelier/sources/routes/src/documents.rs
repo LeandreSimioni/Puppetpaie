@@ -216,8 +216,9 @@ struct DejaPartis {
 
 /// Un depart des documents que la boite ouvre : imprimer, ou envoyer par courriel. Sa case `salaries` se coche parmi les
 /// salaries des messages (`ChoixDesDocuments`), tous coches d'abord (`ValeursDesDocuments`) ; l'ecran la dessine en
-/// colonne de la liste des messages.
-type GesteDesDocuments = crate::imprevus::GesteDeRoute<ChargeMois, ValeursDesDocuments, ChoixDesDocuments>;
+/// colonne de la liste des messages. Sa charge (le mois et les salaries coches) est celle des deux departs, `envoyer-documents`
+/// prenant de plus le mot de passe a l'enveloppe.
+type GesteDesDocuments = crate::imprevus::GesteDeRoute<ChargeDocumentsImprimer, ValeursDesDocuments, ChoixDesDocuments>;
 
 /// Ce que la case `salaries` d'un depart des documents montre d'abord : les salaries de tous les messages.
 #[derive(Debug, Clone, Serialize)]
@@ -725,7 +726,9 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     let salaries = vec![crate::declaration::cle!(ChargeDocumentsImprimer, salaries)];
     let coches = ValeursDesDocuments { salaries: messages.iter().map(|x| x.cle.clone()).collect() };
     let offerts = ChoixDesDocuments { salaries: messages.iter().map(|x| crate::ouverture::Choix::de(&x.cle, &x.nom)).collect() };
-    let depart = |route, libelle| GesteDesDocuments::avec_cases(route, ChargeMois { mois }, libelle, salaries.clone(), coches.clone(), offerts.clone());
+    // Sa charge porte deja les salaries coches a l'ouverture : jouee telle quelle, elle fait partir exactement cela.
+    let charge = ChargeDocumentsImprimer { mois, salaries: Some(coches.salaries.clone()) };
+    let depart = |route, libelle| GesteDesDocuments::avec_cases(route, charge.clone(), libelle, salaries.clone(), coches.clone(), offerts.clone());
     let (principal, autres) = match (pret && !messages.is_empty(), prets.boite_liee) {
         (false, _) => (None, Vec::new()),
         (true, false) => (Some(depart(Route::DocumentsImprimer, IMPRIMER)), Vec::new()),

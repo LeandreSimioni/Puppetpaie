@@ -16,7 +16,7 @@ use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, Co
 use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, OPERATION};
 use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::documents::{client_courriel, refus, Ouvrir};
-use crate::etapes::{ChargeMois, Moteur};
+use crate::etapes::Moteur;
 use compagnie::INTERFACE;
 use crate::Encart;
 use socle::ecran::Pastille;
@@ -388,7 +388,7 @@ pub(crate) struct GesteRecu {
 /// Un depart des contrats coches que la boite ouvre : imprimer, ou envoyer a la signature. Ses cases `contrats` et
 /// `avenants` sont les contrats coches de la liste (`ApercuSignature::a_envoyer`), chacun ce qu'il y ajoute
 /// (`ContratASigner::part`) ; elles montrent d'abord ce qui part si l'on n'en decoche aucun (`ValeursDesContrats`).
-pub(crate) type GesteDesContrats = crate::imprevus::GesteDeRoute<crate::etapes::ChargeMois, ValeursDesContrats, crate::SansCharge>;
+pub(crate) type GesteDesContrats = crate::imprevus::GesteDeRoute<ChargeSignature, ValeursDesContrats, crate::SansCharge>;
 
 /// LE GESTE QUI POSE LE COURRIEL QUI MANQUE au salarie d'un contrat a envoyer, la boite posee (`poser-courriel`) : sa
 /// charge designe le salarie, sa case `email` la complete.
@@ -1217,7 +1217,9 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
         valeurs.contrats.extend(part.contrats.iter().flatten().cloned());
         valeurs.avenants.extend(part.avenants().iter().cloned());
     }
-    let depart = |route, libelle| GesteDesContrats::avec_cases(route, ChargeMois { mois }, libelle, coches.clone(), valeurs.clone(), crate::SansCharge {});
+    // Sa charge porte deja ce qui est coche a l'ouverture : jouee telle quelle, elle fait partir exactement cela.
+    let coche = ChargeSignature { avenants: Some(valeurs.avenants.clone()), ..ChargeSignature::des_contrats(mois, valeurs.contrats.clone()) };
+    let depart = |route, libelle| GesteDesContrats::avec_cases(route, coche.clone(), libelle, coches.clone(), valeurs.clone(), crate::SansCharge {});
     let (principal, autres) = match (contrats.iter().any(|c| c.a_envoyer), boite_liee) {
         (false, _) => (None, Vec::new()),
         (true, false) => (Some(depart(Route::ContratsImprimer, IMPRIMER)), Vec::new()),
