@@ -75,7 +75,7 @@ pub struct ApercuModele {
 }
 
 /// L'adresse ou la fenetre sert l'apercu d'un modele (`interface::Fenetre::apercu_bulletin`) : la fiche Entreprise la
-/// rend sous chaque modele du bulletin (`ouverture::ExempleDuChoix`).
+/// rend sous chaque modele du bulletin (`ouverture::DocumentMontre`).
 pub(crate) fn adresse_apercu(m: ModeleBulletin) -> String {
     format!("/apercu/bulletin?modele={}", m.dans_l_adresse())
 }

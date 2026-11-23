@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Forme;
 use crate::enveloppe::{Dite, Phrase};
-use crate::ouverture::{Choix, ExempleDuChoix};
+use crate::ouverture::{Choix, DocumentMontre};
 use crate::temps::{CaseDatee, TempsDeLaCase};
 use declarations::champs::{self, Anomalie, Case, Champ, CheminDeFiche, FicheAJuger, Gravite, Largeur, Libelles};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
@@ -863,7 +863,7 @@ fn completer_l_entreprise(ctx: &Contexte, e: &ChampsEntreprise, case: &mut CaseD
         case.choix = Some(
             droit::fiche::ModeleBulletin::TOUS
                 .iter()
-                .map(|m| Choix::de(m, m.nom()).montre_par(ExempleDuChoix::du_modele("voir l'exemple", *m)))
+                .map(|m| Choix::de(m, m.nom()).montre_par(DocumentMontre::du_modele("voir l'exemple", *m)))
                 .collect(),
         );
         if e.modele_bulletin.dite().is_none() {

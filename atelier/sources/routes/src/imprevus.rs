@@ -957,6 +957,11 @@ impl<C, V, X> GesteDeRoute<C, V, X> {
     pub(crate) fn avec_cases(route: Route, charge: C, libelle: Affiche, cases: Vec<&'static str>, valeurs: V, choix: X) -> GesteDeRoute<C, V, X> {
         GesteDeRoute { route, charge, libelle: libelle.texte(), cases, valeurs, choix, phrases: Vec::new() }
     }
+
+    /// Le meme geste, sa boite disant `phrases` au-dessus de ses cases.
+    pub(crate) fn disant(self, phrases: Vec<String>) -> GesteDeRoute<C, V, X> {
+        GesteDeRoute { phrases, ..self }
+    }
 }
 
 /// Ce que les cases d'un geste montrent d'abord : ce que l'imprevu dit deja, ou ce que le moteur propose.

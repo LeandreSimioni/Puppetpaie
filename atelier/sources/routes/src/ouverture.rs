@@ -589,7 +589,7 @@ pub(crate) fn registre_identite(dossier: &Path) -> R<RegistreIdentite> {
 
 /// UNE IMAGE DE L'IDENTITE (signature, cachet, logo) : posee ou non, dessinee par le logiciel (le cachet), son fichier et
 /// sa forme quand elle est posee, les documents qui la portent ; la signature dit pour qui elle est posee. La route
-/// `identite` y ajoute sa pastille et ce que son ecran en dit.
+/// `identite` en fait le rang de son ecran (`identite::rang_de_l_image`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct ImageIdentite {
     pub(crate) pose: bool,
@@ -611,10 +611,6 @@ pub(crate) struct ImageIdentite {
     pub(crate) posee_pour: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) autre_personne: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) pastille: Option<socle::ecran::Pastille>,
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub(crate) ecran: Option<EcranDeLImage>,
 }
 
 /// Le format d'une image posee, ecrit par son nom (`png`, `jpg`, `svg`), l'extension de son fichier.
@@ -623,19 +619,6 @@ fn format_ecrit<S: serde::Serializer>(f: &Option<fabrique_pdf::alleger::FormatDI
         Some(f) => s.serialize_str(f.nom()),
         None => s.serialize_none(),
     }
-}
-
-/// Ce que l'ecran de la signature et du tampon dit d'une image : son titre, ce qu'elle engage et ou elle va, ce que dit
-/// l'image posee, et les mots de ses gestes.
-#[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct EcranDeLImage {
-    pub(crate) titre: String,
-    pub(crate) dit: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) automatique_dit: Option<&'static str>,
-    pub(crate) pose_dit: Option<String>,
-    pub(crate) retirer_dit: &'static str,
-    pub(crate) importer_dit: &'static str,
 }
 
 /// `identite` : ce qui est pose (signature, cachet, logo), et depuis quand.
@@ -664,8 +647,6 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             signataire: None,
             posee_pour: None,
             autre_personne: None,
-            pastille: None,
-            ecran: None,
         };
         match pose {
             None => e.dossier = Some(dossier.clone()),
@@ -693,8 +674,8 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
 
 impl Identite {
     /// Les trois images, dans l'ordre ou l'ecran les montre.
-    pub(crate) fn images_mut(&mut self) -> [(documents::SorteDImage, &mut ImageIdentite); 3] {
-        [(documents::SorteDImage::Signature, &mut self.signature), (documents::SorteDImage::Cachet, &mut self.cachet), (documents::SorteDImage::Logo, &mut self.logo)]
+    pub(crate) fn images(&self) -> [(documents::SorteDImage, &ImageIdentite); 3] {
+        [(documents::SorteDImage::Signature, &self.signature), (documents::SorteDImage::Cachet, &self.cachet), (documents::SorteDImage::Logo, &self.logo)]
     }
 }
 
@@ -1225,30 +1206,34 @@ pub(crate) struct Choix {
     ouvre: Option<Vec<&'static str>>,
     /// Le document qui montre ce choix, qu'on ouvre a cote de lui (le bulletin d'exemple d'un modele du bulletin).
     #[serde(skip_serializing_if = "Option::is_none")]
-    exemple: Option<ExempleDuChoix>,
+    exemple: Option<DocumentMontre<crate::bulletin::ChargeModele>>,
 }
 
-/// L'EXEMPLE D'UN CHOIX : le document qui le montre. La route le nomme par la route qui le rend et sa charge (qui lit la
-/// reponse en ligne de commande l'obtient par elles), par l'adresse ou la fenetre sert ce meme document a la page, et
-/// par le lien qui l'ouvre. Le modele du bulletin de la fiche Entreprise : le bulletin d'exemple de chaque modele
-/// (`bulletin-modele-apercu`, `bulletin::adresse_apercu`).
+/// UN DOCUMENT QU'UNE ROUTE NOMME POUR QU'ON LE REGARDE (un aperçu, un exemple, une image posee). La route le nomme par
+/// la route qui le rend et sa charge (`C` ; qui lit la reponse en ligne de commande l'obtient par elles), par l'adresse
+/// ou la fenetre sert ce meme document a la page, et par son libelle. Le bulletin d'exemple de chaque modele du bulletin
+/// sur la fiche Entreprise (`bulletin-modele-apercu`, `bulletin::adresse_apercu`) ; la signature, le tampon et le logo
+/// de l'ecran Signature & tampon (`identite-image`, `identite::adresse_de_l_image`).
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct ExempleDuChoix {
+pub(crate) struct DocumentMontre<C> {
     libelle: &'static str,
     route: Route,
-    charge: crate::bulletin::ChargeModele,
+    charge: C,
     adresse: String,
 }
 
-impl ExempleDuChoix {
+impl<C> DocumentMontre<C> {
+    /// Le document que la route `route` rend pour la charge `charge`, servi a la page a l'adresse `adresse`, et dit
+    /// `libelle`.
+    pub(crate) fn nomme(libelle: &'static str, route: Route, charge: C, adresse: String) -> DocumentMontre<C> {
+        DocumentMontre { libelle, route, charge, adresse }
+    }
+}
+
+impl DocumentMontre<crate::bulletin::ChargeModele> {
     /// Le bulletin d'exemple du modele `modele`, ouvert par le lien `libelle`.
-    pub(crate) fn du_modele(libelle: &'static str, modele: droit::fiche::ModeleBulletin) -> ExempleDuChoix {
-        ExempleDuChoix {
-            libelle,
-            route: Route::BulletinModeleApercu,
-            charge: crate::bulletin::ChargeModele { modele },
-            adresse: crate::bulletin::adresse_apercu(modele),
-        }
+    pub(crate) fn du_modele(libelle: &'static str, modele: droit::fiche::ModeleBulletin) -> Self {
+        DocumentMontre::nomme(libelle, Route::BulletinModeleApercu, crate::bulletin::ChargeModele { modele }, crate::bulletin::adresse_apercu(modele))
     }
 }
 
@@ -1259,7 +1244,7 @@ impl Choix {
     }
 
     /// Le document qui le montre.
-    pub(crate) fn montre_par(self, exemple: ExempleDuChoix) -> Choix {
+    pub(crate) fn montre_par(self, exemple: DocumentMontre<crate::bulletin::ChargeModele>) -> Choix {
         Choix { exemple: Some(exemple), ..self }
     }
 

@@ -151,6 +151,7 @@ routes! {
         SauvegardeMaintenant = "sauvegarde-maintenant",
         CompagnieSupprimer = "compagnie-supprimer",
         Identite = "identite",
+        IdentiteImage = "identite-image",
         PoserIdentite = "poser-identite",
         RetirerIdentite = "retirer-identite",
         MetiersCatalogue = "metiers-catalogue",
@@ -331,6 +332,10 @@ pub enum Ecran {
     /// Avancee, sans ecran dessine : sous « Avancé » de sa place, la page l'affiche depuis sa fiche (`js/avance.js`),
     /// avec ce bouton (le `geste` est pour le LLM).
     Auto(Place, Affiche),
+    /// Le chemin simple : la lecture qui rend l'ecran de cette place, tel qu'on le voit (ce qu'il dit en tete, ses rangs,
+    /// ce qui s'y regarde et ses gestes) ; la page le montre depuis sa fiche et sa reponse (`js/avance.js`,
+    /// `montrerLEcran`), sans la nommer.
+    Montre(Place),
     /// Le chemin simple : une lecture qui nourrit les ecrans (l'etat, la configuration, le mois) ; elle n'a pas de place.
     Lecture,
     /// Avancee : une lecture qui nourrit les ecrans, hors du chemin simple.
@@ -340,7 +345,7 @@ pub enum Ecran {
 impl Ecran {
     pub fn place(self) -> Option<Place> {
         match self {
-            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
+            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) | Ecran::Montre(p) => Some(p),
             Ecran::Lecture | Ecran::LectureAvancee => None,
         }
     }
@@ -348,7 +353,7 @@ impl Ecran {
     /// La route est-elle « avancee » (hors du chemin simple) ?
     pub fn avance(self) -> bool {
         match self {
-            Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::Geste(_) | Ecran::Lecture => false,
+            Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::Geste(_) | Ecran::Montre(_) | Ecran::Lecture => false,
             Ecran::DessineAvance(_) | Ecran::GesteAvance(_) | Ecran::Auto(..) | Ecran::LectureAvancee => true,
         }
     }
@@ -358,6 +363,7 @@ impl Ecran {
             Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::DessineAvance(_) => "dessine",
             Ecran::Geste(_) | Ecran::GesteAvance(_) => "geste",
             Ecran::Auto(..) => "auto",
+            Ecran::Montre(_) => "montre",
             Ecran::Lecture | Ecran::LectureAvancee => "lecture",
         }
     }
@@ -365,6 +371,7 @@ impl Ecran {
     /// Ce que `moteur routes` en dit.
     pub fn texte(self) -> String {
         match self {
+            Ecran::Montre(p) => format!("{} (l'écran que la route rend)", p.nom()),
             Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) => p.nom().to_string(),
             Ecran::Geste(p) | Ecran::GesteAvance(p) => format!("{} (un geste qu'une route rend)", p.nom()),
             Ecran::Auto(p, _) => format!("{} › Avancé", p.nom()),
@@ -417,6 +424,9 @@ pub enum Forme {
     Rangees,
     /// Du HTML colle (la signature des courriels) : le moteur le nettoie et en dit le poids (`champs::Forme::Html`).
     Html,
+    /// UN FICHIER QUE LA PERSONNE CHOISIT SUR SON POSTE, d'un des types de media que la fiche admet (`image/png`…) : la
+    /// charge porte ses octets en base64 (une adresse data: aussi), ce que la ligne de commande donne pour le meme geste.
+    Fichier(&'static [&'static str]),
 }
 
 /// UNE PARTIE D'UNE VALEUR FAITE DE PARTIES (`Forme::Parties`) : sa cle dans la valeur, son libelle, sa forme, et si elle
@@ -496,6 +506,7 @@ impl Forme {
             Forme::Parties(_) => "parties",
             Forme::Rangees => "rangees",
             Forme::Html => "html",
+            Forme::Fichier(_) => "fichier",
         }
     }
 
@@ -503,7 +514,15 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) => None,
+        }
+    }
+
+    /// Les types de media qu'un fichier admet ; aucun pour une autre forme.
+    fn admis(self) -> Option<&'static [&'static str]> {
+        match self {
+            Forme::Fichier(a) => Some(a),
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html => None,
         }
     }
 
@@ -592,13 +611,16 @@ pub struct ChampEcrit {
     forme: Forme,
     #[serde(skip_serializing_if = "Option::is_none")]
     choix: Option<Vec<ChoixEcrit>>,
+    /// Les types de media qu'un fichier admet (`Forme::Fichier`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    admis: Option<&'static [&'static str]>,
     sens: &'static str,
     avance: bool,
 }
 
 impl Champ {
     pub fn ecrit(&self) -> ChampEcrit {
-        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix(), sens: self.sens, avance: self.avance }
+        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix(), admis: self.forme.admis(), sens: self.sens, avance: self.avance }
     }
 }
 
@@ -712,7 +734,7 @@ impl Fiche {
             affichage: self.ecran.mot(),
             bouton: match self.ecran {
                 Ecran::Auto(_, b) | Ecran::DessineAvecBouton(_, b) => Some(b.texte()),
-                Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
+                Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Montre(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
             },
             servie_pendant_la_demande: self.pendant_la_demande == PendantLaDemande::Servie,
         })
@@ -721,7 +743,11 @@ impl Fiche {
     pub fn en_texte(&self) -> R<String> {
         let mut t = format!("{}{} : {}\n  Acte : {}\n  Charge :\n", self.nom(), if self.ecran.avance() { " (avancé)" } else { "" }, self.geste, self.acte.mot());
         for c in self.charge {
-            t.push_str(&format!("    {}{} : {}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens));
+            let admis = match c.forme.admis() {
+                Some(a) => format!(" (un fichier : {})", a.join(", ")),
+                None => String::new(),
+            };
+            t.push_str(&format!("    {}{} : {}{}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens, admis));
         }
         for n in natures_de_la_carte(self.charge)? {
             t.push_str(&format!(
