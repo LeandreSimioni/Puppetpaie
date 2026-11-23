@@ -177,6 +177,8 @@ const CASES = {
       `<button type="button" class="lien" data-tout-cocher>${aideDe("tout_cocher")}</button></span>`),
     lire: (x) => [...x.querySelectorAll("input:checked")].map((c) => c.value),
   },
+  // Plusieurs valeurs d'une liste que la route rend à côté (`choix` du geste, sous la clé de la case) : la même case.
+  get plusieurs_choix_rendus() { return CASES.plusieurs_choix; },
   // Une période (un mois, une année, toutes les années) : une liste déroulante des périodes que la route offre, les
   // mois sous leur année.
   periode: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
@@ -518,7 +520,7 @@ function caseDeRoute(c) {
   // Des choix que la route dit en boutons à cocher (`boutons`) se cochent.
   const forme = c.boutons && c.choix ? "boutons" : c.forme;
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
-  const balise = ["parties", "rangees", "html", "boutons", "plusieurs_choix"].includes(forme) ? "div" : "label";
+  const balise = ["parties", "rangees", "html", "boutons", "plusieurs_choix", "plusieurs_choix_rendus"].includes(forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
     ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis, obligatoire: c.obligatoire })}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${

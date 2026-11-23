@@ -442,7 +442,7 @@ function encartRepetition(r) {
 }
 
 /* ------------------------------------------ les documents aux salariés */
-/** LES DOCUMENTS DU MOIS : chaque salarié à qui ils partent, coché ; on
+/** LES DOCUMENTS DU MOIS : la liste des messages, et la case `salaries` de leurs départs, en colonne ; on
  *  décoche. Deux gestes : Imprimer (un seul PDF, salarié par salarié : bulletin,
  *  certificat, AER) et Envoyer par courriel quand une boîte est posée. Les deux
  *  sont un départ : le moteur numérote et fige la paie. */
@@ -452,9 +452,11 @@ async function boiteEnvoi(mois) {
     a = await api("envoi-apercu", { mois });
   } catch (e) { dire(e.message, "erreur"); return; }
 
-  // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont la case `salaries` est la colonne
-  // cochée de la liste ; celui qui exige le mot de passe (`demande`) le fait taper.
+  // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont la case `salaries` (ses choix, ce
+  // qu'elle montre d'abord : `valeurs`) est la colonne cochée de la liste ; celui qui exige le mot de passe (`demande`)
+  // le fait taper. La liste n'a de messages que si un départ est ouvert.
   const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
+  const coches = (cle) => a.principal.valeurs.salaries.includes(cle);
   const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
     + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
   ouvrirBoite(`
@@ -470,7 +472,7 @@ async function boiteEnvoi(mois) {
       <tr><th></th>${a.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
       ${a.messages.map((m) => `
         <tr>
-          <td><input type="checkbox" class="e-qui" value="${echapper(m.cle)}" checked
+          <td><input type="checkbox" class="e-qui" value="${echapper(m.cle)}" ${coches(m.cle) ? "checked" : ""}
                      aria-label="${echapper(m.nom)}"></td>
           <td>${echapper(m.nom)}${m.pastille ? `<br>${pastilleDeLEtat(m.pastille)}` : ""}</td>
           ${a.boite_liee ? `<td>${echapper(m.destinataire)}</td>` : ""}

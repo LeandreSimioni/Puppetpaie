@@ -38,7 +38,7 @@ pub(crate) type R<T> = Result<T, Echec>;
 /// boite simulee ; une route ouvre la vraie (`client_courriel`).
 pub(crate) type Ouvrir<'a> = &'a mut dyn FnMut() -> R<Box<dyn Courriel>>;
 
-const SALARIES: Legende = dit("Salariés", "seulement ceux-ci (les clés de leurs fiches) ; tous sinon");
+const SALARIES: Legende = dit("Salariés", "seulement ceux-ci (les clés de leurs fiches, parmi les choix de envoi-apercu) ; tous sinon").rendue();
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -50,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les documents du mois de chaque salarié, et à qui ils partiraient.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, colonnes, changements_titre, pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja (titre, quand_dit) ; les départs ouverts, chacun un geste (route, charge, libellé, la case salaries : les clés cochées, tous d'abord ; demande du mot de passe) : principal (envoyer par courriel quand la boîte est posée, imprimer sinon) et autres ; aucun tant que rien n'est prêt",
+        rend: "titre, colonnes, changements_titre, pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja (titre, quand_dit) ; les départs ouverts, chacun un geste (route, charge, libellé, la case salaries, plusieurs choix : choix.salaries, la clé et le nom de chaque message, et valeurs.salaries, ceux qui partent si l'on n'en décoche aucun, tous ; demande du mot de passe) : principal (envoyer par courriel quand la boîte est posée, imprimer sinon) et autres ; aucun tant que rien n'est prêt",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -214,9 +214,22 @@ struct DejaPartis {
     quand_dit: String,
 }
 
-/// Un depart des documents que la boite ouvre : imprimer, ou envoyer par courriel. Sa case `salaries` est la colonne
-/// cochee de la liste des messages (tous coches d'abord).
-type GesteDesDocuments = crate::imprevus::GesteDeRoute<ChargeMois>;
+/// Un depart des documents que la boite ouvre : imprimer, ou envoyer par courriel. Sa case `salaries` se coche parmi les
+/// salaries des messages (`ChoixDesDocuments`), tous coches d'abord (`ValeursDesDocuments`) ; l'ecran la dessine en
+/// colonne de la liste des messages.
+type GesteDesDocuments = crate::imprevus::GesteDeRoute<ChargeMois, ValeursDesDocuments, ChoixDesDocuments>;
+
+/// Ce que la case `salaries` d'un depart des documents montre d'abord : les salaries de tous les messages.
+#[derive(Debug, Clone, Serialize)]
+struct ValeursDesDocuments {
+    salaries: Vec<IdSalarie>,
+}
+
+/// Ce que la case `salaries` d'un depart des documents offre : chaque salarie d'un message, sa cle et son nom.
+#[derive(Debug, Clone, Serialize)]
+struct ChoixDesDocuments {
+    salaries: Vec<crate::ouverture::Choix>,
+}
 
 const IMPRIMER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Imprimer");
 const ENVOYER_PAR_COURRIEL: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer par courriel");
@@ -710,7 +723,9 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     let demande = demande_documents(ctx, mois)?;
     // Les departs ouverts : rien ne part tant qu'un empechement reste ou qu'aucun message n'est du.
     let salaries = vec![crate::declaration::cle!(ChargeDocumentsImprimer, salaries)];
-    let depart = |route, libelle| GesteDesDocuments::avec_cases(route, ChargeMois { mois }, libelle, salaries.clone(), crate::imprevus::ValeursDeDepart::default(), crate::imprevus::ChoixDesCases::default());
+    let coches = ValeursDesDocuments { salaries: messages.iter().map(|x| x.cle.clone()).collect() };
+    let offerts = ChoixDesDocuments { salaries: messages.iter().map(|x| crate::ouverture::Choix::de(&x.cle, &x.nom)).collect() };
+    let depart = |route, libelle| GesteDesDocuments::avec_cases(route, ChargeMois { mois }, libelle, salaries.clone(), coches.clone(), offerts.clone());
     let (principal, autres) = match (pret && !messages.is_empty(), prets.boite_liee) {
         (false, _) => (None, Vec::new()),
         (true, false) => (Some(depart(Route::DocumentsImprimer, IMPRIMER)), Vec::new()),

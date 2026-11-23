@@ -426,6 +426,10 @@ pub enum Forme {
     /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
     /// `propose`) ; l'ecran la fait choisir.
     ChoixRendu,
+    /// DES VALEURS D'UNE LISTE FERMEE QUE LA ROUTE REND A COTE, plusieurs a la fois, sous la cle de la case (les salaries a
+    /// qui partent les documents du mois : `choix` d'un geste) : l'ecran les fait cocher, une case par valeur, comme
+    /// `PlusieursChoix`, et la charge porte les codes coches.
+    PlusieursChoixRendus,
     /// UNE VALEUR FAITE DE PARTIES, chacune sa cle, son libelle et sa forme simple (`Partie`) : la route etat les rend
     /// sous la cle de la case (`parties`) ; la partie qui se choisit offre ce que la route rend sous la meme cle
     /// (`choix`), et chaque valeur offerte dit les parties qu'elle ouvre (`ouvre`) : une partie qui n'est pas de toujours
@@ -550,6 +554,7 @@ impl Forme {
             Forme::Choix(_) => "choix",
             Forme::PlusieursChoix(_) => "plusieurs_choix",
             Forme::ChoixRendu => "choix_rendu",
+            Forme::PlusieursChoixRendus => "plusieurs_choix_rendus",
             Forme::Parties(_) => "parties",
             Forme::Rangees => "rangees",
             Forme::Html => "html",
@@ -562,7 +567,7 @@ impl Forme {
     fn choix(self) -> R<Option<Vec<ChoixEcrit>>> {
         match self {
             Forme::Choix(c) | Forme::PlusieursChoix(c) => Ok(Some(c.ecrites()?)),
-            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
+            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::PlusieursChoixRendus | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
         }
     }
 
@@ -570,7 +575,7 @@ impl Forme {
     fn admis(self) -> Option<&'static [&'static str]> {
         match self {
             Forme::Fichier(a) => Some(a),
-            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
+            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::PlusieursChoixRendus | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
         }
     }
 
