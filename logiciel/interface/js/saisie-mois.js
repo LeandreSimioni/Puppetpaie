@@ -180,18 +180,18 @@ function carteImportee(p, i) {
       c.source != null ? `<span class="ci-source">${echapper(c.source)}</span>` : ""}${
       c.pourquoi != null ? `<span class="ci-pourquoi">${echapper(c.pourquoi)}</span>` : ""}</div>`;
   const l = p.lignes;
-  const nombre = (c) => (c.nombre ? ' class="nombre"' : "");
+  const nombre = (c) => (c.a_droite ? ' class="nombre"' : "");
   const lignes = l ? `
     <table class="ci-lignes"><tr>${l.colonnes.map((c) => `<th${nombre(c)}>${echapper(c.libelle)}</th>`).join("")}</tr>
-      ${l.rangees.map((x) => `<tr>${x.map((t, k) => `<td${nombre(l.colonnes[k])}>${echapper(t)}</td>`).join("")}</tr>`).join("")}
+      ${l.rangees.map((x) => `<tr>${x.cellules.map((t, k) => `<td${nombre(l.colonnes[k])}>${t == null ? "" : echapper(t)}</td>`).join("")}</tr>`).join("")}
     </table>` : "";
   return `
     <div class="carte-importee${p.non_lu ? " incomplete" : ""}" data-rang="${i}">
       <div class="e-resume">
-        <div class="carte-quand" title="${echapper(r.quand_titre)}">
-          <b class="${r.epars ? "epars" : ""}">${echapper(r.quand)}</b><span>${echapper(r.mois)}</span></div>
+        <div class="carte-quand" title="${echapper(r.quand.titre)}">
+          <b class="${r.quand.epars ? "epars" : ""}">${echapper(r.quand.jours)}</b><span>${echapper(r.quand.mois)}</span></div>
         <div class="carte-qui"${r.origine_dit ? ` title="${echapper(r.origine_dit)}"` : ""}>
-          <span class="carte-nom"><b>${echapper(r.nom)}</b> <span class="mot-etat">${echapper(r.mot)}</span></span>
+          <span class="carte-nom">${r.nom != null ? `<b>${echapper(r.nom)}</b> ` : ""}<span class="mot-etat">${echapper(r.mot)}</span></span>
           <span class="discret">${echapper(r.quoi_dit)}</span></div>
         <div class="carte-actes"><div class="etats-actes">${r.pastilles.map(pastille).join("")}</div></div>
         <div class="carte-net" title="${echapper(r.montant_titre)}">${montant}</div>

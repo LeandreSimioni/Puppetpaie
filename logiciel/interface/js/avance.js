@@ -837,11 +837,17 @@ async function quitterLEcran(dans = document) {
       if (e.jeter) await e.jeter();
       continue;
     }
-    if (!(await e.enregistrer())) return false;
+    const fait = await e.enregistrer();
+    if (!fait) return false;
     oublierLEcran(e.bloc);
+    // L'enregistrement a ouvert la page qui le suit : on reste sur elle.
+    if (fait === ENREGISTRE_PUIS_SUITE) return false;
   }
   return true;
 }
+/** Ce que rend l'`enregistrer` d'un écran retenu quand il a écrit et ouvert la page qui suit (les indemnités d'un arrêt,
+ *  les jours payés) : la sortie ne la referme pas. Sinon il rend vrai (écrit) ou faux (refusé). */
+const ENREGISTRE_PUIS_SUITE = "suite";
 
 /* ------------------------------------------------ un écran que la route rend */
 

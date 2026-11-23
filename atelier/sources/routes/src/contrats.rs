@@ -16,7 +16,7 @@ use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, Co
 use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, OPERATION};
 use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::documents::{client_courriel, refus, Ouvrir};
-use crate::etapes::{ChargeMois, Moteur};
+use crate::etapes::Moteur;
 use compagnie::INTERFACE;
 use crate::Encart;
 use socle::ecran::Pastille;
@@ -65,7 +65,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &ChargeApercuSignature::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; contrats (chacun : son état, part (ce qu'il ajoute à la charge d'un départ, coché), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe) ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), les mêmes ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
+        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), coche (coché à l'ouverture), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -388,7 +388,7 @@ pub(crate) struct GesteRecu {
 /// Un depart des contrats coches que la boite ouvre : imprimer, ou envoyer a la signature. Ses cases `contrats` et
 /// `avenants` sont les contrats coches de la liste (`ApercuSignature::a_envoyer`), chacun ce qu'il y ajoute
 /// (`ContratASigner::part`) ; elles montrent d'abord ce qui part si l'on n'en decoche aucun (`ValeursDesContrats`).
-pub(crate) type GesteDesContrats = crate::imprevus::GesteDeRoute<crate::etapes::ChargeMois, ValeursDesContrats, crate::SansCharge>;
+pub(crate) type GesteDesContrats = crate::imprevus::GesteDeRoute<ChargeSignature, ValeursDesContrats, crate::SansCharge>;
 
 /// LE GESTE QUI POSE LE COURRIEL QUI MANQUE au salarie d'un contrat a envoyer, la boite posee (`poser-courriel`) : sa
 /// charge designe le salarie, sa case `email` la complete.
@@ -441,8 +441,12 @@ pub(crate) struct ContratASigner {
     /// Un courriel a deja demande de signer ce contrat (le journal le dit) : le redemander est un rappel.
     #[serde(skip)]
     pub(crate) demande_par_courriel: bool,
+    /// Dans la liste `a_envoyer` de la reponse : il ne se rend pas en plus.
+    #[serde(skip)]
     pub(crate) a_envoyer: bool,
     pub(crate) en_avenant: bool,
+    /// Dans la liste `en_attente` de la reponse : il ne se rend pas en plus.
+    #[serde(skip)]
     pub(crate) en_attente: bool,
     recu: Option<GesteRecu>,
     relancer: Option<GesteRelancer>,
@@ -457,6 +461,10 @@ pub(crate) struct ContratASigner {
     /// Ce qu'il ajoute a la charge d'un depart quand il est coche (lui, ou son avenant) ; seulement a envoyer.
     #[serde(skip_serializing_if = "Option::is_none")]
     part: Option<ChargeSignature>,
+    /// COCHE A L'OUVERTURE de la boite qui fait partir les contrats : a envoyer, de ceux des salaries choisis s'il en
+    /// est ; sa part est dans ce que les departs montrent d'abord (`ValeursDesContrats`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    coche: bool,
     /// L'apercu de son avenant, quand il part en avenant.
     #[serde(skip_serializing_if = "Option::is_none")]
     voir_avenant: Option<crate::etapes::Action>,
@@ -479,9 +487,11 @@ pub(crate) struct ApercuSignature {
     principal: Option<GesteDesContrats>,
     autres: Vec<GesteDesContrats>,
     mois: Mois,
+    /// Tous les contrats du mois, que le moteur lit (l'horloge) ; la reponse ne les rend que dans leur liste.
+    #[serde(skip)]
     pub(crate) contrats: Vec<ContratASigner>,
     /// Ce que montre la boite qui fait partir les contrats : ceux a envoyer, chacun une case a cocher ; et celle des
-    /// contrats en attente : ceux qui attendent leur signature.
+    /// contrats en attente : ceux qui attendent leur signature. Un contrat est dans l'une, l'autre, ou aucune.
     a_envoyer: Vec<ContratASigner>,
     en_attente: Vec<ContratASigner>,
     boite_liee: bool,
@@ -1156,6 +1166,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
         });
         contrats.push(ContratASigner {
             part,
+            coche: false,
             voir_avenant,
             courriel,
             salarie: p.salarie.id.clone(),
@@ -1207,11 +1218,16 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
     let coches = vec![crate::declaration::cle!(ChargeSignature, contrats), crate::declaration::cle!(ChargeSignature, avenants)];
     // CE QUI PART SI L'ON NE DECOCHE RIEN : la part de chaque contrat a envoyer, de ceux des salaries choisis s'il en est.
     let mut valeurs = ValeursDesContrats::default();
-    for part in contrats.iter().filter(|c| c.a_envoyer && seulement.is_none_or(|l| l.contains(&c.salarie))).filter_map(|c| c.part.as_ref()) {
+    for c in contrats.iter_mut() {
+        c.coche = c.a_envoyer && c.part.is_some() && seulement.is_none_or(|l| l.contains(&c.salarie));
+    }
+    for part in contrats.iter().filter(|c| c.coche).filter_map(|c| c.part.as_ref()) {
         valeurs.contrats.extend(part.contrats.iter().flatten().cloned());
         valeurs.avenants.extend(part.avenants().iter().cloned());
     }
-    let depart = |route, libelle| GesteDesContrats::avec_cases(route, ChargeMois { mois }, libelle, coches.clone(), valeurs.clone(), crate::SansCharge {});
+    // Sa charge porte deja ce qui est coche a l'ouverture : jouee telle quelle, elle fait partir exactement cela.
+    let coche = ChargeSignature { avenants: Some(valeurs.avenants.clone()), ..ChargeSignature::des_contrats(mois, valeurs.contrats.clone()) };
+    let depart = |route, libelle| GesteDesContrats::avec_cases(route, coche.clone(), libelle, coches.clone(), valeurs.clone(), crate::SansCharge {});
     let (principal, autres) = match (contrats.iter().any(|c| c.a_envoyer), boite_liee) {
         (false, _) => (None, Vec::new()),
         (true, false) => (Some(depart(Route::ContratsImprimer, IMPRIMER)), Vec::new()),
@@ -1277,7 +1293,7 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
     } else {
         let avenant = AvenantVoulu { salarie: c.salarie.clone(), debut: c.debut, numero: c.numero.clone(), mois: c.mois, effet: Some(brut.effet) };
         let parties = PARTIES_D_UN_AVENANT.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
-        let cases = vec![crate::fiches::CaseDeLaFiche::de_rangees_fixes(crate::declaration::cle!(ChargeSignature, avenants), L_AVENANT, ValeurDeCase::de(&[&avenant]), parties)];
+        let cases = vec![crate::fiches::CaseDeLaFiche::de_rangees(crate::declaration::cle!(ChargeSignature, avenants), L_AVENANT, ValeurDeCase::de(&[&avenant]), parties)];
         let envoyer = ChargeSignature::des_avenants(brut.mois, vec![avenant]);
         let demande = envoyer.demande(ctx)?;
         let principal = GesteDeLAvenant::avec_cases(Route::DemanderSignature, envoyer, ENVOYER_L_AVENANT, vec![crate::declaration::cle!(ChargeSignature, avenants)], crate::SansCharge {}, crate::SansCharge {})

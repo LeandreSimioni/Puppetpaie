@@ -149,7 +149,7 @@ impl EtatCase {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Action {
     route: Route,
-    charge: ChargeDuGeste,
+    charge: ChargeDeLAction,
     puis: Option<Route>,
     libelle: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -181,13 +181,41 @@ impl VueDuGeste {
     }
 }
 
-/// LA CHARGE D'UN GESTE : celle de la route qu'il ouvre, en sa forme, telle que la route la lit.
+/// LA CHARGE D'UNE ACTION : celle d'une route qui n'a qu'une vue, ou celle d'une route a deux vues, que seul `vers` donne.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum ChargeDeLAction {
+    Route(ChargeDuGeste),
+    Vue(ChargeDUneVue),
+}
+
+/// LA CHARGE D'UNE ROUTE A DEUX VUES (`VueDuGeste`) : l'apercu du depot, celui des contrats. Elle n'entre dans une
+/// `Action` que par `vers`, qui dit la vue ; `action` ne la prend pas.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub(crate) enum ChargeDUneVue {
+    Signature(crate::contrats::ChargeApercuSignature),
+    Depot(Designation),
+}
+
+impl From<crate::contrats::ChargeApercuSignature> for ChargeDUneVue {
+    fn from(c: crate::contrats::ChargeApercuSignature) -> ChargeDUneVue {
+        ChargeDUneVue::Signature(c)
+    }
+}
+
+impl From<Designation> for ChargeDUneVue {
+    fn from(c: Designation) -> ChargeDUneVue {
+        ChargeDUneVue::Depot(c)
+    }
+}
+
+/// LA CHARGE D'UN GESTE : celle de la route qu'il ouvre, en sa forme, telle que la route la lit ; celle d'une route a deux
+/// vues n'en est pas (`ChargeDUneVue`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub(crate) enum ChargeDuGeste {
     Mois(ChargeMois),
-    Signature(crate::contrats::ChargeApercuSignature),
-    Depot(Designation),
     Recu(crate::contrats::ChargeRecu),
     Avenant(crate::contrats::ChargeAvenant),
     FinContrat(crate::imprevus::ChargeFinContratSignaler),
@@ -227,8 +255,6 @@ macro_rules! charge_du_geste {
 
 charge_du_geste! {
     ChargeMois => Mois,
-    crate::contrats::ChargeApercuSignature => Signature,
-    Designation => Depot,
     crate::contrats::ChargeRecu => Recu,
     crate::contrats::ChargeAvenant => Avenant,
     crate::imprevus::ChargeFinContratSignaler => FinContrat,
@@ -242,14 +268,15 @@ charge_du_geste! {
     crate::documents::ChargePiecePartie => Piece,
 }
 
-/// L'`Action` de `route` sur `charge`, la charge de la route en sa forme.
+/// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
+/// (`ChargeDUneVue`) : son action se fait par `vers`.
 pub(crate) fn action(route: Route, charge: impl Into<ChargeDuGeste>, puis: Option<Route>, libelle: String) -> Action {
-    Action { route, charge: charge.into(), puis, libelle, tester: false, vue: None }
+    Action { route, charge: ChargeDeLAction::Route(charge.into()), puis, libelle, tester: false, vue: None }
 }
 
 /// L'`Action` qui ouvre la vue `vue` de sa route, sur `charge`.
-pub(crate) fn vers(vue: VueDuGeste, charge: impl Into<ChargeDuGeste>, puis: Option<Route>, libelle: String) -> Action {
-    Action { vue: Some(vue), ..action(vue.route(), charge, puis, libelle) }
+pub(crate) fn vers(vue: VueDuGeste, charge: impl Into<ChargeDUneVue>, puis: Option<Route>, libelle: String) -> Action {
+    Action { route: vue.route(), charge: ChargeDeLAction::Vue(charge.into()), puis, libelle, tester: false, vue: Some(vue) }
 }
 
 /// Le compte d'une case : un nombre, ou ce qui est revenu sur ce qui est parti.

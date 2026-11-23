@@ -214,9 +214,10 @@ pub(crate) struct PartieDeLaFiche {
 }
 
 impl<K> CaseDeLaFiche<K> {
-    /// UNE CASE FAITE DE CASES QU'UN ECRAN REND HORS D'UNE FICHE (`EcranRendu` : un contrat de la DSN) : sa cle, son
-    /// libelle, sa valeur, celles de ses parties qui se saisissent, ce que le moteur dit sous elle et ses temps en mots ;
-    /// de base, sur toute la ligne, sans bloc ni aide.
+    /// UNE CASE FAITE DE CASES QU'UN ECRAN OU UNE BOITE DE SAISIE REND HORS D'UNE FICHE (`EcranRendu` : un contrat de la
+    /// DSN ; `imprevus::SaisieDUnImprevu` : le jour et l'heure ou l'on a su l'accident) : sa cle, son libelle, sa valeur,
+    /// celles de ses parties qui se saisissent, ce que le moteur dit sous elle et ses temps en mots ; de base, sur toute
+    /// la ligne, sans bloc ni aide.
     pub(crate) fn de_parties(cle: K, libelle: String, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>, dit: Vec<String>, temps: Option<TempsDeLaCase<String>>) -> CaseDeLaFiche<K> {
         CaseDeLaFiche {
             cle,
@@ -274,20 +275,14 @@ impl<K> CaseDeLaFiche<K> {
         CaseDeLaFiche { largeur: Largeur::Pleine, ..CaseDeLaFiche::de_la_boite(cle, libelle, forme, "", valeur) }
     }
 
-    /// DES RANGEES QU'UN ECRAN REND HORS D'UNE FICHE (les alineas d'un paragraphe d'un modele de contrat) : sa cle, son
-    /// libelle, sa valeur (la liste de ses rangees), les parties de chaque rangee et le bouton qui en ajoute une.
-    pub(crate) fn de_rangees(cle: K, libelle: crate::catalogue::Affiche, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>, ajouter: crate::catalogue::Affiche) -> CaseDeLaFiche<K> {
-        CaseDeLaFiche { forme: Forme::Rangees, parties: Some(parties), ajouter: Some(ajouter.texte().to_string()), ..CaseDeLaFiche::simple(cle, libelle, Forme::Rangees, valeur) }
-    }
-
     /// La meme case, offrant `choix` (une case qui se choisit).
     pub(crate) fn offrant(self, choix: Vec<Choix>) -> CaseDeLaFiche<K> {
         CaseDeLaFiche { choix: Some(choix), ..self }
     }
 
-    /// La meme case, faite des parties `parties` (`Forme::Parties`), sur toute la ligne.
-    pub(crate) fn en_parties(self, parties: Vec<PartieDeLaFiche>) -> CaseDeLaFiche<K> {
-        CaseDeLaFiche { forme: Forme::Parties(&[]), largeur: Largeur::Pleine, parties: Some(parties), ..self }
+    /// Les memes rangees, que le bouton `ajouter` allonge d'une rangee (et que chacune peut quitter).
+    pub(crate) fn ajoutant(self, ajouter: crate::catalogue::Affiche) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { ajouter: Some(ajouter.texte().to_string()), ..self }
     }
 
     /// La meme case, rangee sous « Avancé » (repliee tant qu'on ne l'ouvre pas).
@@ -300,9 +295,10 @@ impl<K> CaseDeLaFiche<K> {
         CaseDeLaFiche { dit, ..self }
     }
 
-    /// DES RANGEES QUI NE S'AJOUTENT NI NE SE RETIRENT (l'avenant que son envoi fait partir) : seules leurs parties se
-    /// saisissent ; sa cle, son libelle, sa valeur (la liste de ses rangees) et les parties de chaque rangee.
-    pub(crate) fn de_rangees_fixes(cle: K, libelle: crate::catalogue::Affiche, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>) -> CaseDeLaFiche<K> {
+    /// DES RANGEES QU'UN ECRAN REND HORS D'UNE FICHE : sa cle, son libelle, sa valeur (la liste de ses rangees) et les
+    /// parties de chaque rangee. Elles ne s'ajoutent ni ne se retirent (l'avenant que son envoi fait partir : seules leurs
+    /// parties se saisissent), sauf `ajoutant` (les alineas d'un paragraphe d'un modele de contrat).
+    pub(crate) fn de_rangees(cle: K, libelle: crate::catalogue::Affiche, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>) -> CaseDeLaFiche<K> {
         CaseDeLaFiche { parties: Some(parties), ..CaseDeLaFiche::simple(cle, libelle, Forme::Rangees, valeur) }
     }
 }
@@ -315,17 +311,12 @@ impl PartieDeLaFiche {
         PartieDeLaFiche { cle: p.cle.to_string(), libelle: p.libelle.texte().to_string(), forme: p.forme, aide: None, exemple: None, prerempli: None, choix, boutons: false, ouverte: p.toujours }
     }
 
-    /// UNE PARTIE D'UNE CASE QU'UNE BOITE DE SAISIE REND (`CaseDeLaFiche::en_parties`), ouverte : son chemin dans la
-    /// valeur, ce qui la precede (la suite du libelle de sa case, « à » : vide, rien), sa forme et ce que le moteur prend
-    /// pour elle vide (`prerempli` : il le propose, la case le montre sans l'ecrire).
-    pub(crate) fn proposee(cle: &str, suite: &'static str, forme: Forme, prerempli: Option<ValeurDeCase>) -> PartieDeLaFiche {
-        PartieDeLaFiche { cle: cle.to_string(), libelle: suite.to_string(), forme, aide: None, exemple: None, prerempli, choix: None, boutons: false, ouverte: true }
-    }
-
-    /// Une partie jour ouverte d'une case qu'un geste fait saisir (`imprevus::GesteDeRoute::en_parties`) : son chemin dans
-    /// la valeur et son libelle, tels que la route les compose (le jour du virement d'une annee de la CASC-SVP).
-    pub(crate) fn jour(cle: String, libelle: String) -> PartieDeLaFiche {
-        PartieDeLaFiche { cle, libelle, forme: Forme::Date, aide: None, exemple: None, prerempli: None, choix: None, boutons: false, ouverte: true }
+    /// UNE PARTIE OUVERTE QUE LA ROUTE COMPOSE, d'une case qu'une boite de saisie rend (`CaseDeLaFiche::de_parties`) ou
+    /// qu'un geste fait saisir (`imprevus::GesteDeRoute::en_parties`) : son chemin dans la valeur, son libelle (la suite du
+    /// libelle de sa case, « à » ; le jour du virement d'une annee de la CASC-SVP ; vide, rien), sa forme et ce que le
+    /// moteur prend pour elle vide (`prerempli` : il le propose, la case le montre sans l'ecrire).
+    pub(crate) fn ouverte(cle: String, libelle: String, forme: Forme, prerempli: Option<ValeurDeCase>) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle, libelle, forme, aide: None, exemple: None, prerempli, choix: None, boutons: false, ouverte: true }
     }
 
     /// Une partie texte ouverte d'une case qu'un ecran rend (`CaseDeLaFiche::de_parties`) : son chemin, son libelle, son

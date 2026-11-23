@@ -510,7 +510,7 @@ fn gestes_d_une_fin(f: &FinLue) -> R<Vec<GesteDEcheance>> {
 }
 
 /// Ce que rend une boite de saisie (`suspension-saisie`, `arret-obligations`).
-pub(crate) const SAISIE_REND: &str = "titre, cases (chacune sa clé, celle d'un champ du geste qui enregistre, son libellé, sa forme, ses choix, sa valeur, ce que le moteur propose, prerempli, et ce qu'il dit sous elle), dit (ce que la boîte dit sous ses cases), enregistrer (sa route, sa charge déjà remplie, où chaque case va sous sa clé, et son libellé)";
+pub(crate) const SAISIE_REND: &str = "titre, cases (chacune sa clé, celle d'un champ du geste qui enregistre, son libellé, sa forme, ses choix, sa valeur, ce que le moteur propose, prerempli, et ce qu'il dit sous elle), dit (ce que la boîte dit sous ses cases), enregistrer (sa route, sa charge déjà remplie, où chaque case va sous sa clé, et son libellé ; aucun quand il ne pourrait que refuser : aucun contrat ce jour-là, le salarié illisible, et dit dit pourquoi)";
 
 /// LA BOITE QUI SAISIT UN IMPREVU, telle qu'une lecture la rend pour les faits deja dits (`suspension-saisie` pour une
 /// absence, `arret-obligations` pour un arret) : son titre, ses cases ouvertes dans l'ordre ou elle les montre (chacune
@@ -523,15 +523,21 @@ pub(crate) struct SaisieDUnImprevu {
     titre: String,
     cases: Vec<CaseDeLaFiche<&'static str>>,
     dit: Vec<String>,
-    enregistrer: EnregistrerLEcran<ChargeDeLaSaisie>,
+    /// Aucun quand il ne pourrait que refuser : aucun contrat ne couvre le jour, ou le salarie ne se lit pas (`dit` dit
+    /// pourquoi, et la boite n'a qu'« Annuler »).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enregistrer: Option<EnregistrerLEcran<ChargeDeLaSaisie>>,
 }
 
 impl SaisieDUnImprevu {
     /// La boite titree `titre`, de ces cases, disant `dit`, enregistree par `route` avec la charge que `salarie` et `contrat`
-    /// remplissent deja.
-    pub(crate) fn de(titre: String, cases: Vec<CaseDeLaFiche<&'static str>>, dit: Vec<String>, route: Route, salarie: Option<SalarieDesigne>, contrat: &ContratDeLaSaisie) -> SaisieDUnImprevu {
+    /// remplissent deja ; sans geste quand le salarie ne se lit pas (`salarie_illisible`) ou qu'aucun contrat ne couvre
+    /// le jour.
+    pub(crate) fn de(titre: String, cases: Vec<CaseDeLaFiche<&'static str>>, dit: Vec<String>, route: Route, salarie: Option<SalarieDesigne>, salarie_illisible: bool, contrat: &ContratDeLaSaisie) -> SaisieDUnImprevu {
+        let ne_peut_que_refuser = salarie_illisible || matches!(contrat, ContratDeLaSaisie::Aucun(_));
         let charge = ChargeDeLaSaisie { salarie, contrat: contrat.porte() };
-        SaisieDUnImprevu { titre, cases, dit, enregistrer: EnregistrerLEcran::a_plat(route, charge, ENREGISTRER) }
+        let enregistrer = (!ne_peut_que_refuser).then(|| EnregistrerLEcran::a_plat(route, charge, ENREGISTRER));
+        SaisieDUnImprevu { titre, cases, dit, enregistrer }
     }
 }
 
@@ -555,8 +561,9 @@ pub(crate) enum ContratDeLaSaisie {
     RienADemander,
     /// Le contrat de la carte d'ou l'on vient, parmi ceux qui couvrent le jour : rien ne se demande, le geste le porte.
     LeSien(NumeroContrat),
-    /// Plusieurs contrats couvrent le jour : la case qui le fait choisir, chacun son numero et ce qu'il dit.
-    AChoisir(Vec<Choix>),
+    /// Plusieurs contrats couvrent le jour : la case qui le fait choisir, chacun son numero et ce qu'il dit (aucune case
+    /// quand aucun n'a de numero) ; et, pour chaque contrat qui n'a pas encore de numero, la phrase qui le dit.
+    AChoisir { choix: Vec<Choix>, sans_numero: Vec<String> },
     /// Aucun contrat ne couvre le jour : la phrase qui le dit (il n'y a rien a suspendre).
     Aucun(String),
 }
@@ -569,7 +576,7 @@ impl ContratDeLaSaisie {
     fn porte(&self) -> Option<NumeroContrat> {
         match self {
             ContratDeLaSaisie::LeSien(n) => Some(n.clone()),
-            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::AChoisir(_) | ContratDeLaSaisie::Aucun(_) => None,
+            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::AChoisir { .. } | ContratDeLaSaisie::Aucun(_) => None,
         }
     }
 
@@ -578,24 +585,28 @@ impl ContratDeLaSaisie {
     pub(crate) fn voulu(&self, choisi: Option<&NumeroContrat>) -> Option<NumeroContrat> {
         match self {
             ContratDeLaSaisie::LeSien(n) => Some(n.clone()),
-            ContratDeLaSaisie::AChoisir(_) => choisi.cloned(),
+            ContratDeLaSaisie::AChoisir { .. } => choisi.cloned(),
             ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::Aucun(_) => None,
         }
     }
 
-    /// La case qui le fait choisir (sous la cle `cle`, montrant `choisi`), quand la boite le demande.
+    /// La case qui le fait choisir (sous la cle `cle`, montrant `choisi`), quand la boite le demande et qu'un contrat a
+    /// de quoi se choisir (son numero).
     pub(crate) fn case(&self, cle: &'static str, choisi: Option<&NumeroContrat>) -> Option<CaseDeLaFiche<&'static str>> {
         match self {
-            ContratDeLaSaisie::AChoisir(choix) => Some(CaseDeLaFiche::de_la_boite(cle, QUEL_CONTRAT, crate::catalogue::Forme::ChoixRendu, "", choisi.and_then(ValeurDeCase::de)).offrant(choix.clone())),
-            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::LeSien(_) | ContratDeLaSaisie::Aucun(_) => None,
+            ContratDeLaSaisie::AChoisir { choix, .. } if !choix.is_empty() => {
+                Some(CaseDeLaFiche::de_la_boite(cle, QUEL_CONTRAT, crate::catalogue::Forme::ChoixRendu, "", choisi.and_then(ValeurDeCase::de)).offrant(choix.clone()))
+            }
+            ContratDeLaSaisie::AChoisir { .. } | ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::LeSien(_) | ContratDeLaSaisie::Aucun(_) => None,
         }
     }
 
-    /// Ce que la boite en dit : qu'aucun contrat ne couvre le jour.
+    /// Ce que la boite en dit : qu'aucun contrat ne couvre le jour ; qu'un contrat a choisir n'a pas encore de numero.
     pub(crate) fn dit(&self) -> Option<String> {
         match self {
             ContratDeLaSaisie::Aucun(p) => Some(p.clone()),
-            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::LeSien(_) | ContratDeLaSaisie::AChoisir(_) => None,
+            ContratDeLaSaisie::AChoisir { sans_numero, .. } if !sans_numero.is_empty() => Some(sans_numero.join(" ")),
+            ContratDeLaSaisie::AChoisir { .. } | ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::LeSien(_) => None,
         }
     }
 }
@@ -618,19 +629,24 @@ pub(crate) fn contrat_de_la_saisie(ctx: &Contexte, cle: Option<&IdSalarie>, jour
         return Ok(ContratDeLaSaisie::LeSien(n));
     }
     // Chaque contrat se dit en une ligne : son numero et sa periode ; un contrat sans numero ne se designe pas (la charge
-    // le nomme par son numero), il ne s'offre pas.
-    let choix = contrats
-        .iter()
-        .filter_map(|k| {
-            let numero = k.numero.as_ref()?;
-            let periode = match k.periode.fin() {
-                Some(f) => format!("du {} au {}", k.periode.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
-                None => format!("depuis le {}", k.periode.debut().jj_mm_aaaa()),
-            };
-            Some(Choix::de(numero, format!("{}, {}", numero, periode)))
-        })
-        .collect();
-    Ok(ContratDeLaSaisie::AChoisir(choix))
+    // le nomme par son numero), il ne s'offre pas : la boite dit qu'il recoit son numero a la validation de son
+    // engagement (`engagement::numeros::a_la_validation`).
+    let (mut choix, mut sans_numero) = (Vec::new(), Vec::new());
+    for k in &contrats {
+        let periode = match k.periode.fin() {
+            Some(f) => format!("du {} au {}", k.periode.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+            None => format!("depuis le {}", k.periode.debut().jj_mm_aaaa()),
+        };
+        match &k.numero {
+            Some(numero) => choix.push(Choix::de(numero, format!("{}, {}", numero, periode))),
+            None => sans_numero.push(format!(
+                "Le contrat de {} {} n'a pas encore de numéro : il le reçoit à la validation de son engagement. Validez-le, puis choisissez-le ici.",
+                ctx.nomme(cle),
+                periode
+            )),
+        }
+    }
+    Ok(ContratDeLaSaisie::AChoisir { choix, sans_numero })
 }
 
 /// Le titre d'une boite de saisie : ce qu'elle saisit, et pour qui (le nom du salarie, quand il se lit).
@@ -687,13 +703,14 @@ fn suspension_saisie(ctx: &Contexte, c: ChargeSuspensionSaisie) -> R<ReponseSais
             .offrant(motifs),
     );
     cases.push(case_de_la_note(cle!(ChargeSuspensionEnregistrer, note), c.note.as_ref()));
+    let salarie_illisible = illisible.is_some();
     let dit: Vec<String> = [illisible, contrat.dit(), Some("Saisie une fois : chaque mois qu'elle traverse la déclare et, si elle n'est pas payée, en retire le salaire.".to_string())]
         .into_iter()
         .flatten()
         .collect();
     let titre = titre_de_la_saisie(ctx, "Une absence", cle.as_ref());
     let phrase = socle::phrase!("{} : {} cases.", titre, cases.len());
-    Ok(ReponseSaisieDUneAbsence { phrase, boite: SaisieDUnImprevu::de(titre, cases, dit, Route::SuspensionEnregistrer, c.salarie, &contrat) })
+    Ok(ReponseSaisieDUneAbsence { phrase, boite: SaisieDUnImprevu::de(titre, cases, dit, Route::SuspensionEnregistrer, c.salarie, salarie_illisible, &contrat) })
 }
 
 /// Ce que rend un geste sur un arret : l'arret resume, et ce qui se lit du geste ; un arret qu'on vient d'enregistrer, ce

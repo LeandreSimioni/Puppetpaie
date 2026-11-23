@@ -130,11 +130,11 @@ const TABLEAU: &str = "tableau";
 /// rendue telle quelle (resultat ou refus), au format d'une reponse de la page. Le mois a ouvrir y est aussi, lu en sa
 /// forme (`etapes::le_mois_a_ouvrir`). Ce qui vit dans la memoire de la fenetre (la veille, la mise a jour) et ce que
 /// l'ecran ne garde pas (`journal/signalements.json`) se lit a chaque ouverture, a cote (`interface/api.rs`).
-const LECTURES_OUVERTURE: [(Route, &str); 6] = [
+/// `rappels` et `pour-demarrer` y sont aussi, faites ensemble : la liste de « Pour démarrer » ne se calcule qu'une fois
+/// (`rappels::rappels_et_pour_demarrer`).
+const LECTURES_OUVERTURE: [(Route, &str); 4] = [
     (Route::Etat, "{}"),
     (Route::Echeancier, "{}"),
-    (Route::Rappels, "{}"),
-    (Route::PourDemarrer, "{}"),
     (Route::ConseilsResume, "{}"),
     (Route::ConseilDuJour, r#"{"decalage": 0}"#),
 ];
@@ -642,6 +642,14 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: Empreinte) -> R<E
         lectures.insert(route.nom().to_string(), lecture(o, route, &c));
     }
     compagnie::incidents::brancher_l_engagement();
+    let (rappels, pour_demarrer) = {
+        // Une lecture, comme une route servie (`servir_la_route`) : le code et la compagnie lus une fois.
+        let (_code, _geste) = (socle::fichiers::code_fige(), socle::forme::geste());
+        crate::rappels::rappels_et_pour_demarrer(ctx)
+    };
+    for (route, rendu) in [(Route::Rappels, rappels), (Route::PourDemarrer, pour_demarrer)] {
+        lectures.insert(route.nom().to_string(), socle::ecriture::json_en_ligne(&Reponse::de(route, rendu)));
+    }
     let (ouvre, reponse) = match crate::etapes::le_mois_a_ouvrir(ctx) {
         Ok((m, rendu)) => (Some(m), Reponse::de(Route::MoisAOuvrir, Ok(rendu))),
         Err(e) => (None, Reponse::de(Route::MoisAOuvrir, Err(e))),

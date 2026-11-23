@@ -446,8 +446,9 @@ function dessinerLivre(r, apercu) {
   const cible = document.getElementById("exports-resultat");
   const l = r.ecran.livre;
   const classe = { sous_total: "sous-total", total_general: "total-general" };
+  // Une cellule qui ne dit rien (`null`) reste vide.
   const cellule = (t, c, gras) => `<td${c.a_droite ? ' class="r"' : c.discrete ? ' class="discret"' : ""}>${
-    gras && t && !c.discrete ? `<b>${echapper(t)}</b>` : echapper(t)}</td>`;
+    t == null ? "" : gras && !c.discrete ? `<b>${echapper(t)}</b>` : echapper(t)}</td>`;
   const corps = l.rangees.map((x) => `<tr${classe[x.sorte] ? ` class="${classe[x.sorte]}"` : ""}>${
     x.cellules.map((t, i) => cellule(t, l.colonnes[i], x.sorte !== "ligne")).join("")}</tr>`).join("");
   cible.innerHTML = `

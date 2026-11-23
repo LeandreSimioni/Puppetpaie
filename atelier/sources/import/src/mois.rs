@@ -21,7 +21,7 @@ use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, Lig
 use envois::etats;
 use socle::date::{Jour, Periode};
 use socle::echec::R;
-use socle::ecran::EtatDEcran;
+use socle::ecran::{ColonneRendue, EtatDEcran, QuandDeLaCarte, RangeeRendue, SorteDeRangee};
 use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::Cachets;
@@ -160,8 +160,8 @@ fn spectacle_de(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<(IdSpec
 /// LA PERIODE D'UN CONTRAT IMPORTE DANS `mois`, en clair, quand le bulletin ne dit pas ses jours : « 20–27 » pour un
 /// contrat qui commence et finit dans le mois (le 1er quand il a commence avant), « 20/11 – 03/12 » pour un contrat a
 /// cheval sur un autre mois (« 01/09/2022 – 31/12 » quand il a commence une autre annee), « … » pour une borne que
-/// l'import n'a pas lue.
-fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
+/// l'import n'a pas lue. Vrai avec elle : la periode est a cheval sur un autre mois (elle se dit eparse).
+fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> (String, bool) {
     let dans = |j: &Jour| mois.contient(j);
     let dehors = d.as_ref().is_some_and(|j| !dans(j)) || f.as_ref().is_some_and(|j| !dans(j));
     let borne = |j: Option<&Jour>, inconnue: &str| match j {
@@ -172,9 +172,9 @@ fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
     };
     let (a, b) = (borne(d.as_ref(), if dehors { "…" } else { "1" }), borne(f.as_ref(), "…"));
     match (a == b, dehors) {
-        (true, _) => a,
-        (false, true) => format!("{} – {}", a, b),
-        (false, false) => format!("{}–{}", a, b),
+        (true, _) => (a, false),
+        (false, true) => (format!("{} – {}", a, b), true),
+        (false, false) => (format!("{}–{}", a, b), false),
     }
 }
 
@@ -263,17 +263,16 @@ pub struct CarteImportee {
     pub(crate) etats: EtatsDeCarte,
 }
 
-/// LA CARTE FERMEE : quand (les jours travailles, ou la periode du contrat, et au survol leurs dates ; `epars` : des
-/// jours qui ne se suivent pas, ou une periode a cheval sur un autre mois), le mois abrege ; qui (le nom, le mot
+/// LA CARTE FERMEE : quand (`QuandDeLaCarte` : les jours travailles, ou la periode du contrat, et au survol leurs dates,
+/// comme sur la carte d'un engagement) ; qui (le nom, le mot
 /// « importé », les pieces lues au survol) ; quoi ; ses pastilles ; le montant que la carte dit (le net a payer ; sans
 /// lui, le brut, que son mot precede) et ce qu'il est, au survol.
 #[derive(Debug, Clone, Serialize)]
 struct ResumeDeLaCarte {
-    quand: String,
-    quand_titre: String,
-    epars: bool,
-    mois: &'static str,
-    nom: String,
+    quand: QuandDeLaCarte,
+    /// Le nom du salarie ; aucun : ni la piece ni la fiche ne le disent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nom: Option<String>,
     mot: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     origine_dit: Option<String>,
@@ -325,15 +324,8 @@ struct CaseLue {
 /// ce que le bulletin n'imprime pas).
 #[derive(Debug, Clone, Serialize)]
 struct LignesDeLaCarte {
-    colonnes: [ColonneDesLignes; 4],
-    rangees: Vec<[String; 4]>,
-}
-
-/// Une colonne des lignes du bulletin.
-#[derive(Debug, Clone, Serialize)]
-struct ColonneDesLignes {
-    libelle: &'static str,
-    nombre: bool,
+    colonnes: Vec<ColonneRendue>,
+    rangees: Vec<RangeeRendue>,
 }
 
 /// Ce que dit une carte dont la periode est lue sans ses jours, au survol de « quand ».
@@ -343,28 +335,6 @@ const BRUT_SEUL: &str = "Le brut : le net à payer n'est pas lu.";
 /// Ou lire pourquoi une case n'est pas lue.
 const POURQUOI_NON_LU: &str = "Un clic sur la carte montre ses cases, et sous chacune pourquoi.";
 
-/// Des jours d'un mois, en clair et au plus court : « 6 », « 21–23 », « 14 · 15 · 17 · 18 » ; des jours qui se suivent
-/// font une plage.
-fn jours_en_clair(jours: &[Jour]) -> R<String> {
-    let mut suivis = true;
-    for w in jours.windows(2) {
-        suivis &= w[0].apres(socle::date::Duree::jours(1))? == w[1];
-    }
-    Ok(match (jours.first(), jours.last()) {
-        (None, _) | (_, None) => String::new(),
-        (Some(a), Some(b)) if jours.len() == 1 || a == b => a.quantieme_ecrit(),
-        (Some(a), Some(b)) if suivis => format!("{}–{}", a.quantieme_ecrit(), b.quantieme_ecrit()),
-        _ => jours.iter().map(Jour::quantieme_ecrit).collect::<Vec<_>>().join(" · "),
-    })
-}
-
-/// Ce qu'une cellule de la carte montre d'une valeur : son texte ; rien (une cellule vide) quand la piece ne la dit pas.
-fn ou_vide(t: Option<String>) -> String {
-    match t {
-        Some(t) => t,
-        None => String::new(),
-    }
-}
 
 /// La piece qui atteste un contrat, ecrite comme la carte la montre.
 fn attestation_dite(a: Attestation) -> &'static str {
@@ -549,9 +519,13 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     };
 
     // QUAND : les jours travailles que le bulletin imprime ; sans eux, la periode du contrat.
-    let (quand, quand_titre) = match dates.is_empty() {
-        false => (jours_en_clair(&dates)?, dates.iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", ")),
-        true => (periode_en_clair(debut, fin, mois), DATES_NON_LUES.to_string()),
+    // EPARS : des jours qui ne se suivent pas, ou une periode a cheval sur un autre mois.
+    let quand = match dates.is_empty() {
+        false => QuandDeLaCarte::des_jours(&dates, mois)?,
+        true => {
+            let (jours, epars) = periode_en_clair(debut, fin, mois);
+            QuandDeLaCarte { jours, epars, titre: DATES_NON_LUES.to_string(), mois: mois.nom(Graphie::Abregee) }
+        }
     };
     // LE MONTANT : le net a payer ; sans lui (une DSN seule ne le declare pas), le brut, et la carte le dit.
     let (montant_dit, montant_mot) = match (montant("net_a_payer"), montant("brut")) {
@@ -560,11 +534,8 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         (None, None) => (None, None),
     };
     let resume = ResumeDeLaCarte {
-        epars: quand.contains(" · ") || quand.contains(" – "),
         quand,
-        quand_titre,
-        mois: mois.nom(Graphie::Abregee),
-        nom: ou_vide(nom.clone()),
+        nom: nom.clone(),
         mot: "importé",
         origine_dit,
         quoi_dit,
@@ -621,21 +592,21 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     }
 
     // LES LIGNES DU BULLETIN : ce que chacune paie, telle qu'une phrase le dit, et son montant.
-    let lignes: Vec<[String; 4]> = p
+    let lignes: Vec<RangeeRendue> = p
         .iter()
         .flat_map(|p| p.lignes.iter())
-        .map(|l: &LigneImprimee| {
-            [
-                l.libelle.clone(),
-                ou_vide(l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite)),
-                ou_vide(l.paiement.map(|x| x.taux().dit())),
-                ou_vide(l.montant.map(socle::texte::euros)),
-            ]
+        .map(|l: &LigneImprimee| RangeeRendue {
+            sorte: SorteDeRangee::Ligne,
+            cellules: vec![
+                Some(l.libelle.clone()),
+                l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite),
+                l.paiement.map(|x| x.taux().dit()),
+                l.montant.map(socle::texte::euros),
+            ],
         })
         .collect();
-    let colonne = |libelle, nombre| ColonneDesLignes { libelle, nombre };
     let lignes = (!lignes.is_empty()).then(|| LignesDeLaCarte {
-        colonnes: [colonne("Ligne du bulletin", false), colonne("Quantité", true), colonne("Taux", true), colonne("Montant", true)],
+        colonnes: vec![ColonneRendue::de_texte("Ligne du bulletin"), ColonneRendue::de_nombres("Quantité"), ColonneRendue::de_nombres("Taux"), ColonneRendue::de_nombres("Montant")],
         rangees: lignes,
     });
     Ok(CarteImportee { salarie, resume, non_lu, cases, lignes, debut, nom, bulletin, etats })

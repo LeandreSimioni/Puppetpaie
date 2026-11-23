@@ -50,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie a à faire ce jour : DSN, fins de contrat, DPAE…",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; les spectacles que sa revue demande, chacun dit avec son numéro d'objet ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton, la vue qu'il ouvre quand la route en a deux ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait », choisir les spectacles qui continuent), fermer_dit : le bouton qui ferme la boîte",
+        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; les spectacles que sa revue demande, chacun dit avec son numéro d'objet ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton, la vue qu'il ouvre quand la route en a deux ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait », choisir les spectacles qui continuent), fermer_dit : le bouton qui ferme la boîte ; ouvrir_a_l_ouverture : vrai quand il y a quelque chose à montrer (un rappel, une échéance du mois à faire, une ligne de « Pour démarrer » ou son refus, ce qu'une DSN donnerait)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les échéances du mois et de l'année.",
         charge: &SansCharge::CHARGE,
         exemple: "{}",
-        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ouvrir_a_l_ouverture : vrai quand il y a quelque chose à faire (un rappel, une échéance du mois, une ligne de « Pour démarrer », ce qu'une DSN donnerait) ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_mois (l'année qui vient, mois par mois : le mois et les titres de ce qui y tombe)",
+        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_mois (l'année qui vient, mois par mois : le mois et les titres de ce qui y tombe)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -222,9 +222,13 @@ impl Ord for CleDEcheance {
 #[derive(Debug, Serialize)]
 pub(crate) struct Rappels {
     phrase: Phrase,
-    pub(crate) rappels: Vec<EcheanceDite>,
+    rappels: Vec<EcheanceDite>,
     /// La boite des rappels se ferme « plus tard » quand il y a quelque chose a faire.
     fermer_dit: &'static str,
+    /// LA BOITE DE L'OUVERTURE S'OUVRE-T-ELLE : quand il y a quelque chose a montrer, et seulement alors (un rappel du, une
+    /// echeance du mois a faire, une ligne de « Pour démarrer », ce qu'une DSN pourrait donner). « Pour démarrer » refuse :
+    /// la boite s'ouvre aussi, et son refus se dit a sa place.
+    ouvrir_a_l_ouverture: bool,
     phrases: Vec<String>,
 }
 
@@ -245,9 +249,6 @@ struct Echeancier {
     ce_mois: Vec<EcheanceDite>,
     a_venir: Vec<EcheanceDite>,
     a_faire: usize,
-    /// LA BOITE DE L'OUVERTURE S'OUVRE-T-ELLE : quand il y a quelque chose a faire, et seulement alors (un rappel du, une
-    /// echeance du mois a faire, une ligne de « Pour démarrer », ce qu'une DSN pourrait donner).
-    ouvrir_a_l_ouverture: bool,
     /// CE QUE L'ECRAN EN MONTRE, sous la date et la bienvenue, dans cet ordre : « Ce mois-ci » (aucun titre quand tout ce
     /// qui est du ce mois, un rappel le dit), ses echeances, ou « Rien à faire » ; puis « L'année qui vient » et ses
     /// echeances. Une chose se dit une fois : une echeance qu'un rappel dit n'est pas un rang du mois.
@@ -361,7 +362,7 @@ impl Dite for Faite {
 /// CE QUE LA COMPAGNIE PEUT REMPLIR D'AVANCE (`declarations::demarrage::route`), avec les acces aux organismes et le
 /// Drive qui se proposent (`acces_proposes`), et la pastille de ce qui est simule quand rien ne part de la compagnie. Ce
 /// qu'une DSN pourrait donner se range a part quand l'import n'en a repris aucune.
-fn pour_demarrer(ctx: &Contexte) -> socle::echec::R<(declarations::demarrage::PourDemarrer, Option<Pastille>)> {
+fn pour_demarrer(ctx: &Contexte) -> DemarrageLu {
     let (proposes, simules) = acces_proposes(ctx)?;
     let (simule, pastille_simulee) = match simules {
         Some((pose, pastille)) => (Some(pose), Some(pastille)),
@@ -377,7 +378,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         Route::Rappels => {
             let SansCharge {} = charge.lire()?;
-            en_json(rappels(ctx)?)
+            en_json(rappels(ctx, &pour_demarrer(ctx))?)
         }
         Route::Echeancier => {
             let SansCharge {} = charge.lire()?;
@@ -385,46 +386,57 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::RevueSpectacles => en_json(revue_spectacles(ctx, charge.lire()?)?),
         Route::EcheanceFaite => en_json(echeance_faite(ctx, charge.lire()?)?),
-        // Ce que la compagnie peut remplir d'avance, d'un coup ; ce que le moteur a pose de lui-meme se dit en information
-        // (gris) ; les acces aux organismes et le Drive se proposent (`acces_proposes`).
         Route::PourDemarrer => {
             let SansCharge {} = charge.lire()?;
-            let (d, pastille_simulee) = pour_demarrer(ctx)?;
-            // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
-            let n = d.poses.len();
-            let poses: Vec<PoseVue> = d
-                .poses
-                .into_iter()
-                .enumerate()
-                .map(|(i, pose)| {
-                    let pastille = match (&pastille_simulee, i + 1 == n) {
-                        (Some(p), true) => p.clone(),
-                        _ => Pastille::de(socle::ecran::EtatDEcran::Information, "posé pour vous"),
-                    };
-                    PoseVue { pose, pastille }
-                })
-                .collect();
-            // Les listes de la fiche d'un salarie se lisent une fois pour toutes les lignes.
-            let listes = std::cell::OnceCell::new();
-            let manques: Vec<ManqueVu> = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
-            let poses_titre = (!poses.is_empty()).then_some("Posé pour vous");
-            let enregistrer = manques.iter().any(|m| m.case_rendue.is_some() || !m.a_enregistrer.is_empty()).then_some("Enregistrer");
-            en_json(PourDemarrerVu {
-                phrase: socle::phrase!("{}", d.phrase),
-                phrases: d.phrases,
-                titre: d.titre,
-                note: d.note,
-                manques,
-                dsn: d.dsn,
-                poses,
-                poses_titre,
-                trouver_dit: "Où le trouver",
-                enregistrer,
-                configuration_dit: "Ouvrir la configuration",
-            })
+            en_json(pour_demarrer_vu(ctx, pour_demarrer(ctx)?)?)
         }
         autre => Err(route_inconnue(autre.nom())),
     }
+}
+
+/// LES DEUX LECTURES DE L'OUVERTURE QUI DISENT « POUR DÉMARRER » (`etat_garde`), d'un seul calcul de sa liste : `rappels`
+/// (qu'elle ouvre la boite, ou son refus) et `pour-demarrer`.
+pub(crate) fn rappels_et_pour_demarrer(ctx: &Contexte) -> (R<Rendu>, R<Rendu>) {
+    let demarrage = pour_demarrer(ctx);
+    let rappels = rappels(ctx, &demarrage).and_then(en_json);
+    (rappels, demarrage.and_then(|d| pour_demarrer_vu(ctx, d)).and_then(en_json))
+}
+
+/// `pour-demarrer` : ce que la compagnie peut remplir d'avance, d'un coup ; ce que le moteur a pose de lui-meme se dit en
+/// information (gris) ; les acces aux organismes et le Drive se proposent (`acces_proposes`).
+fn pour_demarrer_vu(ctx: &Contexte, (d, pastille_simulee): (declarations::demarrage::PourDemarrer, Option<Pastille>)) -> R<PourDemarrerVu> {
+    // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
+    let n = d.poses.len();
+    let poses: Vec<PoseVue> = d
+        .poses
+        .into_iter()
+        .enumerate()
+        .map(|(i, pose)| {
+            let pastille = match (&pastille_simulee, i + 1 == n) {
+                (Some(p), true) => p.clone(),
+                _ => Pastille::de(socle::ecran::EtatDEcran::Information, "posé pour vous"),
+            };
+            PoseVue { pose, pastille }
+        })
+        .collect();
+    // Les listes de la fiche d'un salarie se lisent une fois pour toutes les lignes.
+    let listes = std::cell::OnceCell::new();
+    let manques: Vec<ManqueVu> = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
+    let poses_titre = (!poses.is_empty()).then_some("Posé pour vous");
+    let enregistrer = manques.iter().any(|m| m.case_rendue.is_some() || !m.a_enregistrer.is_empty()).then_some("Enregistrer");
+    Ok(PourDemarrerVu {
+        phrase: socle::phrase!("{}", d.phrase),
+        phrases: d.phrases,
+        titre: d.titre,
+        note: d.note,
+        manques,
+        dsn: d.dsn,
+        poses,
+        poses_titre,
+        trouver_dit: "Où le trouver",
+        enregistrer,
+        configuration_dit: "Ouvrir la configuration",
+    })
 }
 
 /// Archive les spectacles actifs qui ne sont pas dans
@@ -722,6 +734,12 @@ impl Echeance {
         self.quand_dit = format!("le {}", jour.jj_mm_aaaa());
     }
 
+    /// A FAIRE CE MOIS-CI, SANS QU'UN RAPPEL LA DISE : elle tombe ce mois (`courant`), n'est pas due, et n'est pas faite.
+    /// L'echeancier les compte (`a_faire`) ; elles ouvrent la boite de l'ouverture (`rappels`).
+    fn a_faire_dans(&self, courant: Mois) -> bool {
+        !self.due && self.tombe == Some(courant) && matches!(self.etat, AFaire | EnRetard)
+    }
+
     /// Ce sur quoi l'echeancier la range : son dernier jour, ou le mois ou elle tombe (en texte : « 2026-11-05 » se range
     /// apres « 2026-11 »).
     fn rang(&self) -> Option<String> {
@@ -925,10 +943,32 @@ impl Etat<'_> {
     }
 }
 
-/// `rappels` : les echeances dues maintenant (`echeances`, `due`), dans l'ordre ou elles se font, au jour de la compagnie.
-pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
+/// Les echeances dues maintenant (`due`), dites, dans l'ordre ou elles se font : les rappels.
+fn dues(tout: &[Echeance]) -> R<Vec<EcheanceDite>> {
+    tout.iter().filter(|e| e.due).map(Echeance::dite).collect()
+}
+
+/// Les rappels de la compagnie au jour de `ctx` (le tableau de l'administrateur les lit).
+pub(crate) fn rappels_dus(ctx: &Contexte) -> R<Vec<EcheanceDite>> {
+    dues(&echeances(&Etat::de(ctx)?)?)
+}
+
+/// Ce que « Pour démarrer » a dit (`pour_demarrer`), ou son refus.
+type DemarrageLu = R<(declarations::demarrage::PourDemarrer, Option<Pastille>)>;
+
+/// `rappels` : les echeances dues maintenant (`echeances`, `due`), dans l'ordre ou elles se font, au jour de la compagnie,
+/// et si la boite de l'ouverture s'ouvre, d'apres elles, ce qui est a faire ce mois-ci et ce que « Pour démarrer » a dit
+/// (`demarrage` : son refus ne ferme rien, il ouvre la boite, ou il se dit).
+fn rappels(ctx: &Contexte, demarrage: &DemarrageLu) -> socle::echec::R<Rappels> {
     let st = Etat::de(ctx)?;
-    let rappels: Vec<EcheanceDite> = echeances(&st)?.iter().filter(|e| e.due).map(Echeance::dite).collect::<R<_>>()?;
+    let tout = echeances(&st)?;
+    let rappels = dues(&tout)?;
+    let courant = st.aujourdhui.mois_civil();
+    let demarrage_a_quelque_chose = match demarrage {
+        Ok((d, _)) => !d.manques.is_empty() || d.dsn.is_some(),
+        Err(_) => true,
+    };
+    let ouvrir_a_l_ouverture = !rappels.is_empty() || tout.iter().any(|e| e.a_faire_dans(courant)) || demarrage_a_quelque_chose;
     let mut phrases: Vec<String> = rappels
         .iter()
         .map(|r| {
@@ -941,6 +981,7 @@ pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
         phrase: socle::phrase!("Rappels : {}.", rappels.len()),
         fermer_dit: if rappels.is_empty() { "Fermer" } else { "Plus tard" },
         rappels,
+        ouvrir_a_l_ouverture,
         phrases,
     })
 }
@@ -992,10 +1033,7 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         Some(c) => socle::phrase!("{} : {} ce mois-ci, {} à venir.", c, ce_mois_dit, a_venir_dit),
         None => socle::phrase!("{} ce mois-ci, {} à venir.", ce_mois_dit, a_venir_dit),
     };
-    let a_faire = ce_mois.iter().filter(|x| !x.due && matches!(x.etat, AFaire | EnRetard)).count();
-    // Les rappels sont les echeances dues (`rappels`) ; ce que « Pour démarrer » demande se lit de sa route.
-    let (demarrage, _) = pour_demarrer(ctx)?;
-    let ouvrir_a_l_ouverture = ce_mois.iter().any(|e| e.due) || a_faire > 0 || !demarrage.manques.is_empty() || demarrage.dsn.is_some();
+    let a_faire = ce_mois.iter().filter(|x| x.a_faire_dans(courant)).count();
     // CE QUI EST FAIT NE SE RAPPELLE PAS : une echeance faite se tait, sauf celle qui se coche, qui reste pour se
     // decocher ; faite, elle ne dit plus ni quand ni quoi. UNE CHOSE SE DIT UNE FOIS : celle qu'un rappel dit, avec sa date
     // et son geste, n'est pas un rang du mois.
@@ -1040,7 +1078,6 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         ce_mois,
         a_venir,
         a_faire,
-        ouvrir_a_l_ouverture,
         ce_mois_titre,
         ce_mois_rangs,
         ce_mois_vide,

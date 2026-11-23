@@ -29,9 +29,9 @@ async function montrerRappels(lu = api) {
   try { manques = await lireDemarrage(lu); } catch (e) { dire(e.message, "erreur"); }
   const liste = r.rappels;
   // L'ÉCHÉANCIER : « un pop-up au démarrage : on est le…,
-  // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle n'apparaît que s'il y a quelque chose à faire, et
-  // c'est l'échéancier qui le dit (`ouvrir_a_l_ouverture`) ; refusé, il ne dit rien, et la boîte ne s'ouvre pas.
-  if (!ech || !ech.ouvrir_a_l_ouverture) return;
+  // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle n'apparaît que s'il y a quelque chose à montrer, et
+  // ce sont les rappels qui le disent (`ouvrir_a_l_ouverture`).
+  if (!r.ouvrir_a_l_ouverture) return;
   // Ce qu'une DSN pourrait donner compte dans ce que la boîte a montré : qu'il change, et elle se rouvre.
   RAPPELS_MONTRES = { liste, ech, manques, dsn: DEMARRAGE.dsn };
   if (dejaMontres(RAPPELS_MONTRES)) return;
@@ -144,12 +144,16 @@ function htmlDemarrage(manques) {
     </div>${htmlPoses()}`;
 }
 let DEMARRAGE_LISTES = 0;   // chaque liste peinte a son numéro : ses cases se lisent chez elle
+const DEPART_DES_LIGNES = new WeakMap();   // ce que dit chaque ligne à l'ouverture de sa liste (`casesDuBloc`)
 
 /* Les cases dessinées d'une liste : ce qu'une case de route fait seule (un calendrier, une rangée). Chaque liste est un
  * écran retenu (`retenirLEcran`) : la quitter avec une saisie non enregistrée se demande ; une valeur que le moteur
  * propose remplit sa case dès l'ouverture, elle n'est donc pas un changement. Jeter relit la liste. */
 function brancherDemarrage(conteneur) {
-  conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => brancherLesCases(li));
+  conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => {
+    brancherLesCases(li);
+    DEPART_DES_LIGNES.set(li, casesDuBloc(li));
+  });
   conteneur.querySelectorAll(".demarrage-liste").forEach((liste) => {
     retenirLEcran(liste, { enregistrer: () => enregistrerDemarrage(liste), jeter: repeindreDemarrage });
   });
@@ -175,6 +179,9 @@ function changementsDemarrage(liste) {
   liste.querySelectorAll("[data-demarrage]").forEach((li) => {
     const m = DEMARRAGE.manques[+li.dataset.demarrage];
     if (!m || !seRemplitIci(m)) return;
+    // NE PART QUE CE QUI A CHANGÉ depuis l'ouverture de la liste, et ce que le moteur propose (`propose` : la fiche ne
+    // l'a pas encore, « Enregistrer » le valide).
+    if (m.propose == null && casesDuBloc(li) === DEPART_DES_LIGNES.get(li)) return;
     const cle = JSON.stringify(m.enregistrer);
     const e = parEcriture.get(cle) || { route: m.enregistrer.route, charge: m.enregistrer.charge, donnees: {} };
     lesCasesLues(li.querySelector(".demarrage-case")).forEach(([c, v]) => {
@@ -209,7 +216,8 @@ async function enregistrerDemarrage(liste) {
         if (!reponse) { if (bouton) bouton.disabled = false; return false; }
         r = await api(route, { ...charge, ...reponse, confirme: true });
       }
-      phrase = r.phrase;
+      // La phrase dite à la fin : celle de la dernière réponse qui a écrit (une fiche dit ses cases écrites, `ecrits`).
+      if (r.ecrits.length) phrase = r.phrase;
     }
     for (const g of gestes) phrase = (await api(g.route, g.charge)).phrase;
   } catch (e) {
@@ -223,7 +231,7 @@ async function enregistrerDemarrage(liste) {
     return false;
   }
   await relireEtat();
-  dire(phrase);
+  if (phrase) dire(phrase);
   await repeindreDemarrage();
   return true;
 }
