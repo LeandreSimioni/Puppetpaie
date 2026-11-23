@@ -792,8 +792,9 @@ pub(crate) fn activer_fiche(ctx: &Contexte, c: &ChargeActiver) -> R<()> {
     }
 }
 
-/// Le temps sans engagement apres lequel un spectacle se range dans les archives.
-const SANS_ENGAGEMENT: socle::date::Duree<socle::date::EnMois> = socle::date::Duree::mois(24);
+/// Le temps sans engagement apres lequel un spectacle se range dans les archives : le meme seuil que l'import
+/// (`import::derniere_piece::RECENTE`), une seule duree.
+const SANS_ENGAGEMENT: socle::date::Duree<socle::date::EnMois> = import::derniere_piece::RECENTE;
 
 /// LES SPECTACLES QUE LE TEMPS RANGE (Léandre, ticket #621 : « si jamais on n'a pas fait un spectacle dans les 12 mois,
 /// ils s'archivent automatiquement. Mais si on continue de les jouer, ils continuent d'exister et on peut toujours les
