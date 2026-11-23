@@ -259,10 +259,19 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     }
     let mut sortie = Vec::new();
     for ((cotisation, grandeur, logiciel), (libelles, cas)) in ecarts {
+        // CE QUE LE RESUME DIT SE LIT EN MOTS (il se montre a l'ecran, `incidents-lire`) : les libelles que le bulletin
+        // imprime, ou le nom du total ; la cle de la cotisation reste dans le genre et le detail.
+        let nommee = match (&cotisation, libelles.is_empty()) {
+            (RegroupementDeComparaison::Total(t), _) => t.dit().to_string(),
+            (_, false) => libelles.join(" ; "),
+            (RegroupementDeComparaison::Autres, true) => "les autres contributions dues par l'employeur".to_string(),
+            (RegroupementDeComparaison::Convention, true) => "les cotisations de la convention collective".to_string(),
+            (RegroupementDeComparaison::Apec, true) => "l'Apec".to_string(),
+            (RegroupementDeComparaison::Cotisation(_), true) => "une cotisation que le bulletin ne nomme pas".to_string(),
+        };
         let resume = format!(
-            "Écart de calcul à l'import : {} ({}), {}, bulletin {} ; {} paie(s).",
-            cotisation,
-            if libelles.is_empty() { "total du bulletin".to_string() } else { libelles.join(" ; ") },
+            "Écart de calcul à l'import : {}, {}, bulletin {} ; {} paie(s).",
+            nommee,
             grandeur.dite(),
             logiciel,
             cas.len()

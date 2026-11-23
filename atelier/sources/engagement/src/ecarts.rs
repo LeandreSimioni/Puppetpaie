@@ -127,6 +127,16 @@ impl TotalDuBulletin {
             TotalDuBulletin::NetImposable => "net_imposable",
         }
     }
+
+    /// Son nom en mots, tel que l'arrete du 25/02/2016 (le modele du bulletin) le nomme.
+    pub fn dit(self) -> &'static str {
+        match self {
+            TotalDuBulletin::CotisationsSalariales => "le total des cotisations salariales",
+            TotalDuBulletin::CotisationsPatronales => "le total des cotisations patronales",
+            TotalDuBulletin::NetSocial => "le montant net social",
+            TotalDuBulletin::NetImposable => "le net imposable",
+        }
+    }
 }
 
 impl RegroupementDeComparaison {
@@ -513,7 +523,7 @@ fn refaire<'a>(
         let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = FormeSaisie::de(&lue)? else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures, precision: None, dates: jours.clone() }));
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures_par_unite(), precision: None, dates: jours.clone() }));
             continue;
         };
         // LA LIGNE DANS LA FORME QUE LE CATALOGUE DEMANDE DE SA RUBRIQUE, rangee par la porte d'une ligne saisie
@@ -535,7 +545,8 @@ fn refaire<'a>(
             rubrique: Some(lue.code.clone()),
             quantite: voulue(Cle::Quantite).then_some(paiement.quantite()),
             taux: if voulue(Cle::Taux) { Some(Some(par_unite()?)) } else { None },
-            heures: voulue(Cle::Heures).then_some(l.heures),
+            // La saisie ne porte que des heures par unite : le total que la ligne imprime s'y partage, ici seulement.
+            heures: voulue(Cle::Heures).then(|| l.heures_par_unite()),
             base,
             taux_majoration: part,
             montant: voulue(Cle::Montant).then_some(Some(paiement.montant())),
@@ -544,11 +555,11 @@ fn refaire<'a>(
         };
         saisies.push(donnee.ranger(&lue)?);
     }
-    // Le spectacle que le bulletin nomme ; sans titre, celui dont la fiche porte son numero d'objet.
-    let spectacle = match (mensuelle, dit(&p.spectacle)) {
-        (true, _) => None,
-        (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
-        (false, None) => p.numero_objet.as_ref().and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite() == Some(n)).map(|(k, _)| k.clone())),
+    // LE SPECTACLE DE LA PAIE, par la seule regle (`importe::spectacle_de_la_paie`) ; quand aucune fiche ne le porte
+    // encore, la paie se compare de nouveau quand elle existe (`a_refaire`).
+    let spectacle = match mensuelle {
+        true => None,
+        false => imp.spectacle_de(&ctx, p).map_err(|m| a_refaire(c, m))?,
     };
     // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
     // (`Importe::contrat_de_la_paie` : sa fin, dite ou declaree, n'est jamais celle du mois que paie un bulletin), son
