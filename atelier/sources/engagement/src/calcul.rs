@@ -1941,8 +1941,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         let manque = || socle::echec::cle("Le barème ne donne pas le taux de cette ligne : le complément ne s'ajoute à rien.", id.as_str());
         // Le complement au-dela d'un seuil : le taux reduit, plus le complement.
         if let Some(compl) = &r.complement {
-            // Sans seuil, le complement s'ajoute toujours.
-            let depasse = compl.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), brut, Heures::ZERO.max(heures_annexes), n)).transpose()?;
+            // Sans seuil, le complement s'ajoute toujours ; avec, les revenus de la paie, deduction forfaitaire
+            // specifique deduite (`au_dela_du_seuil`).
+            let deduction = dfs.as_ref().map(|d| d.montant);
+            let depasse = compl.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), brut, deduction, Heures::ZERO.max(heures_annexes), n)).transpose()?;
             if depasse.is_none_or(|d| d) {
                 taux_pat = Some(taux_compose(taux_pat.ok_or_else(manque)? + compl.taux));
             }

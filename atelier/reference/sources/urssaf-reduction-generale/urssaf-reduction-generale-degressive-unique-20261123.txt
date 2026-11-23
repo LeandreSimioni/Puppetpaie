@@ -1,0 +1,557 @@
+La réduction générale dégressive unique
+Mis à jour le 13 juillet 2026   Lecture 14 min
+
+En tant qu'employeur, vous pouvez bénéficier d'une réduction de charges sur les rémunérations de vos
+salariés : c'est la réduction générale dégressive unique (RGDU) des cotisations.
+Cette réduction concerne certaines de vos cotisations patronales et s’applique aux employeurs situés en
+métropole et dans les départements et régions d’Outre-mer (Drom).
+
+
+
+
+Les salariés concernés
+La RGDU s’applique aux rémunérations versées :
+
+    aux salariés pour lesquels l’employeur est soumis à l’obligation d’adhésion au régime d’assurance chômage ;
+    aux salariés affiliés aux régimes spéciaux de Sécurité sociale des marins, des mines et des clercs et employés de notaires ;
+
+    aux apprentis pour lesquels l’employeur ne bénéficie pas de l’exonération spécifique liée au contrat d’apprentissage ;
+    à certains salariés non affiliés à un régime spécial que l’employeur soit soumis ou non à l’obligation d’affiliation à l’assurance
+    chômage. Sont ainsi notamment visés les salariés non affiliés à un régime spécial :
+         des entreprises inscrites au répertoire national des entreprises contrôlées majoritairement par l’État (Recme). C’est le cas
+         notamment de la RATP, de la SNCF et de certaines industries électriques et gazières (IEG) ;
+         des établissements publics à caractère industriel et commercial (Epic) des collectivités territoriales ;
+
+         des sociétés d’économie mixte (Sem) dans lesquelles ces collectivités ont une participation majoritaire ;
+
+         des IEG non listées au Recme et de La Poste.
+
+Vous pouvez appliquer la réduction générale des cotisations si votre salarié :
+
+    a conclu un contrat de travail ;
+    a une rémunération inférieure :
+
+         à 3 Smic applicable au 1er janvier 2026 (ou 2,9293 Smic applicable au 1er juin 2026) en métropole et dans les Drom (hors
+         Mayotte) ;
+
+         à 1,6 Smic applicable à Mayotte en 2026 ;
+
+
+    est assuré contre le risque de perte d’emploi selon les modalités devant être retenues par l’employeur (notamment affiliation
+    obligatoire au régime d’assurance chômage s’il s’agit du secteur privé).
+
+
+
+Les cotisations exonérées
+
+Métropole et Drom (hors Mayotte)
+
+La réduction s’applique aux cotisations et contributions patronales :
+
+    d’assurances sociales (maladie, maternité, invalidité, décès) au taux de 13,00 % ;
+    de vieillesse au taux de 10,66 % ;
+
+    d’allocations familiales au taux de 5,25 % ;
+
+    d’accidents du travail et maladies professionnelles (AT-MP) pour sa partie mutualisée au taux de 0,49 % ;
+
+    de retraite complémentaire légalement obligatoire (Agirc-Arrco) au taux de 6,01 % ;
+
+    de fonds national d’aide au logement (Fnal) au taux de 0,10 % pour les entreprises de moins de 50 salariés ou 0,50 % pour les
+    entreprises de 50 salariés et plus ;
+
+    de solidarité pour l’autonomie (CSA) au taux de 0,30 % ;
+
+    d’assurance chômage au taux de 4,00 %.
+
+Pour en savoir plus sur ces cotisations, consultez la page dédiée. Lien vers /accueil/employeur/cotisations/liste-cotisations.html
+
+
+
+
+    Bon à savoir
+
+
+    À la différence des autres cotisations, pour le calcul de la réduction générale, le taux de la cotisation accidents du travail et maladies
+    professionnelles (AT-MP) est limité
+    À compter du 1er janvier 2026, cette limite est fixée à 0,49 %.
+
+
+
+Mayotte
+
+La réduction s’applique aux cotisations et contributions applicables à Mayotte :
+
+    d’allocations familiales au taux de 5,40 % ;
+
+    de maladie-maternité au taux de 5,80 % ;
+
+    d’assurance vieillesse au taux de 9,90 % ;
+
+    d’accidents du travail-maladies professionnelles (AT-MP) dans sa partie mutualisée au taux de 0,49 % ;
+
+    de fonds national d’aide au logement (Fnal) au taux de 0,10 % pour les entreprises de moins de 50 salariés ou 0,50 % pour les
+    entreprises de 50 salariés et plus ;
+
+    d’assurance chômage au taux de 2,80 %.
+Le calcul de la réduction générale en 3 étapes
+
+    Bon à savoir
+
+    Depuis 2025, la prime de partage de la valeur (PPV) est désormais prise en compte dans le calcul de la réduction générale.
+
+    Cette prise en compte doit être faite :
+
+         pour vérifier que la rémunération annuelle, PPV incluse est inférieure à 3 Smic ;
+
+         déterminer le coefficient de la réduction ;
+
+         calculer le montant de la réduction.
+
+    Cette prise en compte doit être faite dans tous les cas, que la PPV soit placée ou non sur un plan d’épargne.
+
+
+
+Un simulateur est disponible pour estimer le montant des cotisations dues sur la rémunération de votre salarié. Il calcule également le
+montant de la réduction générale dégressive unique dont vous pouvez bénéficier en métropole et dans les Drom (hors Mayotte).
+
+
+Simulateur de cotisations employeur
+ Simulateur
+
+
+ Lien vers /accueil/outils-documentation/simulateurs/cotisations-employeur.html
+
+
+
+ 1 Déterminez le coefficient de réduction générale
+
+
+ Métropole et Drom (hors Mayotte)
+
+ En métropole, le coefficient varie selon votre effectif.
+
+ Entreprise de moins de 50 salariés
+ Le montant du coefficient de réduction est déterminé selon la formule suivante :
+ T min + (T delta × [(½) × (3 × ((Smic calculé pour un an + (Smic horaire × nombre d'heures supplémentaires ou complémentaires)) ÷
+ rémunération annuelle brute) - 1)]P) = 0,0200 + (0,3781 × [(½) × (3 × ((Smic calculé pour un an + (Smic horaire × nombre d'heures
+ supplémentaires ou complémentaires)) ÷ rémunération annuelle brute) - 1)]P)
+
+ Entreprise de 50 salariés et plus
+ Le montant du coefficient de réduction est déterminé selon la formule suivante :
+ T min + (T delta × [(½) × (3 × ((Smic calculé pour un an + (Smic horaire × nombre d'heures supplémentaires ou complémentaires)) ÷
+ rémunération annuelle brute) - 1)]P) = 0,0200 + (0,3821 × [(½) × (3 × ((Smic calculé pour un an + (Smic horaire × nombre d'heures
+ supplémentaires ou complémentaires)) ÷ rémunération annuelle brute) - 1)]P)
+
+ Ces informations concernent les employeurs faisant application des taux de cotisations de droit commun.
+
+ Pour le calcul du coefficient, la valeur du Smic est calculée pour un an. Le Smic peut être majoré des heures supplémentaires et
+ complémentaires.
+
+ La formule de calcul que vous devez prendre en compte est égale à :
+ Smic horaire × 35 × 52 ÷ 12
+
+ Elle est applicable à votre salarié rémunéré à temps plein sur le mois.
+
+ Dans certains cas, elle est également applicable si votre salarié est rémunéré en dessous du Smic (par exemple pour les contrats
+ d’apprentissage).
+
+ La valeur du Smic peut être ajustée pour tenir compte des temps partiels, des durées collectives de travail inférieures à la durée légale,
+ de suspensions du contrat de travail.
+
+ En 2026, la valeur du Smic à prendre en compte est celle en vigueur au 1er janvier 2026.
+
+ Pour calculer le coefficient de la réduction de l’année 2026, vous devez donc utiliser l’une des deux formules suivantes :
+
+      T min + (T delta × [(½) × (3 × Smic calculé sur un an sur la base de sa valeur en vigueur au 1er janvier 2026 ÷ rémunération annuelle
+      brute - 1) ] P) ;
+
+      T min + (T delta × [(½) × (2,9293 × Smic calculé pour un an sur la base de sa valeur en vigueur au 1er juin 2026 ÷ rémunération
+      annuelle brute - 1)] P).
+
+
+
+
+     Bon à savoir
+
+
+     Le Boss indique que ces formules peuvent ne pas être appliquées aux cotisations et contributions dues au titre des rémunérations
+     des salariés dont le contrat de travail aura pris fin entre le 1er et le 30 juin 2026. Elles devront en revanche s’appliquer aux
+     cotisations et contributions dues sur l’ensemble de l’année 2026 au titre de tous les salariés ayant encore un contrat de travail en
+     cours au 1er juillet 2026.
+
+
+
+
+ Exemple
+
+
+ Votre entreprise a 70 salariés et vous souhaitez calculer la réduction générale au titre de votre salarié sur le mois de juin 2026. Il
+ travaille 35 heures par semaine, est présent tout le mois et n’a pas fait d’heure supplémentaire.
+
+ Pour un Smic brut mensuel de 1 867,02 € au 1er juin 2026 et une rémunération mensuelle brute de 2 000 €, la valeur maximale du
+ coefficient de réduction générale est de 0,3178.
+ Soit : 0,0200 + (0,3821 × [(½) × (2,9293 × 1 867,02 ÷ 2 000) - 1)]1,75) = 0,3178.
+
+
+ Mayotte
+
+ Le montant du coefficient de réduction est déterminé selon la formule suivante :
+ T min + (T delta × [(½) × (A × ((Smic calculé pour un an + (Smic horaire × nombre d'heures supplémentaires ou complémentaires)) ÷
+ rémunération annuelle brute) - 1)]P).
+ En 2026, la formule est la suivante : 0 + (T delta × [(1 ÷ (1,6 - 1)) × (1,6 × ((Smic calculé pour un an + (Smic horaire × nombre d’heures
+ supplémentaires ou complémentaires)) ÷ rémunération annuelle brute) - 1)] 1).
+
+ En 2026,
+    A est égal à 1,6 ;
+
+    T min est égal à 0 ;
+     P est égal à 1.
+
+Ces informations concernent les employeurs mahorais faisant application des taux de cotisations de droit commun applicable à
+Mayotte.
+
+Smic à prendre en compte dans la formule de calcul :
+La valeur du Smic à prendre en compte en 2026 pour le calcul du coefficient de la réduction générale est la valeur du Smic en vigueur à
+Mayotte ; les revalorisations du Smic sont prises en compte. Le Smic est majoré le cas échéant des heures supplémentaires et
+complémentaires.
+
+La formule de calcul que vous devez prendre en compte est égale à :
+Smic horaire × 35 × 52 ÷ 12
+
+Elle est applicable à votre salarié rémunéré à temps plein sur le mois.
+
+Dans certains cas, elle est également applicable si votre salarié est rémunéré en dessous du Smic (par exemple pour les contrats
+d’apprentissage).
+
+La valeur du Smic est éventuellement ajustée pour tenir compte des temps partiels, des durées collectives de travail inférieures à la
+durée légale, de suspensions du contrat de travail.
+
+
+
+
+Exemple
+
+
+Votre entreprise a 10 salariés. Vous souhaitez calculer la réduction générale au titre de votre salarié sur le mois de juin 2026. Il travaille
+35 heures par semaine, est présent tout le mois et qui n’a pas fait d’heure supplémentaire.
+
+Pour un Smic brut mensuel de 1 449,93 € au 1er juin 2026 et une rémunération mensuelle brute de 1 600 €, la valeur maximale du
+coefficient de réduction générale est de 0,1836.
+0 + (T delta × [(1 ÷ (1,6 - 1) × (1,6 × ((Smic calculé pour un an + (Smic horaire × nombre d’heures supplémentaires ou complémentaires))
+÷ rémunération annuelle brute) - 1)]1) = 0,2449 × [(1 ÷ (1,6 - 1) × (1,6 × ((1 449,93 ÷ 1 600) - 1 )]1) = 0,1836.
+
+
+
+Cas particuliers des VRP, journalistes et professions médicales (hors Mayotte)
+
+
+Le coefficient de la réduction générale est adapté pour les voyageurs représentants placiers (VRP) à cartes multiples, les journalistes,
+les professions médicales exerçant à temps partiel une activité rémunérée pour le compte de plusieurs employeurs.
+
+
+
+    Pour aller plus loin
+
+
+    Pour toutes les précisions à propos de ces cas particuliers, consultez le Bulletin officiel de la Sécurité
+    sociale Lien vers https://boss.gouv.fr/portail/accueil/allegements-et-exonerations/allegements-generaux.html#470 .
+
+
+
+Cas particuliers des intérimaires et salariés affiliés à une caisse de congés payés
+
+
+Le coefficient de la réduction générale est majoré pour tenir compte du versement des indemnités de congés payés aux salariés
+intérimaires et aux salariés dont les indemnités de congés payés sont versées par une caisse de congés payés.
+
+
+
+    Pour aller plus loin
+
+
+    Pour toutes les précisions à propos de ces cas particuliers, consultez le Bulletin officiel de la Sécurité
+    sociale    Lien vers https://boss.gouv.fr/portail/accueil/exonerations/allegements-generaux.html#390 .
+
+
+
+Cas particulier des conducteurs des entreprises de transport routier de marchandises
+
+
+Le coefficient de la réduction générale est majoré au titre :
+
+    d’une part, du régime d’heures d’équivalence auquel ces conducteurs sont soumis ;
+    d’autre part, de leur affiliation obligatoire à une caisse de congés payés.
+
+
+
+    Pour aller plus loin
+
+
+    Pour toutes les précisions à propos de ces cas particuliers, consultez le Bulletin officiel de la Sécurité
+    sociale    Lien vers https://boss.gouv.fr/portail/accueil/allegements-et-exonerations/allegements-generaux.html#1080 .
+
+
+
+Cas particuliers des CDD et des contrats de travail temporaire
+
+
+En cas de contrat à durée déterminée, le coefficient de la réduction se calcule contrat par contrat.
+
+Si vous êtes une entreprise de travail temporaire : pour les intérimaires mis à disposition au cours d’une année auprès de plusieurs
+entreprises utilisatrices, le coefficient est déterminé pour chaque mission.
+
+
+
+2 Déterminez le montant de la réduction générale
+
+Pour déterminer le montant de la réduction générale, il vous suffit de multiplier votre coefficient de réduction par la rémunération
+mensuelle brute.
+
+
+Exemple
+
+En métropole, votre entreprise a un coefficient de 0,3178 pour votre salarié sur le mois de juin 2026 qui a une rémunération mensuelle
+brute de 2 000 € pour 35 heures par semaine, présent tout le mois et qui n’a pas fait d’heure supplémentaire.
+Vous souhaitez calculer la réduction générale du mois de juin 2026.
+Vous bénéficiez d’un montant mensuel de la réduction générale de 635,60 € (soit : 2 000€ × 0,3178).
+
+À Mayotte, le coefficient maximum est de 0,2449. Votre entreprise a un coefficient de 0,1836 pour votre salarié sur le mois de juin
+2026 qui a une rémunération mensuelle brute de 1 600 € pour 35 heures par semaine, présent tout le mois et qui n’a pas fait d’heure
+supplémentaire.
+Vous souhaitez calculer la réduction générale du mois de juin 2026.
+Vous bénéficiez d’un montant mensuel de la réduction générale de 293,76 € (soit : 1 600 € × 0,1836).
+
+
+
+Calculs de la réduction générale en cas d’application de la déduction forfaitaire spécifique (DFS)
+
+
+Si vous appliquez la DFS, vous devez effectuer 2 calculs afin de savoir si le montant de la réduction générale doit être plafonné.
+
+ 2.1     Vous calculez la réduction générale sans application de la DFS en excluant de la rémunération les sommes versées au titre des
+         frais professionnels.
+
+2.2 Vous calculez ensuite la réduction générale avec application de la DFS. Le résultat est limité à 130 % du montant de la réduction
+         calculée sans application de la DFS.
+
+
+
+    Pour aller plus loin
+
+
+    Retrouvez les exemples de calcul dans le Bulletin officiel de la Sécurité
+    sociale       Lien vers https://boss.gouv.fr/portail/accueil/exonerations/allegements-generaux.html#titre-chapitre-3--calcul-de-la-reducti-section-1--determination-du-mont-iii--plaf
+
+
+
+Régularisation progressive ou annuelle
+
+
+Régularisation progressive
+À chaque échéance, vous cumulez :
+
+       les rémunérations brutes du salarié perçues depuis le début de l’année ou depuis son embauche ;
+
+       et vous calculez le montant du Smic brut sur cette même période.
+
+
+La régularisation correspond à la différence entre le montant ainsi calculé et le montant cumulé des réductions appliquées sur les mois
+ou trimestres précédents de l'année.
+
+
+Exemple de calcul de régularisation progressive
+
+
+Votre entreprise a 70 salariés, et vous souhaitez calculer le montant de la réduction générale du mois de juillet 2026 pour votre salarié
+en CDD de janvier à septembre 2026. Il a une rémunération mensuelle brute habituelle de 2 000 € pour 35 heures par semaine. Il est
+présent sur les sept mois et il n'a fait aucune heure supplémentaire sur la période.
+À titre exceptionnel, en juin 2026, il perçoit une prime de 1 000 €, ce qui porte son salaire brut de juin à 3 000 €.
+
+En cas de régularisation progressive de la réduction, la valeur maximale du coefficient de réduction générale dans cette situation au
+mois de juillet 2026 est de 0,0200 + (0,3821 × [(½) × (3 × 1 823,03 × 7 ÷ 15 000 - 1)]1,75) = 0,2652.
+
+Ce résultat peut également être déterminé de la manière suivante : 0,0200 + (0,3821 × [(½) × (2,9293 x 1 867,02 € × 7 ÷ 15 000 € - 1)]1,75)
+= 0,2652.
+
+Le montant de réduction générale calculée en juillet est donc de 3 347,50 € (15 000 € × 0,2652) = 3 978 €.
+
+Votre entreprise ayant déclaré 3 347,50 € de réduction générale au titre les mois précédents, le montant déclaré au titre de juillet est de
+3 978 € - 3347,6 € = 630,50 €.
+
+Régularisation annuelle
+Elle correspond à la différence entre le montant de la réduction calculée selon la formule annuelle et le montant des réductions
+appliquées par anticipation sur les périodes précédentes de l’année.
+
+Elle intervient :
+
+       sur les cotisations dues au titre du mois de décembre, pour les employeurs « mensuels » ;
+
+       ou au titre du dernier trimestre de l’année pour les employeurs « trimestriels ».
+
+
+
+3 Déduisez le montant global de la réduction sur les cotisations
+
+Vous trouverez ci-dessous les formules de calcul vous permettant de déterminer, en fonction de votre effectif, le montant de la
+réduction générale à déduire sur les cotisations versées à l’Urssaf et aux Institutions de retraite complémentaire.
+
+
+
+Métropole et Drom (hors Mayotte)
+
+Entreprises de moins de 50 salariés
+       Sur les cotisations et contributions versées à l’Urssaf, du 1er janvier au 31 décembre 2026 : montant de la réduction
+       × (0,3380 ÷ 0,3981).
+
+       Sur les cotisations et contributions versées aux institutions de retraite complémentaire, du 1er janvier au 31 décembre
+       2026 : montant de la réduction × (0,0601 ÷ 0,3981).
+
+Entreprises de 50 salariés et plus
+       Sur les cotisations et contributions versées à l’Urssaf, du 1er janvier au 31 décembre 2026 : montant de la réduction × ( 0,3420 ÷
+       0,4021).
+
+       Sur les cotisations et contributions versées aux institutions de retraite complémentaire, du 1er janvier au 31 décembre 2026 :
+       montant de la réduction × (0,0601 ÷ 0,4021).
+
+
+
+
+    Pour aller plus loin
+
+
+    Vous devez adapter ces ratios en cas de taux particuliers de cotisations conduisant à un coefficient différent :
+
+           de 0,3981 ;
+
+           de 0,4021 ;
+           ou lorsque la contribution d’assurance chômage n’est pas recouvrée par l’Urssaf.
+
+
+    Pour en savoir plus, consultez le Bulletin officiel de la Sécurité
+    sociale       Lien vers http://boss.gouv.fr/portail/accueil/allegements-et-exonerations/allegements-generaux.html#titre-chapitre-1--la-reduction-general-section-3---modalites-dap
+
+
+
+Mayotte
+ Le montant de la réduction est imputé sur les cotisations et contributions applicables à Mayotte et éligibles à la réduction. Les
+ cotisations de retraite complémentaire ne sont pas éligibles à la réduction générale à Mayotte. Le montant de la réduction est donc
+ intégralement déclaré à l’Urssaf.
+
+
+
+La déclaration de la réduction
+
+Métropole et Drom (hors Mayotte)
+
+Chaque mois, vous déclarez la réduction générale dans votre déclaration sociale nominative (DSN).
+
+Vous indiquez sur les lignes spécifiques de votre DSN :
+
+     le nombre de salariés concernés ;
+
+     et le montant de la réduction, qu’il soit positif ou négatif à l’aide de codes types de personnel (CTP).
+
+Pour le cas général :
+Vous déclarez le montant de la réduction générale sur le CTP 668. Si vous avez trop déduit les mois précédents, vous déclarez alors la
+régularisation sur le CTP 669.
+
+Pour les personnes éligibles à la réduction générale mais pour lesquelles l’Urssaf ne recouvre pas les cotisations d’assurance
+chômage (exemple des salariés engagés à titre temporaire relevant des professions de la production cinématographique, de l’audiovisuel
+ou du spectacle) : le montant de la réduction générale doit être déclaré sur le CTP 671 et pour la régularisation sur le CTP 801.
+
+
+Mayotte
+
+Chaque mois, vous déclarez la réduction générale dans votre déclaration sociale nominative (DSN).
+
+Vous indiquez sur les lignes spécifiques de votre DSN :
+
+     le nombre de salariés concernés ;
+     et le montant de la réduction, qu’il soit positif ou négatif à l’aide de codes types de personnel (CTP).
+
+
+Pour le cas général :
+Vous déclarez le montant de la réduction générale sur le CTP 413. Si vous avez trop déduit les mois précédents, vous déclarez alors la
+régularisation sur le CTP 419.
+
+Pour les personnes éligibles à la réduction générale mais pour lesquelles l’Urssaf ne recouvre pas les cotisations d’assurance
+chômage, le montant de la réduction générale doit être déclaré sur le CTP 568 et pour la régularisation sur le CTP 069.
+
+
+
+
+    Bon à savoir
+
+
+    À Mayotte, les intermittents du spectacle ne sont pas soumis à une réglementation dérogatoire et ne sont donc pas concernés par
+    les CTP RGDU sans chômage.
+
+
+
+
+    Bon à savoir
+
+    La déclaration de la réduction générale est vérifiée par les Urssaf lors de campagnes de fiabilisation. Vous pouvez également être
+    alerté en cas d’erreur dans votre déclaration par le service « suivi DSN » qui vous indique les éléments à corriger.
+
+
+
+Important
+
+Pensez à conserver tous les justificatifs nécessaires au calcul de la réduction générale. En cas de contrôle, vous devrez être en mesure
+de mettre à la disposition des agents chargés du contrôle toutes les informations utiles à cette vérification.
+
+
+
+Guide Urssaf : comment déclarer et régulariser les cotisations Urssaf en DSN
+PDF - 1,11 Mo - Publié le 20 octobre 2026
+
+ Lien vers /files/live/sites/urssaffr/files/outils-documentation/guides/Guide-declaration-regularisation-cotisations-sociales-Urssaf-
+ DSN.pdf
+
+
+
+Les règles de cumul
+Vous pouvez cumuler la réduction générale avec :
+
+     la déduction patronale forfaitaire Lien vers /accueil/employeur/beneficier-exonerations/exonerations-heures/deduction-forfaitaire-
+     patronale.html applicable au titre des heures supplémentaires et du rachat des jours de réduction du temps de travail (JRTT) ;
+     sous certaines conditions, avec l’exonération « aide à domicile » Lien vers /accueil/employeur/beneficier-
+     exonerations/exonerations-secteur-activite/exoneration-aide-a-domicile.html pour les employés des structures concernées, pour la
+     part de la rémunération qui ne donne pas lieu à l’application de l’exonération aide à domicile : il est possible de bénéficier, pour un
+     même salarié, au titre du même mois pour des heures différentes, de l’exonération prévue au titre de l’aide à domicile avec la
+     réduction générale, lorsque ce salarié intervient alternativement auprès d’un public fragile et auprès d’un autre public ;
+     l’application de déduction forfaitaire spécifique pour frais professionnels Lien vers /accueil/employeur/beneficier-
+     exonerations/frais-professionnels.html (DFS) ;
+
+     les taux réduits Lien vers /accueil/employeur/cotisations/liste-cotisations/taux-reduits-cas-particuliers.html de cotisations
+     sociales appliqués aux journalistes professionnels, pigistes et assimilés, et les taux réduits de cotisations d'assurance vieillesse
+     appliqués aux VRP à cartes multiples et aux membres des professions médicales.
+
+
+En revanche, à l’exception des mesures ci-dessus énumérées, vous ne pouvez pas cumuler la réduction générale :
+
+     avec aucune autre exonération totale ou partielle de cotisations patronales pour un même salarié (exemple : réduction du taux de la
+     cotisation d’assurance maladie et d’allocations familiales) ;
+
+     avec l’application de taux spécifiques, d’assiettes ou de montants forfaitaires de cotisations (exemple : taux spécifiques aux artistes
+     du spectacle).
+    Bon à savoir
+
+    Vous pouvez renoncer à une exonération de cotisations patronales et appliquer la réduction générale des cotisations. Dans le cas où
+    ce changement a lieu en cours d’année : chacune des périodes d’emploi correspondantes donne lieu à l’application d’un régime
+    d’exonération, comme s’il s’agissait de contrats différents. Pour la réduction générale, la formule de calcul prend donc en compte les
+    périodes de travail pendant lesquelles la réduction s’applique, comme si le salarié commençait ou terminait sa relation de travail en
+    cours d’année.
+
+
+
+
+Textes de référence
+
+Article L241-13 et suivants code de la Sécurité        Lien vers
+sociale                                                https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042912368
+
+Article D241-7 et suivants code de la Sécurité sociale Lien vers https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000046843821
+

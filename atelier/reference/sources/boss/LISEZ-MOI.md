@@ -121,10 +121,39 @@ collectif et obligatoire, limites). C'est l'assiette **sociale** ; le net **impo
 (`../bofip/BOI-RSA-BASE-30-10-20-*`). Où : la prévoyance et le Fonds collectif santé des intermittents au barème
 (leur `source`), et la part patronale de la mutuelle des permanents.
 
+## `boss-allegements-generaux-20261123.pdf` — Exonérations › Allègements généraux
+
+URL (en tête de la transcription) : `http://boss.gouv.fr/portail/sites/siteboss/accueil/exonerations/allegements-generaux.html`,
+**version en vigueur au 01/08/2026** (l. 11), « Mis à jour le 27/07/2026 » (dernière ligne), imprimée par Léandre le
+23/11/2026. C'est la réduction générale dégressive unique (RGDU) de 2026 : la page ne parle plus des taux réduits de
+maladie et d'allocations familiales de 2025.
+
+Ce qu'on en lit :
+- **§ 190** (l. 241-252) : sous une déduction forfaitaire spécifique, « la rémunération intègre les sommes versées au
+  titre du remboursement de frais professionnels, puisque ces sommes ne sont plus exclues de l'assiette des cotisations
+  lorsqu'une déduction forfaitaire spécifique est appliquée » ; « La rémunération à prendre en compte pour la réduction
+  est égale à 1 900 × (1 – 10%) soit 1 710 € ». C'est la lecture, par l'administration, de « la rémunération [...]
+  définie à l'article L. 242-1 » (L. 241-13, III) : l'assiette abattue de la déduction.
+- **§ 220** (l. 331-332) : la réduction « ne peut pas être cumulée avec une autre exonération partielle ou totale de
+  cotisations patronales, ainsi qu'avec l'application de taux spécifiques, d'assiettes ou de montants forfaitaires ».
+- **§ 230** (l. 334-339) : « Lorsque les employeurs choisissent de ne pas appliquer une exonération totale ou partielle
+  [...], ils peuvent alors appliquer la réduction générale. Cette décision n'est pas irrévocable » ; changement au premier
+  jour du mois civil suivant. Le paragraphe dit « exonération », pas « taux spécifiques ».
+- **§ 250-280** (l. 371-405) : les taux réduits cumulables avec la réduction : journalistes rémunérés à la pige, VRP à
+  cartes multiples, professions médicales à temps partiel. Les artistes du spectacle n'y sont pas.
+- **§ 820** (l. 1281-1292) : pour un salarié intermittent, le SMIC du coefficient « est basé sur la durée de travail
+  inscrite au contrat de travail du salarié » ; rien sur la durée d'un cachet.
+
+Où le moteur s'en sert : § 190, dans la règle du seuil des taux réduits de 2025 (`droit::reduction::au_dela_du_seuil`,
+les revenus déduction forfaitaire spécifique déduite). § 220 à 280 : ce que fait déjà le barème 2026 (l'artiste n'a pas
+la réduction générale, `par_statut.technicien.reduction_generale.statuts`), non cité dans le barème.
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
 
+- `boss-allegements-generaux-20261123.pdf` : `96939404eefe87b53bf974d4245018a61a9a9e26ef204bb999286ff8008b099e`
+- `boss-allegements-generaux-20261123.txt` : `a811e5596fd06fc72689dbd3562913e62961686576aa64862eebc875ee7f0e85`
 - `boss-assiette-generale-20260801.pdf` : `24e0891513382a6e6fe3304604b182e851dd14945d733d176713c53c641a759e`
 - `boss-assiette-generale-20260801.txt` : `601c928726d512d018a43b6a272ea578245bad6898165920b57436e30708033d`
 - `boss-frais-professionnels-20261013.pdf` : `6b37fa2f738615c30e2af2dc1f4b694e04695732fcd49fffc59a397a5c249b48`

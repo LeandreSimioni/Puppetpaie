@@ -35,10 +35,22 @@ l'Urssaf applique les textes ; il cite ses références (Légifrance, Audiens). 
 
 Où le moteur s'en sert : `atelier/sources/paie/src/plafond.rs` (lots 1i, 1l), barème `logiciel/donnees/baremes/`.
 
+## `mon-entreprise-artiste-du-spectacle-20261123.pdf`
+
+La page de documentation « Salarié › Régimes spécifiques › Taux réduits cas particuliers › Profession › Artiste du
+spectacle » de mon-entreprise.urssaf.fr, imprimée en PDF par Léandre le 23/11/2026 (transcription `pdftotext` à côté ;
+l'URL n'est pas sur l'impression). Elle dit seulement : « Concerne uniquement les artistes des employeurs du spectacle
+vivant. Les techniciens ne sont pas concernés. », « Valeur : Non applicable » pour la situation vide de la page, et
+renvoie aux « Taux réduits pour les artistes du spectacle ». Rien sur la réduction générale ni sur un seuil.
+
+Où le moteur s'en sert : nulle part ; déposée avec la passation du lot barème du 23/11/2026.
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
 
+- `mon-entreprise-artiste-du-spectacle-20261123.pdf` : `3e2ca5ca879c8b171b4b8861a31cd860321c88d81ce4346d5c1ec9e331c375de`
+- `mon-entreprise-artiste-du-spectacle-20261123.txt` : `ec19ca9820060d50b42da08553ac262d968d0bc30d6d89b2be2e029b1cda3f87`
 - `urssaf-modele-social-11.1.0-20260716.tgz` : `c65fd69742e40b98e036d98e55256158ddfae70bd24dae0adc9eb8e5cafa0a8f`
 - `urssaf-modele-social-11.1.0-intermittents-20260716.json` : `a90643345bffbef3538084f0b9aa44febd5ae5ae246672324fa5a7021e90d6f4`
 - `urssaf-mon-entreprise-intermittents-artiste-20261010.mht` : `8fcd1cf7304e2e007eb823c1d8e2644f159bd2abb4804fb9783ca70053c2fc6b`
