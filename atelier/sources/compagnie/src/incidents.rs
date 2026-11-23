@@ -705,6 +705,23 @@ pub enum CanalDeLaPage {
     Ressource,
 }
 
+/// LES CANAUX SONT UNE LISTE QU'UNE CHARGE NOMME (`canal`), par leur nom.
+impl socle::liste::ListeFermee for CanalDeLaPage {
+    const TOUTES: &'static [CanalDeLaPage] = &[CanalDeLaPage::Erreur, CanalDeLaPage::Promesse, CanalDeLaPage::Ressource];
+
+    fn code(&self) -> socle::echec::R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(match self {
+            CanalDeLaPage::Erreur => "Une erreur",
+            CanalDeLaPage::Promesse => "Une promesse rejetée",
+            CanalDeLaPage::Ressource => "Une ressource absente",
+        })
+    }
+}
+
 /// Ce que porte un incident de la page.
 #[derive(Serialize)]
 struct DetailDeLaPage {

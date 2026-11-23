@@ -17,10 +17,10 @@ use serde::Serialize;
 use compagnie::incidents::{self, BilanIncidents, Ligne, Nature, Paquet, PourLEditeur, DEPOSE, EN_ATTENTE};
 use compagnie::nombre_de_paies::{AnneePartie, ContenuParti};
 use compagnie::problemes::{self, Apercu, BilanMessages, CaptureDeLaPage, EtatDuMessage, SignalementVu};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, OPERATION};
+use crate::catalogue::{Acte, Affiche, Fiche, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::declaration::{charge, dit, Legende};
+use crate::declaration::{charge, dit, ChampDuType, ChargeDuType, Legende};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
@@ -28,6 +28,20 @@ use socle::echec::{Classe, R};
 use socle::paris::Moment;
 
 const QUOI: Legende = dit("Nature", "une seule nature d'incident ; toutes sinon").avancee();
+// La charge de `incident-navigateur`, champ par champ : sa structure est celle du journal des incidents
+// (`compagnie::incidents::RapportNavigateur`), d'une autre crate que `charge!`.
+const CHARGE_INCIDENT_NAVIGATEUR: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, String>("genre", dit("Genre", "le genre de l'erreur (TypeError…)")),
+        ChampDuType::du_type::<_, String>("message", dit("Ce que la page a vu", "ce que la page a vu")),
+        ChampDuType::du_type::<_, Option<String>>("fichier", dit("Fichier", "le fichier de la page, quand elle le sait")),
+        ChampDuType::du_type::<_, Option<u64>>("ligne", dit("Ligne", "sa ligne, quand elle la sait")),
+        ChampDuType::du_type::<_, Option<u64>>("colonne", dit("Colonne", "sa colonne, quand elle la sait")),
+        ChampDuType::du_type::<_, Option<String>>("pile", dit("Pile", "la pile des appels ; une ressource absente n'en a pas")),
+        ChampDuType::du_type::<_, incidents::CanalDeLaPage>("canal", dit("Canal", "par où la page l'a vu casser")),
+        ChampDuType::du_type::<_, String>("ou_dans_la_page", dit("Écran", "l'écran de la page où c'est arrivé")),
+    ],
+};
 const DIAGNOSTIC_REND: &str = "envoi (vrai : actif), total, en_attente, groupes (ce qui part, mot pour mot), pastille";
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -98,7 +112,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentNavigateur,
         geste: "Noter ce qui a cassé dans la page.",
-        charge: &[Champ { nom: "message", libelle: Affiche::new("Ce que la page a vu"), forme: Forme::Texte, sens: "ce que la page a vu (et genre, fichier, ligne, colonne, pile, canal, ou_dans_la_page)", avance: false }],
+        charge: &CHARGE_INCIDENT_NAVIGATEUR,
         exemple: r#"{"genre":"TypeError","message":"exemple","canal":"erreur","ou_dans_la_page":"paie"}"#,
         rend: "note (vrai : noté), empreinte",
         refus: &[OPERATION],
