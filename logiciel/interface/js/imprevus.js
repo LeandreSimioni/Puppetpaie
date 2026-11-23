@@ -418,8 +418,7 @@ async function boiteDUnImprevu(lecture, ou) {
     try { x = await api(g.route, { ...g.charge, ...saisiDans(bloc) }); }
     catch (e) { dire(e.message, "erreur"); return false; }
     oublierLEcran(bloc);
-    await etapeSuite(x, x.arret || x.suspension, p);
-    return true;
+    return (await etapeSuite(x, x.arret || x.suspension, p)) ? ENREGISTRE_PUIS_SUITE : true;
   };
   retenirLEcran(bloc, { enregistrer });
   boite.querySelector("[data-enregistrer]").onclick = enregistrer;
@@ -437,6 +436,7 @@ async function boiteDUnImprevu(lecture, ou) {
    rien n'est obligatoire — les indemnités se connaissent au relevé de la
    caisse, et se reprennent sous la carte. */
 
+/* Rend vrai quand la seconde page est ouverte. */
 async function etapeSuite(r, i, p) {
   const jours = i.cachets;
   const g = i.a_dire;
@@ -444,7 +444,7 @@ async function etapeSuite(r, i, p) {
     fermerBoite();
     dire(r.phrase);
     await p.apres();
-    return;
+    return false;
   }
   const div = p.carte ? p.carte.div : null;
   const ici = (c) => div && c.mois === MOIS_AFFICHE && !div.classList.contains("validee");
@@ -476,6 +476,7 @@ async function etapeSuite(r, i, p) {
     if (retirer.length && !(div && await retirerDesJours(div, retirer))) dire(ETAT.aides.jour_hors_ligne, "erreur");
     await finir();
   };
+  return true;
 }
 
 
