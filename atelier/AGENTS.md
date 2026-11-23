@@ -318,6 +318,10 @@ Ce que Léandre veut de l'import, dit le 19/11/2026 ; tout agent qui y touche le
   davantage : rien de ce qu'on n'a pas su lire aujourd'hui n'est perdu.
 - **On prend tout ce que la fiche de paie dit**, puisqu'on sait la lire, et on la compare à notre calcul (« Les
   écarts de calcul »).
+- **Avant 2026, on ne compare que ce que le logiciel sait calculer** (Léandre, 23/11/2026 : « Si ça arrive avant
+  2026, on compare pas d'après moi », « on n'a pas les barèmes de toutes les conventions ») : une paie d'avant 2026
+  dont le logiciel n'a pas le barème de l'année ou de la convention entre dans l'historique sans comparaison et sans
+  incident ; à partir de 2026, ce manque fait un incident.
 - **L'ancien logiciel est un vrai logiciel de paie.** Les gens font leurs paies avec ; ses pièces sont justes a
   priori, et une DSN importée a été acceptée. On ne le traite jamais en château de sable : normalement il n'y a
   pas de conflit entre deux pièces : « A priori, ça n'existe pas. C'est là-dessus qu'on part. » On n'invente donc

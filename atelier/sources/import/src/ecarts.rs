@@ -19,8 +19,10 @@
 //! Le texte passe quand meme par le caviardage (`caviardage`, les fiches de la compagnie connues), et un montant ecrit
 //! dans une raison (un refus du calcul) devient `<MONTANT>`.
 //!
-//! UNE PAIE SE COMPARE UNE FOIS, sauf quand le calcul l'a refusee (une configuration a completer) : elle se compare de
-//! nouveau a l'ouverture suivante. UN RAPPORT DEJA NOTE NE SE NOTE PAS DEUX FOIS (meme empreinte, meme resume, meme
+//! UNE PAIE SE COMPARE UNE FOIS, sauf quand le calcul l'a refusee (une configuration a completer) ou que le logiciel ne
+//! livre pas de quoi la calculer : elle se compare de nouveau a l'ouverture suivante. Une paie d'avant
+//! `engagement::ecarts::COMPAREE_TOUJOURS_DES` que le logiciel ne sait pas calculer n'est pas une comparaison : ni
+//! incident, ni registre. UN RAPPORT DEJA NOTE NE SE NOTE PAS DEUX FOIS (meme empreinte, meme resume, meme
 //! detail) : un import rejoue ne renvoie rien.
 
 use droit::fiche::Lue as _;
