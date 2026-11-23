@@ -474,7 +474,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let documents = match &bulletin {
         Some(b) => {
             let n: String = b.numero.iter().filter(|n| !n.is_empty()).map(|n| format!(" n° {}", n)).collect();
-            EtatDeCarte { etat: EtatDEcran::Fait, courte: "bulletin importé", phrase: format!("bulletin de l'ancien logiciel{}, copié dans historique/bulletins/", n) }
+            EtatDeCarte { etat: EtatDEcran::Fait, courte: "bulletin importé", phrase: format!("bulletin de l'ancien logiciel{}, gardé : il se rouvre depuis l'Historique, à son mois", n) }
         }
         None => EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "documents remis avant PuppetPaie : aucun bulletin importé pour cette paie".to_string() },
     };
