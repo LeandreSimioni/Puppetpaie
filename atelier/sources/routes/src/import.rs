@@ -111,7 +111,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // La boite aux lettres `import/` entiere, bulletins compris (`import::bulletins`).
         Route::ImportationApercu => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(CompteRendu::de(crate::importation::bulletins::apercu_dossier(ctx)?))
+            en_json(CompteRenduDeLImport::de(crate::importation::bulletins::apercu_dossier(ctx)?))
         }
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
@@ -119,7 +119,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::Importer => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(CompteRendu::de(crate::importation::ecrite::importer(ctx)?))
+            en_json(CompteRenduDeLImport::de(crate::importation::ecrite::importer(ctx)?))
         }
         // La nature des contrats repris qu'aucun bulletin ne dit.
         Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
@@ -841,27 +841,27 @@ const REPRENDRE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Rep
 /// reprendre ce que l'apercu a lu (`importer`, sous le libelle « Reprendre »), tant que rien n'est ecrit et qu'il y a
 /// quelque chose a reprendre ; aucun sinon.
 #[derive(Debug, Serialize)]
-struct CompteRendu {
+struct CompteRenduDeLImport {
     #[serde(flatten)]
     lu: Importation,
     gestes: Vec<GesteDeLImport>,
     /// Les titres de ses parties et de ses colonnes (`MOTS_DU_COMPTE_RENDU`).
-    mots: MotsDuCompteRendu,
+    mots: MotsDuCompteRenduDeLImport,
 }
 
-impl CompteRendu {
-    fn de(lu: Importation) -> CompteRendu {
+impl CompteRenduDeLImport {
+    fn de(lu: Importation) -> CompteRenduDeLImport {
         let gestes = match lu.ecrit || lu.rien_a_faire {
             true => Vec::new(),
             false => vec![geste_de_l_import(Route::Importer, REPRENDRE)],
         };
-        CompteRendu { lu, gestes, mots: MOTS_DU_COMPTE_RENDU }
+        CompteRenduDeLImport { lu, gestes, mots: MOTS_DU_COMPTE_RENDU }
     }
 }
 
 /// LES TITRES DU COMPTE RENDU DE L'IMPORT, tels que la page les montre : chaque partie, chaque colonne de ses tableaux.
 #[derive(Debug, Serialize)]
-struct MotsDuCompteRendu {
+struct MotsDuCompteRenduDeLImport {
     /// Les pieces que l'import ne reprend pas, et pourquoi (`tri.non_repris`).
     non_repris: &'static str,
     /// Le tableau du tri, fichier par fichier (`tri.fichiers`), et ses trois colonnes.
@@ -895,7 +895,7 @@ struct MotsDuCompteRendu {
     identites: &'static str,
 }
 
-const MOTS_DU_COMPTE_RENDU: MotsDuCompteRendu = MotsDuCompteRendu {
+const MOTS_DU_COMPTE_RENDU: MotsDuCompteRenduDeLImport = MotsDuCompteRenduDeLImport {
     non_repris: "Non repris",
     fichier_par_fichier: "Fichier par fichier",
     fichier: "Fichier",
@@ -921,7 +921,7 @@ const MOTS_DU_COMPTE_RENDU: MotsDuCompteRendu = MotsDuCompteRendu {
     identites: crate::importation::identite::LA_MEME_PERSONNE,
 };
 
-impl Dite for CompteRendu {
+impl Dite for CompteRenduDeLImport {
     fn phrase(&self) -> &Phrase {
         &self.lu.phrase
     }
