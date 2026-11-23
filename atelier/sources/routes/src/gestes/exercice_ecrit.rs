@@ -93,6 +93,21 @@ pub(crate) struct EcritureRendue {
     mois: socle::mois::Mois,
     auxiliaire: Option<documents::ecritures_comptables::NumeroDeCompte>,
     auxiliaire_libelle: Option<String>,
+    /// La ligne telle que le tableau la montre, une cellule par colonne (`EcranDeLExportCompta::colonnes`) : le mois de
+    /// sa date, le compte, le libelle, le debit et le credit (vides quand ils sont nuls), l'analytique.
+    cellules: [String; 6],
+}
+
+/// CE QUE L'ECRAN DIT DE L'EXPORT COMPTA : son titre, ce qu'il resume (ses mois, ses ecritures, l'equilibre du debit et
+/// du credit, le fichier ecrit), les colonnes du tableau, le bouton du dossier (quand il est ecrit) et celui qui ferme.
+#[derive(Debug, Serialize)]
+pub(crate) struct EcranDeLExportCompta {
+    titre: String,
+    resume: String,
+    colonnes: [&'static str; 6],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ouvrir: Option<&'static str>,
+    fermer: &'static str,
 }
 
 /// Ce que rend `export-compta` : sa phrase, l'annee et ses mois (de `du` a `au`), les ecritures et leurs totaux, le
@@ -114,6 +129,7 @@ pub(crate) struct ExportComptaRendu {
     fichier: Option<NomDeFichier>,
     plan: String,
     avertissements: Vec<String>,
+    ecran: EcranDeLExportCompta,
 }
 
 impl crate::enveloppe::Dite for ExportComptaRendu {
@@ -131,6 +147,26 @@ impl ExportCompta {
             Some(f) => socle::phrase!("Export comptable de {} : {} écritures, dans {} (le dossier des exercices).", self.annee, self.ecritures.len(), f),
             None => socle::phrase!("Export comptable de {} : {} écritures, rien n'est écrit.", self.annee, self.ecritures.len()),
         };
+        // Un montant nul ne se montre pas : sa cellule est vide.
+        let montant_montre = |m: Montant| if m == Montant::ZERO { String::new() } else { socle::grandeurs::ecrit::texte::dit(m) };
+        let ecrit_dit = match &fichier {
+            Some(f) => format!(" Écrit : {}.", f),
+            None => String::new(),
+        };
+        let ecran = EcranDeLExportCompta {
+            titre: format!("Export compta — {}", self.annee),
+            resume: format!(
+                "Mois {} — {} écritures, débit {} = crédit {}.{}",
+                self.mois.iter().map(|m| m.mm()).collect::<Vec<_>>().join(", "),
+                self.ecritures.len(),
+                socle::texte::euros(self.total_debit),
+                socle::texte::euros(self.total_credit),
+                ecrit_dit
+            ),
+            colonnes: ["Mois", "Compte", "Libellé", "Débit", "Crédit", "Analytique"],
+            ouvrir: dossier.as_ref().map(|_| "Ouvrir le dossier"),
+            fermer: "Fermer",
+        };
         Ok(ExportComptaRendu {
             phrase,
             annee: self.annee,
@@ -141,6 +177,17 @@ impl ExportCompta {
                 .ecritures
                 .into_iter()
                 .map(|e| EcritureRendue {
+                    cellules: [
+                        e.date.mois_civil().mm(),
+                        e.compte.to_string(),
+                        e.libelle.clone(),
+                        montant_montre(e.debit),
+                        montant_montre(e.credit),
+                        match &e.analytique {
+                            Some(a) => a.clone(),
+                            None => String::new(),
+                        },
+                    ],
                     journal: e.journal,
                     date: e.date,
                     compte: e.compte,
@@ -159,6 +206,7 @@ impl ExportCompta {
             fichier,
             plan: self.plan,
             avertissements: self.avertissements,
+            ecran,
         })
     }
 }

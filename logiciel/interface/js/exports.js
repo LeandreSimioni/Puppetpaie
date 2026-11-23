@@ -532,27 +532,24 @@ async function lancerExportCompta(annee) {
   let r;
   try { r = await api("export-compta", { annee }); }
   catch (e) { dire(e.message, "erreur"); return; }
-  const lignes = r.ecritures.map((e) => `
-    <tr><td>${echapper(e.date.slice(5, 7))}</td><td>${echapper(e.compte)}</td>
-        <td>${echapper(e.libelle)}</td>
-        <td class="r">${e.debit !== "0.00" ? echapper(e.debit) : ""}</td>
-        <td class="r">${e.credit !== "0.00" ? echapper(e.credit) : ""}</td>
-        <td class="discret">${echapper(e.analytique)}</td></tr>`).join("");
+  const x = r.ecran;
+  // Le débit et le crédit s'alignent à droite (les colonnes 3 et 4), l'analytique se lit en retrait.
+  const classe = ["", "", "", "r", "r", "discret"];
+  const lignes = r.ecritures.map((e) => `<tr>${e.cellules.map((c, i) =>
+    `<td${classe[i] ? ` class="${classe[i]}"` : ""}>${echapper(c)}</td>`).join("")}</tr>`).join("");
   ouvrirBoite(`
-    <h3>Export compta — ${echapper(r.annee)}</h3>
-    <p class="discret">Mois ${r.mois.map((m) => m.slice(5)).join(", ")} — ${r.ecritures.length}
-      écritures, débit ${echapper(euros(r.total_debit))} = crédit ${echapper(euros(r.total_credit))}.
-      ${r.fichier ? `Écrit : <b>${echapper(r.fichier)}</b>` : ""}</p>
+    <h3>${echapper(x.titre)}</h3>
+    <p class="discret">${echapper(x.resume)}</p>
     ${r.avertissements.map((a) => `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
-      <tr><th>Mois</th><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Analytique</th></tr>
+      <tr>${x.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
       ${lignes}
     </table></div>
     <div class="actions">
-      <button class="secondaire" id="x-ouvrir">Ouvrir le dossier</button>
-      <button class="primaire" onclick="fermerBoite()">Fermer</button>
+      ${x.ouvrir ? `<button class="secondaire" id="x-ouvrir">${echapper(x.ouvrir)}</button>` : ""}
+      <button class="primaire" onclick="fermerBoite()">${echapper(x.fermer)}</button>
     </div>`);
-  document.getElementById("x-ouvrir").onclick = async () => {
+  if (x.ouvrir) document.getElementById("x-ouvrir").onclick = async () => {
     await ouvrirEtDire(r.dossier);
   };
   if (document.getElementById("exercices")) dessinerExercices();
