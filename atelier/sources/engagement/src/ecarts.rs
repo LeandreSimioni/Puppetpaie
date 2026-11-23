@@ -1023,10 +1023,13 @@ fn introuvable(c: &mut Suivi, raison: Echec) -> Echec {
 }
 
 /// L'empreinte de la paie `mois` de l'engagement importe `imp` : ce qui la reconnait d'une comparaison a l'autre (son
-/// salarie, ses bornes, son numero et ce que les pieces en disent, sans la date de l'import).
+/// salarie, ses bornes, son numero et ce que les pieces en disent, sans la date de l'import). UN CHAMP QUE L'IMPORT
+/// AJOUTE A UNE PAIE DEJA RANGEE N'Y ENTRE PAS (`PaieVersee::abattement`, qu'un bulletin repris de nouveau pose sur la
+/// paie : `routes::importation::ecrite::completer_par`) : la paie reste celle que le registre des paies comparees
+/// reconnait, et ses rapports ne repartent pas.
 pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> EmpreinteCourte {
     let brut = imp.objet().carte();
-    let paie = PaieVersee { importe_le: None, ..p.clone() };
+    let paie = PaieVersee { importe_le: None, abattement: None, ..p.clone() };
     let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, paie));
     Empreinte::des_octets(graine.as_bytes()).courte()
 }
