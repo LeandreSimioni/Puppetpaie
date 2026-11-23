@@ -1932,6 +1932,8 @@ pub(crate) struct VuePaie {
     bornes: PeriodeOuverte,
     contrat: ContratVu,
     dates_travail: Vec<Jour>,
+    /// Ce que dit sa carte validee, fermee : ses jours travailles du mois en clair, et le mois abrege.
+    quand: socle::ecran::QuandDeLaCarte,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
     cachets: Cachets,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que la carte ou son mois ecrit.
@@ -2100,6 +2102,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             rupture,
         },
         dates_travail: e.dates_travail.clone(),
+        quand: socle::ecran::QuandDeLaCarte::des_jours(&e.dates_travail, data.mois)?,
         cachets: e.cachets,
         taux_cachet,
         heures: e.heures,

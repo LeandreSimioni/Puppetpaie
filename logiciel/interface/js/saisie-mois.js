@@ -188,8 +188,8 @@ function carteImportee(p, i) {
   return `
     <div class="carte-importee${p.non_lu ? " incomplete" : ""}" data-rang="${i}">
       <div class="e-resume">
-        <div class="carte-quand" title="${echapper(r.quand_titre)}">
-          <b class="${r.epars ? "epars" : ""}">${echapper(r.quand)}</b><span>${echapper(r.mois)}</span></div>
+        <div class="carte-quand" title="${echapper(r.quand.titre)}">
+          <b class="${r.quand.epars ? "epars" : ""}">${echapper(r.quand.jours)}</b><span>${echapper(r.quand.mois)}</span></div>
         <div class="carte-qui"${r.origine_dit ? ` title="${echapper(r.origine_dit)}"` : ""}>
           <span class="carte-nom"><b>${echapper(r.nom)}</b> <span class="mot-etat">${echapper(r.mot)}</span></span>
           <span class="discret">${echapper(r.quoi_dit)}</span></div>

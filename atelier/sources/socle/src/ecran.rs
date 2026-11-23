@@ -85,3 +85,40 @@ pub enum SorteDeRangee {
     SousTotal,
     TotalGeneral,
 }
+
+/// QUAND, SUR UNE CARTE FERMEE (celle d'un engagement, celle d'une paie importee) : ses jours en clair et au plus court
+/// (`des_jours` ; une periode quand ils ne sont pas lus), s'ils sont epars (des jours qui ne se suivent pas, ou une
+/// periode a cheval sur un autre mois), ce qu'ils sont au survol, et le mois, abrege.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct QuandDeLaCarte {
+    pub jours: String,
+    pub epars: bool,
+    pub titre: String,
+    pub mois: &'static str,
+}
+
+impl QuandDeLaCarte {
+    /// Les jours de `jours` qui tombent dans `mois`, en clair : « 6 », « 21–23 », « 14 · 15 · 17 · 18 » (des jours qui se
+    /// suivent font une plage) ; au survol, chacun en entier.
+    pub fn des_jours(jours: &[crate::date::Jour], mois: crate::mois::Mois) -> crate::echec::R<QuandDeLaCarte> {
+        let mut jours: Vec<crate::date::Jour> = jours.iter().filter(|j| mois.contient(j)).copied().collect();
+        jours.sort();
+        jours.dedup();
+        let mut suivis = true;
+        for w in jours.windows(2) {
+            suivis &= w[0].apres(crate::date::Duree::jours(1))? == w[1];
+        }
+        let en_clair = match (jours.first(), jours.last()) {
+            (None, _) | (_, None) => String::new(),
+            (Some(a), Some(b)) if a == b => a.quantieme_ecrit(),
+            (Some(a), Some(b)) if suivis => format!("{}–{}", a.quantieme_ecrit(), b.quantieme_ecrit()),
+            _ => jours.iter().map(crate::date::Jour::quantieme_ecrit).collect::<Vec<_>>().join(" · "),
+        };
+        Ok(QuandDeLaCarte {
+            jours: en_clair,
+            epars: !suivis,
+            titre: jours.iter().map(crate::date::Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", "),
+            mois: mois.nom(crate::mois::Graphie::Abregee),
+        })
+    }
+}

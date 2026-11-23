@@ -21,7 +21,7 @@ use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, Lig
 use envois::etats;
 use socle::date::{Jour, Periode};
 use socle::echec::R;
-use socle::ecran::{ColonneRendue, EtatDEcran, RangeeRendue, SorteDeRangee};
+use socle::ecran::{ColonneRendue, EtatDEcran, QuandDeLaCarte, RangeeRendue, SorteDeRangee};
 use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::Cachets;
@@ -263,16 +263,13 @@ pub struct CarteImportee {
     pub(crate) etats: EtatsDeCarte,
 }
 
-/// LA CARTE FERMEE : quand (les jours travailles, ou la periode du contrat, et au survol leurs dates ; `epars` : des
-/// jours qui ne se suivent pas, ou une periode a cheval sur un autre mois), le mois abrege ; qui (le nom, le mot
+/// LA CARTE FERMEE : quand (`QuandDeLaCarte` : les jours travailles, ou la periode du contrat, et au survol leurs dates,
+/// comme sur la carte d'un engagement) ; qui (le nom, le mot
 /// « importé », les pieces lues au survol) ; quoi ; ses pastilles ; le montant que la carte dit (le net a payer ; sans
 /// lui, le brut, que son mot precede) et ce qu'il est, au survol.
 #[derive(Debug, Clone, Serialize)]
 struct ResumeDeLaCarte {
-    quand: String,
-    quand_titre: String,
-    epars: bool,
-    mois: &'static str,
+    quand: QuandDeLaCarte,
     nom: String,
     mot: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -336,26 +333,6 @@ const BRUT_SEUL: &str = "Le brut : le net à payer n'est pas lu.";
 /// Ou lire pourquoi une case n'est pas lue.
 const POURQUOI_NON_LU: &str = "Un clic sur la carte montre ses cases, et sous chacune pourquoi.";
 
-/// Des jours d'un mois, en clair et au plus court : « 6 », « 21–23 », « 14 · 15 · 17 · 18 » ; des jours qui se suivent
-/// font une plage.
-fn jours_en_clair(jours: &[Jour]) -> R<String> {
-    let suivis = jours_suivis(jours)?;
-    Ok(match (jours.first(), jours.last()) {
-        (None, _) | (_, None) => String::new(),
-        (Some(a), Some(b)) if jours.len() == 1 || a == b => a.quantieme_ecrit(),
-        (Some(a), Some(b)) if suivis => format!("{}–{}", a.quantieme_ecrit(), b.quantieme_ecrit()),
-        _ => jours.iter().map(Jour::quantieme_ecrit).collect::<Vec<_>>().join(" · "),
-    })
-}
-
-/// Des jours ranges se suivent-ils, chacun le lendemain du precedent ? Sinon, ils sont epars.
-fn jours_suivis(jours: &[Jour]) -> R<bool> {
-    let mut suivis = true;
-    for w in jours.windows(2) {
-        suivis &= w[0].apres(socle::date::Duree::jours(1))? == w[1];
-    }
-    Ok(suivis)
-}
 
 /// Ce qu'une cellule de la carte montre d'une valeur : son texte ; rien (une cellule vide) quand la piece ne la dit pas.
 fn ou_vide(t: Option<String>) -> String {
@@ -549,11 +526,11 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
 
     // QUAND : les jours travailles que le bulletin imprime ; sans eux, la periode du contrat.
     // EPARS : des jours qui ne se suivent pas, ou une periode a cheval sur un autre mois.
-    let (quand, quand_titre, epars) = match dates.is_empty() {
-        false => (jours_en_clair(&dates)?, dates.iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", "), !jours_suivis(&dates)?),
+    let quand = match dates.is_empty() {
+        false => QuandDeLaCarte::des_jours(&dates, mois)?,
         true => {
-            let (quand, a_cheval) = periode_en_clair(debut, fin, mois);
-            (quand, DATES_NON_LUES.to_string(), a_cheval)
+            let (jours, epars) = periode_en_clair(debut, fin, mois);
+            QuandDeLaCarte { jours, epars, titre: DATES_NON_LUES.to_string(), mois: mois.nom(Graphie::Abregee) }
         }
     };
     // LE MONTANT : le net a payer ; sans lui (une DSN seule ne le declare pas), le brut, et la carte le dit.
@@ -563,10 +540,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         (None, None) => (None, None),
     };
     let resume = ResumeDeLaCarte {
-        epars,
         quand,
-        quand_titre,
-        mois: mois.nom(Graphie::Abregee),
         nom: ou_vide(nom.clone()),
         mot: "importé",
         origine_dit,
