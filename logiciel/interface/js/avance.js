@@ -725,8 +725,8 @@ function brancherLesGestes(cible, gestes, entete, apres) {
 }
 
 /** `bouton` : celui du geste, éteint le temps de la réponse quand le geste part sans boîte. `apres` reçoit la réponse.
- *  Un geste dont la route engage (sa fiche : `acte`) est un envoi : la boîte du mot de passe le sait (`envoi`), et le
- *  bouton de sa boîte le porte. */
+ *  Un geste dont la route engage (sa fiche : `acte`) est un envoi pour la boîte du mot de passe (`envoi`) ; le bouton de
+ *  sa boîte a la forme que lui donne la route (`classeDuGeste`), en bouton principal. */
 async function faireLeGeste(g, entete, apres, bouton) {
   const envoi = CATALOGUE[g.route].acte === "engage";
   const partir = async (charge, boite) => {
@@ -758,7 +758,7 @@ async function faireLeGeste(g, entete, apres, bouton) {
     <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire${envoi ? " envoi" : ""}" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
+      <button class="${classeDuGeste({ ...g, rang: "principal" })}" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
