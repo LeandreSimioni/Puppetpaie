@@ -74,7 +74,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Exports),
+        // `exporter` la rend en geste, une annee par geste, dans la regularisation CASC-SVP.
+        ecran: Ecran::GesteAvance(Place::Exports),
     },
     Fiche {
         route: Route::Exporter,
@@ -714,17 +715,100 @@ enum EtatRendu {
 }
 
 /// CE QUE L'ECRAN DIT D'UN ETAT EXPORTE : ses donnees personnelles, ses totaux partiels, et pour la regularisation
-/// CASC-SVP ce que disent ses deux etapes.
+/// CASC-SVP ce que disent ses deux etapes et ce qui s'y fait (`casc`).
 #[derive(Debug, Serialize)]
 struct EcranDUnEtat {
     personnelles: Option<&'static str>,
     partiels: Option<String>,
-    virement: &'static str,
-    automatique: &'static str,
-    a_la_main: &'static str,
-    /// La regularisation CASC-SVP, une boite posee : la demande du mot de passe avant `casc-envoyer`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    demande: Option<compagnie::demande::DemandeDuMotDePasse>,
+    casc: Option<EcranDeLaCasc>,
+}
+
+/// CE QUE L'ECRAN DIT DE LA REGULARISATION CASC-SVP, et ce qui s'y fait : son titre ; les virements (`virement`) ; les
+/// deux courriels, depuis la boite (`envoi`, seulement quand elle est posee) ou a la main (`ouvrir` : le bouton des
+/// fichiers, seulement quand ils sont ecrits ; `noter` : noter chaque annee regularisee, un geste par annee) ; le detail
+/// par mois et ses colonnes.
+#[derive(Debug, Serialize)]
+struct EcranDeLaCasc {
+    titre: String,
+    virement: &'static str,
+    courriels: &'static str,
+    depuis_la_boite: &'static str,
+    automatique: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    envoi: Option<EnvoiDeLaCasc>,
+    a_la_main_titre: &'static str,
+    a_la_main: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ouvrir: Option<&'static str>,
+    courriel_audiens: &'static str,
+    courriel_casc: &'static str,
+    noter: Vec<GesteDeRoute<crate::etapes::ChargeAnnee, ValeursDeLaCasc, SansCharge>>,
+    detail: &'static str,
+    colonnes: [&'static str; 4],
+}
+
+/// L'ENVOI DES DEUX COURRIELS, la boite posee : sa route (`casc-envoyer`), son bouton, ce qu'il dit pendant l'envoi, la
+/// demande du mot de passe, et la case de la date de chaque virement (`date_libelle` de chaque annee). La charge,
+/// `vire_le`, est une table annee -> jour : une date par annee remplie, sous son annee.
+#[derive(Debug, Serialize)]
+struct EnvoiDeLaCasc {
+    route: Route,
+    bouton: &'static str,
+    pendant: &'static str,
+    demande: compagnie::demande::DemandeDuMotDePasse,
+}
+
+/// Ce que la boite qui note une annee regularisee montre d'abord : la cotisation de l'annee.
+#[derive(Debug, Serialize)]
+struct ValeursDeLaCasc {
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    montant: socle::grandeurs::Montant,
+}
+
+const NOTER_REGULARISEE: Affiche = Affiche::new("Noter comme régularisé");
+
+/// Ce que l'ecran dit de la regularisation `r`, et ce qui s'y fait.
+fn ecran_de_la_casc(ctx: &Contexte, r: &crate::importation::casc::Regularisation) -> R<EcranDeLaCasc> {
+    let noter = r
+        .annees
+        .iter()
+        .map(|a| {
+            GesteDeRoute::avec_cases(
+                Route::CascRegularise,
+                crate::etapes::ChargeAnnee { annee: a.annee },
+                NOTER_REGULARISEE,
+                vec![cle!(ChargeCascRegularise, vire_le), cle!(ChargeCascRegularise, montant)],
+                ValeursDeLaCasc { montant: a.cotisation },
+                SansCharge {},
+            )
+            .disant(vec![format!("CASC-SVP {} : {}, {}.", a.annee, socle::texte::euros(a.cotisation), a.libelle_dit)])
+        })
+        .collect();
+    let envoi = match r.boite_liee {
+        true => Some(EnvoiDeLaCasc { route: Route::CascEnvoyer, bouton: "Envoyer les 2 courriels", pendant: "Envoi…", demande: crate::coffre::demande(&ctx.racine, GESTE_CASC)? }),
+        false => None,
+    };
+    Ok(EcranDeLaCasc {
+        titre: format!("Régularisation CASC-SVP — {} — {}", r.periode, socle::texte::euros(r.total)),
+        virement: "Vers Audiens Santé Prévoyance – Encaissement. L'IBAN se lit dans l'espace employeur Audiens ou sur la page employeurs du CASC-SVP.",
+        courriels: "Les deux courriels",
+        depuis_la_boite: "Depuis la boîte",
+        automatique: if r.boite_liee {
+            "Audiens reçoit les masses et les dates des virements ; le CASC-SVP, la liste nominative. Une copie reste dans le dossier, et les années sont notées régularisées."
+        } else {
+            "La boîte courriel n'est pas posée : Configuration › Courriel. Une fois posée, l'envoi se fait d'ici en un clic."
+        },
+        envoi,
+        a_la_main_titre: "À la main",
+        a_la_main: "Joindre la liste nominative au courriel du CASC-SVP, recopier les deux courriels ci-dessous, puis noter la régularisation.",
+        ouvrir: r.dossier.as_ref().map(|_| "Ouvrir les fichiers"),
+        courriel_audiens: "Courriel à Audiens",
+        courriel_casc: "Courriel au CASC-SVP",
+        noter,
+        detail: "Détail par mois",
+        colonnes: ["mois", "masse", "taux (%)", "CASC"],
+    })
 }
 
 /// Le geste de `casc-envoyer`, tel que la demande du mot de passe le dit.
@@ -737,10 +821,10 @@ const GESTE_DOSSIER: &str = "envoyer par courriel à chaque salarié choisi son 
 fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
     let nom = |f: &Option<std::path::PathBuf>| -> R<Option<String>> { f.as_deref().map(|p| NomDeFichier::du(p).map(String::from)).transpose() };
     // (le titre, les fichiers ecrits, ses avertissements, ses donnees personnelles, ses totaux partiels, la boite posee)
-    let (etat, titre, ecrits, avertissements, personnelles, partiels, boite_liee) = match exporter_objet(ctx, c)? {
+    let (etat, titre, ecrits, avertissements, personnelles, partiels, casc) = match exporter_objet(ctx, c)? {
         Exporte::Casc(r) => {
-            let (periode, ecrits, avertissements, boite_liee) = (r.periode.clone(), r.fichiers.iter().map(|f| NomDeFichier::du(f).map(String::from)).collect::<R<Vec<_>>>()?, r.avertissements.clone(), r.boite_liee);
-            (EtatRendu::Casc(r), periode, ecrits, avertissements, false, Vec::new(), boite_liee)
+            let (periode, ecrits, avertissements, casc) = (r.periode.clone(), r.fichiers.iter().map(|f| NomDeFichier::du(f).map(String::from)).collect::<R<Vec<_>>>()?, r.avertissements.clone(), ecran_de_la_casc(ctx, &r)?);
+            (EtatRendu::Casc(r), periode, ecrits, avertissements, false, Vec::new(), Some(casc))
         }
         Exporte::Livre(l) => {
             let bulletins = l.totaux.bulletins();
@@ -754,11 +838,11 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
                 })
                 .collect();
             let (periode, ecrit, avertissements) = (l.periode.clone(), nom(&l.fichier)?.into_iter().collect(), l.avertissements.clone());
-            (EtatRendu::Livre(l), periode, ecrit, avertissements, false, partiels, false)
+            (EtatRendu::Livre(l), periode, ecrit, avertissements, false, partiels, None)
         }
         Exporte::Tableau(t) => {
             let (titre, ecrit, avertissements, personnelles) = (t.titre.clone(), nom(&t.fichier)?.into_iter().collect(), t.avertissements.clone(), t.donnees_personnelles);
-            (EtatRendu::Tableau(t), titre, ecrit, avertissements, personnelles, Vec::new(), false)
+            (EtatRendu::Tableau(t), titre, ecrit, avertissements, personnelles, Vec::new(), None)
         }
     };
     // Le nom de chaque fichier ecrit part dans la reponse (`fichier`, `fichiers`) : la phrase le dit en mots.
@@ -770,14 +854,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
     let ecran = EcranDUnEtat {
         personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans prive/, et ne s'envoie qu'à qui en a besoin."),
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),
-        virement: "Vers Audiens Santé Prévoyance – Encaissement. L'IBAN se lit dans l'espace employeur Audiens ou sur la page employeurs du CASC-SVP.",
-        automatique: if boite_liee {
-            "Audiens reçoit les masses et les dates des virements ; le CASC-SVP, la liste nominative. Une copie reste dans le dossier, et les années sont notées régularisées."
-        } else {
-            "La boîte courriel n'est pas posée : Configuration › Courriel. Une fois posée, l'envoi se fait d'ici en un clic."
-        },
-        a_la_main: "Joindre la liste nominative au courriel du CASC-SVP, recopier les deux courriels ci-dessous, puis noter la régularisation.",
-        demande: if boite_liee { Some(crate::coffre::demande(&ctx.racine, GESTE_CASC)?) } else { None },
+        casc,
     };
     Ok(EtatExporte { phrase, etat, phrases: avertissements, ecran })
 }

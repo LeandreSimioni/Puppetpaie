@@ -347,88 +347,70 @@ async function lancerExport(apercu) {
  *  sinon à la main, les fichiers sont là. Le détail des mois se déplie. */
 function dessinerCasc(r) {
   const cible = document.getElementById("exports-resultat");
+  const e = r.ecran.casc;
   const lignes = r.mois.map((m) => `<tr><td>${echapper(m.libelle)}</td>
-      <td class="r">${echapper(m.masse)}</td><td class="r">${echapper(m.taux)} %</td>
+      <td class="r">${echapper(m.masse)}</td><td class="r">${echapper(m.taux)}</td>
       <td class="r">${echapper(m.cotisation)}</td></tr>`).join("");
   const annees = r.annees.map((a) => `<tr class="sous-total"><td><b>${echapper(a.annee)}</b></td>
       <td class="r">${echapper(a.masse)}</td><td></td><td class="r"><b>${echapper(a.cotisation)}</b></td></tr>`).join("");
-  const courriel = (c, titre) => `<details><summary>${titre} — ${echapper(c.entete_dit)}</summary>
+  const courriel = (c, titre) => `<details><summary>${echapper(titre)} — ${echapper(c.entete_dit)}</summary>
       <pre class="courriel">${echapper(c.corps)}</pre></details>`;
-  const n = r.annees.length;
+  // Chaque année se note par son geste ; son bouton suit l'année qu'il porte.
+  const noter = e.noter.map((g) => `<p>${echapper(String(g.charge.annee))} ${
+    boutonsDesGestes(e.noter, (x) => x === g)}</p>`).join("");
   cible.innerHTML = `
-    <h3>Régularisation CASC-SVP — ${echapper(r.periode)} — ${echapper(euros(r.total))}</h3>
+    <h3>${echapper(e.titre)}</h3>
     ${r.avertissements.map((a) => `<div class="encart alerte">${echapper(a)}</div>`).join("")}
     <div class="casc-etape">
       <h4>${echapper(r.virements_titre)}</h4>
       <ul>${r.annees.map((a) => `<li><b>${echapper(euros(a.cotisation))}</b>, ${echapper(a.libelle_dit)}</li>`).join("")}</ul>
-      <p class="discret">${echapper(r.ecran.virement)}</p>
+      <p class="discret">${echapper(e.virement)}</p>
     </div>
     <div class="casc-etape">
-      <h4>Les deux courriels</h4>
+      <h4>${echapper(e.courriels)}</h4>
       <div class="casc-choix">
         <div class="casc-option principale">
-          <h5>Depuis la boîte</h5>
-          ${r.boite_liee ? `
+          <h5>${echapper(e.depuis_la_boite)}</h5>
+          ${e.envoi ? `
           <div class="e-contrat-champs">
             ${r.annees.map((a) => `<label>${echapper(a.date_libelle)}
               <input type="date" class="casc-date" data-annee="${echapper(a.annee)}"></label>`).join("")}
           </div>
-          <button class="primaire" id="casc-envoyer">Envoyer les 2 courriels</button>
-          <p class="discret">${echapper(r.ecran.automatique)}</p>` : `
-          <p>${echapper(r.ecran.automatique)}</p>`}
+          <button class="primaire" id="casc-envoyer">${echapper(e.envoi.bouton)}</button>
+          <p class="discret">${echapper(e.automatique)}</p>` : `
+          <p>${echapper(e.automatique)}</p>`}
         </div>
         <div class="casc-option">
-          <h5>À la main</h5>
-          <p>${echapper(r.ecran.a_la_main)}</p>
-          ${r.dossier ? `<button class="secondaire" id="casc-dossier">Ouvrir les fichiers</button>` : ""}
-          ${courriel(r.courriel_audiens, "Courriel à Audiens")}
-          ${courriel(r.courriel_casc, "Courriel au CASC-SVP")}
-          <div class="e-contrat-champs">
-            <label>Année <select id="casc-annee">${r.annees.map((a) =>
-              `<option>${echapper(a.annee)}</option>`).join("")}</select></label>
-            <label>Virée le <input type="date" id="casc-vire-le"></label>
-            <label>Montant <input type="text" id="casc-montant" size="8"></label>
-            <button class="secondaire" id="casc-noter">Noter comme régularisé</button>
-          </div>
+          <h5>${echapper(e.a_la_main_titre)}</h5>
+          <p>${echapper(e.a_la_main)}</p>
+          ${e.ouvrir ? `<button class="secondaire" id="casc-dossier">${echapper(e.ouvrir)}</button>` : ""}
+          ${courriel(r.courriel_audiens, e.courriel_audiens)}
+          ${courriel(r.courriel_casc, e.courriel_casc)}
+          <div id="casc-noter">${noter}</div>
         </div>
       </div>
     </div>
-    <details><summary>Détail par mois</summary>
-      <table class="livre"><thead><tr><th>mois</th><th class="r">masse</th><th class="r">taux</th>
-        <th class="r">CASC</th></tr></thead><tbody>${lignes}${annees}</tbody></table>
+    <details><summary>${echapper(e.detail)}</summary>
+      <table class="livre"><thead><tr>${e.colonnes.map((c, i) =>
+        `<th${i ? ' class="r"' : ""}>${echapper(c)}</th>`).join("")}</tr></thead><tbody>${lignes}${annees}</tbody></table>
     </details>`;
-  if (r.dossier) document.getElementById("casc-dossier").onclick = async () => {
+  if (e.ouvrir) document.getElementById("casc-dossier").onclick = async () => {
     await ouvrirEtDire(r.dossier);
   };
-  const choixAnnee = document.getElementById("casc-annee");
-  const montant = document.getElementById("casc-montant");
-  const preremplir = () => {
-    const a = r.annees.find((x) => x.annee === Number(choixAnnee.value));
-    montant.value = a ? a.cotisation : "";
-  };
-  choixAnnee.onchange = preremplir;
-  preremplir();
-  document.getElementById("casc-noter").onclick = async () => {
-    const vire = document.getElementById("casc-vire-le").value;
-    try {
-      const e = await api("casc-regularise",
-        { annee: Number(choixAnnee.value), vire_le: vire, montant: montant.value });
-      dire(e.phrase);
-    } catch (x) { dire(x.message, "erreur"); }
-  };
+  brancherLesGestes(document.getElementById("casc-noter"), e.noter, {}, async () => {});
   const envoyer = document.getElementById("casc-envoyer");
   if (envoyer) envoyer.onclick = async () => {
+    // La charge de l'envoi est une table année → jour : une date remplie part sous son année.
     const vire_le = {};
     for (const c of document.querySelectorAll(".casc-date")) if (c.value) vire_le[c.dataset.annee] = c.value;
-    const liste = Object.keys(vire_le);
-    const mdp = await demanderMotDePasse(r.ecran.demande, { envoi: true });
+    const mdp = await demanderMotDePasse(e.envoi.demande, { envoi: true });
     if (!mdp) return;
-    const rendre = occupe(envoyer, "Envoi…");
+    const rendre = occupe(envoyer, e.envoi.pendant);
     const repere = await repereCourrielsFictifs();
     try {
-      const e = await api("casc-envoyer", { vire_le, motdepasse: mdp });
-      dire(e.phrase, "envoye");
-      cible.innerHTML = `<p>${echapper(e.phrase)}</p>`;
+      const e2 = await api(e.envoi.route, { vire_le, motdepasse: mdp });
+      dire(e2.phrase, "envoye");
+      cible.innerHTML = `<p>${echapper(e2.phrase)}</p>`;
       fenetreCourrielsFictifs("courriel", repere);
     } catch (x) {
       rendre();
