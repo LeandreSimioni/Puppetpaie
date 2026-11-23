@@ -217,11 +217,11 @@ impl socle::liste::ListeFermee for Partie {
 }
 
 impl Partie {
-    /// Le libelle de la partie, celui du geste qui la lit.
-    fn bouton(self) -> Affiche {
+    /// Le libelle de la partie, celui du geste qui la lit (une constante : un texte fautif ne compile pas).
+    const fn bouton(self) -> Affiche {
         match self {
-            Partie::Contrat => Affiche::new("Contrat"),
-            Partie::Avenant => Affiche::new("Avenant"),
+            Partie::Contrat => const { Affiche::new("Contrat") },
+            Partie::Avenant => const { Affiche::new("Avenant") },
         }
     }
 }
@@ -581,11 +581,11 @@ impl socle::liste::ListeFermee for Sens {
 }
 
 impl Sens {
-    /// Le libelle du sens, celui du geste qui deplace un paragraphe.
-    fn bouton(self) -> Affiche {
+    /// Le libelle du sens, celui du geste qui deplace un paragraphe (une constante : un texte fautif ne compile pas).
+    const fn bouton(self) -> Affiche {
         match self {
-            Sens::Monter => Affiche::new("Monter"),
-            Sens::Descendre => Affiche::new("Descendre"),
+            Sens::Monter => const { Affiche::new("Monter") },
+            Sens::Descendre => const { Affiche::new("Descendre") },
         }
     }
 }
