@@ -15,7 +15,8 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
 use socle::mois::{Annee, Mois};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, ListeDeChoix, Refus, FORME, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
+use crate::declaration::{charge, dit, legendes, ChampDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
 
@@ -31,11 +32,14 @@ use socle::fichiers::NomDeFichier;
 use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
-const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false };
+const ANNEE: Legende = dit("Année", "l'année, AAAA");
+const TOUTES_LES_ANNEES: Legende = dit("Toutes les années", "vrai : toutes les années, à la place du mois ou de l'année").avancee();
+const LOGICIEL: Legende = dit("Logiciel", "le logiciel du comptable ; absent : aucun");
+const ANALYTIQUE: Legende = dit("Par spectacle", "vrai : par spectacle").avancee();
 
 /// Une lecture sans charge de l'Historique ou des Exports.
 const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche {
-    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
+    Fiche { route, geste, charge: &SansCharge::CHARGE, exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -48,7 +52,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::RetenirLogiciel,
         geste: "Retenir le logiciel du comptable, dont les écritures prennent le format.",
-        charge: &[Champ { nom: "logiciel", libelle: Affiche::new("Logiciel"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::LogicielComptable>()), sens: "le logiciel du comptable ; absent : aucun", avance: false }, Champ { nom: "analytique", libelle: Affiche::new("Par spectacle"), forme: Forme::OuiNon, sens: "vrai : par spectacle", avance: true }],
+        charge: &ChargeRetenirLogiciel::CHARGE,
         exemple: r#"{}"#,
         rend: "le logiciel retenu",
         refus: &[OPERATION],
@@ -60,11 +64,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CascRegularise,
         geste: "Noter régularisée, hors DSN, la CASC-SVP d'une année de mois importés.",
-        charge: &[
-            ANNEE,
-            Champ { nom: "vire_le", libelle: Affiche::new("Viré le"), forme: Forme::Date, sens: "le jour du virement, AAAA-MM-JJ", avance: false },
-            Champ { nom: "montant", libelle: Affiche::new("Montant viré"), forme: Forme::Nombre, sens: "le montant viré", avance: false },
-        ],
+        charge: &ChargeCascRegularise::CHARGE,
         exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"1.12"}"#,
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, FORME, MANQUE],
@@ -76,14 +76,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Exporter,
         geste: "Exporter un état (livre de paie, charges…) en tableau ou en fichier.",
-        charge: &[
-            Champ { nom: "etat", libelle: Affiche::new("État"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::EtatDExport>()), sens: "l'état ; exports-periodes dit ceux que la compagnie peut exporter", avance: false },
-            MOIS,
-            ANNEE,
-            Champ { nom: "regroupement", libelle: Affiche::new("Regroupement"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::RegroupementDEtat>()), sens: "le regroupement des lignes, parmi ceux que l'état propose (exports-periodes)", avance: true },
-            Champ { nom: "format", libelle: Affiche::new("Format"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::FormatDExport>()), sens: "le format du fichier, parmi ceux que l'état propose (exports-periodes)", avance: true },
-            Champ { nom: "apercu", libelle: Affiche::new("Aperçu seulement"), forme: Forme::OuiNon, sens: "vrai : le tableau, sans écrire de fichier", avance: true },
-        ],
+        charge: &ChargeExporter::CHARGE,
         exemple: r#"{"etat":"livre-de-paie","mois":"2026-11","regroupement":"salarie","format":"csv","apercu":true}"#,
         rend: "le tableau, ou le fichier écrit",
         refus: &[OPERATION, MANQUE],
@@ -98,7 +91,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[
             Champ { nom: "salaries", libelle: Affiche::new("Salariés"), forme: Forme::Liste, sens: "les clés de leurs fiches", avance: false },
             MOIS,
-            ANNEE,
+            ChampDuType::du_type::<_, Annee>("annee", ANNEE).champ,
             Champ { nom: "categories", libelle: Affiche::new("Ce que le dossier porte"), forme: Forme::Liste, sens: "ce que le dossier porte ; tout sinon", avance: true },
         ],
         exemple: r#"{"salaries":["FULLER"],"mois":"2026-11"}"#,
@@ -115,7 +108,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Droits,
         geste: "Dire les heures et cachets cumulés de chaque intermittent (annexes 8 et 10).",
-        charge: &[Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois du tableau (le mois, l'année civile), AAAA-MM ; absent : celui du jour", avance: false }],
+        charge: &ChargeDroits::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "salaries (chacun : nom, fenetre, lignes [quoi, valeur], phrase, notes, colonnes du tableau), phrase (ce que vaut ce compte)",
         refus: &[OPERATION, FORME],
@@ -127,10 +120,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CascEnvoyer,
         geste: "Envoyer à Audiens et au CASC-SVP la régularisation des mois importés.",
-        charge: &[
-            Champ { nom: "vire_le", libelle: Affiche::new("Virements faits"), forme: Forme::Objet, sens: "{année: jour du virement fait, AAAA-MM-JJ}", avance: false },
-            Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel ; sans lui, le moteur le demande à un humain", avance: false },
-        ],
+        charge: &ChargeCasc::CHARGE,
         exemple: r#"{"vire_le":{"2025":"2026-11-02"}}"#,
         rend: "partis (les destinataires), expediteur, periode, total, annees (les régularisations notées), eml",
         refus: &[
@@ -462,12 +452,13 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     })
 }
 
-/// La charge de `retenir-logiciel` : le logiciel du comptable (absent ou vide : aucun), et l'analytique.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeRetenirLogiciel {
-    logiciel: Option<LogicielComptable>,
-    analytique: Option<bool>,
+charge! {
+    /// La charge de `retenir-logiciel` : le logiciel du comptable (absent ou vide : aucun), et l'analytique.
+    #[derive(Debug)]
+    pub(crate) struct ChargeRetenirLogiciel {
+        logiciel: Option<LogicielComptable> = LOGICIEL,
+        analytique: Option<bool> = ANALYTIQUE,
+    }
 }
 
 /// Ce que rend `retenir-logiciel` : sa phrase, et le logiciel du comptable tel que la page le montre.
@@ -495,14 +486,15 @@ fn retenir_logiciel(ctx: &Contexte, c: ChargeRetenirLogiciel) -> R<LogicielReten
     Ok(LogicielRetenu { phrase, compta })
 }
 
-/// La charge de `casc-regularise` : l'annee, le jour du virement, le montant vire (tape, il se convertit a la porte :
-/// `Charge::lire`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCascRegularise {
-    annee: Annee,
-    vire_le: Jour,
-    montant: socle::grandeurs::Montant,
+charge! {
+    /// La charge de `casc-regularise` : l'annee, le jour du virement, le montant vire (tape, il se convertit a la porte :
+    /// `Charge::lire`).
+    #[derive(Debug)]
+    struct ChargeCascRegularise {
+        annee: Annee = ANNEE,
+        vire_le: Jour = dit("Viré le", "le jour du virement, AAAA-MM-JJ"),
+        montant: socle::grandeurs::Montant = dit("Montant viré", "le montant viré"),
+    }
 }
 
 /// Ce que rend `casc-regularise` : sa phrase, et la regularisation notee.
@@ -522,23 +514,24 @@ fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     Ok(CascNotee { phrase: socle::phrase!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }
 
-/// La charge de `exporter` : l'etat (le livre de paie sans lui), la periode (le mois, l'annee, ou toutes les annees),
-/// le regroupement, le format, les coordonnees des salaries, l'apercu (rien n'est ecrit), et pour les ecritures
-/// comptables le logiciel du comptable et l'analytique. Le regroupement et le format se disent quand l'etat les demande
-/// (ses `questions`, ses `formats` : les tables des exports) ; ce qui n'est pas dit est absent.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeExporter {
-    etat: EtatDExport,
-    mois: Option<Mois>,
-    annee: Option<Annee>,
-    toutes_les_annees: Option<bool>,
-    regroupement: Option<RegroupementDEtat>,
-    format: Option<FormatDExport>,
-    coordonnees: Option<bool>,
-    apercu: Option<bool>,
-    logiciel: Option<LogicielComptable>,
-    analytique: Option<bool>,
+charge! {
+    /// La charge de `exporter` : l'etat (le livre de paie sans lui), la periode (le mois, l'annee, ou toutes les annees),
+    /// le regroupement, le format, les coordonnees des salaries, l'apercu (rien n'est ecrit), et pour les ecritures
+    /// comptables le logiciel du comptable et l'analytique. Le regroupement et le format se disent quand l'etat les
+    /// demande (ses `questions`, ses `formats` : les tables des exports) ; ce qui n'est pas dit est absent.
+    #[derive(Debug)]
+    pub(crate) struct ChargeExporter {
+        etat: EtatDExport = dit("État", "l'état ; exports-periodes dit ceux que la compagnie peut exporter"),
+        mois: Option<Mois> = legendes::MOIS,
+        annee: Option<Annee> = ANNEE,
+        toutes_les_annees: Option<bool> = TOUTES_LES_ANNEES,
+        regroupement: Option<RegroupementDEtat> = dit("Regroupement", "le regroupement des lignes, parmi ceux que l'état propose (exports-periodes)").avancee(),
+        format: Option<FormatDExport> = dit("Format", "le format du fichier, parmi ceux que l'état propose (exports-periodes)").avancee(),
+        coordonnees: Option<bool> = dit("Coordonnées", "vrai : les coordonnées des salariés, quand l'état les propose").avancee(),
+        apercu: Option<bool> = dit("Aperçu seulement", "vrai : le tableau, sans écrire de fichier").avancee(),
+        logiciel: Option<LogicielComptable> = dit("Logiciel", "le logiciel du comptable, pour les écritures comptables").avancee(),
+        analytique: Option<bool> = ANALYTIQUE,
+    }
 }
 
 /// Ce que l'etat `forme` demande et que la charge ne dit pas, ou dit hors de ce qu'il permet : le refus qui le nomme.
@@ -862,6 +855,20 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
         .collect())
 }
 
+/// Le jour de chaque virement fait, par annee : un objet `{annee: jour}`.
+impl ValeurDeLaCharge<ParSaForme> for std::collections::BTreeMap<Annee, Jour> {
+    const FORME: Forme = Forme::Objet;
+}
+
+charge! {
+    /// La charge de `casc-envoyer` : le jour de chaque virement fait, par annee (AAAA-MM-JJ) ; le mot de passe du
+    /// logiciel tape pour l'envoi, l'enveloppe le prend (`Charge::mot_de_passe`).
+    #[derive(Debug)]
+    struct ChargeCasc {
+        vire_le: std::collections::BTreeMap<Annee, Jour> = dit("Virements faits", "{année: jour du virement fait, AAAA-MM-JJ}"),
+    }
+}
+
 /// Envoie les deux courriels de la regularisation, APRES les virements.
 /// Irreversible. `vire_le` : {annee: AAAA-MM-JJ}, une date par virement fait ; le dossier envoye est celui de ces
 /// annees-la, exactement.
@@ -869,14 +876,6 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
 /// Dans cet ordre : la boite, la preuve, le dossier (ecrit, pour que la liste nominative jointe soit celle du jour),
 /// l'envoi, puis ce qui s'en garde -- les deux `.eml` dans `exports/casc-svp/envoyes/`, la ligne de
 /// journal, et les annees notees regularisees. Rien de tout cela ne s'ecrit si l'envoi casse.
-/// La charge de `casc-envoyer` : le jour de chaque virement fait, par annee (AAAA-MM-JJ), et le mot de passe du logiciel
-/// tape pour l'envoi.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCasc {
-    vire_le: std::collections::BTreeMap<socle::mois::Annee, Jour>,
-}
-
 fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret::Secret>, ouvrir: Ouvrir) -> R<CascEnvoyee> {
     let qui = INTERFACE;
     use crate::importation::casc::{ecrire, regularisation, Demande};
@@ -1020,11 +1019,12 @@ fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
 
 // ------------------------------------------------------------------ les droits des intermittents, l'archive d'un mois
 
-/// La charge de `droits` : le mois du tableau (aucun : celui du jour).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDroits {
-    mois: Option<Mois>,
+charge! {
+    /// La charge de `droits` : le mois du tableau (aucun : celui du jour).
+    #[derive(Debug)]
+    struct ChargeDroits {
+        mois: Option<Mois> = dit("Mois", "le mois du tableau (le mois, l'année civile), AAAA-MM ; absent : celui du jour"),
+    }
 }
 
 /// Une rangee du tableau du mois : ce qu'elle compte, et sa valeur dans chaque colonne.
