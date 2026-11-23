@@ -21,8 +21,9 @@ use socle::date::Jour;
 use socle::mois::{Annee, Graphie, Mois};
 use engagement;
 use compagnie::etat_dsn;
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
+use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::catalogue::Route;
+use crate::declaration::{charge, dit, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use crate::imprevus::{FinASignaler, FinLue, ResumeDArret};
 use crate::SansCharge;
@@ -44,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Rappels,
         geste: "Dire ce que la compagnie a à faire ce jour : DSN, fins de contrat, DPAE…",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton)",
         refus: &[OPERATION, FORME],
@@ -56,7 +57,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Echeancier,
         geste: "Lire les échéances du mois et de l'année.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: "{}",
         rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état et si un rappel la dit",
         refus: &[OPERATION, FORME],
@@ -68,7 +69,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::RevueSpectacles,
         geste: "Archiver les spectacles qui ne continuent pas, et noter la revue faite.",
-        charge: &[ANNEE, Champ { nom: "continuent", libelle: Affiche::new("Spectacles qui continuent"), forme: Forme::Liste, sens: "les spectacles qui continuent (leurs clés) ; les autres s'archivent", avance: false }],
+        charge: &ChargeRevue::CHARGE,
         exemple: r#"{"annee":2026,"continuent":["le-banc-des-menteurs"]}"#,
         rend: "phrase, archives, continuent, configuration",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "les spectacles qui continuent : des spectacles actifs, par leur clé" }, FORME],
@@ -80,7 +81,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::PourDemarrer,
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
         refus: &[OPERATION, FORME],
@@ -92,10 +93,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EcheanceFaite,
         geste: "Cocher une échéance annuelle que seule la compagnie peut dire faite.",
-        charge: &[
-            Champ { nom: "cle", libelle: Affiche::new("Échéance"), forme: Forme::Texte, sens: "l'échéance et son année, « quoi:AAAA » (celle que rappels ou echeancier rendent)", avance: false },
-            Champ { nom: "fait", libelle: Affiche::new("Faite"), forme: Forme::OuiNon, sens: "faux : la décocher", avance: false },
-        ],
+        charge: &ChargeFaite::CHARGE,
         exemple: r#"{"cle":"revue-spectacles:2026"}"#,
         rend: "cle, fait",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "une échéance qui se coche, avec son année" }, FORME],
@@ -106,25 +104,30 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false };
-
 // ------------------------------------------------------------------ les charges
 
-/// La charge de `revue-spectacles` : l'annee de la revue, et les spectacles qui continuent (leurs cles ; les autres
-/// s'archivent). Le geste qu'offre son rappel l'ecrit aussi.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeRevue {
-    annee: Annee,
-    continuent: Vec<droit::contexte::IdSpectacle>,
+charge! {
+    /// La charge de `revue-spectacles` : l'annee de la revue, et les spectacles qui continuent (leurs cles ; les autres
+    /// s'archivent). Le geste qu'offre son rappel l'ecrit aussi.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeRevue {
+        annee: Annee = crate::historique::ANNEE,
+        continuent: Vec<droit::contexte::IdSpectacle> = dit("Spectacles qui continuent", "les spectacles qui continuent (leurs clés) ; les autres s'archivent"),
+    }
 }
 
-/// La charge de `echeance-faite` : l'echeance « quoi:AAAA », cochee sauf `fait: false`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeFaite {
-    cle: CleDEcheance,
-    fait: Option<bool>,
+charge! {
+    /// La charge de `echeance-faite` : l'echeance « quoi:AAAA », cochee sauf `fait: false`.
+    #[derive(Debug)]
+    struct ChargeFaite {
+        cle: CleDEcheance = dit("Échéance", "l'échéance et son année, « quoi:AAAA » (celle que rappels ou echeancier rendent)"),
+        fait: Option<bool> = dit("Faite", "faux : la décocher"),
+    }
+}
+
+/// Dans une charge, la cle d'une echeance se dit en texte (« quoi:AAAA »).
+impl ValeurDeLaCharge<ParSaForme> for CleDEcheance {
+    const FORME: Forme = Forme::Texte;
 }
 
 /// LA CLE D'UNE ECHEANCE : ce qui la nomme d'un rappel a l'autre, que la page renvoie pour la cocher
