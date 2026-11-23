@@ -1341,7 +1341,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce que la DSN sait d'un contrat (infra DSN mensuelle, ou déjà déclaré) | `droit::natures::ConnuDeLaDsn` | `droit/src/natures.rs` |
 | une fin de la liste des fins à signaler : lue, ou sur une carte à corriger | `routes::imprevus::FinASignaler` (`FinLue`, `FinACorriger`) | `routes/src/imprevus.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
-| vue qu'ouvre le geste d'un clic quand sa route en a deux (l'aperçu du dépôt : choisir les embauches de la DPAE, ou déposer ; celui des contrats : ceux à envoyer, ou ceux qui attendent leur signature), que l'action nomme (`vue`) et dont la page ouvre la boîte sans rien décider | `routes::etapes::VueDuGeste` | `routes/src/etapes.rs` |
+| vue qu'ouvre le geste d'un clic quand sa route en a deux (l'aperçu du dépôt : choisir les embauches de la DPAE, ou déposer ; celui des contrats : ceux à envoyer, ou ceux qui attendent leur signature), que l'action nomme (`vue`) et dont la page ouvre la boîte sans rien décider ; la charge d'une telle route n'entre dans une action que par `vers`, qui dit la vue (`ChargeDUneVue`) | `routes::etapes::VueDuGeste`, `routes::etapes::ChargeDUneVue` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | mémoire d'une fiche datée (ce que le moteur garde d'une fiche pour lui seul, ni case ni note : la section `memoires` de `fiche!` ; le matricule donné d'office, `matricule_d_office`) | un champ facultatif de la fiche datée d'un salarié (celle que range `Salaries`), du type de ce qu'il garde | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
