@@ -6,7 +6,7 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::importation::casc::{marquer_regularise, RegularisationNotee};
@@ -15,8 +15,8 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
 use socle::mois::{Annee, Mois};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
-use crate::declaration::{charge, dit, legendes, ChampDuType, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::catalogue::{Acte, Forme, Fiche, Refus, FORME, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
 
@@ -33,7 +33,7 @@ use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
 const ANNEE: Legende = dit("Année", "l'année, AAAA");
-const TOUTES_LES_ANNEES: Legende = dit("Toutes les années", "vrai : toutes les années, à la place du mois ou de l'année").avancee();
+pub(crate) const TOUTES_LES_ANNEES: Legende = dit("Toutes les années", "vrai : toutes les années, à la place du mois ou de l'année").avancee();
 const LOGICIEL: Legende = dit("Logiciel", "le logiciel du comptable ; absent : aucun");
 const ANALYTIQUE: Legende = dit("Par spectacle", "vrai : par spectacle").avancee();
 
@@ -88,12 +88,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DossierEnvoyer,
         geste: "Refaire le dossier de chaque salarié choisi et le lui envoyer par courriel.",
-        charge: &[
-            Champ { nom: "salaries", libelle: Affiche::new("Salariés"), forme: Forme::Liste, sens: "les clés de leurs fiches", avance: false },
-            MOIS,
-            ChampDuType::du_type::<_, Annee>("annee", ANNEE).champ,
-            Champ { nom: "categories", libelle: Affiche::new("Ce que le dossier porte"), forme: Forme::Liste, sens: "ce que le dossier porte ; tout sinon", avance: true },
-        ],
+        charge: &ChargeDossierEnvoyer::CHARGE,
         exemple: r#"{"salaries":["FULLER"],"mois":"2026-11"}"#,
         rend: "le dossier, et envoi (partis)",
         refus: &[
@@ -713,17 +708,17 @@ const CORPS_DOSSIER: &str = "Bonjour {prenom},\n\nTu trouveras ci-joint ton doss
 /// certificats sont les pages memes de l'archive ; le reste se prend tel quel).
 const REEDITION_CONTRATS: &str = "Les contrats ont été réédités par notre logiciel de paie depuis les données\nd'origine : les numéros et les montants sont ceux des contrats qui t'ont été\nremis ; seule la mise en page peut avoir changé depuis.\n\n";
 
-/// La charge de `dossier-envoyer` : les salaries (aucun : chacun), la periode (le mois, l'annee, ou toutes les annees), ce
-/// que le dossier porte (tout sinon), et le mot de passe du logiciel tape pour l'envoi. L'envoi refait le dossier de
-/// chacun : ni apercu, ni dossier d'ensemble.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDossierEnvoyer {
-    salaries: Option<Vec<droit::contexte::IdSalarie>>,
-    mois: Option<Mois>,
-    annee: Option<Annee>,
-    toutes_les_annees: Option<bool>,
-    categories: Option<Vec<documents::CategorieDeDocument>>,
+charge! {
+    /// La charge de `dossier-envoyer` : les salaries (aucun : chacun), la periode (le mois, l'annee, ou toutes les annees),
+    /// ce que le dossier porte (tout sinon). L'envoi refait le dossier de chacun : ni apercu, ni dossier d'ensemble.
+    #[derive(Debug)]
+    struct ChargeDossierEnvoyer {
+        salaries: Option<Vec<droit::contexte::IdSalarie>> = dit("Salariés", "les clés de leurs fiches"),
+        mois: Option<Mois> = legendes::MOIS,
+        annee: Option<Annee> = ANNEE,
+        toutes_les_annees: Option<bool> = TOUTES_LES_ANNEES,
+        categories: Option<Vec<documents::CategorieDeDocument>> = dit("Ce que le dossier porte", "ce que le dossier porte ; tout sinon").avancee(),
+    }
 }
 
 /// La route `dossier-envoyer` : le dossier se refait ici (`dossier_salarie`, un fichier par salarie, ecrit dans

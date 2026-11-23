@@ -19,7 +19,7 @@ use droit::fiche::Lue as _;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 
@@ -35,7 +35,8 @@ use documents::{CategorieDeDocument, SorteDePieceProduite};
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
 use socle::echec::{erreur, Classe, Echec, R};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, legendes};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 
@@ -46,13 +47,7 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::DossierSalarie,
     geste: "Assembler les documents de salariés sur une période, en PDF ou en ZIP.",
-    charge: &[
-        Champ { nom: "salaries", libelle: Affiche::new("Salariés"), forme: Forme::Liste, sens: "les clés des salariés", avance: false },
-        Champ { nom: "mois", libelle: Affiche::new("Période"), forme: Forme::Texte, sens: "un mois AAAA-MM ; ou annee, ou toutes_les_annees", avance: false },
-        Champ { nom: "categories", libelle: Affiche::new("Sortes de documents"), forme: Forme::Liste, sens: "les sortes de documents (bulletins, contrats…) ; toutes par défaut", avance: true },
-        Champ { nom: "ensemble", libelle: Affiche::new("Un seul fichier"), forme: Forme::OuiNon, sens: "vrai : un seul fichier pour tous", avance: true },
-        Champ { nom: "apercu", libelle: Affiche::new("Aperçu seulement"), forme: Forme::OuiNon, sens: "vrai : dire ce qui serait assemblé, sans rien écrire", avance: true },
-    ],
+    charge: &DemandeDeDossier::CHARGE,
     exemple: r#"{"salaries":["FULLER"],"mois":"2026-11","apercu":true}"#,
     rend: "les fichiers écrits (ou à écrire, en aperçu), par salarié et par sorte",
     refus: &[OPERATION, MANQUE, ILLISIBLE, FORME],
@@ -91,19 +86,20 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
 
 // ------------------------------------------------------------------ les formes
 
-/// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
-/// chacun), UNE periode (le mois, l'annee, ou toutes les annees), ce qu'il porte (rien : tout), un seul fichier pour
-/// tous (`ensemble`), et `apercu` pour dire ce qui s'ecrirait sans rien ecrire.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DemandeDeDossier {
-    pub(crate) salaries: Option<Vec<IdSalarie>>,
-    pub(crate) mois: Option<Mois>,
-    pub(crate) annee: Option<socle::mois::Annee>,
-    pub(crate) toutes_les_annees: Option<bool>,
-    pub(crate) categories: Option<Vec<CategorieDeDocument>>,
-    pub(crate) ensemble: Option<bool>,
-    pub(crate) apercu: Option<bool>,
+charge! {
+    /// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
+    /// chacun), UNE periode (le mois, l'annee, ou toutes les annees), ce qu'il porte (rien : tout), un seul fichier pour
+    /// tous (`ensemble`), et `apercu` pour dire ce qui s'ecrirait sans rien ecrire.
+    #[derive(Debug, Clone, Default)]
+    pub(crate) struct DemandeDeDossier {
+        pub(crate) salaries: Option<Vec<IdSalarie>> = dit("Salariés", "les clés des salariés"),
+        pub(crate) mois: Option<Mois> = legendes::MOIS,
+        pub(crate) annee: Option<socle::mois::Annee> = crate::historique::ANNEE,
+        pub(crate) toutes_les_annees: Option<bool> = crate::archives::TOUTES_LES_ANNEES,
+        pub(crate) categories: Option<Vec<CategorieDeDocument>> = dit("Sortes de documents", "les sortes de documents (bulletins, contrats…) ; toutes par défaut").avancee(),
+        pub(crate) ensemble: Option<bool> = dit("Un seul fichier", "vrai : un seul fichier pour tous").avancee(),
+        pub(crate) apercu: Option<bool> = dit("Aperçu seulement", "vrai : dire ce qui serait assemblé, sans rien écrire").avancee(),
+    }
 }
 
 /// Une table JSON dont les cles gardent l'ordre ou elles sont venues (les salaries, puis leurs categories).

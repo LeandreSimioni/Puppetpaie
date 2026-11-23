@@ -93,6 +93,7 @@ formes! {
         droit::fiche::CodePcsEse,
         droit::fiche::Courriel,
         droit::fiche::CaseDeFiche,
+        documents::CategorieDeDocument,
         droit::emplois::CodeEmploi,
         droit::natures::IdentifiantDeDeclaration,
         engagement::numeros::NumeroContrat,
