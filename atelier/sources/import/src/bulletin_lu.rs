@@ -426,26 +426,23 @@ fn taux_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
 
 /// LES HEURES QU'UNE LIGNE COMPTEE EN TETE DIT APRES SON LIBELLE (« 2 services de répétition (8 h) » : les heures de
 /// travail auxquelles le salaire se rapporte, C. trav. R. 3243-1, 5°, `code-du-travail/articles-20261028.md`, l. 442),
-/// rapportees a chacune de ses `quantite` unites : le libelle sans elles, et elles. Sans « (<nombre> h) » en fin de
-/// libelle, ou quand elles ne se partagent pas juste entre ses unites, le libelle tel quel.
-fn heures_du_libelle(libelle: &str, quantite: Imprime) -> (String, Option<HeuresParUnite>) {
-    let lu = libelle.trim_end().strip_suffix(" h)").and_then(|t| t.rsplit_once(" (")).and_then(|(tete, n)| {
-        let total: Heures = lire_nombre(n)?.grandeur();
-        Some((tete.to_string(), total.par_unite(quantite.grandeur())?))
-    });
+/// toutes ensemble, telles qu'il les imprime : le libelle sans elles, et elles. Sans « (<nombre> h) » en fin de libelle,
+/// le libelle tel quel.
+fn heures_du_libelle(libelle: &str) -> (String, Option<Heures>) {
+    let lu = libelle.trim_end().strip_suffix(" h)").and_then(|t| t.rsplit_once(" (")).and_then(|(tete, n)| Some((tete.to_string(), lire_nombre(n)?.grandeur())));
     match lu {
         Some((tete, h)) => (tete, Some(h)),
         None => (libelle.to_string(), None),
     }
 }
 
-/// La quantite qu'un libelle dit apres lui, dans son unite (« Indemnité compensatrice de congés payés (4,92 jours) ») :
-/// le libelle sans elle, et elle.
+/// La quantite qu'un libelle dit apres lui, dans son unite (« Indemnité compensatrice de congés payés (4,92 jours) »,
+/// « Heures supplémentaires (3 h) ») : le libelle sans elle, et elle.
 fn quantite_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
     let lu = libelle.trim_end().strip_suffix(')').and_then(|t| t.rsplit_once(" (")).and_then(|(tete, dedans)| {
         let (n, unite) = dedans.split_once(' ')?;
         let unite = unite.trim_end_matches('s');
-        ["jour", "semaine", "heure", "cachet", "service"].contains(&unite).then_some(())?;
+        ["jour", "semaine", "heure", "h", "cachet", "service"].contains(&unite).then_some(())?;
         Some((tete.to_string(), lire_nombre(n)?))
     });
     match lu {
@@ -974,6 +971,22 @@ pub struct LignePaie {
     /// saisissent (un service de repetition).
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     pub heures: Option<HeuresParUnite>,
+    /// LES HEURES DE TRAVAIL QUE LA LIGNE IMPRIME, toutes ensemble, telles qu'imprimees (« 2 services de répétition
+    /// (8 h) » : 8 h ; C. trav. R. 3243-1, 5°).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub heures_imprimees: Option<Heures>,
+}
+
+impl LignePaie {
+    /// SES HEURES PAR UNITE : celles qu'elle imprime, rapportees a sa quantite ; sinon celles que la table donne a son
+    /// libelle. La saisie d'une ligne ne porte que des heures par unite (`droit::catalogue::Rubrique::heures_par_unite`) :
+    /// le total imprime s'y partage, et sa quantite fois elles le rend.
+    pub fn heures_par_unite(&self) -> Option<HeuresParUnite> {
+        match (self.heures_imprimees, self.quantite) {
+            (Some(total), Some(q)) => total.par_unite(q.grandeur()),
+            _ => self.heures,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -2260,9 +2273,11 @@ impl<'a> Lecteur<'a> {
         // libelle (« Cachets à 150,00 »).
         let ligne = |libelle: &str, quantite: Option<Imprime>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
             let (libelle, taux_ecrit) = taux_du_libelle(libelle);
-            let (libelle, quantite, heures_dites) = match quantite {
+            // Une ligne comptee en tete dit ses heures apres son libelle ; sans quantite en tete, ce qu'il dit apres lui est
+            // sa quantite (« Heures supplémentaires (3 h) »).
+            let (libelle, quantite, heures_imprimees) = match quantite {
                 Some(q) => {
-                    let (libelle, h) = heures_du_libelle(&libelle, q);
+                    let (libelle, h) = heures_du_libelle(&libelle);
                     (libelle, Some(q), h)
                 }
                 None => {
@@ -2271,10 +2286,9 @@ impl<'a> Lecteur<'a> {
                 }
             };
             let cl = canon(&libelle);
-            // Une ligne hors de l'assiette (un defraiement) n'est pas dans le brut, ou que le bulletin l'imprime. Ses
-            // heures par unite : celles que la ligne dit, sinon celles que la table donne a son libelle.
+            // Une ligne hors de l'assiette (un defraiement) n'est pas dans le brut, ou que le bulletin l'imprime.
             let (rubrique, heures, soumis) = match table.lignes.iter().find(|x| x.canon == cl) {
-                Some(x) => (x.rubrique.clone(), heures_dites.or(x.heures), soumis && !x.non_soumise),
+                Some(x) => (x.rubrique.clone(), x.heures, soumis && !x.non_soumise),
                 None => {
                     avertissements.push(Avertissement::LibelleInconnu(libelle.clone()));
                     (None, None, soumis)
@@ -2282,7 +2296,7 @@ impl<'a> Lecteur<'a> {
             };
             let n = r.nombres.len();
             let taux = if n >= 2 { Some(r.nombres[n - 2].1) } else { taux_ecrit };
-            LignePaie { quantite, libelle, taux, montant: r.dernier(), soumis, rubrique, heures }
+            LignePaie { quantite, libelle, taux, montant: r.dernier(), soumis, rubrique, heures, heures_imprimees }
         };
         let de_ligne = |r: &RangCorps| match &r.quantite {
             Some((q, reste)) => (reste.clone(), Some(*q)),
@@ -2646,6 +2660,16 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         };
         let r = droit::catalogue::rubrique(racine, code, &b.periode.fin())?;
         let cachet = r.unite == droit::catalogue::Unite::Cachet;
+        let ens = r.compte_pour == droit::catalogue::ComptePour::OuvertureDesDroits;
+        // Les heures que la ligne imprime, toutes ensemble, quand sa rubrique les fait saisir : elles se comptent telles
+        // qu'imprimees.
+        if let (true, Some(h)) = (r.heures_a_saisir(), l.heures_imprimees) {
+            heures = heures.map(|x| x + h);
+            if ens {
+                enseignement = enseignement.map(|x| x + h);
+            }
+            continue;
+        }
         // Les heures d'une unite : le forfait du catalogue, sinon celles que le libelle dit ; une heure compte ses heures.
         let par_unite = r.heures_forfait.or(l.heures);
         if !cachet && par_unite.is_none() && r.unite != droit::catalogue::Unite::Heure {
@@ -2653,7 +2677,6 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
             sans_duree |= r.saisie.contains(&droit::catalogue::CaseSaisie::Heures);
             continue;
         }
-        let ens = r.compte_pour == droit::catalogue::ComptePour::OuvertureDesDroits;
         let Some(q) = l.quantite else {
             avertissements.push(format!("« {} » : sans quantité, ses {} ne se comptent pas", l.libelle, if cachet { "cachets" } else { "heures" }));
             if cachet {
