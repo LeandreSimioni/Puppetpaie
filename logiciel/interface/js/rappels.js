@@ -466,40 +466,6 @@ async function agirSurRappel(r) {
   return ouvrirGeste(r.action, mois || r.mois, null, r);
 }
 
-/* ---- La revue des spectacles, en début d'année. Un numéro d'objet vaut
- * tant que le spectacle se joue : on
- * demande seulement lesquels continuent. Tout est coché ; décocher archive,
- * et une fiche archivée se réactive d'un clic dans Configuration. */
-function boiteRevueSpectacles(r, charge) {
-  const lignes = r.spectacles.map((s, i) => `
-    <label class="coche"><input type="checkbox" class="rv-garde" data-cle="${echapper(s.cle)}" checked>
-      ${echapper(s.nomme)}${s.numero_objet ? ` <span class="discret">${echapper(s.numero_objet)}</span>` : ""}</label>`).join("");
-  ouvrirBoite(`
-    <h3>${echapper(r.titre_boite)}</h3>
-    <p>${echapper(r.question)}</p>
-    ${lignes}
-    <p class="note">${aideDe("revue_spectacles")}</p>
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Plus tard</button>
-      <button class="primaire" id="rv-valider">Enregistrer</button>
-    </div>`);
-  document.getElementById("rv-valider").onclick = async () => {
-    const bouton = document.getElementById("rv-valider");
-    bouton.disabled = true;
-    const continuent = [...document.querySelectorAll(".rv-garde")]
-      .filter((c) => c.checked).map((c) => c.dataset.cle);
-    try {
-      const res = await api("revue-spectacles", { ...charge, continuent });
-      await relireEtat();
-      fermerBoite();
-      dire(res.phrase);
-    } catch (e) {
-      bouton.disabled = false;
-      dire(e.message, "erreur");
-    }
-  };
-}
-
 /* ---- L'exercice, dans l'Historique : par année, ce qui est fait, ce qui
  * se fait. Clôturer fige l'année et écrit le zip ; l'export compta écrit le
  * CSV du journal de paie. Les deux sont locaux — rien ne part. */

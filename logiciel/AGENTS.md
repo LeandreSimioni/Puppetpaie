@@ -18,7 +18,8 @@ ne calcule rien de tête et n'invente aucune valeur.
 - La compagnie : la route `compagnies` (sans `--racine`) dit les compagnies de l'installation ; le `chemin` de chacune est
   le `--racine` de ses routes. Sans compagnie : `compagnie-ajouter`.
 - Ce qui est à faire : les routes `pour-demarrer`, `rappels`, `etat-du-mois`. Le geste suivant est l'`action` d'un rappel ou d'un groupe
-  d'`etat-du-mois` : sa `route` et sa `charge`, puis la route de l'acte (`puis`).
+  d'`etat-du-mois` : sa `route` et sa `charge`, puis la route de l'acte (`puis`) ; ou un des `gestes` d'un rappel : sa
+  `route`, sa `charge`, et ses `cases` à remplir (ce qu'elles montrent d'abord, `valeurs`, et ce qu'elles offrent, `choix`).
 
 **Les règles.**
 - Un acte réel (dépôt réel, envoi, signature) : le programme ouvre lui-même une boîte où la personne tape le mot de passe

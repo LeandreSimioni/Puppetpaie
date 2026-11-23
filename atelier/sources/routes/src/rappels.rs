@@ -79,7 +79,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::Dessine(Place::Paie),
+        ecran: Ecran::Geste(Place::Paie),
     },
     Fiche {
         route: Route::PourDemarrer,
@@ -288,6 +288,10 @@ const L_ANNEE_QUI_VIENT: &str = "L'année qui vient";
 /// Les libelles du geste « C'est fait » d'une echeance que seule la compagnie peut dire faite, et de celui qui le defait.
 const C_EST_FAIT: Affiche = Affiche::new("C'est fait");
 const PAS_ENCORE_FAIT: Affiche = Affiche::new("Pas encore fait");
+
+/// Le libelle du geste de la revue des spectacles, et ce que sa boite dit sous la question.
+const CHOISIR_LES_SPECTACLES: Affiche = Affiche::new("Choisir les spectacles");
+const REVUE_DIT: &str = "Décochés, ils s'archivent : ils restent lisibles et se réactivent d'un clic (Configuration › Spectacles). Ceux qui continuent gardent leur numéro d'objet.";
 
 /// Ce que rend `revue-spectacles`.
 #[derive(Debug, Serialize)]
@@ -694,9 +698,9 @@ impl Echeance {
     /// fin d'un contrat se signale (ou, s'il manque une case, se complete dans sa carte : la saisie du mois, puis
     /// l'engagement modifie) ; un signalement DSN d'arret ou de reprise se signale ; une obligation hors DSN qu'une route
     /// dit faite (`accident-declare`, `attestation-declare`) se dit faite ; le reste s'ouvre dans son mois. Une DSN, une
-    /// DPAE : l'apercu de son depot, puis le depot. La cloture, l'export compta, la revue des spectacles : leur route.
-    /// Le geste d'une route qui a sa structure de charge (le mois, les signalements des imprevus, la revue des
-    /// spectacles) la passe ; un objet qui ne la remplit pas (un arret sans son salarie ou son dernier jour travaille)
+    /// DPAE : l'apercu de son depot, puis le depot. La cloture, l'export compta : leur route (la revue des spectacles est
+    /// un de ses `gestes`). Le geste d'une route qui a sa structure de charge (le mois, les signalements des imprevus) la
+    /// passe ; un objet qui ne la remplit pas (un arret sans son salarie ou son dernier jour travaille)
     /// n'offre pas de geste.
     fn action(&self) -> R<Option<crate::etapes::Action>> {
         use crate::etapes::{action, deposer_dsn, ChargeAnnee, ChargeMois, ChargeObligationDArret};
@@ -742,16 +746,12 @@ impl Echeance {
                 let Some(mois) = self.mois else { return Ok(None) };
                 action(Route::DepotApercu, crate::depots::Designation::du_mois(crate::depots::Quoi::Dpae, mois), Some(Route::Deposer), "Préparer la DPAE".into())
             }
-            GenreDEcheance::DeLAnnee(cle) if *cle == CLOTURE || *cle == EXPORT_COMPTA || *cle == REVUE_SPECTACLES => {
+            GenreDEcheance::DeLAnnee(cle) if *cle == CLOTURE || *cle == EXPORT_COMPTA => {
                 let Some(annee) = self.annee else { return Ok(None) };
                 if *cle == CLOTURE {
                     action(Route::Cloture, ChargeAnnee { annee }, None, format!("Clôturer {}", annee))
-                } else if *cle == EXPORT_COMPTA {
-                    action(Route::ExportCompta, ChargeAnnee { annee }, None, "Exporter pour la compta".into())
                 } else {
-                    // Tous continuent, tant qu'on n'en a pas décoché un : la boîte s'ouvre ainsi.
-                    let charge = ChargeRevue { annee, continuent: self.spectacles.iter().map(|s| s.cle.clone()).collect() };
-                    action(Route::RevueSpectacles, charge, None, "Choisir les spectacles".into())
+                    action(Route::ExportCompta, ChargeAnnee { annee }, None, "Exporter pour la compta".into())
                 }
             }
             GenreDEcheance::DeLAnnee(_) => return Ok(None),
@@ -788,15 +788,24 @@ impl Echeance {
             objet: self.objet.clone(),
             action: self.action()?,
             gestes: self.gestes(),
-            titre_boite: self.annee.map(|a| format!("Les spectacles de {}", a)),
         })
     }
 
     /// LES GESTES QUE SA BOITE FAIT, tels que la page les dessine en boutons (`js/avance.js`, `brancherLesGestes`) : une
     /// echeance que seule la compagnie peut dire faite se coche (« C'est fait », `echeance-faite`), et se decoche une fois
-    /// faite (« Pas encore fait »).
+    /// faite (« Pas encore fait ») ; la revue des spectacles fait cocher ceux qui continuent, tous cochés d'abord (la
+    /// charge n'en porte aucun : tout décocher les archive tous).
     fn gestes(&self) -> Vec<GesteDEcheance> {
         let mut gestes = Vec::new();
+        if let (GenreDEcheance::DeLAnnee(cle), Some(annee)) = (&self.quoi, self.annee) {
+            if *cle == REVUE_SPECTACLES {
+                let charge = ChargeRevue { annee, continuent: Vec::new() };
+                let valeurs = ValeursDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| s.cle.clone()).collect()) };
+                let choix = ChoixDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| crate::ouverture::Choix::de(&s.cle, &s.dit)).collect()) };
+                let geste = GesteDeRoute::avec_cases(Route::RevueSpectacles, charge.into(), CHOISIR_LES_SPECTACLES, vec![cle!(ChargeRevue, continuent)], valeurs, choix);
+                gestes.push(geste.disant(vec![self.question.clone(), REVUE_DIT.to_string()]));
+            }
+        }
         if self.cochable {
             let fait = self.etat != Fait;
             let charge = ChargeFaite { cle: self.cle.clone(), fait: Some(fait) };
@@ -859,8 +868,6 @@ pub(crate) struct EcheanceDite {
     pub(crate) action: Option<crate::etapes::Action>,
     /// Les gestes que sa boite fait (`Echeance::gestes`).
     pub(crate) gestes: Vec<GesteDEcheance>,
-    /// Le titre de sa boite.
-    pub(crate) titre_boite: Option<String>,
 }
 
 /// Un spectacle actif que la revue de l'annee demande : sa cle, son titre et son numero d'objet tels que sa fiche les
