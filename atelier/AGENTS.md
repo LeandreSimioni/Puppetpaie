@@ -152,7 +152,9 @@ l'arrivée tient la page, et c'est prouvé en jouant (tout cliquer ; une compagn
 
 **Le moteur rend, la page lit la réponse** et n'a que ses règles d'affichage. **Où chaque route
 se voit, c'est sa fiche qui le dit** (`Fiche::ecran`, obligatoire, `routes/src/catalogue.rs`) : `Dessine(place)` (un écran
-fait main de cette place l'appelle), `Auto(place, bouton)` (sous « Avancé » de sa place, `js/avance.js` la dessine
+fait main de cette place l'appelle), `Rendu(place)` (la lecture qui rend l'écran de cette place, ce qu'il dit, ses
+rangs, ses cases et le geste qui les enregistre : `js/avance.js` le pose depuis sa réponse, `poserLEcranRendu`),
+`Auto(place, bouton)` (sous « Avancé » de sa place, `js/avance.js` la dessine
 depuis sa fiche : son nom n'est écrit dans aucun JS), `Geste(place)` (une route de cette place la rend en geste : route,
 charge, libellé, cases ; `js/avance.js` en dessine le bouton et la boîte depuis sa fiche), `Lecture` (elle nourrit un
 écran, n'écrit rien) ; `DessineAvance(place)`, `GesteAvance(place)` et `LectureAvancee` : les mêmes, hors du chemin

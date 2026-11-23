@@ -200,8 +200,8 @@ const CASES = {
     html: (v, o) => {
       const nom = `boutons-${++NUMERO_DES_BOUTONS}`;
       const coche = v != null ? String(v) : o.prerempli != null ? String(o.prerempli) : null;
-      const exemple = (c) => (c.exemple ? ` <a class="lien" href="${echapper(`${c.exemple.adresse}${c.exemple.adresse.includes("?") ? "&" : "?"}jeton=${
-        encodeURIComponent(JETON)}&t=${Date.now()}`)}" target="_blank" rel="noopener">${echapper(c.exemple.libelle)}</a>` : "");
+      const exemple = (c) => (c.exemple ? ` <a class="lien" href="${echapper(adresseDuDocument(c.exemple))}" target="_blank" rel="noopener">${
+        echapper(c.exemple.libelle)}</a>` : "");
       return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}${
         v == null && o.prerempli != null ? ` data-prerempli="${echapper(String(o.prerempli))}"` : ""}>${(o.choix || []).filter((c) => c.code !== "")
         .map((c) => `<span class="choix-et-exemple"><label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${coche === c.code ? " checked" : ""}> ${
@@ -229,7 +229,17 @@ const CASES = {
       return x.textContent.trim() || x.querySelector("img") ? x.innerHTML.trim() : null;
     },
   },
+  // UN FICHIER QUE LA PERSONNE CHOISIT SUR SON POSTE, des types que la fiche admet (`o.admis`) : ses octets partent en
+  // base64, lus dès qu'il est choisi (`brancherLesCases`) ; rien de choisi, la case est vide.
+  fichier: {
+    html: (v, o) => `<input type="file" data-case${o.admis ? ` accept="${echapper(o.admis.join(","))}"` : ""}>`,
+    lire: (x) => (x.dataset.contenu == null ? null : x.dataset.contenu),
+  },
 };
+
+/** L'ADRESSE OÙ LA FENÊTRE SERT UN DOCUMENT QUE LA ROUTE NOMME (`adresse`, `routes::ouverture::DocumentMontre`), refaite à
+ *  chaque fois : le document a pu changer depuis. */
+const adresseDuDocument = (d) => `${d.adresse}${d.adresse.includes("?") ? "&" : "?"}jeton=${encodeURIComponent(JETON)}&t=${Date.now()}`;
 
 /** Les jours qui disent leur propre lieu (`{jour, lieu}`) : une case chacun, le lieu du jour. */
 function lieuxDesJours(jours) {
@@ -281,6 +291,19 @@ function brancherLesCases(bloc, o = {}) {
     };
   });
   bloc.querySelectorAll(".case-html").forEach((x) => { if (x.dataset.rendu == null) x.dataset.rendu = x.innerHTML; });
+  // Un fichier choisi se lit en base64 (sans l'en-tête de l'adresse data:) ; le moteur reconnaît son format à ses
+  // premiers octets, pas à son extension.
+  bloc.querySelectorAll('input[type="file"][data-case]').forEach((x) => {
+    x.onchange = () => {
+      delete x.dataset.contenu;
+      const f = x.files && x.files[0];
+      if (!f) return;
+      const l = new FileReader();
+      l.onload = () => { x.dataset.contenu = String(l.result).split(",").pop(); };
+      l.onerror = () => dire(String(l.error), "erreur");
+      l.readAsDataURL(f);
+    };
+  });
   // Les rangées : « + » en ajoute une (le modèle vide), la croix retire la sienne ; la case le dit comme une saisie.
   const dire = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
   bloc.querySelectorAll("[data-rangee-plus]").forEach((b) => {
@@ -466,7 +489,7 @@ function caseDeRoute(c) {
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
   const balise = ["parties", "rangees", "html", "boutons"].includes(forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
-    ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps })}${
+    ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis })}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${
     c.renvoi ? `<button type="button" class="lien case-renvoi" data-renvoi="${echapper(JSON.stringify(c.renvoi))}">${echapper(c.renvoi.libelle)}</button>` : ""}</${balise}>`;
 }
@@ -532,7 +555,7 @@ function casesDesChamps(champs, valeurs, choix, o = {}) {
   };
   const une = (c) => {
     const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix,
-      exemple: exemple(c.nom) };
+      exemple: exemple(c.nom), admis: c.admis };
     return caseDeRoute(o.modifie ? modifiable(d) : d);
   };
   const avance = (c) => !!o.modifie && !!c.avance;
@@ -672,35 +695,65 @@ async function quitterLEcran() {
 
 /* ------------------------------------------------ un écran que la route rend */
 
-/** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (sa fiche : `affichage: "rendu"`). Sa charge : le mois de l'écran
- *  quand sa fiche le prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la
- *  place de l'écran. */
+/** La route qui rend l'écran de la place `place` (sa fiche : `affichage: "rendu"`), s'il en est une. */
+function routeQuiRend(place) {
+  return Object.values(CATALOGUE).find((f) => f.affichage === "rendu" && f.ecran === place);
+}
+
+/** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (`routeQuiRend`). Sa charge : le mois de l'écran quand sa fiche le
+ *  prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
 async function dessinerLEcranRendu(cible, f) {
   const mois = f.charge.some((c) => c.nom === "mois" && c.forme === "mois") && typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE
     ? { mois: MOIS_AFFICHE } : {};
   let r;
   try { r = await api(f.nom, mois); }
-  catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-  poserLEcranRendu(cible, r);
+  catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
+  poserLEcranRendu(cible, r, () => dessinerLEcranRendu(cible, f));
 }
 
-/** POSE DANS `cible` L'ÉCRAN RENDU `r` (`routes::fiches::EcranRendu`) : ses encarts, ses cases dessinées comme celles
- *  d'une fiche (`casesDeLaFiche`, l'historique de ses cases datées compris), et le bouton de son geste (`enregistrer` :
- *  sa route, sa charge, le champ de la charge où vont les cases, `dans`, et son libellé). Enregistrer envoie ce que les
- *  cases disent et pose l'écran que la route rend en réponse ; un refus se dit, et les saisies restent. Quitter avec une
- *  saisie non enregistrée se demande (`retenirLEcran`). */
-function poserLEcranRendu(cible, r) {
+/** POSE DANS `cible` L'ÉCRAN RENDU `r` (`routes::ecran::EcranRendu`) ; ce qu'il n'a pas, la route ne l'écrit pas.
+ *  - Ce qu'il dit en tête : ses encarts.
+ *  - Ses rangs : chacun ce qui s'y regarde (`montre`, le document que la route nomme : à gauche, la place gardée sur
+ *    tous les rangs dès qu'un rang en a un), son titre, ce qu'il dit, sa pastille et son état, et ses gestes
+ *    (`brancherLesGestes`, la boîte titrée du titre du rang) ; après un geste, `relire`.
+ *  - Ses cases, dessinées comme celles d'une fiche (`casesDeLaFiche`, l'historique de ses cases datées compris), et le
+ *    bouton de son geste (`enregistrer` : sa route, sa charge, le champ de la charge où vont les cases, `dans`, et son
+ *    libellé). Enregistrer envoie ce que les cases disent et pose l'écran que la route rend en réponse ; un refus se
+ *    dit, et les saisies restent. Quitter avec une saisie non enregistrée se demande (`retenirLEcran`). */
+function poserLEcranRendu(cible, r, relire) {
+  const rangs = r.rangs || [];
+  const images = rangs.some((g) => g.montre);
+  const apercu = (g) => (!images ? "" : `<div class="rang-apercu">${g.montre
+    ? `<img src="${echapper(adresseDuDocument(g.montre))}" alt="${echapper(g.montre.libelle)}">` : ""}</div>`);
+  const dessinRangs = !rangs.length ? "" : `<div class="rangs">${rangs.map((g, i) => `
+      <div class="rang${images ? " rang-image" : ""}" data-rang="${i}">
+        ${apercu(g)}
+        <div class="rang-infos">
+          <b class="rang-nom">${echapper(g.titre)}</b>
+          ${g.dit.map((l) => `<span class="discret">${echapper(l)}</span>`).join("")}
+          <div>${pastilleDeLEtat(g.pastille)}${g.etat ? ` <span class="discret">${echapper(g.etat)}</span>` : ""}</div>
+        </div>
+        <div class="rang-actions">${boutonsDesGestes(g.gestes)}</div>
+      </div>`).join("")}</div>`;
   const g = r.enregistrer;
-  cible.innerHTML = `<div class="carte">${encarts(r.encarts)}<div data-ecran-cases>${casesDeLaFiche(r)}</div>
-    <div class="actions"><button class="primaire" data-enregistrer>${echapper(g.libelle)}</button></div></div>`;
+  const cases = !r.cases ? "" : `<div data-ecran-cases>${casesDeLaFiche({ cases: r.cases, historique: r.historique || [] })}</div>
+    ${g ? `<div class="actions"><button class="primaire" data-enregistrer>${echapper(g.libelle)}</button></div>` : ""}`;
+  const dedans = `${encarts(r.encarts || [])}${dessinRangs}${cases}`;
+  cible.innerHTML = r.cases ? `<div class="carte">${dedans}</div>` : dedans;
+  cible.querySelectorAll("[data-rang]").forEach((b) => {
+    const x = rangs[+b.dataset.rang];
+    brancherLesGestes(b, x.gestes, { titre: x.titre }, relire);
+  });
+  if (!r.cases) return;
   const bloc = cible.querySelector("[data-ecran-cases]");
   brancherLesCases(bloc);
+  if (!g) return;
   const enregistrer = async () => {
     let x;
     try { x = await api(g.route, { ...g.charge, [g.dans]: lireLesCases(bloc) }); }
     catch (e) { dire(e.message, "erreur"); return false; }
     dire(x.phrase);
-    poserLEcranRendu(cible, x);
+    poserLEcranRendu(cible, x, relire);
     return true;
   };
   cible.querySelector("[data-enregistrer]").onclick = enregistrer;

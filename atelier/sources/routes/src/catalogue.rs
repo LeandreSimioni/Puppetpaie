@@ -151,6 +151,7 @@ routes! {
         SauvegardeMaintenant = "sauvegarde-maintenant",
         CompagnieSupprimer = "compagnie-supprimer",
         Identite = "identite",
+        IdentiteImage = "identite-image",
         PoserIdentite = "poser-identite",
         RetirerIdentite = "retirer-identite",
         MetiersCatalogue = "metiers-catalogue",
@@ -318,8 +319,9 @@ impl Place {
 pub enum Ecran {
     /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine).
     Dessine(Place),
-    /// Le chemin simple : elle rend l'ecran de cette place tel qu'on le saisit (`fiches::EcranRendu`) ; la page le pose
-    /// depuis sa reponse (`js/avance.js`), sans la nommer.
+    /// Le chemin simple : la lecture qui rend l'ecran de cette place tel qu'on le voit et le saisit
+    /// (`ecran::EcranRendu` : ce qu'il dit en tete, ses rangs, ses cases et le geste qui les enregistre) ; la page le
+    /// pose depuis sa reponse (`js/avance.js`, `poserLEcranRendu`), sans la nommer.
     Rendu(Place),
     /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine), par ce bouton (viser un montant
     /// sur la carte).
@@ -369,7 +371,8 @@ impl Ecran {
     /// Ce que `moteur routes` en dit.
     pub fn texte(self) -> String {
         match self {
-            Ecran::Dessine(p) | Ecran::Rendu(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) => p.nom().to_string(),
+            Ecran::Rendu(p) => format!("{} (l'écran que la route rend)", p.nom()),
+            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) => p.nom().to_string(),
             Ecran::Geste(p) | Ecran::GesteAvance(p) => format!("{} (un geste qu'une route rend)", p.nom()),
             Ecran::Auto(p, _) => format!("{} › Avancé", p.nom()),
             Ecran::Lecture | Ecran::LectureAvancee => "(une lecture des écrans)".to_string(),
@@ -421,6 +424,9 @@ pub enum Forme {
     Rangees,
     /// Du HTML colle (la signature des courriels) : le moteur le nettoie et en dit le poids (`champs::Forme::Html`).
     Html,
+    /// UN FICHIER QUE LA PERSONNE CHOISIT SUR SON POSTE, d'un des types de media que la fiche admet (`image/png`…) : la
+    /// charge porte ses octets en base64 (une adresse data: aussi), ce que la ligne de commande donne pour le meme geste.
+    Fichier(&'static [&'static str]),
 }
 
 /// UNE PARTIE D'UNE VALEUR FAITE DE PARTIES (`Forme::Parties`) : sa cle dans la valeur, son libelle, sa forme, et si elle
@@ -500,6 +506,7 @@ impl Forme {
             Forme::Parties(_) => "parties",
             Forme::Rangees => "rangees",
             Forme::Html => "html",
+            Forme::Fichier(_) => "fichier",
         }
     }
 
@@ -507,7 +514,15 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) => None,
+        }
+    }
+
+    /// Les types de media qu'un fichier admet ; aucun pour une autre forme.
+    fn admis(self) -> Option<&'static [&'static str]> {
+        match self {
+            Forme::Fichier(a) => Some(a),
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html => None,
         }
     }
 
@@ -596,13 +611,16 @@ pub struct ChampEcrit {
     forme: Forme,
     #[serde(skip_serializing_if = "Option::is_none")]
     choix: Option<Vec<ChoixEcrit>>,
+    /// Les types de media qu'un fichier admet (`Forme::Fichier`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    admis: Option<&'static [&'static str]>,
     sens: &'static str,
     avance: bool,
 }
 
 impl Champ {
     pub fn ecrit(&self) -> ChampEcrit {
-        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix(), sens: self.sens, avance: self.avance }
+        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix(), admis: self.forme.admis(), sens: self.sens, avance: self.avance }
     }
 }
 
@@ -725,7 +743,11 @@ impl Fiche {
     pub fn en_texte(&self) -> R<String> {
         let mut t = format!("{}{} : {}\n  Acte : {}\n  Charge :\n", self.nom(), if self.ecran.avance() { " (avancé)" } else { "" }, self.geste, self.acte.mot());
         for c in self.charge {
-            t.push_str(&format!("    {}{} : {}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens));
+            let admis = match c.forme.admis() {
+                Some(a) => format!(" (un fichier : {})", a.join(", ")),
+                None => String::new(),
+            };
+            t.push_str(&format!("    {}{} : {}{}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens, admis));
         }
         for n in natures_de_la_carte(self.charge)? {
             t.push_str(&format!(

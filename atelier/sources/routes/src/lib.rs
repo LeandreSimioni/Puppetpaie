@@ -67,7 +67,7 @@ mod engagement;
 mod contrats;
 mod modeles_contrat;
 pub mod fiches;
-mod identite;
+pub mod identite;
 mod metiers;
 mod convention_du_metier;
 pub mod bulletin;
@@ -83,6 +83,7 @@ mod mois;
 pub mod accueil;
 pub mod catalogue;
 pub mod affiche;
+mod ecran;
 
 mod apercu_dsn;
 pub mod etat_garde;

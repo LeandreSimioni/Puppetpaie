@@ -45,7 +45,7 @@ function dessinerConfig() {
   avance.dataset.auto = document.querySelector(`.sous-onglets button[data-fiche="${FICHE_ACTIVE}"]`).dataset.place;
   dessinerAvance(avance);
   // Un sous-onglet dont une route rend l'écran (sa fiche : `affichage: "rendu"`, sa place) : le dessinateur le pose.
-  const rendu = Object.values(CATALOGUE).find((f) => f.affichage === "rendu" && f.ecran === avance.dataset.auto);
+  const rendu = routeQuiRend(avance.dataset.auto);
   if (rendu) {
     document.getElementById("config-formulaire").innerHTML = "";
     dessinerLEcranRendu(liste, rendu);
@@ -59,11 +59,6 @@ function dessinerConfig() {
   if (FICHE_ACTIVE === "coffre") {
     document.getElementById("config-formulaire").innerHTML = "";
     dessinerCoffre(liste);
-    return;
-  }
-  if (FICHE_ACTIVE === "identite") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerIdentite(liste);
     return;
   }
   if (FICHE_ACTIVE === "metiers") {

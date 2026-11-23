@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Forme;
 use crate::enveloppe::{Dite, Phrase};
-use crate::ouverture::{Choix, ExempleDuChoix};
+use crate::ouverture::{Choix, DocumentMontre};
 use crate::temps::{CaseDatee, TempsDeLaCase};
 use declarations::champs::{self, Anomalie, Case, Champ, CheminDeFiche, FicheAJuger, Gravite, Largeur, Libelles};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
@@ -262,39 +262,6 @@ impl HistoireDUneCase {
     /// Les valeurs de la case `libelle`, en mots.
     pub(crate) fn de(libelle: String, temps: TempsDeLaCase<String>) -> HistoireDUneCase {
         HistoireDUneCase { libelle, temps }
-    }
-}
-
-/// UN ECRAN QU'UNE ROUTE REND TEL QU'ON LE SAISIT, hors d'une fiche (Configuration › Organismes et contrats) : ses
-/// encarts, ses cases (`K` : leur cle), l'historique de ses cases datees en mots, et le geste qui l'enregistre. La page le
-/// pose comme une fiche (`js/avance.js`, `poserLEcranRendu`) et ne decide rien.
-#[derive(Debug, Serialize)]
-pub(crate) struct EcranRendu<K, C> {
-    encarts: Vec<crate::Encart>,
-    cases: Vec<CaseDeLaFiche<K>>,
-    historique: Vec<HistoireDUneCase>,
-    enregistrer: EnregistrerLEcran<C>,
-}
-
-impl<K, C> EcranRendu<K, C> {
-    pub(crate) fn de(encarts: Vec<crate::Encart>, cases: Vec<CaseDeLaFiche<K>>, historique: Vec<HistoireDUneCase>, enregistrer: EnregistrerLEcran<C>) -> EcranRendu<K, C> {
-        EcranRendu { encarts, cases, historique, enregistrer }
-    }
-}
-
-/// LE GESTE QUI ENREGISTRE UN ECRAN RENDU : sa route, sa charge (`C`), le champ de cette charge ou vont les cases de
-/// l'ecran (`dans` : chacune sous sa cle, une case vide nulle), et son libelle. Sa route rend l'ecran enregistre.
-#[derive(Debug, Serialize)]
-pub(crate) struct EnregistrerLEcran<C> {
-    route: crate::catalogue::Route,
-    charge: C,
-    dans: &'static str,
-    libelle: &'static str,
-}
-
-impl<C> EnregistrerLEcran<C> {
-    pub(crate) fn de(route: crate::catalogue::Route, charge: C, dans: &crate::catalogue::Champ, libelle: crate::catalogue::Affiche) -> EnregistrerLEcran<C> {
-        EnregistrerLEcran { route, charge, dans: dans.nom, libelle: libelle.texte() }
     }
 }
 
@@ -941,7 +908,7 @@ fn completer_l_entreprise(ctx: &Contexte, e: &ChampsEntreprise, case: &mut CaseD
         case.choix = Some(
             droit::fiche::ModeleBulletin::TOUS
                 .iter()
-                .map(|m| Choix::de(m, m.nom()).montre_par(ExempleDuChoix::du_modele("voir l'exemple", *m)))
+                .map(|m| Choix::de(m, m.nom()).montre_par(DocumentMontre::du_modele("voir l'exemple", *m)))
                 .collect(),
         );
         if e.modele_bulletin.dite().is_none() {

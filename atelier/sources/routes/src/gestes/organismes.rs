@@ -1,5 +1,5 @@
 //! L'ECRAN DES ORGANISMES ET DES CONTRATS DE LA DSN (Configuration › Organismes et contrats) : ses deux routes, qui
-//! lisent et ecrivent par `compagnie::organismes`. La lecture rend l'ecran tel qu'on le saisit (`fiches::EcranRendu`) :
+//! lisent et ecrivent par `compagnie::organismes`. La lecture rend l'ecran tel qu'on le saisit (`ecran::EcranRendu`) :
 //! un contrat par case, ses parties que la compagnie saisit, et le geste qui l'enregistre.
 
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,8 @@ use socle::mois::Mois;
 use compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
 use droit::organismes::{CleDeContrat, IdentifiantDOrganisme};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
-use crate::fiches::{CaseDeLaFiche, EcranRendu, EnregistrerLEcran, HistoireDUneCase, PartieDeLaFiche};
+use crate::ecran::{EcranRendu, EnregistrerLEcran};
+use crate::fiches::{CaseDeLaFiche, HistoireDUneCase, PartieDeLaFiche};
 use crate::temps::TempsDeLaCase;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
@@ -72,7 +73,7 @@ pub(crate) struct OrganismesDits {
     phrase: Phrase,
     mois: Mois,
     #[serde(flatten)]
-    ecran: EcranRendu<CleDeContrat, ChargeOrganismes>,
+    ecran: EcranRendu<ChargeOrganismes, CleDeContrat>,
 }
 
 /// Ce que la compagnie a saisi d'un contrat, a une date : sa reference et son organisme (vide : non saisi, ou donne par
@@ -210,6 +211,6 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         }
         cases.push(CaseDeLaFiche::de_parties(ligne.cle, ligne.quoi, valeur, parties, dit, siens));
     }
-    let enregistrer = EnregistrerLEcran::de(Route::OrganismesEnregistrer, ChargeOrganismes { mois: Some(mois) }, &CONTRATS, ENREGISTRER);
-    Ok(OrganismesDits { phrase, mois, ecran: EcranRendu::de(encarts, cases, historique, enregistrer) })
+    let enregistrer = Some(EnregistrerLEcran::de(Route::OrganismesEnregistrer, ChargeOrganismes { mois: Some(mois) }, &CONTRATS, ENREGISTRER));
+    Ok(OrganismesDits { phrase, mois, ecran: EcranRendu { encarts, rangs: Vec::new(), cases, historique, enregistrer } })
 }

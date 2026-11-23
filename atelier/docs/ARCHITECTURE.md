@@ -1180,8 +1180,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
 | fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, si « Avancé » s'ouvre, les cases dont la route a récrit la saisie, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
 | case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix et s'ils se cochent en boutons, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir, et la case d'un écran rendu, sous sa propre clé : un contrat de la DSN) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
-| écran qu'une route rend tel qu'on le saisit, hors d'une fiche (ses encarts, ses cases, l'historique de ses cases datées en mots, le geste qui l'enregistre ; la route le dit par sa fiche, `Ecran::Rendu`, et la page le pose, `poserLEcranRendu` : Configuration › Organismes et contrats) | `routes::fiches::EcranRendu` | `routes/src/fiches/rendue.rs` |
-| geste qui enregistre un écran rendu (sa route, sa charge, le champ de la charge où vont les cases de l'écran, chacune sous sa clé, son libellé) | `routes::fiches::EnregistrerLEcran` | `routes/src/fiches/rendue.rs` |
+| écran qu'une route rend tel qu'on le voit et le saisit (ce qu'il dit en tête, ses encarts ; ses rangs ; ses cases ; l'historique de ses cases datées en mots ; le geste qui enregistre ses cases ; ce qu'il n'a pas ne s'écrit pas ; la route le dit par sa fiche, `catalogue::Ecran::Rendu`, et la page le pose, `poserLEcranRendu` : Configuration › Organismes et contrats, des cases ; Configuration › Signature & tampon, des rangs) | `routes::ecran::EcranRendu` | `routes/src/ecran.rs` |
+| geste qui enregistre les cases d'un écran rendu (sa route, sa charge, le champ de la charge où vont toutes les cases de l'écran, chacune sous sa clé, son libellé ; pas un `GesteDeRoute`, qui fait saisir dans sa boîte des champs de la charge, chacun le sien) | `routes::ecran::EnregistrerLEcran` | `routes/src/ecran.rs` |
 | où une case de fiche renvoie, rendu sous elle (le sous-onglet des métiers, ou la case d'une autre fiche : l'option de la déduction forfaitaire de l'entreprise) | `routes::fiches::RenvoiDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | ce qui se fait depuis la fiche d'un salarié enregistré, dans son en-tête (sa clé, d'où ses imprévus et ses droits se lisent, et le geste vers ses documents) | `routes::fiches::SalarieDeLEntete` | `routes/src/fiches/rendue.rs` |
 | fiche d'un salarié neuf à faire remplir par la personne, dans son en-tête (ce que la demande fait, son geste `fiche-demander` ou ce qui lui manque, la demande du mot de passe) | `routes::fiches::InvitationDeLaFiche` | `routes/src/fiches/rendue.rs` |
@@ -1191,7 +1191,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | complémentaire santé d'un salarié au mois telle que sa fiche la fait dire (hors fiche, ce qui manque pour la payer, ou les niveaux où l'on choisit) | `routes::fiches::SanteDuSalarie` | `routes/src/fiches/rendue.rs` |
 | texte tapé d'une case que son type refuse (les quinze chiffres d'un NIR collé) | `routes::fiches::CaseTapee` | `routes/src/fiches/rendue.rs` |
 | niveau de garantie de la complémentaire santé que le barème du jour offre (son code et son libellé) | `routes::ouverture::NiveauDeSante` | `routes/src/ouverture.rs` |
-| exemple d'un choix, qu'on ouvre à côté de lui (le document qui le montre, nommé par la route qui le rend et sa charge, par l'adresse où la fenêtre le sert à la page, et par le lien qui l'ouvre : le bulletin d'exemple de chaque modèle du bulletin) | `routes::ouverture::ExempleDuChoix` | `routes/src/ouverture.rs` |
+| document qu'une route nomme pour qu'on le regarde (un aperçu, un exemple, une image posée : nommé par la route qui le rend et sa charge, par l'adresse où la fenêtre le sert à la page, et par son libellé ; le bulletin d'exemple de chaque modèle du bulletin, à côté de son choix ; la signature, le tampon et le logo de l'écran Signature & tampon) | `routes::ouverture::DocumentMontre` | `routes/src/ouverture.rs` |
+| rang d'un écran qu'une route rend (son titre, ce qu'il dit, sa pastille et son état, le document qui s'y regarde, ses gestes) | `routes::ecran::RangDeLEcran` | `routes/src/ecran.rs` |
 | partie d'une case de fiche faite de cases, ou de chaque rangée d'une liste (son chemin, son libellé, sa forme, son aide, ses choix, si elle est ouverte) | `routes::fiches::PartieDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | largeur d'une case de fiche à l'écran (toute la ligne, ou la moitié) | `declarations::champs::Largeur` | `declarations/src/champs.rs` |
 | case qui ne s'ouvre que si une autre est trop longue (le complément d'adresse, au-delà de ce que la DSN admet) | `declarations::champs::PlusLong` | `declarations/src/champs.rs` |
@@ -1286,7 +1287,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | contrat repris qu'une AEM, un bulletin ou un certificat et la DSN datent autrement : la DSN vaut, la pièce part chez l'éditeur | `ContratDitAutrement` | `routes/src/importation/incident.rs` |
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
 | questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
-| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases, ce qu'elles montrent d'abord et ce qu'elles offrent) : celui d'un imprévu, d'une question d'identité, de l'onglet Métiers (créer un métier, sa charge `AucunMetier` ; modifier un métier créé, `MetierDesigne` ; leurs cases montrent `ValeursDuMetier` et offrent `ChoixDuMetier`) | `GesteDeRoute` | `routes/src/imprevus.rs` |
+| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases, ce qu'elles montrent d'abord et ce qu'elles offrent) : celui d'un imprévu, d'une question d'identité, de l'onglet Métiers (créer un métier, sa charge `AucunMetier` ; modifier un métier créé, `MetierDesigne` ; leurs cases montrent `ValeursDuMetier` et offrent `ChoixDuMetier`), de l'écran Signature & tampon (poser une image, ses cases montrent `ValeursDeLaPose` ; la retirer) | `GesteDeRoute` | `routes/src/imprevus.rs` |
 | ce que la DSN reprise déclare autrement que le logiciel : une valeur d'un contrat repris, ou un matricule | `ValeurDeclaree` | `import/src/reponse.rs` |
 | valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDuContrat` | `import/src/reponse.rs` |
 | matricule qu'une DSN qui arrive déclare autrement que la fiche (ce que la fiche porte, ce que la DSN déclare), ou matricule donné d'office qu'une fiche cède au salarié pour qui la DSN le déclare (et le suivant qu'elle prend) | `ValeurDuMatricule` | `import/src/reponse.rs` |
@@ -2122,22 +2123,28 @@ ses rangées ; ce que le moteur sait d'une case vient avec elle (`dit`, `preremp
 l'Urssaf se choisissent dans les listes du moteur, le taux AT/MP dit sous lui ce que dit `taux-atmp`, la taxe sur les
 salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle, le modèle du bulletin se coche
 entre ses deux modèles (`boutons`), chacun avec son bulletin d'exemple, que la route nomme par la route qui le rend, sa charge et son adresse
-(`routes::ouverture::ExempleDuChoix`), et sans choix écrit montre coché le simplifié, qu'il n'écrit pas tant qu'on
+(`routes::ouverture::DocumentMontre`), et sans choix écrit montre coché le simplifié, qu'il n'écrit pas tant qu'on
 n'en coche pas un autre. Sur la fiche d'un salarié, les deux
 pays se choisissent dans leurs listes (la table « Pays » de la DSN, le COG de l'INSEE) ; avec un pays de nationalité de
 la liste, la nationalité DSN s'en déduit, ne s'ouvre pas et se dit sous le pays ; le métier se choisit dans ceux d'une
 fiche ; la complémentaire santé dans les niveaux du barème du jour (ou dit pourquoi elle ne se choisit pas ici) ; les
 jours travaillés se cochent dans ceux que leur forme déclare (`Declaree::valeurs`).
-Les autres écrans passeront par le même dessinateur.
-
-**Un écran rendu** : un sous-onglet dont une route a pour fiche `Ecran::Rendu(place)` (affichage `rendu`) se dessine
-depuis sa réponse, sans que la page la nomme : ses encarts, ses cases (`routes::fiches::CaseDeLaFiche`, sous la clé de
-l'écran), l'historique de ses cases datées, et le geste qui l'enregistre (`routes::fiches::EnregistrerLEcran` : la route,
-sa charge, et le champ où vont les cases, chacune sous sa clé), dont la route rend l'écran enregistré. Sa lecture reçoit
-le mois de l'onglet Paie quand sa fiche prend un `mois`. Configuration › Organismes et contrats est ainsi : un contrat
-par case, ses parties à saisir (l'organisme, la référence), ce que les textes en donnent dit dessous. **Quitter sans
-enregistrer** se demande pour tout écran que le dessinateur pose (`retenirLEcran`, `quitterLEcran`, `js/avance.js`),
-depuis ses cases et leur valeur à l'ouverture.
+**Un écran se rend comme une fiche** : la lecture qui rend l'écran de sa place le dit dans sa fiche
+(`catalogue::Ecran::Rendu(place)`, affichage `rendu`), et le dessinateur le pose tel qu'elle le rend
+(`poserLEcranRendu`, `js/avance.js`), sans la nommer. L'écran rendu (`routes::ecran::EcranRendu`) a une seule forme,
+dont chaque partie ne s'écrit que s'il en a : ce qu'il dit en tête (ses encarts) ; ses rangs
+(`routes::ecran::RangDeLEcran`), chacun son titre, ce qu'il dit, sa pastille et son état, le document qui s'y regarde
+(`routes::ouverture::DocumentMontre`, que la fenêtre sert à son adresse par la même route) et ses gestes
+(`GesteDeRoute`, chacun sa boîte) ; ses cases (`routes::fiches::CaseDeLaFiche`, sous la clé de l'écran) et l'historique
+de ses cases datées ; et le geste qui enregistre ses cases (`routes::ecran::EnregistrerLEcran` : la route, sa charge, et
+le champ où vont les cases, chacune sous sa clé), dont la route rend l'écran enregistré. Sa lecture reçoit le mois de
+l'onglet Paie quand sa fiche prend un `mois`. Un fichier que la personne choisit sur son poste est une forme de case
+(`Forme::Fichier`, les types qu'elle admet dans la fiche) : il part en base64, comme la ligne de commande le donne.
+Configuration › Signature & tampon a des rangs (route `identite`, l'image par `identite-image`) ; Configuration ›
+Organismes et contrats a des cases : un contrat par case, ses parties à saisir (l'organisme, la référence), ce que les
+textes en donnent dit dessous. **Quitter sans enregistrer** se demande pour tout écran rendu qui a des cases
+(`retenirLEcran`, `quitterLEcran`, `js/avance.js`), depuis ses cases et leur valeur à l'ouverture. Les autres écrans
+passeront par le même dessinateur.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois
 

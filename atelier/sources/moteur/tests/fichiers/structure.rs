@@ -478,7 +478,7 @@ fn le_catalogue_est_range() {
     for f in catalogue() {
         match f.ecran {
             Ecran::Auto(..) => assert!(f.charge.iter().all(|c| c.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
-            Ecran::Lecture | Ecran::LectureAvancee => assert!(f.acte == Acte::Lit, "{} est une lecture et écrit", f.nom()),
+            Ecran::Rendu(_) | Ecran::Lecture | Ecran::LectureAvancee => assert!(f.acte == Acte::Lit, "{} est une lecture et écrit", f.nom()),
             _ => {}
         }
     }
