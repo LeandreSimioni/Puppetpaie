@@ -545,12 +545,19 @@ fn refaire<'a>(
         saisies.push(donnee.ranger(&lue)?);
     }
     // LE SPECTACLE DE LA PAIE : celui dont la fiche porte son numero d'objet (`Importe::spectacle_de`), que l'import a cree
-    // depuis ce numero avec un titre seulement propose ; le titre que le bulletin imprime, pour une paie sans numero.
-    let spectacle = match (mensuelle, imp.numero_objet_de(p), dit(&p.spectacle)) {
-        (true, _, _) => None,
-        (false, Some(_), _) => imp.spectacle_de(&ctx, p),
-        (false, None, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
-        (false, None, None) => None,
+    // depuis ce numero avec un titre seulement propose ; a defaut, celui que le titre imprime designe (une fiche creee a
+    // la main, sans numero). Un numero qu'aucune fiche ne porte, sans titre qui en designe une, se dit par ce que la piece
+    // en imprime ; la paie se compare de nouveau quand la fiche existe (`a_refaire`).
+    let spectacle = match (mensuelle, imp.numero_objet_de(p), imp.spectacle_de(&ctx, p), dit(&p.spectacle)) {
+        (true, ..) => None,
+        (false, _, Some(cle), _) => Some(cle),
+        (false, None, None, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
+        (false, Some(numero), None, Some(titre)) => match ctx.spectacle(&titre) {
+            Ok(s) => Some(s.cle),
+            Err(_) => return Err(a_refaire(c, socle::refus!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, ni son titre « {} »", numero, titre))),
+        },
+        (false, Some(numero), None, None) => return Err(a_refaire(c, socle::refus!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, qui n'imprime pas de titre", numero))),
+        (false, None, None, None) => None,
     };
     // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
     // (`Importe::contrat_de_la_paie` : sa fin, dite ou declaree, n'est jamais celle du mois que paie un bulletin), son
