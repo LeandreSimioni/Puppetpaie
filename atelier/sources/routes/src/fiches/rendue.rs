@@ -125,7 +125,7 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
                 crate::catalogue::Route::FicheDemander,
                 crate::SansCharge {},
                 crate::catalogue::Affiche::new("Envoyer la demande"),
-                vec!["adresse", "prenom"],
+                vec![crate::declaration::cle!(super::ChargeFicheDemander, adresse), crate::declaration::cle!(super::ChargeFicheDemander, prenom)],
                 crate::imprevus::ValeursDeDepart::default(),
                 crate::imprevus::ChoixDesCases::default(),
             )

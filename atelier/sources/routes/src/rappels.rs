@@ -23,7 +23,7 @@ use engagement;
 use compagnie::etat_dsn;
 use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::catalogue::Route;
-use crate::declaration::{charge, dit, ParSaForme, ValeurDeLaCharge};
+use crate::declaration::{charge, cle, dit, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use crate::imprevus::{FinASignaler, FinLue, ResumeDArret};
 use crate::SansCharge;
@@ -1731,7 +1731,7 @@ impl ManqueVu {
                 route: Route::Effectif,
                 charge: crate::fiches::ChargeEffectif { annee: Some(e.annee), valeur: None },
                 libelle: format!("L'effectif de {}", e.annee),
-                cases: vec!["valeur"],
+                cases: vec![cle!(crate::fiches::ChargeEffectif, valeur)],
                 valeurs: EffectifDeDepart { valeur: e.valeur },
                 choix: SansChoix {},
                 phrases: vec![e.phrase],

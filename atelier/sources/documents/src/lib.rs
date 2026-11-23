@@ -29,9 +29,9 @@ pub mod taxe_sur_les_salaires;
 
 /// UNE IMAGE DE L'IDENTITE DE LA COMPAGNIE : sa signature, son cachet (le tampon), son logo. Une liste du logiciel,
 /// dans l'ordre ou l'ecran les montre (`TOUTES`) ; elle s'ecrit par son nom (`signature`, `cachet`, `logo`), celui du
-/// fichier pose (`gabarits/identite/<nom>.png`) et de la charge qui la designe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// fichier pose (`gabarits/identite/<nom>.png`) et de la charge qui la designe : ce nom n'est ecrit qu'une fois (`nom`),
+/// que l'ecriture, la lecture et la liste fermee prennent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SorteDImage {
     Signature,
     Cachet,
@@ -54,7 +54,20 @@ impl SorteDImage {
     pub fn du_nom(nom: &str) -> Option<SorteDImage> {
         SorteDImage::TOUTES.into_iter().find(|s| s.nom() == nom)
     }
+}
 
+impl serde::Serialize for SorteDImage {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+/// A la porte : un nom qui n'est pas celui d'une image se refuse.
+impl<'de> serde::Deserialize<'de> for SorteDImage {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let nom = String::deserialize(d)?;
+        SorteDImage::du_nom(&nom).ok_or_else(|| serde::de::Error::custom(socle::liste::pas_de_la_liste("Image", &nom, &SorteDImage::TOUTES.map(SorteDImage::nom))))
+    }
 }
 
 /// LES IMAGES DE L'IDENTITE SONT UNE LISTE QU'UNE CHARGE NOMME (`quoi`), par leur nom.

@@ -50,7 +50,7 @@ use socle::mois::{Graphie, Mois};
 use crate::catalogue::{Acte, Affiche, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::declaration::{charge, dit, legendes, ChargeDuType, Legende};
+use crate::declaration::{charge, cle, dit, legendes, ChargeDuType, Legende};
 use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, tous_les_arrets, ArretDit, ContratAuJour};
 
 /// Le dernier jour travaille avant l'arret, qui le designe.
@@ -1049,7 +1049,7 @@ impl Designe {
 fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -> GesteDeRoute<Designe> {
     let motifs = n.motifs_reprise.saisissables().into_iter().map(|m| Choisi { code: m.code, libelle: m.libelle }).collect();
     GesteDeRoute {
-        cases: vec!["reprise", "motif_reprise"],
+        cases: vec![cle!(ChargeArretReprise, reprise), cle!(ChargeArretReprise, motif_reprise)],
         valeurs: ValeursDeDepart { reprise: a.reprise.clone(), motif_reprise: a.reprise_motif, ..ValeursDeDepart::default() },
         choix: ChoixDesCases { motif_reprise: Some(motifs) },
         ..d.geste(Route::ArretReprise, libelle)
@@ -1075,11 +1075,11 @@ fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bo
             IjDePrincipe::AuReleve(phrase) => dit = Some(phrase),
         }
     }
-    let mut cases = vec!["ij_brute", "ij_nette"];
+    let mut cases = vec![cle!(ChargeArretIndemnites, ij_brute), cle!(ChargeArretIndemnites, ij_nette)];
     if majoree {
-        cases.extend(["ij_brute_majoree", "ij_nette_majoree"]);
+        cases.extend([cle!(ChargeArretIndemnites, ij_brute_majoree), cle!(ChargeArretIndemnites, ij_nette_majoree)]);
     }
-    cases.push("jours_deja_indemnises");
+    cases.push(cle!(ChargeArretIndemnites, jours_deja_indemnises));
     // Des indemnites deja dites se reprennent ; pas encore dites, elles sont a dire.
     let libelle = if a.ij_brute.is_some() { INDEMNITES_DITES } else { INDEMNITES_A_DIRE };
     let valeurs = ValeursDeDepart {
@@ -1107,7 +1107,7 @@ fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool
     let mut g = Vec::new();
     if cours {
         g.push(GesteDeRoute {
-            cases: vec!["fin"],
+            cases: vec![cle!(ChargeArretProlonger, fin)],
             phrases: vec![crate::ouverture::aide("prolongation")?.to_string()],
             ..d.geste(Route::ArretProlonger, PROLONGER)
         });
@@ -1127,7 +1127,7 @@ fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool
 fn gestes_d_une_absence(s: &SuspensionSaisie, reportee: &[Mois]) -> Vec<GesteDeRoute<Designe>> {
     let d = Designe::Absence { salarie: s.salarie.clone(), debut: s.debut.clone() };
     let mut g = vec![GesteDeRoute {
-        cases: vec!["fin"],
+        cases: vec![cle!(ChargeSuspensionModifier, fin)],
         valeurs: ValeursDeDepart { fin: Some(s.fin.clone()), ..ValeursDeDepart::default() },
         ..d.geste(Route::SuspensionModifier, CHANGER_LA_FIN)
     }];
