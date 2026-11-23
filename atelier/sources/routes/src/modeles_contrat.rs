@@ -887,7 +887,7 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
     for nat in natures_de(ctx)? {
         let (contrat, avenant) = (texte_de_base(&nat, Partie::Contrat)?, texte_de_base(&nat, Partie::Avenant)?);
         let defaut = m.defauts.get(&nat.cle);
-        let dit = |id: Option<&IdDeModele>, nom: String, manques: Vec<String>, base_changee: bool| {
+        let dit = |id: Option<&IdDeModele>, nom: String, manques: Vec<String>, base_changee: bool| -> R<ModeleDit> {
             let est_defaut = defaut == id;
             let pastille = match (manques.is_empty(), est_defaut) {
                 (false, _) => Pastille::de(socle::ecran::EtatDEcran::Refuse, "incomplet"),
@@ -902,14 +902,15 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
                 gestes.push(sans_case(Route::ModeleContratParDefaut, du_modele(), PAR_DEFAUT));
             }
             if let Some(id) = id {
-                gestes.push(sans_case(Route::SupprimerModeleContrat, SurLeModele { id: Some(id.clone()), ..SurLeModele::default() }, SUPPRIMER));
+                let disparait = ce_que_supprimer_dit(ctx, &nom, id, est_defaut)?;
+                gestes.push(sans_case(Route::SupprimerModeleContrat, SurLeModele { id: Some(id.clone()), ..SurLeModele::default() }, SUPPRIMER).disant(disparait));
             }
-            ModeleDit { id: id.cloned(), nom, base: id.is_none(), defaut: est_defaut, base_changee: base_changee.then_some(BASE_CHANGEE), manques, pastille, ouvrir, gestes }
+            Ok(ModeleDit { id: id.cloned(), nom, base: id.is_none(), defaut: est_defaut, base_changee: base_changee.then_some(BASE_CHANGEE), manques, pastille, ouvrir, gestes })
         };
-        let mut pieces = vec![dit(None, nom_de_base(&nat), manques_des_deux(&nat, &contrat, &avenant)?, false)];
+        let mut pieces = vec![dit(None, nom_de_base(&nat), manques_des_deux(&nat, &contrat, &avenant)?, false)?];
         for s in m.speciaux.iter().filter(|s| s.nature == nat.cle) {
             let change = s.contrat.base != contrat || s.avenant.base != avenant;
-            pieces.push(dit(Some(&s.id), s.nom.clone(), manques_des_deux(&nat, &s.contrat.texte, &s.avenant.texte)?, change));
+            pieces.push(dit(Some(&s.id), s.nom.clone(), manques_des_deux(&nat, &s.contrat.texte, &s.avenant.texte)?, change)?);
         }
         let nom = nat.nom_du_contrat();
         let copier = GesteDeRoute::avec_cases(Route::CopierModeleContrat, SurLeModele { nature: Some(nat.cle.clone()), ..SurLeModele::default() }, COPIER, vec![cle!(ChargeCopier, nom)], ValeursDuModele::default(), SansCharge {});
@@ -1143,6 +1144,20 @@ fn choisi_par(ctx: &Contexte, id: &IdDeModele) -> R<Vec<String>> {
         .filter(|o| o.carte().modele_contrat.as_ref() == Some(id) || o.avenants().iter().any(|a| a.termes.modele_contrat.as_ref() == Some(id)))
         .map(|o| engagement::etats::qui_de(ctx, o))
         .collect())
+}
+
+/// CE QUE LA BOITE DE `supprimer-modele-contrat` DIT avant qu'on supprime le special `id` (`nom`) : ce qui disparait, ce
+/// que devient le defaut de sa nature s'il l'est (`est_defaut`), et les engagements qui l'ont choisi (`choisi_par`).
+fn ce_que_supprimer_dit(ctx: &Contexte, nom: &str, id: &IdDeModele, est_defaut: bool) -> R<Vec<String>> {
+    let mut dit = vec![format!("Le modèle « {} » disparaît, son contrat et son avenant.", nom)];
+    if est_defaut {
+        dit.push("C'est le modèle par défaut de sa nature : le modèle du logiciel le redevient.".to_string());
+    }
+    let qui = choisi_par(ctx, id)?;
+    if !qui.is_empty() {
+        dit.push(format!("{} engagement(s) l'ont choisi ({}) : leur contrat suit alors le modèle par défaut de sa nature ; un contrat déjà parti garde son texte.", qui.len(), qui.join(", ")));
+    }
+    Ok(dit)
 }
 
 /// SUPPRIMER UN MODELE SPECIAL : `{id}` ; s'il etait le defaut de sa nature, la base le redevient ; les engagements qui
