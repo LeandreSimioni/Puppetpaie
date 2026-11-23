@@ -104,7 +104,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les quatre étapes du mois : DPAE, Contrats, DSN, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic",
+        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,

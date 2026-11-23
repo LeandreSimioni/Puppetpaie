@@ -19,9 +19,17 @@
    seul : un garde-fou posé dans un front se contourne par l'autre.
 */
 
+/** LES VUES D'UNE ROUTE QUI EN A DEUX : la boîte de chacune, que l'action nomme (`vue`, `etapes::VueDuGeste`). */
+const VUES_DU_GESTE = {
+  "embauches-a-choisir": (action) => boiteDpae(action.charge.mois),
+  "depot": (action) => boiteDepot(action.charge, { testerDabord: !!action.tester }),
+  "contrats-a-envoyer": (action) => boiteSignature(action.charge),
+  "contrats-en-attente": (action) => boiteContratsEnAttente(action.charge.mois),
+};
+
 /** Le geste d'un groupe ou d'un carré : la boîte de la route que le moteur nomme (`route`, avec sa `charge` ; `puis` :
- *  l'acte qui suit). Un dossier à ouvrir porte son `chemin`. `sur` : le rappel dont vient le geste (la fin de contrat à
- *  compléter : son `objet`). */
+ *  l'acte qui suit), ou de la vue qu'il nomme quand la route en a deux (`vue`). Un dossier à ouvrir porte son `chemin`.
+ *  `sur` : le rappel dont vient le geste (la fin de contrat à compléter : son `objet`). */
 function ouvrirGeste(action, mois, sur) {
   if (!action) return;
   if (action.chemin) return ouvrirEtDire(action.chemin, action.phrase, true);
@@ -29,9 +37,8 @@ function ouvrirGeste(action, mois, sur) {
   const m = c.mois || mois;
   switch (action.route) {
     case "depot-apercu":
-      return c.quoi === "dpae" && !c.engagements ? boiteDpae(m) : boiteDepot(c, { testerDabord: !!action.tester });
     case "signature-apercu":
-      return action.puis === "contrat-recu" ? boiteContratsEnAttente(m) : boiteSignature({ ...c, mois: m });
+      return VUES_DU_GESTE[action.vue](action);
     case "envoi-apercu": return boiteEnvoi(m);
     case "historique-mois": return ouvrirMoisHistorique(m);
     // Une pièce partie dont le fichier manque : la route la refait et rend son chemin, qui s'ouvre.
