@@ -406,11 +406,6 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 }
 .chevron-pluri.avant { left: -10px; }
 .chevron-pluri.apres { right: -10px; }
-/* Les cases du contrat d'autres écrans (Configuration, Exports). */
-.e-contrat-champs { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin: 4px 0; }
-.e-contrat-champs label { font-size: 12px; color: var(--discret); }
-.e-contrat-champs input { display: block; padding: .3rem .4rem; }
-.e-contrat-champs label[hidden] { display: none; }
 .supprimer { color: var(--erreur); border: none; background: none; font-size: 18px; }
 
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }

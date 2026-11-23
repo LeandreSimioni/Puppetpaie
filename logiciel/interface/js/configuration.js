@@ -356,6 +356,7 @@ async function dessinerImportation(cible) {
   // Les gestes que la route rend (`gestes` : importer ; l'aperçu, que sa fiche range sous « Avancé »).
   brancherLesGestes(document.getElementById("import-gestes"), e.gestes, {}, apresLImport);
   brancherIdentites(document.getElementById("import-etat"), e);
+  brancherNatures(document.getElementById("import-etat"), e);
   // Ce qui reste à dire pour la configuration (`pour-demarrer`), dès qu'il y a un historique repris.
   if (e.repris) peindreDemarrage(document.getElementById("import-demarrage"));
   const ouvrir = document.getElementById("import-ouvrir");
@@ -438,7 +439,7 @@ function vueEtatImportation(e) {
       <div class="rang-infos"><b class="rang-nom">${echapper(x.titre_dit)}</b>${echapper(x.resume)}</div>
       <div class="rang-etat">${pastilleDeLEtat(x.pastille)}</div>
     </div>`).join("");
-  return repris + vueIdentitesADire(e.identites) + vueNaturesADire(e.a_dire)
+  return repris + vueIdentitesADire(e.identites) + vueNaturesADire(e)
     + (editeur ? `<h3>${echapper(e.editeur_titre)}</h3>${editeur}` : "");
 }
 
@@ -473,84 +474,75 @@ function brancherIdentites(cible, e) {
    (`import::nature`). Les bulletins d'un permanent ne disent pas s'il
    est en CDI ou en CDD : le moteur les nomme (`a_dire`), la page le
    demande, une fois par salarié, sans rien choisir d'avance. */
-function vueNaturesADire(liste) {
-  if (!liste.length) return "";
-  // Ce que chaque nature demande avec elle (`demande`, du moteur) : pour un
-  // contrat qui court encore, son début, sa fin s'il a un terme, son numéro.
-  const CASES = {
-    debut: (x) => `<label>Début du contrat <input type="date" data-nature-champ="debut"></label>`,
-    fin: (x) => `<label>Fin prévue <input type="date" data-nature-champ="fin"></label>`,
-    numero: (x) => `<label title="${aideDe("import_numero")}">Numéro du contrat
-        <input type="text" data-nature-champ="numero" placeholder="${echapper(x.numero_placeholder)}"></label>`,
-    salaire: (x) => `<label>Salaire mensuel brut <input type="text" inputmode="decimal" data-nature-champ="salaire"
-        placeholder="celui du contrat signé"></label>`,
-    quotite: (x) => `<label title="${aideDe("import_quotite")}">Heures par mois
-        <input type="text" inputmode="decimal" data-nature-champ="quotite" placeholder="celle du contrat signé"></label>`,
-  };
-  // Une seule nature proposée (celle que la DSN reprise déclare) : elle est
-  // choisie, et ses cases se montrent d'emblée.
-  const lignes = liste.map((x) => { const seule = x.natures.length === 1 ? x.natures[0] : null;
-    const montre = (c) => !!seule && seule.demande.includes(c);
-    return `<div class="rang" data-nature-rang="${echapper(x.salarie)}">
+function vueNaturesADire(e) {
+  if (!e.a_dire.length) return "";
+  // Chaque ligne : ce que la route en dit, la case de la nature (`nature`) et
+  // celles qu'une nature peut demander (`cases`), dessinées comme toute case
+  // de route ; seules se montrent celles que la nature choisie demande
+  // (`montrerLesCasesDeLaNature`).
+  const lignes = e.a_dire.map((x, i) => `<div class="rang" data-nature-rang="${i}">
       <div class="rang-infos"><b class="rang-nom">${echapper(x.nom)}</b>
         ${echapper(x.dit)}
         ${x.en_cours_dit ? `<div class="note">${echapper(x.en_cours_dit)}</div>` : ""}
         ${x.dsn_non_relue ? `<div class="note">${echapper(x.dsn_non_relue)}</div>` : ""}
-        <div class="e-contrat-champs" data-nature-cases${seule && seule.demande.length ? "" : " hidden"}>${["debut", "fin", "numero", "salaire", "quotite"].map((c) =>
-          `<span data-nature-case="${c}"${montre(c) ? "" : " hidden"}>${CASES[c](x)}</span>`).join("")}</div></div>
-      <div class="rang-etat" style="display:flex;gap:6px;align-items:center">
-        <select data-nature-choix aria-label="${echapper(x.choix_dit)}">
-          ${seule ? "" : `<option value="" data-demande="">— choisir —</option>`}
-          ${x.natures.map((n) => `<option value="${echapper(n.cle)}"${seule ? " selected" : ""}
-             data-demande="${echapper(n.demande.join(" "))}">${echapper(n.libelle)}</option>`).join("")}
-        </select>
-        <button type="button" class="petit" data-nature-salarie="${echapper(x.salarie)}">Enregistrer</button>
-      </div>
-    </div>`; }).join("");
-  return `<h3>Nature de ces contrats</h3>
-    <p class="note">${aideDe("import_natures")}</p>${lignes}`;
+        <div class="e-cases" data-nature-cases>${[x.nature, ...x.cases].map(caseDeRoute).join("")}</div></div>
+      <div class="rang-etat">${boutonsDesGestes([x.enregistrer])}</div>
+    </div>`).join("");
+  return `<h3>${echapper(e.natures_titre)}</h3>
+    <p class="note">${echapper(e.natures_note)}</p>${lignes}`;
 }
 
-/* La nature choisie montre les cases qu'elle demande, et elles seules. */
-document.addEventListener("change", (ev) => {
-  const sel = ev.target.closest && ev.target.closest("[data-nature-choix]");
-  if (!sel) return;
-  const rang = sel.closest("[data-nature-rang]");
-  const opt = sel.selectedOptions[0];
-  const demande = opt.dataset.demande.split(" ").filter((x) => x);
-  rang.querySelectorAll("[data-nature-case]").forEach((c) => { c.hidden = !demande.includes(c.dataset.natureCase); });
-  rang.querySelector("[data-nature-cases]").hidden = !demande.length;
-});
+/* LA LIGNE `rang` DE LA NATURE `x` MONTRE LES CASES QUE LA NATURE CHOISIE
+   DEMANDE (`natures[].demande`), et elles seules ; aucune nature choisie,
+   aucune. */
+function montrerLesCasesDeLaNature(rang, x) {
+  const choisie = lireLaCase(rang.querySelector(`.case[data-cle="${CSS.escape(x.nature.cle)}"] > [data-case]`));
+  const n = x.natures.find((m) => m.cle === choisie);
+  const demande = n ? n.demande : [];
+  x.cases.forEach((c) => {
+    rang.querySelector(`.case[data-cle="${CSS.escape(c.cle)}"]`).hidden = !demande.includes(c.cle);
+  });
+}
 
-document.addEventListener("click", async (ev) => {
+/* LES LIGNES DES NATURES À DIRE de `e`, dans `cible` : chacune montre les
+   cases de sa nature choisie, et les montre de nouveau quand elle change ;
+   son geste (`enregistrer`) part avec sa charge et ce que disent la case de
+   la nature et celles qui se montrent ; après la réponse, l'état se relit.
+   Quitter une ligne qui porte une saisie non enregistrée se demande. */
+function brancherNatures(cible, e) {
+  cible.querySelectorAll("[data-nature-rang]").forEach((rang) => {
+    const x = e.a_dire[+rang.dataset.natureRang];
+    const cases = rang.querySelector("[data-nature-cases]");
+    brancherLesCases(cases);
+    montrerLesCasesDeLaNature(rang, x);
+    cases.addEventListener("change", () => montrerLesCasesDeLaNature(rang, x));
+    const g = x.enregistrer;
+    const bouton = rang.querySelector("[data-geste]");
+    const enregistrer = async () => {
+      const montrees = Object.fromEntries(lesCasesLues(cases).filter(([cle]) =>
+        !cases.querySelector(`.case[data-cle="${CSS.escape(cle)}"]`).hidden));
+      const rallumer = occupe(bouton, `${g.libelle}…`);
+      let r;
+      try { r = await api(g.route, { ...g.charge, ...montrees }); }
+      catch (err) { rallumer(); dire(err.message, "erreur"); return false; }
+      oublierLEcran(cases);
+      dire(r.phrase, r.couleur);
+      // Les natures au mois s'ouvrent alors dans la saisie (`nouvelle_carte` de la route saisie).
+      await relireEtat();
+      rafraichirReferentiels();
+      await rafraichirEtatImportation();
+      return true;
+    };
+    bouton.onclick = enregistrer;
+    retenirLEcran(cases, { enregistrer });
+  });
+}
+
+document.addEventListener("click", (ev) => {
   const ouvrir = ev.target.closest && ev.target.closest("[data-ouvrir-fiche]");
   if (ouvrir) {
     ev.preventDefault();
     ouvrirFicheImportee(ouvrir.dataset.ouvrirFiche, ouvrir.dataset.ouvrirCle);
-    return;
-  }
-  const b = ev.target.closest && ev.target.closest("[data-nature-salarie]");
-  if (!b) return;
-  ev.preventDefault();
-  const rang = b.closest("[data-nature-rang]");
-  // Une nature non choisie part absente : c'est le moteur qui la refuse (règle 2).
-  const nature = rang.querySelector("[data-nature-choix]").value || null;
-  b.disabled = true;
-  try {
-    const charge = { salarie: b.dataset.natureSalarie, nature };
-    rang.querySelectorAll("[data-nature-case]:not([hidden]) [data-nature-champ]").forEach((c) => {
-      // Chaque case part telle qu'elle est tapée : la route convertit un nombre (le salaire, les heures par mois).
-      charge[c.dataset.natureChamp] = c.value.trim() === "" ? null : c.value.trim();
-    });
-    const r = await api("importation-nature", charge);
-    dire(r.phrase, r.couleur);
-    // Les natures au mois s'ouvrent alors dans la saisie (`nouvelle_carte` de la route saisie).
-    await relireEtat();
-    rafraichirReferentiels();
-    rafraichirEtatImportation();
-  } catch (err) {
-    dire(err.message, "erreur");
-    b.disabled = false;
   }
 });
 
@@ -670,6 +662,7 @@ async function rafraichirEtatImportation() {
     const e = await api("importation-etat");
     cible.innerHTML = vueEtatImportation(e);
     brancherIdentites(cible, e);
+    brancherNatures(cible, e);
     return e;
   } catch (e) { dire(e.message, "erreur"); return null; }
 }

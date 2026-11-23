@@ -303,6 +303,15 @@ impl<K> CaseDeLaFiche<K> {
     }
 }
 
+impl CaseDeLaFiche<&'static str> {
+    /// LA CASE D'UN CHAMP DE LA CHARGE DE LA ROUTE QUI L'ENREGISTRE (`importation-nature`), qu'un ecran montre hors d'une
+    /// boite : sa cle, son libelle et sa forme sont ceux du champ, son aide `aide` (vide : aucune) et sa valeur `valeur` ;
+    /// de base, sur sa demi-largeur, sans bloc.
+    pub(crate) fn du_champ(champ: &crate::catalogue::Champ, aide: &str, valeur: Option<ValeurDeCase>) -> CaseDeLaFiche<&'static str> {
+        CaseDeLaFiche::de_la_boite(champ.nom, champ.libelle, champ.forme, aide, valeur)
+    }
+}
+
 impl PartieDeLaFiche {
     /// LA PARTIE QUE DECLARE UNE VALEUR FAITE DE PARTIES (`catalogue::Partie`, celles d'une charge) : son chemin, son
     /// libelle et sa forme tels qu'elle les dit, ouverte quand elle est de toujours ; `choix` : ce qu'elle offre quand elle

@@ -44,7 +44,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "titre, repris (un historique est repris : le guide se replie), gestes (importer ; importation-apercu, sous « Avancé »), editeur_titre, importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
+        rend: "titre, repris (un historique est repris : le guide se replie), gestes (importer ; importation-apercu, sous « Avancé »), editeur_titre, importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire, sous natures_titre et natures_note : pour chaque salarié, nature, la case qui la choisit parmi les natures proposées, cases, celles qu'une nature peut demander, natures[].demande, celles que chacune demande, et le geste enregistrer, dont la charge se complète de ces cases ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -815,6 +815,8 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
         attend_editeur,
         a_dire: crate::importation::nature::a_dire(ctx)?,
+        natures_titre: "Nature de ces contrats",
+        natures_note: crate::ouverture::aide("import_natures")?,
         identites: crate::importation::identite::en_attente(ctx)?,
         guide: import::guide::guide(),
         repris_dit,
@@ -973,8 +975,10 @@ struct EtatImportation {
     /// La pastille de l'historique repris.
     pastille_repris: socle::ecran::Pastille,
     attend_editeur: usize,
-    /// Les contrats repris dont la nature reste a dire, par salarie.
+    /// Les contrats repris dont la nature reste a dire, par salarie, sous leur titre et ce qu'il en dit.
     a_dire: Vec<crate::importation::nature::ADire>,
+    natures_titre: &'static str,
+    natures_note: &'static str,
     /// Les individus que les DSN reprises declarent et que l'import met de cote, le temps que la compagnie dise s'ils
     /// sont le salarie d'une fiche sans NIR (`importation::identite`).
     identites: crate::importation::identite::IdentitesEnAttente,
