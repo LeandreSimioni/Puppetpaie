@@ -10,6 +10,7 @@ use socle::echec::{Classe, R};
 use super::enveloppe::{en_json, Charge, Dite, Rendu};
 
 pub use crate::affiche::Affiche;
+use crate::declaration::{legendes, ChampDuType};
 
 /// LES ROUTES, chacune une fois, par son nom : celui de `/api/<route>` et de `moteur route`. Une variante par fiche du
 /// catalogue (`au_catalogue`), et celles de l'atelier, qui n'en ont pas : l'horloge du banc, la route d'essai qui tombe.
@@ -649,22 +650,45 @@ pub struct ChampEcrit {
     admis: Option<&'static [&'static str]>,
     sens: &'static str,
     avance: bool,
+    /// Vrai : la route ne se fait pas sans lui (son type n'est pas `Option`). Absent : la fiche, ecrite a la main, ne le
+    /// dit pas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    obligatoire: Option<bool>,
 }
 
 impl Champ {
-    pub fn ecrit(&self) -> R<ChampEcrit> {
-        Ok(ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix()?, admis: self.forme.admis(), sens: self.sens, avance: self.avance })
+    pub fn ecrit(&self, obligatoire: Option<bool>) -> R<ChampEcrit> {
+        Ok(ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix()?, admis: self.forme.admis(), sens: self.sens, avance: self.avance, obligatoire })
+    }
+}
+
+/// LA CHARGE QU'UNE FICHE DIT : chaque champ, et s'il est obligatoire. Celle que la route declare (`charge!`,
+/// `crate::declaration::ChargeDuType`) le tire de son type ; celle qu'une fiche ecrit encore a la main (un tableau de
+/// `Champ`) ne le dit pas (`None`). Les deux ne vivent ensemble que le temps que chaque route declare sa charge.
+pub trait LaCharge: std::fmt::Debug + Sync {
+    fn champs(&self) -> Vec<(Champ, Option<bool>)>;
+}
+
+impl<const N: usize> LaCharge for [Champ; N] {
+    fn champs(&self) -> Vec<(Champ, Option<bool>)> {
+        self.iter().map(|c| (*c, None)).collect()
+    }
+}
+
+impl LaCharge for crate::declaration::ChargeDuType {
+    fn champs(&self) -> Vec<(Champ, Option<bool>)> {
+        self.champs.iter().map(|c| (c.champ, Some(c.obligatoire))).collect()
     }
 }
 
 /// La charge de la fiche porte-t-elle les changements d'une carte (`changements`) ?
-fn porte_une_carte(charge: &[Champ]) -> bool {
-    charge.iter().any(|c| c.nom == "changements")
+fn porte_une_carte(charge: &[(Champ, Option<bool>)]) -> bool {
+    charge.iter().any(|(c, _)| c.nom == "changements")
 }
 
 /// LES NATURES D'UNE CARTE ET LEURS CASES, tirees du type (`engagement::carte::CarteValide::natures`), pour une fiche dont
 /// la charge porte une carte ; aucune sinon.
-fn natures_de_la_carte(charge: &[Champ]) -> R<Vec<NatureDecrite<Forme>>> {
+fn natures_de_la_carte(charge: &[(Champ, Option<bool>)]) -> R<Vec<NatureDecrite<Forme>>> {
     if porte_une_carte(charge) { natures_des_cartes() } else { Ok(Vec::new()) }
 }
 
@@ -716,7 +740,8 @@ pub struct Fiche {
     pub route: Route,
     /// Le geste, en une phrase breve.
     pub geste: &'static str,
-    pub charge: &'static [Champ],
+    /// Sa charge : `&Type::CHARGE`, celle que la route declare (`charge!`).
+    pub charge: &'static dyn LaCharge,
     /// Une charge que la route accepte sur une compagnie de test (`tests/fichiers/routes.rs`), en JSON.
     pub exemple: &'static str,
     pub rend: &'static str,
@@ -731,8 +756,9 @@ pub struct Fiche {
 }
 
 /// Ce que bien des fiches partagent : le mois de l'ecran, et les refus de la forme de la charge.
-pub const MOIS: Champ = Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois de l'écran, AAAA-MM", avance: false };
-pub const SALARIE: Champ = Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé de la fiche du salarié (ou son nom)", avance: false };
+/// Ceux d'une fiche ecrite a la main, tires de leur legende (`crate::declaration::legendes`) et de leur type.
+pub const MOIS: Champ = ChampDuType::du_type::<_, socle::mois::Mois>("mois", legendes::MOIS).champ;
+pub const SALARIE: Champ = ChampDuType::du_type::<_, droit::contexte::SalarieDesigne>("salarie", legendes::SALARIE).champ;
 pub const MANQUE: Refus = Refus { classe: Classe::Manque, corriger: "le champ de la charge, ou la fiche, que la phrase nomme" };
 pub(crate) const ILLISIBLE: Refus = Refus { classe: Classe::Illisible, corriger: "la date ou la valeur que la phrase dit illisible" };
 pub const FORME: Refus = Refus { classe: Classe::MalFormee, corriger: "le champ de la charge que la phrase nomme" };
@@ -748,11 +774,12 @@ impl Fiche {
     pub fn ecrite(&self) -> R<FicheEcrite> {
         let exemple = socle::forme::lire_texte(self.exemple, "Défaut du logiciel : l'exemple d'une route n'est pas une charge.")
             .map_err(|m| m.reclasser(Classe::DefautDuLogiciel))?;
+        let charge = self.charge.champs();
         Ok(FicheEcrite {
             nom: self.nom(),
             geste: self.geste,
-            charge: self.charge.iter().map(Champ::ecrit).collect::<R<_>>()?,
-            natures: natures_de_la_carte(self.charge)?,
+            charge: charge.iter().map(|(c, o)| c.ecrit(*o)).collect::<R<_>>()?,
+            natures: natures_de_la_carte(&charge)?,
             exemple,
             rend: self.rend,
             refus: self.refus.iter().map(|r| RefusEcrit { classe: r.classe, corriger: r.corriger }).collect(),
@@ -775,7 +802,8 @@ impl Fiche {
 
     pub fn en_texte(&self) -> R<String> {
         let mut t = format!("{}{} : {}\n  Acte : {}\n  Charge :\n", self.nom(), if self.ecran.avance() { " (avancé)" } else { "" }, self.geste, self.acte.mot());
-        for c in self.charge {
+        let charge = self.charge.champs();
+        for (c, obligatoire) in &charge {
             let admis = match c.forme.admis() {
                 Some(a) => format!(" (un fichier : {})", a.join(", ")),
                 None => String::new(),
@@ -785,9 +813,18 @@ impl Fiche {
                 Some(v) => format!(" ; au choix : {}", v.iter().map(|x| format!("{} ({})", x.code, x.libelle)).collect::<Vec<_>>().join(", ")),
                 None => String::new(),
             };
-            t.push_str(&format!("    {}{} : {}{}{}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens, admis, choix));
+            // Ce que la ligne dit du champ, comme d'une case d'une carte : sa forme, s'il est obligatoire, s'il est avance.
+            let dit: Vec<&str> = [
+                Some(c.forme.mot()),
+                obligatoire.map(|o| if o { "obligatoire" } else { "facultatif" }),
+                c.avance.then_some("avancé"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            t.push_str(&format!("    {} ({}) : {}{}{}\n", c.nom, dit.join(", "), c.sens, admis, choix));
         }
-        for n in natures_de_la_carte(self.charge)? {
+        for n in natures_de_la_carte(&charge)? {
             t.push_str(&format!(
                 "  Cases d'une carte {} (cases de changements, carte neuve \"{}\" ; celles qu'un fait ouvre, et la place de chacune : `carte.cases` de chaque paie de la route apercu) :\n",
                 n.nature, n.nature

@@ -47,17 +47,20 @@ use socle::mode::Mode;
 use socle::grandeurs::MontantUnitaire;
 use socle::mois::{Graphie, Mois};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
+use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, LaCharge, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
+use crate::declaration::{charge, dit, legendes, ChampDuType, Legende};
 use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, tous_les_arrets, ArretDit, ContratAuJour};
 
-const DERNIER_JOUR: Champ = Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé avant l'arrêt, qui le désigne", avance: false };
+/// Le dernier jour travaille avant l'arret, qui le designe.
+const DERNIER_JOUR_TRAVAILLE: Legende = dit("Dernier jour travaillé", "le dernier jour travaillé avant l'arrêt, qui le désigne");
+const DERNIER_JOUR: Champ = ChampDuType::du_type::<_, Jour>("dernier_jour", DERNIER_JOUR_TRAVAILLE).champ;
 const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Premier jour d'absence"), forme: Forme::Date, sens: "le premier jour de l'absence, qui la désigne", avance: false };
 const UN_ARRET: &str = r#"{"salarie":"FULLER","dernier_jour":"2026-11-27"}"#;
 
 /// Une fiche de ce module : `rend` et les refus que toutes partagent.
-const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str, rend: &'static str, acte: Acte, ecran: Ecran) -> Fiche {
+const fn fiche(route: Route, geste: &'static str, charge: &'static dyn LaCharge, exemple: &'static str, rend: &'static str, acte: Acte, ecran: Ecran) -> Fiche {
     Fiche { route, geste, charge, exemple, rend, refus: &[OPERATION, MANQUE, ILLISIBLE, FORME], acte, phrase: 0, ecran, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
@@ -98,17 +101,7 @@ pub const ROUTES: &[Fiche] = &[
         &[SALARIE, Champ { nom: "jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé", avance: false }],
         r#"{"salarie":"FULLER","jour":"2026-11-27"}"#, "contrats : ceux du salarié qui couvrent ce jour", Acte::Lit, ECRAN),
     Fiche { phrase: 400, ..fiche(Route::ArretEnregistrer, "Enregistrer un arrêt de travail.",
-        &[
-            SALARIE, DERNIER_JOUR,
-            Champ { nom: "debut", libelle: Affiche::new("Début de l'arrêt"), forme: Forme::Date, sens: "le premier jour que l'avis prescrit ; le dernier jour travaillé s'il a été prescrit ce jour-là", avance: false },
-            Champ { nom: "fin", libelle: Affiche::new("Fin prescrite"), forme: Forme::Date, sens: "la fin prescrite", avance: false },
-            Champ { nom: "motif", libelle: Affiche::new("Motif"), forme: Forme::ChoixRendu, sens: "le motif d'arrêt (motifs_arret des nomenclatures de imprevus)", avance: false },
-            Champ { nom: "date_accident", libelle: Affiche::new("Jour de l'accident"), forme: Forme::Date, sens: "le jour de l'accident, quand le motif l'appelle", avance: true },
-            Champ { nom: "connu", libelle: Affiche::new("Su le"), forme: Forme::Objet, sens: "{jour, heure} où la compagnie a su l'accident, quand le motif l'appelle", avance: true },
-            Champ { nom: "contrat", libelle: Affiche::new("Contrat"), forme: Forme::Texte, sens: "le contrat suspendu, quand plusieurs couvrent le jour", avance: true },
-            Champ { nom: "jours_deja_indemnises", libelle: Affiche::new("Jours déjà indemnisés"), forme: Forme::Nombre, sens: "pour le maintien d'un permanent", avance: true },
-            Champ { nom: "note", libelle: Affiche::new("Note"), forme: Forme::Texte, sens: "une note libre", avance: true },
-        ],
+        &ChargeArretEnregistrer::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","debut":"2026-11-30","fin":"2026-11-30","motif":"01"}"#,
         "arret (l'arrêt résumé), phrase", Acte::Ecrit, ECRAN) },
     Fiche { phrase: 700, ..fiche(Route::ArretProlonger, "Prolonger un arrêt : sa nouvelle fin.",
@@ -171,22 +164,23 @@ struct ChargeArretContrats {
     jour: Jour,
 }
 
-/// La charge de `arret-enregistrer`. `connu` est la connaissance de l'accident, en la forme que lit
-/// `obligations::connaissance_saisie` (`{jour, heure}`, celle de la route `arret-connaissance`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeArretEnregistrer {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
-    debut: Jour,
-    fin: Jour,
-    motif: MotifDArret,
-    date_accident: Option<Jour>,
-    connu: Option<crate::obligations::ConnaissanceDite>,
-    contrat: Option<NumeroContrat>,
-    #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
-    jours_deja_indemnises: Option<Duree<EnJours>>,
-    note: Option<String>,
+charge! {
+    /// La charge de `arret-enregistrer`. `connu` est la connaissance de l'accident, en la forme que lit
+    /// `obligations::connaissance_saisie` (`{jour, heure}`, celle de la route `arret-connaissance`).
+    #[derive(Debug)]
+    struct ChargeArretEnregistrer {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
+        debut: Jour = dit("Début de l'arrêt", "le premier jour que l'avis prescrit ; le dernier jour travaillé s'il a été prescrit ce jour-là"),
+        fin: Jour = dit("Fin prescrite", "la fin prescrite"),
+        motif: MotifDArret = dit("Motif", "le motif d'arrêt (motifs_arret des nomenclatures de imprevus)"),
+        date_accident: Option<Jour> = dit("Jour de l'accident", "le jour de l'accident, quand le motif l'appelle").avancee(),
+        connu: Option<crate::obligations::ConnaissanceDite> = dit("Su le", "{jour, heure} où la compagnie a su l'accident, quand le motif l'appelle").avancee(),
+        contrat: Option<NumeroContrat> = dit("Contrat", "le contrat suspendu, quand plusieurs couvrent le jour").avancee(),
+        #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
+        jours_deja_indemnises: Option<Duree<EnJours>> = dit("Jours déjà indemnisés", "pour le maintien d'un permanent").avancee(),
+        note: Option<String> = dit("Note", "une note libre").avancee(),
+    }
 }
 
 /// La charge de `arret-prolonger` : l'arret (son salarie, son dernier jour travaille) et sa nouvelle fin prescrite.

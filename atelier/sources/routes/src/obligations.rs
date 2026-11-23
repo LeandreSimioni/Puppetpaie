@@ -63,7 +63,7 @@ use crate::catalogue::{Ecran, Place};
 
 const SALARIE_ARRETE: Champ = Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé de la fiche du salarié arrêté", avance: false };
 const DERNIER_JOUR: Champ = Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé de l'arrêt, AAAA-MM-JJ (il désigne l'arrêt)", avance: false };
-const FAITE: &[Champ] = &[
+const FAITE: &[Champ; 6] = &[
     SALARIE_ARRETE,
     DERNIER_JOUR,
     Champ { nom: "le", libelle: Affiche::new("Fait le"), forme: Forme::Date, sens: "le jour où elle a été faite ; vide : la retirer", avance: false },
@@ -1371,6 +1371,11 @@ pub(crate) struct ConnaissanceDite {
     jour: Option<Jour>,
     #[serde(default, deserialize_with = "jour_et_heure::saisie")]
     heure: Option<HeureDuJour>,
+}
+
+/// Dans une charge, elle se dit d'un objet (`{jour, heure}`).
+impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for ConnaissanceDite {
+    const FORME: crate::catalogue::Forme = crate::catalogue::Forme::Objet;
 }
 
 /// `arret-connaissance` : le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident ; un `jour` vide efface ce

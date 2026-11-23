@@ -206,7 +206,7 @@ fn un_champ_texte_n_est_pas_une_liste_fermee() {
     let mut fautes = Vec::new();
     for f in catalogue() {
         let exemple: Value = serde_json::from_str(f.exemple).unwrap();
-        for champ in f.charge.iter().filter(|c| c.forme == Forme::Texte) {
+        for (champ, _) in f.charge.champs().into_iter().filter(|(c, _)| c.forme == Forme::Texte) {
             let mut charge = exemple.clone();
             let objet = charge.as_object_mut().unwrap();
             objet.insert(champ.nom.to_string(), json!("hors-de-toute-liste"));
@@ -508,7 +508,7 @@ fn le_catalogue_est_range() {
     use routes::catalogue::{Acte, Ecran, Forme, FICHES};
     for f in catalogue() {
         match f.ecran {
-            Ecran::Auto(..) => assert!(f.charge.iter().all(|c| c.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
+            Ecran::Auto(..) => assert!(f.charge.champs().iter().all(|(c, _)| c.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
             Ecran::Rendu(_) | Ecran::Lecture | Ecran::LectureAvancee => assert!(f.acte == Acte::Lit, "{} est une lecture et écrit", f.nom()),
             _ => {}
         }
