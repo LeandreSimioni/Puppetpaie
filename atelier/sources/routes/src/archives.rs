@@ -83,7 +83,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Exporter un état (livre de paie, charges…) en tableau ou en fichier.",
         charge: &ChargeExporter::CHARGE,
         exemple: r#"{"etat":"livre-de-paie","periode":"2026-11","regroupement":"salarie","format":"csv","apercu":true}"#,
-        rend: "le tableau, ou le fichier écrit",
+        rend: "le tableau, ou le fichier écrit ; ecran (le livre de paie tel qu'il se lit : colonnes, rangées et leurs cellules dites ; la régularisation CASC-SVP : ses étapes, ses gestes, dont l'envoi, une date par année)",
         refus: &[OPERATION, MANQUE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -731,12 +731,70 @@ struct EcranDUnEtat {
     casc: Option<EcranDeLaCasc>,
 }
 
-/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE : ses colonnes (le mois, le salarie, le spectacle, puis les montants de
-/// `documents::etats_paie::LigneLivre`, dans cet ordre) et sa ligne du total general.
+/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE, tel qu'il se lit : ses colonnes (le mois, le salarie, le spectacle, puis les
+/// montants de `documents::etats_paie::LigneLivre`, dans cet ordre), puis ses rangees dans l'ordre ou elles se lisent
+/// (les lignes de chaque groupe et son sous-total, le total general au bout), chacune ses cellules deja dites, une par
+/// colonne.
 #[derive(Debug, Serialize)]
 struct EcranDuLivre {
-    colonnes: [&'static str; 10],
-    total_general: &'static str,
+    colonnes: Vec<ColonneDuLivre>,
+    rangees: Vec<RangeeDuLivre>,
+}
+
+/// Une colonne du livre : son libelle, a droite pour un montant, en retrait pour ce qui precise la ligne (le spectacle,
+/// ou le nombre de bulletins d'un total).
+#[derive(Debug, Serialize)]
+struct ColonneDuLivre {
+    libelle: &'static str,
+    a_droite: bool,
+    discrete: bool,
+}
+
+/// Une rangee du livre : une ligne, le sous-total d'un groupe, ou le total general ; ses cellules, une par colonne.
+#[derive(Debug, Serialize)]
+struct RangeeDuLivre {
+    sorte: SorteDeRangee,
+    cellules: Vec<String>,
+}
+
+/// Ce qu'est une rangee du livre.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SorteDeRangee {
+    Ligne,
+    SousTotal,
+    TotalGeneral,
+}
+
+/// Ce qu'une cellule du livre dit d'un montant que la ligne ne dit pas (les pieces d'une paie importee l'ont tu).
+const MONTANT_TU: &str = "—";
+
+/// Le livre `l`, tel qu'il se lit : chaque cellule dite.
+fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
+    let colonne = |libelle, a_droite, discrete| ColonneDuLivre { libelle, a_droite, discrete };
+    let mut colonnes = vec![colonne("Mois", false, false), colonne("Salarié", false, false), colonne("Spectacle", false, true)];
+    colonnes.extend(["Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"].map(|c| colonne(c, true, false)));
+    let total = |sorte, titre: &str, t: &documents::etats_paie::Totaux| {
+        let mut cellules = vec![String::new(), titre.to_string(), t.bulletins_dit()];
+        cellules.extend(t.sommes_dites());
+        RangeeDuLivre { sorte, cellules }
+    };
+    let mut rangees = Vec::new();
+    for g in &l.groupes {
+        for x in &g.lignes {
+            // Le spectacle de la ligne ; sans spectacle, sa nature de contrat.
+            let quoi = if x.spectacle.is_empty() { x.libelle_nature.clone() } else { x.spectacle.clone() };
+            let mut cellules = vec![x.mois.to_string(), x.salarie.clone(), quoi];
+            cellules.extend(x.montants().into_iter().map(|m| match m {
+                Some(m) => socle::grandeurs::ecrit::texte::dit(m),
+                None => MONTANT_TU.to_string(),
+            }));
+            rangees.push(RangeeDuLivre { sorte: SorteDeRangee::Ligne, cellules });
+        }
+        rangees.push(total(SorteDeRangee::SousTotal, &g.total_dit, &g.totaux));
+    }
+    rangees.push(total(SorteDeRangee::TotalGeneral, "TOTAL GÉNÉRAL", &l.totaux));
+    EcranDuLivre { colonnes, rangees }
 }
 
 /// CE QUE L'ECRAN DIT DE LA REGULARISATION CASC-SVP, et ce qui s'y fait : son titre ; les virements (`virement`) ; les
@@ -867,10 +925,10 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),
         sources: "Sources",
         ouvrir: (casc.is_none() && !ecrits.is_empty()).then_some("Ouvrir le dossier"),
-        livre: matches!(etat, EtatRendu::Livre(_)).then_some(EcranDuLivre {
-            colonnes: ["Mois", "Salarié", "Spectacle", "Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"],
-            total_general: "TOTAL GÉNÉRAL",
-        }),
+        livre: match &etat {
+            EtatRendu::Livre(l) => Some(ecran_du_livre(l)),
+            _ => None,
+        },
         casc,
     };
     Ok(EtatExporte { phrase, etat, phrases: avertissements, ecran })
