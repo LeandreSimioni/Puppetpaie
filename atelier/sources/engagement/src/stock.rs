@@ -750,6 +750,39 @@ impl Objet {
     }
 }
 
+/// LE DERNIER JOUR OU UN SPECTACLE EST ENGAGE : la fin la plus tardive de ses engagements (`Le`), ou un engagement
+/// paye au mois qui n'a pas encore de fin et le tient en cours (`SansFin`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DernierJourEngage {
+    Le(Jour),
+    SansFin,
+}
+
+/// LE DERNIER JOUR OU CHAQUE SPECTACLE EST ENGAGE, par les engagements actifs qui le nomment (leur carte, leurs
+/// avenants), importes compris. La fin d'un engagement est celle de son contrat (`Carte::fin_lue` : un contrat d'usage
+/// sans fin dite finit a son dernier jour joue ou planifie) ; un contrat paye au mois sans fin le tient en cours ; une
+/// carte qui n'a encore aucun jour n'engage pas le spectacle. Un spectacle absent n'est engage par rien.
+pub fn derniers_jours_engages(racine: &Path) -> R<BTreeMap<droit::contexte::IdSpectacle, DernierJourEngage>> {
+    let mut out: BTreeMap<droit::contexte::IdSpectacle, DernierJourEngage> = BTreeMap::new();
+    for o in tous(racine)?.1.objets.iter().filter(|o| !o.est_non_actif()) {
+        let dernier = match (o.carte().fin_lue(), o.mensuel()?) {
+            (Some(f), _) => DernierJourEngage::Le(f),
+            (None, true) => DernierJourEngage::SansFin,
+            (None, false) => continue,
+        };
+        let nommes = std::iter::once(&o.carte().spectacle).chain(o.avenants().iter().map(|a| &a.termes.spectacle)).flatten();
+        for s in nommes {
+            let plus_tard = match (out.get(s), dernier) {
+                (None, d) => d,
+                (Some(DernierJourEngage::SansFin), _) | (_, DernierJourEngage::SansFin) => DernierJourEngage::SansFin,
+                (Some(DernierJourEngage::Le(a)), DernierJourEngage::Le(b)) => DernierJourEngage::Le((*a).max(b)),
+            };
+            out.insert(s.clone(), plus_tard);
+        }
+    }
+    Ok(out)
+}
+
 /// Tous les engagements, fichier par fichier, du plus ancien au plus recent, dans l'ordre de chaque fichier.
 pub fn objets(racine: &Path) -> R<Vec<Objet>> {
     Ok(tous(racine)?.1.objets.clone())

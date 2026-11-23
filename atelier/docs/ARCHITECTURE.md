@@ -1219,6 +1219,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
 | clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le cadre qu'une carte disait de son métier, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
 | avenant d'un engagement (les termes qui changent à partir d'un jour, et ceux qui se retirent ; sa forme écrite, `AvenantEcrit`, dont chaque retiré, `Retire`, est un champ de la carte ou la clé gardée `cadre`) | `engagement::stock::Avenant` | `engagement/src/stock.rs` |
+| dernier jour engagé d'un spectacle (la fin la plus tardive des engagements actifs qui le nomment, importés compris, ou un contrat payé au mois sans fin qui le tient en cours ; seul le rangement des spectacles endormis le lit, `derniers_jours_engages`) | `engagement::stock::DernierJourEngage` | `engagement/src/stock.rs` |
 | ouverture d'une case (toujours, ou si un fait) | `engagement::carte::Ouverture` | `engagement/src/carte.rs` |
 | place d'une case ouverte (de base, « Avancé », « Imprévu… », rendue) | `PlaceDeLaCase` | `engagement/src/carte.rs` |
 | case ouverte pour un engagement (sa clé, un `saisie::Champ` ; sa place) | `CaseOuverte` | `engagement/src/carte.rs` |
@@ -1562,7 +1563,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **ligne de paie** : une ligne datée : cachet, heures, prime, frais ; une date de ligne, `DateDeLigne`.
 - **salarié** : une personne que la compagnie emploie ; `SalarieDuContrat`, la fiche figée d'un contrat.
 - **compagnie** : l'employeur et son installation.
-- **spectacle** : une production.
+- **spectacle** : une production. Il s'archive à la main (`activer-fiche`), ou se range de lui-même au geste
+  `ouverture` après 24 mois sans engagement ni réactivation (ticket #621, `fiches::ranger_les_spectacles_endormis`),
+  écrit comme à la main ; archivé ou non, c'est sa case `actif` (`ChampsSpectacle::archivee`).
 - **fiche** : entreprise, salarié ou spectacle, datée ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre
   notion, à renommer.
 - **fiche nommée** : une fiche et ce qui la désigne : l'entreprise (le fichier entier, sans clé), un salarié ou un

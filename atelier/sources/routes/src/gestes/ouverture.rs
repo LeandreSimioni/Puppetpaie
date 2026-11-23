@@ -54,7 +54,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Ouvrir la compagnie : sauvegarder, relever retours, signatures et fiches.",
         charge: &ChargeOuverture::CHARGE,
         exemple: r#"{}"#,
-        rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet), et les incidents en phrases ; ne refuse jamais",
+        rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet, spectacles_ranges : ceux que 24 mois sans engagement ont rangés dans les archives), et les incidents en phrases ; ne refuse jamais",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
@@ -222,6 +222,8 @@ pub struct Ouverture {
     pub phrases_coffre: Vec<String>,
     /// Ce que l'horloge de la compagnie fictive a joue aujourd'hui, en phrases.
     pub horloge: Vec<String>,
+    /// Les spectacles que le temps a ranges dans les archives (`fiches::ranger_les_spectacles_endormis`), en une phrase.
+    pub spectacles_ranges: Vec<String>,
     /// La duree de l'ouverture.
     pub duree: Duration,
     /// Le reseau manquait : dit une fois, pas par erreur.
@@ -253,6 +255,7 @@ impl Ouverture {
             a_poser: Vec::new(),
             phrases_coffre: Vec::new(),
             horloge: Vec::new(),
+            spectacles_ranges: Vec::new(),
             duree: Duration::ZERO,
             hors_ligne: false,
             injoignables: Vec::new(),
@@ -303,7 +306,7 @@ impl Ouverture {
             Some(r) => socle::phrase!("Ouverture du {} : {}", ecrit::francaise::texte(self.quand), r),
             None => socle::phrase!("Ouverture du {}.", ecrit::francaise::texte(self.quand)),
         };
-        let phrases: Vec<String> = self.horloge.iter().chain(&self.manquants).chain(&self.incidents).cloned().collect();
+        let phrases: Vec<String> = self.horloge.iter().chain(&self.spectacles_ranges).chain(&self.manquants).chain(&self.incidents).cloned().collect();
         let sauvegarde = self.sauvegarde.as_ref().map(|s| SauvegardeDite {
             resume: s.resume(),
             deposes: s.deposes.iter().map(|f| f.relatif.clone()).collect(),
@@ -361,6 +364,7 @@ impl Ouverture {
             fiches,
             a_poser: self.a_poser,
             horloge: self.horloge,
+            spectacles_ranges: self.spectacles_ranges,
             hors_ligne: self.hors_ligne,
             injoignables: self.injoignables,
             tout_va_bien,
@@ -388,6 +392,8 @@ pub struct OuvertureDite {
     pub fiches: Option<FichesDites>,
     pub a_poser: Vec<String>,
     pub horloge: Vec<String>,
+    /// Les spectacles que le temps a ranges dans les archives, en une phrase ; vide sinon.
+    pub spectacles_ranges: Vec<String>,
     pub hors_ligne: bool,
     pub injoignables: Vec<String>,
     pub tout_va_bien: bool,
@@ -725,6 +731,16 @@ fn nomme(racine: &Path, e: &socle::echec::Echec) -> String {
     }
 }
 
+/// La phrase des spectacles que le temps a ranges ; aucune s'il n'y en a pas.
+fn phrase_des_spectacles_ranges(ranges: &[String]) -> Option<String> {
+    let noms = ranges.iter().map(|t| format!("« {} »", t)).collect::<Vec<_>>().join(", ");
+    match ranges.len() {
+        0 => None,
+        1 => Some(format!("Spectacle rangé dans les archives après 24 mois sans engagement : {}. Il se réactive dans Configuration › Spectacles.", noms)),
+        _ => Some(format!("Spectacles rangés dans les archives après 24 mois sans engagement : {}. Ils se réactivent dans Configuration › Spectacles.", noms)),
+    }
+}
+
 /// La compagnie est une copie de developpement (`MARQUEUR_COPIE`).
 fn est_copie(racine: &Path) -> bool {
     racine.join(MARQUEUR_COPIE).is_file()
@@ -872,6 +888,13 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
         r.incidents.push(format!("Mois finis : {}", nomme(&ctx.racine, &e)));
     }
     r.finir_l_etape();
+
+    // LES SPECTACLES QUE LE TEMPS RANGE : plus de 24 mois sans engagement ni reactivation, ils s'archivent. Des engagements
+    // qui ne se lisent pas ne rangent rien, et le passage le dit.
+    match crate::fiches::ranger_les_spectacles_endormis(ctx) {
+        Ok(ranges) => r.spectacles_ranges = phrase_des_spectacles_ranges(&ranges).into_iter().collect(),
+        Err(e) => r.incidents.push(format!("Spectacles sans engagement : {}", nomme(&ctx.racine, &e))),
+    }
 
     // LA COMPAGNIE FICTIVE : les retours des depots joues et les signatures demandees arrivent d'ici, sans coffre ni reseau --
     // et rien ne manque au coffre, puisqu'il n'y a rien a y poser.
