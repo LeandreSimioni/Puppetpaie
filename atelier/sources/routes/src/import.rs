@@ -44,7 +44,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
+        rend: "titre, repris (un historique est repris : le guide se replie), importer et apercu (les gestes, route, charge et libellé), editeur_titre, importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -795,8 +795,15 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
         (Some(le), _, _) => socle::phrase!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
         (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel : mettez ses bulletins de paie et une DSN déposée dans le dossier d'import, puis importez."),
     };
+    // UN HISTORIQUE EST REPRIS des qu'une reprise ou un contrat l'est : l'essentiel du guide se replie avec lui.
+    let repris = !reprises.is_empty() || !contrats.is_empty();
     Ok(EtatImportation {
         phrase,
+        titre: "Reprendre votre passé",
+        repris,
+        importer: crate::etapes::action(Route::Importer, crate::SansCharge {}, None, "Importer".to_string()),
+        apercu: crate::etapes::action(Route::ImportationApercu, crate::SansCharge {}, None, "Aperçu, sans rien écrire".to_string()),
+        editeur_titre: "Ce qui attend l'éditeur",
         contrats: contrats.len(),
         salaries: salaries.len(),
         objets: objets.len(),
@@ -820,6 +827,17 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
 #[derive(Debug, Serialize)]
 struct EtatImportation {
     phrase: Phrase,
+    /// Le titre de la carte de l'import.
+    titre: &'static str,
+    /// Un historique est-il repris (une reprise ou un contrat) ? Alors l'essentiel du guide se replie avec lui.
+    repris: bool,
+    /// Le geste qui reprend le dossier d'import : `importer`, la premiere fois comme les suivantes.
+    importer: crate::etapes::Action,
+    /// Le geste qui dit ce que l'import reprendrait, sans rien ecrire (`importation-apercu`), hors du chemin simple
+    /// (`guide.avance`).
+    apercu: crate::etapes::Action,
+    /// Le titre de ce qui attend l'editeur (`editeur`), quand quelque chose l'attend.
+    editeur_titre: &'static str,
     importe_le: Option<Jour>,
     contrats: usize,
     salaries: usize,

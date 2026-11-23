@@ -46,10 +46,9 @@ pub struct Guide {
     pub replie: &'static str,
     /// Le titre de ce qui se lit d'une piece (`Piece::lu`).
     pub ce_qui_s_en_lit: &'static str,
-    /// Le titre de ce qui est hors du chemin simple (`avance`), ou est l'apercu.
+    /// Le titre de ce qui est hors du chemin simple (`avance`), ou est le geste de l'apercu (`importation-etat`,
+    /// `apercu`).
     pub avance: &'static str,
-    /// Le geste de l'apercu (`importation-apercu`), sous `avance`.
-    pub apercu: &'static str,
 }
 
 /// Une sorte de piece : ce que c'est, ou la trouver, ce qui s'en lit.
@@ -140,7 +139,6 @@ pub fn guide() -> Guide {
         replie: "Ce qu'on met dans le dossier d'import",
         ce_qui_s_en_lit: "Ce qui s'en lit",
         avance: "Avancé",
-        apercu: "Aperçu, sans rien écrire",
     }
 }
 
