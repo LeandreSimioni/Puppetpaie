@@ -769,7 +769,7 @@ pub(crate) struct ReponseSignalement {
 /// CE QUI SUIT L'ECRITURE D'UN SIGNALEMENT : son depot (l'apercu du depot du fichier ecrit, puis le depot), le geste que
 /// la reponse rend en `suite`. Ecrire un fichier n'engage rien ; le deposer engage tout : deux gestes.
 fn le_depot(fichier: &std::path::Path) -> crate::etapes::Action {
-    crate::etapes::action(Route::DepotApercu, crate::depots::Designation::du_fichier(fichier.to_path_buf()), Some(Route::Deposer), "Déposer".into())
+    crate::etapes::vers(crate::etapes::VueDuGeste::Depot, crate::depots::Designation::du_fichier(fichier.to_path_buf()), Some(Route::Deposer), "Déposer".into())
 }
 
 /// `fin-contrat-signaler` : le fichier ecrit, et son depot (`suite`).

@@ -19,19 +19,26 @@
    seul : un garde-fou posé dans un front se contourne par l'autre.
 */
 
+/** LES VUES D'UNE ROUTE QUI EN A DEUX : la boîte de chacune, que l'action nomme (`vue`, `etapes::VueDuGeste`). */
+const VUES_DU_GESTE = {
+  "embauches-a-choisir": (action) => boiteDpae(action.charge.mois),
+  "depot": (action) => boiteDepot(action.charge, { testerDabord: !!action.tester }),
+  "contrats-a-envoyer": (action) => boiteSignature(action.charge),
+  "contrats-en-attente": (action) => boiteContratsEnAttente(action.charge.mois),
+};
+
 /** Le geste d'un groupe ou d'un carré : la boîte de la route que le moteur nomme (`route`, avec sa `charge` ; `puis` :
- *  l'acte qui suit). Un dossier à ouvrir porte son `chemin`. `seulement` : les salariés cochés d'avance. `sur` : le rappel dont
- *  vient le geste (la fin de contrat à compléter : son `objet`). */
-function ouvrirGeste(action, mois, seulement, sur) {
+ *  l'acte qui suit), ou de la vue qu'il nomme quand la route en a deux (`vue`). Un dossier à ouvrir porte son `chemin`.
+ *  `sur` : le rappel dont vient le geste (la fin de contrat à compléter : son `objet`). */
+function ouvrirGeste(action, mois, sur) {
   if (!action) return;
   if (action.chemin) return ouvrirEtDire(action.chemin, action.phrase, true);
   const c = action.charge;
   const m = c.mois || mois;
   switch (action.route) {
     case "depot-apercu":
-      return c.quoi === "dpae" && !c.engagements ? boiteDpae(m) : boiteDepot(c, { testerDabord: !!action.tester });
     case "signature-apercu":
-      return action.puis === "contrat-recu" ? boiteContratsEnAttente(m) : boiteSignature(m, seulement);
+      return VUES_DU_GESTE[action.vue](action);
     case "envoi-apercu": return boiteEnvoi(m);
     case "historique-mois": return ouvrirMoisHistorique(m);
     // Une pièce partie dont le fichier manque : la route la refait et rend son chemin, qui s'ouvre.
@@ -442,7 +449,7 @@ function encartRepetition(r) {
 }
 
 /* ------------------------------------------ les documents aux salariés */
-/** LES DOCUMENTS DU MOIS : chaque salarié à qui ils partent, coché ; on
+/** LES DOCUMENTS DU MOIS : la liste des messages, et la case `salaries` de leurs départs, en colonne ; on
  *  décoche. Deux gestes : Imprimer (un seul PDF, salarié par salarié : bulletin,
  *  certificat, AER) et Envoyer par courriel quand une boîte est posée. Les deux
  *  sont un départ : le moteur numérote et fige la paie. */
@@ -452,9 +459,11 @@ async function boiteEnvoi(mois) {
     a = await api("envoi-apercu", { mois });
   } catch (e) { dire(e.message, "erreur"); return; }
 
-  // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont la case `salaries` est la colonne
-  // cochée de la liste ; celui qui exige le mot de passe (`demande`) le fait taper.
+  // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont la case `salaries` (ses choix, ce
+  // qu'elle montre d'abord : `valeurs`) est la colonne cochée de la liste ; celui qui exige le mot de passe (`demande`)
+  // le fait taper. La liste n'a de messages que si un départ est ouvert.
   const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
+  const coches = (cle) => a.principal.valeurs.salaries.includes(cle);
   const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
     + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
   ouvrirBoite(`
@@ -470,7 +479,7 @@ async function boiteEnvoi(mois) {
       <tr><th></th>${a.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
       ${a.messages.map((m) => `
         <tr>
-          <td><input type="checkbox" class="e-qui" value="${echapper(m.cle)}" checked
+          <td><input type="checkbox" class="e-qui" value="${echapper(m.cle)}" ${coches(m.cle) ? "checked" : ""}
                      aria-label="${echapper(m.nom)}"></td>
           <td>${echapper(m.nom)}${m.pastille ? `<br>${pastilleDeLEtat(m.pastille)}` : ""}</td>
           ${a.boite_liee ? `<td>${echapper(m.destinataire)}</td>` : ""}
@@ -517,25 +526,32 @@ async function boiteEnvoi(mois) {
 
 /* --------------------------------------------- les contrats à faire signer */
 
-/** LES CONTRATS À FAIRE PARTIR : ceux que le moteur dit à envoyer
- *  (`a_envoyer` : jamais partis, ou changés depuis), tous cochés ; on décoche
- *  ce qu'on ne fait pas partir. `seulement` : les salariés choisis ailleurs
- *  (la pastille d'un engagement) ; les autres restent dans la liste, décochés.
+/** LES CONTRATS À FAIRE PARTIR : ceux que le moteur rend à cocher
+ *  (`a_envoyer` : jamais partis, ou changés depuis), cochés comme le disent
+ *  les cases de leurs départs (`valeurs` : tous, ou ceux des salariés que la
+ *  charge choisit, `salaries`) ; on décoche ce qu'on ne fait pas partir.
  *  Un contrat signé qui a changé part en avenant. Deux gestes : Imprimer (un
  *  seul PDF de tout ce qui est coché), et Envoyer à la signature quand une
- *  boîte courriel est posée. */
+ *  boîte courriel est posée. `charge` : celle de `signature-apercu`. */
 
-async function boiteSignature(mois, seulement) {
+async function boiteSignature(charge) {
+  const mois = charge.mois;
   let a;
   try {
-    a = await api("signature-apercu", { mois });
+    a = await api("signature-apercu", charge);
   } catch (e) { dire(e.message, "erreur"); return; }
 
-  const contrats = a.contrats.filter((c) => c.a_envoyer);
-  const coche = (c) => !seulement || seulement.includes(c.salarie);
+  const contrats = a.a_envoyer;
   // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont les cases (`contrats`, `avenants`) se
   // remplissent de la part de chaque contrat coché (`part`) ; celui qui exige le mot de passe (`demande`) le fait taper.
+  // Un contrat est coché d'abord quand sa part est dans ce que ces cases montrent d'abord (`valeurs`, les mêmes pour
+  // chaque départ) ; un contrat à cocher a toujours un départ ouvert.
   const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
+  const coche = (c) => {
+    const g = a.principal;
+    const montrees = g.cases.flatMap((k) => g.valeurs[k].map((x) => JSON.stringify(x)));
+    return g.cases.some((k) => (c.part[k] || []).some((x) => montrees.includes(JSON.stringify(x))));
+  };
   const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
     + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
   ouvrirBoite(`
@@ -552,10 +568,8 @@ async function boiteSignature(mois, seulement) {
           <span><b>${echapper(c.nom)}</b> — ${echapper(c.spectacle)},
             ${echapper(c.periode_dit)}
             ${c.numero_dit ? `<span class="discret">(${echapper(c.numero_dit)})</span>` : ""}
-            ${a.boite_liee ? (c.destinataire ? `<br><span class="discret">${echapper(c.destinataire)}</span>`
-              : `<br><span class="s-courriel">Son courriel
-                  <input type="email" class="s-courriel-saisi" placeholder="son courriel" data-salarie="${echapper(c.salarie)}">
-                  <button type="button" class="lien s-courriel-poser" data-salarie="${echapper(c.salarie)}">Enregistrer</button></span>`) : ""}
+            ${a.boite_liee && c.destinataire ? `<br><span class="discret">${echapper(c.destinataire)}</span>` : ""}
+            ${c.courriel ? `<br><span class="s-courriel" data-i="${i}">${boutonsDesGestes([c.courriel])}</span>` : ""}
             ${c.pastille ? `<br>${pastilleDeLEtat(c.pastille)}` : ""}${c.voir_avenant ? `
               <button class="lien s-avenant" data-i="${i}">${echapper(c.voir_avenant.libelle)}</button>` : ""}</span>
         </label>`).join("")}
@@ -593,24 +607,18 @@ async function boiteSignature(mois, seulement) {
       }
     };
   });
-  // LE COURRIEL QUI MANQUE se saisit ici : il s'enregistre dans la fiche du
-  // salarié (`poser-courriel`), et la boîte se rouvre avec lui.
-  document.querySelectorAll(".s-courriel-poser").forEach((b) => {
-    b.onclick = async (ev) => {
-      ev.preventDefault();                 // le bouton est dans un <label>
-      const champ = document.querySelector(`.s-courriel-saisi[data-salarie="${CSS.escape(b.dataset.salarie)}"]`);
-      try {
-        var pose = await api("poser-courriel", { salarie: b.dataset.salarie, email: champ ? champ.value : "" });
-      } catch (e) { dire(e.message, "erreur"); return; }
+  // LE COURRIEL QUI MANQUE : le geste que la route rend sur le contrat (`courriel`, `poser-courriel`), sa boîte par-dessus
+  // celle-ci ; il s'enregistre dans la fiche du salarié, et la boîte se rouvre avec lui, les mêmes salariés cochés.
+  document.querySelectorAll(".s-courriel").forEach((el) => {
+    const c = contrats[+el.dataset.i];
+    el.onclick = (ev) => ev.preventDefault();   // dans un <label> : ne pas cocher la case
+    brancherLesGestes(el, [c.courriel], { titre: c.nom, pardessus: true }, async (pose) => {
       await relireEtat();
-      const gardes = [...document.querySelectorAll(".s-qui:checked")].map((c) => c.value);
+      const gardes = [...document.querySelectorAll(".s-qui:checked")].map((x) => x.value);
       fermerBoite();
       dire(pose.phrase, "envoye");
-      boiteSignature(mois, gardes);
-    };
-  });
-  document.querySelectorAll(".s-courriel-saisi").forEach((c) => {
-    c.onclick = (ev) => ev.preventDefault();   // dans un <label> : ne pas cocher la case
+      boiteSignature({ mois, salaries: gardes });
+    });
   });
   // L'aperçu de son avenant, tel que la route le nomme (`voir_avenant`).
   document.querySelectorAll(".s-avenant").forEach((b) => {
@@ -634,7 +642,7 @@ async function boiteContratsEnAttente(mois, fait) {
   try {
     a = await api("signature-apercu", { mois });
   } catch (e) { dire(e.message, "erreur"); return; }
-  const contrats = a.contrats.filter((c) => c.en_attente);
+  const contrats = a.en_attente;
   ouvrirBoite(`
     <h3>${echapper(a.titre_en_attente)}</h3>
     ${moisEnGros(mois)}
@@ -707,6 +715,11 @@ async function boiteAvenant(mois, salarie, debut, numero) {
   } catch (e) { dire(e.message, "erreur"); return; }
   const mods = a.modifications;
   const cite = (textes) => textes.map((x) => `<p class="citation">« ${echapper(x)} »</p>`).join("");
+  // LES ENVOIS QUE LA ROUTE OUVRE (`principal` : l'avenant ; `autres` : annule et remplace), chacun un geste qui exige le
+  // mot de passe ; ceux qui ont des cases (l'avenant et sa date d'effet) les prennent dans celles que la route rend.
+  const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
+  const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
+    + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
   ouvrirBoite(`
     <h3>${echapper(a.titre)}</h3>
     <p class="discret">${echapper(a.situation)}</p>
@@ -720,17 +733,18 @@ async function boiteAvenant(mois, salarie, debut, numero) {
         <b>${echapper(m.titre_dit)}</b>
         <div class="discret">Avant</div>${cite(m.avant)}
         <div class="discret">Désormais</div>${cite(m.apres)}
-      </div>`).join("")}
-      <label>Date d'effet de l'avenant
-        <input type="date" id="av-effet" value="${echapper(a.effet)}"></label>` : ""}
+      </div>`).join("")}` : ""}
+    ${a.cases.length ? `<div id="av-cases">${grilleDesCases(a.cases.map(caseDeRoute).join(""), "", false)}</div>` : ""}
     ${a.contrat_signe ? `<div class="encart info">${echapper(a.contrat_signe.phrase)}
       <button class="lien" id="av-dossier">Ouvrir son dossier</button></div>` : ""}
     <p class="discret"><a href="#" id="av-pieces">Ce qui est parti</a></p>
-    <div class="actions">
+    <div class="actions" id="av-envois">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      ${mods.length && a.remplacable && a.boite_liee ? `<button class="secondaire envoi" id="av-remplace">Annule et remplace</button>` : ""}
-      ${mods.length && a.boite_liee ? `<button class="primaire envoi" id="av-envoyer">Envoyer l'avenant</button>` : ""}
+      ${boutons((g) => g !== a.principal, "secondaire")}
+      ${boutons((g) => g === a.principal, "primaire")}
     </div>`);
+  const cases = document.getElementById("av-cases");
+  if (cases) brancherLesCases(cases);
   // LE CONTRAT SIGNÉ HORS DU LOGICIEL : la route rend le chemin de son dossier, la fenêtre l'ouvre (et le crée).
   const dossier = document.getElementById("av-dossier");
   if (dossier) dossier.onclick = (ev) => {
@@ -743,40 +757,18 @@ async function boiteAvenant(mois, salarie, debut, numero) {
     boitePieces({ salarie, numero, nom: a.nom, bornes: a.bornes, spectacle: a.spectacle,
                 }, "contrat-signature");
   };
-  const envoyer = document.getElementById("av-envoyer");
-  if (envoyer) envoyer.onclick = async () => {
-    const effet = document.getElementById("av-effet").value || a.effet;
-    const mdp = await demanderMotDePasse(a.demande_envoyer, { envoi: true });
-    if (!mdp) return;
-    const rendre = occupe(envoyer, "Envoi…");
-    try {
-      const r = await api("demander-signature", { mois, avenants: [{ salarie, debut, numero, mois, effet }], motdepasse: mdp });
-      fermerBoite();
-      dire(r.phrase, "envoye");
-      afficherEnvoi(r, a.mois);
-      await rafraichirActions();
-    } catch (e) {
-      rendre();
-      dire(e.message, "erreur");
-    }
+  // UN ENVOI : sa charge, que complète ce que disent ses cases (la date d'effet tapée), part sans autre boîte, après le
+  // mot de passe (`faireLeGeste`) ; ce qui est parti se dit sous le mois.
+  const apres = async (r) => {
+    fermerBoite();
+    dire(r.phrase, "envoye");
+    afficherEnvoi(r, a.mois);
+    await rafraichirActions();
   };
-  const remplace = document.getElementById("av-remplace");
-  if (remplace) remplace.onclick = async () => {
-    const mdp = await demanderMotDePasse(a.demande_remplacer, { envoi: true });
-    if (!mdp) return;
-    const rendre = occupe(remplace, "Envoi…");
-    try {
-      const r = await api("demander-signature", { mois: a.mois, contrats: [{ salarie, debut, numero: numero || a.contrat }],
-                                                  motdepasse: mdp, remplace: true });
-      fermerBoite();
-      dire(r.phrase, "envoye");
-      afficherEnvoi(r, a.mois);
-      await rafraichirActions();
-    } catch (e) {
-      rendre();
-      dire(e.message, "erreur");
-    }
-  };
+  document.querySelectorAll("#av-envois [data-geste]").forEach((b) => {
+    const g = gestes[+b.dataset.geste];
+    b.onclick = () => faireLeGeste({ ...g, charge: chargeDuGeste(cases, g) || g.charge, cases: [] }, {}, apres, b);
+  });
 }
 
 /** CE QUI EST PARTI, tel que la route d'envoi le rend (`r` : son titre, sa phrase, ses avertissements), sous le mois. */

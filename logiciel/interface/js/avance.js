@@ -177,6 +177,8 @@ const CASES = {
       `<button type="button" class="lien" data-tout-cocher>${aideDe("tout_cocher")}</button></span>`),
     lire: (x) => [...x.querySelectorAll("input:checked")].map((c) => c.value),
   },
+  // Plusieurs valeurs d'une liste que la route rend à côté (`choix` du geste, sous la clé de la case) : la même case.
+  get plusieurs_choix_rendus() { return CASES.plusieurs_choix; },
   // Une période (un mois, une année, toutes les années) : une liste déroulante des périodes que la route offre, les
   // mois sous leur année.
   periode: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
@@ -192,8 +194,10 @@ const CASES = {
     lire: (x) => { const lu = lireLesParties(x); return rienDit(lu) ? null : lu; },
   },
   // DES RANGÉES (les autres établissements) : chacune ses parties (`o.parties`), une croix qui la retire, et sous elle
-  // ses temps (`o.temps.lignes`, par la clé de la rangée) ; « + » en ajoute une (`o.ajouter`). Une rangée qui ne dit rien
-  // ne part pas ; plus aucune rangée, la valeur est vide.
+  // ses temps (`o.temps.lignes`, par la clé de la rangée) ; le bouton que la route nomme en ajoute une (`o.ajouter`). Des
+  // rangées que la route ne fait pas ajouter (aucun `ajouter` : l'avenant qu'un envoi fait partir) ne se retirent pas
+  // non plus : seules leurs parties se saisissent. Une rangée qui ne dit rien ne part pas ; plus aucune rangée, la valeur
+  // est vide.
   rangees: {
     html: (v, o) => {
       const tempsDe = (l) => {
@@ -201,10 +205,11 @@ const CASES = {
         return t ? t.cases.flatMap((c) => [c.avant, c.a_venir]).filter(Boolean)
           .map((x) => `<small class="case-dit">${echapper(x.valeur)} · ${echapper(x.dit)}</small>`).join("") : "";
       };
+      const retirer = o.ajouter ? `<button type="button" class="lien retirer-rangee" title="retirer" aria-label="retirer">&times;</button>` : "";
       const rangee = (l) => `<div class="rangee"><span class="case-parties" data-rangee${attributsDesParties(l, o)}>${partiesDe(l || {}, o)}</span>
-        <button type="button" class="lien retirer-rangee" title="retirer" aria-label="retirer">&times;</button>${tempsDe(l)}</div>`;
-      return `<div class="case-rangees" data-case>${(Array.isArray(v) ? v : []).map(rangee).join("")}
-        <template>${rangee(null)}</template><button type="button" class="secondaire" data-rangee-plus>${echapper(o.ajouter || "+")}</button></div>`;
+        ${retirer}${tempsDe(l)}</div>`;
+      return `<div class="case-rangees" data-case>${(Array.isArray(v) ? v : []).map(rangee).join("")}${o.ajouter
+        ? `<template>${rangee(null)}</template><button type="button" class="secondaire" data-rangee-plus>${echapper(o.ajouter)}</button>` : ""}</div>`;
     },
     lire: (x) => {
       const l = [...x.querySelectorAll(":scope > .rangee > [data-rangee]")].map(lireLesParties).filter((r) => !rienDit(r));
@@ -518,7 +523,7 @@ function caseDeRoute(c) {
   // Des choix que la route dit en boutons à cocher (`boutons`) se cochent.
   const forme = c.boutons && c.choix ? "boutons" : c.forme;
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
-  const balise = ["parties", "rangees", "html", "boutons", "plusieurs_choix"].includes(forme) ? "div" : "label";
+  const balise = ["parties", "rangees", "html", "boutons", "plusieurs_choix", "plusieurs_choix_rendus"].includes(forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
     ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis, obligatoire: c.obligatoire })}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${

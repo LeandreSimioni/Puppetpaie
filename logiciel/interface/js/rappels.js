@@ -464,7 +464,7 @@ async function agirSurRappel(r) {
     document.querySelector('.onglets button[data-vue="paie"]').click();
     await chargerMois(mois);
   }
-  return ouvrirGeste(r.action, mois || r.mois, null, r);
+  return ouvrirGeste(r.action, mois || r.mois, r);
 }
 
 /* ---- L'exercice, dans l'Historique : par année, ce qui est fait, ce qui

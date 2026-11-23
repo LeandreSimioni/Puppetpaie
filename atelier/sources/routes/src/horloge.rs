@@ -536,7 +536,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     // LES AVENANTS se lisent dans l'apercu des signatures, qui relit la paie de chaque engagement valide du mois : une paie
     // que le moteur refuse de calculer (un mois dont la version n'a pas les taux) empeche ce pas, et lui seul ; il se dit,
     // nomme par le refus (le salarie, le mois, la raison), et les autres pas se jouent.
-    let apercu = match crate::contrats::signature_apercu(ctx, le_mois) {
+    let apercu = match crate::contrats::signature_apercu(ctx, le_mois, None) {
         Ok(a) => Some(a.contrats),
         Err(e) if est_une_erreur_d_operation(&e) => {
             calendrier.push(Pas { quand: maintenant_du(jour)?, quoi: format!("avenants de {} regardés", mois_fr(mois)), geste: Geste::Empeche { refus: e } });
@@ -689,7 +689,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         }),
         Geste::Avenant { mois, salarie, debut, nom } => {
             let du_contrat = |ctx: &Contexte| -> R<Option<ContratASigner>> {
-                Ok(crate::contrats::signature_apercu(ctx, *mois)?.contrats.into_iter().find(|x| x.salarie == *salarie && x.contrat.debut() == *debut))
+                Ok(crate::contrats::signature_apercu(ctx, *mois, None)?.contrats.into_iter().find(|x| x.salarie == *salarie && x.contrat.debut() == *debut))
             };
             // La ligne de l'horloge dit ce que le journal dit : parti par courriel, ou imprime et remis en main propre.
             let imprime = std::cell::Cell::new(false);
@@ -704,7 +704,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 // main propre : l'impression est son depart.
                 let mut ouvrir = || -> R<Box<dyn Courriel>> { Ok(Box::new(BoiteMuette::nouvelle())) };
                 if x.destinataire.is_some() {
-                    let etats = crate::contrats::signature_apercu(ctx, *mois)?.contrats;
+                    let etats = crate::contrats::signature_apercu(ctx, *mois, None)?.contrats;
                     let demande = ChargeSignature::des_avenants(*mois, vec![voulu.clone()]).demande(ctx)?;
                     crate::contrats::envoyer_avenants(ctx, std::slice::from_ref(&voulu), &etats, &Preuve::default(), &demande, &mut ouvrir)?;
                 } else {
@@ -881,7 +881,7 @@ struct Signable {
 
 /// Les contrats de spectacle du mois qui ne sont pas revenus signes.
 fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
-    Ok(crate::contrats::signature_apercu(ctx, mois)?
+    Ok(crate::contrats::signature_apercu(ctx, mois, None)?
         .contrats
         .into_iter()
         .filter(|x| x.recu_le.is_none())

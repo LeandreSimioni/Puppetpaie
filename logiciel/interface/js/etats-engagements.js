@@ -105,7 +105,7 @@ async function boitePieces(ligne, acte) {
     const a = montre.gestes[+b.dataset.i].action;
     b.onclick = () => {
       fermerBoite();
-      ouvrirGeste(a, mois, [ligne.salarie]);
+      ouvrirGeste(a, mois);
     };
   });
   document.querySelectorAll(".p-ouvrir").forEach((b) => {

@@ -73,6 +73,7 @@ const fn en_liste(f: Forme) -> Forme {
         Forme::Objet => Forme::Objet,
         Forme::Parties(_) => Forme::Rangees,
         Forme::Choix(l) => Forme::PlusieursChoix(l),
+        Forme::ChoixRendu => Forme::PlusieursChoixRendus,
         _ => panic!("une liste de cette forme n'a pas de case : la dire au développeur"),
     }
 }
@@ -163,7 +164,8 @@ impl Legende {
         Legende { avance: true, ..self }
     }
 
-    /// Un texte dont la route rend les valeurs a cote, sous la cle du champ (`Forme::ChoixRendu`).
+    /// Un texte dont la route rend les valeurs a cote, sous la cle du champ (`Forme::ChoixRendu`) ; une liste de textes,
+    /// plusieurs d'entre elles (`Forme::PlusieursChoixRendus`).
     pub const fn rendue(self) -> Legende {
         Legende { precise: Some(Forme::ChoixRendu), ..self }
     }
@@ -204,6 +206,8 @@ impl ChampDuType {
             None => T::FORME,
             Some(p) => match T::FORME {
                 Forme::Texte => p,
+                // Une liste de textes precisee l'est valeur par valeur (des salaries que la route rend a cote).
+                Forme::Liste => en_liste(p),
                 _ => panic!("seul un texte se précise (`rendue`, `longue`, `fichier`) : les autres formes, leur type les dit"),
             },
         };

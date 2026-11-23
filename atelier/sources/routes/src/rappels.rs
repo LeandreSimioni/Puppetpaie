@@ -50,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie a à faire ce jour : DSN, fins de contrat, DPAE…",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; les spectacles que sa revue demande, chacun dit avec son numéro d'objet ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait », choisir les spectacles qui continuent), fermer_dit : le bouton qui ferme la boîte",
+        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; les spectacles que sa revue demande, chacun dit avec son numéro d'objet ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton, la vue qu'il ouvre quand la route en a deux ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait », choisir les spectacles qui continuent), fermer_dit : le bouton qui ferme la boîte",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -752,7 +752,7 @@ impl Echeance {
             }
             GenreDEcheance::Dpae => {
                 let Some(mois) = self.mois else { return Ok(None) };
-                action(Route::DepotApercu, crate::depots::Designation::du_mois(crate::depots::Quoi::Dpae, mois), Some(Route::Deposer), "Préparer la DPAE".into())
+                crate::etapes::vers(crate::etapes::VueDuGeste::EmbauchesAChoisir, crate::depots::Designation::du_mois(crate::depots::Quoi::Dpae, mois), Some(Route::Deposer), "Préparer la DPAE".into())
             }
             GenreDEcheance::DeLAnnee(cle) if *cle == CLOTURE || *cle == EXPORT_COMPTA => {
                 let Some(annee) = self.annee else { return Ok(None) };
