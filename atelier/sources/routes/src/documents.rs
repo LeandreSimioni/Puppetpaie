@@ -172,12 +172,12 @@ pub(crate) struct DocumentsEnvoyes {
 
 charge! {
     /// La charge de `piece-partie` : le mois, et la piece telle que le journal la nomme (un nom ecrit ailleurs : la page,
-    /// `moteur route`).
-    #[derive(Debug)]
-    struct ChargePiecePartie {
-        mois: Mois = legendes::MOIS,
+    /// `moteur route`) ; l'Historique la rend dans le geste d'un document parti dont le fichier manque.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargePiecePartie {
+        pub(crate) mois: Mois = legendes::MOIS,
         #[serde(deserialize_with = "socle::fichiers::ecrit_ailleurs::nom")]
-        fichier: NomDeFichier = dit("Pièce", "le nom de la pièce, tel que le journal le dit"),
+        pub(crate) fichier: NomDeFichier = dit("Pièce", "le nom de la pièce, tel que le journal le dit"),
     }
 }
 

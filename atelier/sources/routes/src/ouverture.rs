@@ -146,7 +146,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
+        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois, chacun son titre, sa pastille, ses phrases et, s'il reste à faire, le geste qui le reprend : reprendre, comme une action des étapes), historique_dit (aucun mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
@@ -969,13 +969,15 @@ impl serde::Serialize for DsnDuBilan {
     }
 }
 
-/// UN MOIS DE L'HISTORIQUE : le mois, s'il a des documents (`produit`), ou en est sa DSN, sa pastille, le jour du depot,
-/// ses documents en mots, son echeance, s'il se corrige, s'il est tenu avant ce logiciel, ce qui reste a faire, ses
-/// sortes et ses fichiers, et si son exercice est clos. Un mois dont la DSN ne se lit pas (une fiche entreprise
-/// incomplete) ne dit que ses fichiers (`MoisDuBilan::nu`).
+/// UN MOIS DE L'HISTORIQUE : le mois et son titre, s'il a des documents (`produit`), ou en est sa DSN, sa pastille, le
+/// jour du depot, ses documents en mots, son echeance, s'il se corrige, s'il est tenu avant ce logiciel, le geste qui le
+/// reprend s'il reste a faire (`reprendre`, et ce qu'en dit `reste_dit`), ses sortes et ses fichiers, et si son exercice
+/// est clos (`clos_dit` le dit en mots). Un mois dont la DSN ne se lit pas (une fiche entreprise incomplete) ne dit que
+/// ses fichiers (`MoisDuBilan::nu`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MoisDuBilan {
     mois: Mois,
+    titre: String,
     produit: bool,
     dsn: Option<DsnDuBilan>,
     saisi_dit: &'static str,
@@ -992,18 +994,52 @@ pub(crate) struct MoisDuBilan {
     corrigeable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     importe: Option<bool>,
-    a_faire: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reprendre: Option<crate::etapes::Action>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reste_dit: Option<&'static str>,
     sortes: Vec<&'static str>,
     fichiers: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     clos: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clos_dit: Option<&'static str>,
+}
+
+/// Ce que l'Historique dit d'un mois ou il reste a faire, a cote du geste qui le reprend.
+const RESTE_A_FAIRE: &str = "reste à faire";
+
+/// Ce que l'Historique dit d'un mois dont l'exercice est clos.
+const CLOS: &str = "clos";
+
+/// Ce que l'Historique dit quand aucun mois n'est connu.
+const AUCUN_MOIS: &str = "Aucun mois";
+
+/// LE GESTE QUI REPREND UN MOIS OU IL RESTE A FAIRE, depuis l'Historique : le mois dans la page Paie (`etat-du-mois`) ;
+/// une DSN en retard, sa boite de depot, dont le test part d'abord (`etapes::deposer_dsn`) : elle se fabrique et part,
+/// en retard.
+fn reprendre_le_mois(mois: Mois, dsn_en_retard: bool) -> crate::etapes::Action {
+    let libelle = "Reprendre ce mois".to_string();
+    if dsn_en_retard {
+        crate::etapes::deposer_dsn(mois, None, libelle)
+    } else {
+        crate::etapes::action(Route::EtatDuMois, crate::etapes::ChargeMois { mois }, None, libelle)
+    }
+}
+
+/// Le titre d'un mois de l'Historique : son nom en clair, la premiere lettre en capitale (« Novembre 2026 »).
+fn titre_du_mois(mois: Mois) -> String {
+    let t = mois.libelle(socle::mois::Graphie::Accentuee);
+    let mut c = t.chars();
+    c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect()
 }
 
 impl MoisDuBilan {
-    /// Un mois qui ne se lit pas : ses fichiers, rien a corriger, et pourquoi (sa pastille le dit).
+    /// Un mois qui ne se lit pas : ses fichiers, rien a corriger, et pourquoi (sa pastille le dit) ; il reste a faire.
     fn nu(mois: Mois, fichiers: &[NomDeFichier], pourquoi: String) -> MoisDuBilan {
         MoisDuBilan {
             mois,
+            titre: titre_du_mois(mois),
             produit: !fichiers.is_empty(),
             dsn: None,
             saisi_dit: "saisi",
@@ -1015,10 +1051,12 @@ impl MoisDuBilan {
             echeance_depot: None,
             corrigeable: false,
             importe: None,
-            a_faire: true,
+            reprendre: Some(reprendre_le_mois(mois, false)),
+            reste_dit: Some(RESTE_A_FAIRE),
             sortes: Vec::new(),
             fichiers: fichiers.to_vec(),
             clos: None,
+            clos_dit: None,
         }
     }
 }
@@ -1100,8 +1138,10 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
             Etat::ADeposer => ("orange", "DSN à déposer"),
         };
         let quand = if depose { lu.quand.clone() } else { None };
+        let clos = m.exercice_clos(le_mois.annee())?;
         Ok(MoisDuBilan {
             mois: le_mois,
+            titre: titre_du_mois(le_mois),
             produit: !noms.is_empty(),
             dsn: Some(if retard { DsnDuBilan::EnRetard } else { DsnDuBilan::Lue(lu.etat) }),
             saisi_dit: "saisi",
@@ -1118,10 +1158,12 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
             // la DSN du mois courant.
             corrigeable: lu.partie() && en_retard && !importe,
             importe: Some(importe),
-            a_faire,
+            reprendre: a_faire.then(|| reprendre_le_mois(le_mois, retard)),
+            reste_dit: a_faire.then_some(RESTE_A_FAIRE),
             sortes,
             fichiers: noms.to_vec(),
-            clos: Some(m.exercice_clos(le_mois.annee())?),
+            clos: Some(clos),
+            clos_dit: clos.then_some(CLOS),
         })
     }
 }
@@ -1571,6 +1613,9 @@ pub(crate) struct EtatDeLaPage {
     demo: Option<crate::accueil::suppression::MentionDemo>,
     commencer_par_l_import: bool,
     historique: Vec<MoisDuBilan>,
+    /// Ce que l'Historique dit quand aucun mois n'est connu ; rien s'il y en a.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    historique_dit: Option<&'static str>,
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
     choix: ChoixDesCases,
@@ -1666,6 +1711,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // UNE COMPAGNIE VENUE D'UN LOGICIEL PRECEDENT, DONT RIEN N'EST ENCORE REPRIS : la page s'ouvre sur l'import et
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
         commencer_par_l_import: import::guide::commencer_par_l_import(&ctx.racine)?,
+        historique_dit: historique.is_empty().then_some(AUCUN_MOIS),
         historique,
         salaries,
         spectacles,

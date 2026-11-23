@@ -71,7 +71,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Historique),
+        // `historique-mois` la rend en geste, sur un mois qui a des documents.
+        ecran: Ecran::GesteAvance(Place::Historique),
     },
     Fiche {
         route: Route::JournalReprise,

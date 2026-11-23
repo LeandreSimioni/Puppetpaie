@@ -43,9 +43,11 @@ use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 use socle::paris::Moment;
 
-use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME};
+use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Place, Refus, Route, FORME};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
-use crate::etapes::ChargeMois;
+use crate::etapes::{Action, ChargeMois};
+use crate::imprevus::GesteDeRoute;
+use crate::SansCharge;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Historique);
@@ -56,7 +58,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire l'Historique d'un mois : ses documents, ses envois et ce qui en est revenu.",
     charge: &ChargeMois::CHARGE,
     exemple: r#"{"mois":"2026-11"}"#,
-    rend: "mois, documents (chacun son chemin ; fichier : à refaire par piece-partie avant de l'ouvrir), envois (chacun ses retours, du plus récent au plus ancien)",
+    rend: "mois, ecran (les titres et les mots de l'écran), documents (chacun son chemin ; refaire : le geste piece-partie qui le refait avant de l'ouvrir, s'il manque) et documents_dit (aucun), gestes (déposer dans le Drive, archiver), envois (chacun ses retours, du plus récent au plus ancien ; retours_dit : aucun retour attendu n'est venu) et envois_dit (rien n'est parti)",
     refus: &[FORME, Refus { classe: Classe::Disque, corriger: "le journal des envois ou une liste des bulletins repris, que la phrase dit illisible" }],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
     acte: Acte::Lit,
@@ -139,14 +141,43 @@ fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &IdSalarie) -> String {
 
 // ------------------------------------------------------------------ ce que la route rend
 
-/// L'Historique d'un mois.
+/// L'Historique d'un mois : ce que l'ecran dit (`ecran`), ses documents (`documents_dit` quand il n'y en a aucun), ce
+/// qu'on peut faire de lui (`gestes`), ses envois (`envois_dit` quand rien n'est parti).
 #[derive(Debug, Serialize)]
 struct Historique {
     phrase: Phrase,
     mois: Mois,
+    ecran: EcranDuMois,
     documents: Vec<Document>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    documents_dit: Option<&'static str>,
+    gestes: Vec<GesteDuMois>,
     envois: Vec<Envoi>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    envois_dit: Option<&'static str>,
 }
+
+/// Les mots de l'ecran d'un mois de l'Historique : le titre de ses documents, celui de ses envois, le bouton qui ouvre la
+/// piece d'un retour, les colonnes du tableau des anomalies.
+#[derive(Debug, Serialize)]
+struct EcranDuMois {
+    documents: &'static str,
+    envois: &'static str,
+    ouvrir_piece: &'static str,
+    anomalies: [&'static str; 4],
+}
+
+const ECRAN_DU_MOIS: EcranDuMois = EcranDuMois {
+    documents: "Les documents",
+    envois: "Envois et retours",
+    ouvrir_piece: "Ouvrir la pièce",
+    anomalies: ["code", "message", "rubrique", "salarié"],
+};
+
+/// UN GESTE D'UN MOIS DE L'HISTORIQUE (`imprevus::GesteDeRoute`) : sa charge est le mois ; il n'a pas de case.
+type GesteDuMois = GesteDeRoute<ChargeMois, SansCharge, SansCharge>;
+
+const DEPOSER_DANS_LE_DRIVE: Affiche = Affiche::new("Déposer dans le Drive");
 
 impl Dite for Historique {
     fn phrase(&self) -> &Phrase {
@@ -154,8 +185,9 @@ impl Dite for Historique {
     }
 }
 
-/// Un document du mois : son nom lisible, sa sorte, le salarie qu'il sert (s'il est dit), son chemin, et le fichier que
-/// `piece-partie` refait quand le journal le dit parti et qu'il manque.
+/// Un document du mois : son nom lisible, sa sorte, le salarie qu'il sert (s'il est dit), son chemin, et, quand le journal
+/// le dit parti et qu'il manque, le geste qui le refait avant de l'ouvrir (`refaire` : `piece-partie`, qui rend son
+/// chemin).
 #[derive(Debug, Serialize)]
 struct Document {
     nom: String,
@@ -163,7 +195,7 @@ struct Document {
     salarie: Option<droit::contexte::IdSalarie>,
     chemin: CheminRelatif,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<NomDeFichier>,
+    refaire: Option<Action>,
 }
 
 /// Un envoi du mois (une ligne du journal), et ce qui en est revenu.
@@ -179,8 +211,10 @@ struct Envoi {
     identite: String,
     accepte: bool,
     resume: String,
-    attend_retour: bool,
     retours: Vec<RetourLu>,
+    /// Ce qui se dit d'un depot qui attend ses retours (par son flux) et n'en a aucun ; rien sinon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retours_dit: Option<&'static str>,
 }
 
 /// Un retour sous son envoi : son titre, quand (sa reponse, ou la publication d'un retour d'organisme, ecrite telle que
@@ -225,18 +259,27 @@ struct Anomalie {
     rubrique: Option<String>,
     ligne: Option<String>,
     nombre: Option<String>,
+    /// Ce qui se dit d'une anomalie qui se repete (« × 3 ») ; rien pour une seule.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fois: Option<String>,
     salarie: Option<String>,
 }
 
 impl Anomalie {
     fn du_rapport(a: &AnomalieDuRapport) -> Anomalie {
         let o = |t: &str| dit(t).map(String::from);
-        Anomalie { code: o(&a.code), categorie: a.categorie.clone(), message: o(&a.message), rubrique: o(&a.rubrique), ligne: o(&a.ligne), nombre: o(&a.nombre), salarie: o(&a.salarie) }
+        let nombre = o(&a.nombre);
+        Anomalie { code: o(&a.code), categorie: a.categorie.clone(), message: o(&a.message), rubrique: o(&a.rubrique), ligne: o(&a.ligne), fois: fois(&nombre), nombre, salarie: o(&a.salarie) }
     }
 
     fn du_message(message: &str) -> Anomalie {
-        Anomalie { code: None, categorie: None, message: dit(message).map(String::from), rubrique: None, ligne: None, nombre: None, salarie: None }
+        Anomalie { code: None, categorie: None, message: dit(message).map(String::from), rubrique: None, ligne: None, nombre: None, fois: None, salarie: None }
     }
+}
+
+/// Ce qui se dit d'une anomalie que la piece compte `nombre` fois : « × n » au-dela d'une ; rien sinon.
+fn fois(nombre: &Option<String>) -> Option<String> {
+    nombre.as_deref().filter(|n| *n != "1").map(|n| format!("× {}", n))
 }
 
 // ------------------------------------------------------------------ les envois
@@ -424,25 +467,27 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let envoi = DossierDuMois::Envoi.chemin(mois);
     let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.texte().ends_with(".zip")) {
-        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
+        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), refaire: None, nom: nom.into() });
     }
     for d in crate::archives::pieces_de_l_envoi(ctx, mois)? {
-        out.push(Document { sorte: rubrique_de(&d.nom), salarie: d.salarie, chemin: envoi.joint(&NomDeFichier::lire(&d.nom)?), fichier: None, nom: d.nom });
+        out.push(Document { sorte: rubrique_de(&d.nom), salarie: d.salarie, chemin: envoi.joint(&NomDeFichier::lire(&d.nom)?), refaire: None, nom: d.nom });
     }
-    // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : `fichier` le nomme pour `piece-partie`, qui le refait
-    // (`depart::piece_partie`) et rend son chemin.
+    // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : son geste (`refaire`) appelle `piece-partie`, qui le
+    // refait (`depart::piece_partie`) et rend son chemin.
     for (nom, quoi) in pieces_du_journal(lignes) {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
         // Le dossier du mois de ce qu'il est : sa piece, ou les sorties du mois pour le fichier d'un depot ou un fichier pose.
         let chemin = quoi.dossier().chemin(mois).joint(&nom);
-        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
+        // Le bouton du geste dit le nom du document, tel que l'ecran le montre.
+        let refaire = crate::etapes::action(Route::PiecePartie, crate::documents::ChargePiecePartie { mois, fichier: nom.clone() }, None, nom_lisible(ctx, nom.texte()));
+        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, refaire: Some(refaire), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
-        out.push(Document { nom, sorte: RubriqueDeLHistorique::Bulletins, salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
+        out.push(Document { nom, sorte: RubriqueDeLHistorique::Bulletins, salarie: Some(b.salarie.clone()), chemin: b.chemin, refaire: None });
     }
     for d in out.iter_mut() {
         d.nom = nom_lisible(ctx, &d.nom);
@@ -785,13 +830,15 @@ fn neores_lu(crm: &Neores) -> Lecture {
         // prendre (04, 05) n'en est pas une : il se dit en phrase, avec sa valeur (`RO.B008`, plus bas).
         let parametre = matches!(a.type_action, Some(TypeDActionNeores::PriseEnCompteDUnParametre | TypeDActionNeores::RegularisationDUnParametre)) && a.resultat.is_none();
         if !parametre {
+            let nombre = lu(&a.individus).map(String::from);
             l.anomalies.push(Anomalie {
                 code: lu(&a.code).map(String::from),
                 categorie: a.type_action.map(|t| t.libelle().to_string()),
                 message: message.clone(),
                 rubrique: joint(rubriques.iter().map(|r| Some(r.as_str())), ", "),
                 ligne: None,
-                nombre: lu(&a.individus).map(String::from),
+                fois: fois(&nombre),
+                nombre,
                 salarie: joint(salaries.iter().map(|s| Some(s.as_str())), ", "),
             });
         } else if let Some(m) = &message {
@@ -955,13 +1002,15 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
             if let Some(e) = r.date_evenement {
                 message.push(format!("événement du {}", e.jj_mm_aaaa()));
             }
+            let nombre = r.nombre.map(|n| n.to_string());
             l.anomalies.push(Anomalie {
                 code: lu(&r.code).map(String::from),
                 categorie: joint([genre.map(GenreDeRetourOc::mot), r.criticite.map(CriticiteOc::libelle)], ", "),
                 message: joint(message.iter().map(|m| Some(m.as_str())), " — "),
                 rubrique: joint([lu(&r.rubrique), lu(&r.libelle_rubrique).map(|x| format!("({})", x)).as_deref()], " "),
                 ligne: None,
-                nombre: r.nombre.map(|n| n.to_string()),
+                fois: fois(&nombre),
+                nombre,
                 salarie: lu(&r.salarie).map(String::from),
             });
         }
@@ -1147,7 +1196,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
             identite: identite(ctx, l),
             accepte: l.accepte(),
             resume: etats::resume(Some(l), &recus, &avenants),
-            attend_retour: l.flux().is_some(),
+            retours_dit: (l.flux().is_some() && retours.is_empty()).then_some("Aucun retour"),
             retours,
         });
     }
@@ -1155,5 +1204,20 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
     envois.sort_by(|a, b| (&b.quand, b.mode).cmp(&(&a.quand, a.mode)));
     let documents = documents(ctx, le_mois, &lignes)?;
     let phrase = socle::phrase!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
-    Ok(Historique { phrase, mois: le_mois, documents, envois })
+    // Les documents d'un mois se deposent dans le Drive de la compagnie (`archiver`, qui refuse un mois sans documents).
+    let gestes: Vec<GesteDuMois> = if documents.is_empty() {
+        Vec::new()
+    } else {
+        vec![GesteDeRoute::avec_cases(Route::Archiver, ChargeMois { mois: le_mois }, DEPOSER_DANS_LE_DRIVE, Vec::new(), SansCharge {}, SansCharge {})]
+    };
+    Ok(Historique {
+        phrase,
+        mois: le_mois,
+        ecran: ECRAN_DU_MOIS,
+        documents_dit: documents.is_empty().then_some("Aucun document"),
+        documents,
+        gestes,
+        envois_dit: envois.is_empty().then_some("Rien n'est parti"),
+        envois,
+    })
 }

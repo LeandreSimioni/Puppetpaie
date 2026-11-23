@@ -169,6 +169,7 @@ pub(crate) enum ChargeDuGeste {
     ObligationDArret(ChargeObligationDArret),
     Annee(ChargeAnnee),
     Revue(crate::rappels::ChargeRevue),
+    Piece(crate::documents::ChargePiecePartie),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -205,6 +206,7 @@ charge_du_geste! {
     ChargeObligationDArret => ObligationDArret,
     ChargeAnnee => Annee,
     crate::rappels::ChargeRevue => Revue,
+    crate::documents::ChargePiecePartie => Piece,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme.
