@@ -158,7 +158,7 @@ fn canal_installe() -> Option<Rc<dyn Canal>> {
 
 /// La phrase de refus quand personne ne peut taper : pourquoi, et quoi faire.
 pub const SANS_HUMAIN: &str = "Rien n'est parti : aucun humain n'est la pour taper le mot de passe du logiciel (ni ecran, ni terminal). \
-Un acte reel ne se fait pas sans lui : le lancer depuis la fenetre PuppetPaie, ou depuis un terminal ouvert par vous.";
+Un acte reel ne se fait pas sans lui : le taper dans la case qui le demande, ou lancer l'acte depuis la fenetre PuppetPaie ou un terminal ouvert par vous.";
 
 /// La question que pose la fenetre ou le terminal : la demande, mot pour mot (`DemandeDuMotDePasse`).
 fn question(demande: &DemandeDuMotDePasse, essai: u8, precedent_refuse: bool, seance: bool) -> Question {
@@ -250,7 +250,7 @@ pub fn ouvrir_seance(racine: &Path, qui: &QuiOuvre) -> Verdict {
 
 /// La phrase de refus quand personne ne peut taper un mot de passe a poser.
 pub const SANS_HUMAIN_SAISIE: &str = "Rien n'a ete pose : aucun humain n'est la pour taper le mot de passe sans l'afficher (ni ecran, ni terminal). \
-Poser un mot de passe est un geste d'humain : le faire depuis un terminal ouvert par vous.";
+Poser un mot de passe est un geste d'humain : le taper dans sa case, ou le faire depuis un terminal ouvert par vous.";
 
 /// La SAISIE d'un secret a POSER (le mot de passe d'un organisme, d'une boite courriel, le nouveau mot de passe du logiciel), par le
 /// meme canal que la demande d'un acte : la fenetre du moteur s'il y en a une, sinon le terminal SANS ECHO, sinon un refus. Ni

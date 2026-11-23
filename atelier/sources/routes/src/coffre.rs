@@ -1343,7 +1343,7 @@ fn ecran_du_coffre(ctx: &Contexte, e: &EtatDuCoffre) -> R<EcranDuCoffre> {
                 gestes.push(geste(Route::CoffreVerifier, Some(s.service), VERIFIER, Vec::new()));
             }
             let (cases, note) = if id.ici {
-                (vec![cle!(ChargePoser, valeur), cle!(ChargePoser, nom), cle!(ChargePoser, prenom)], Some("Le compte ouvert sur urssaf.fr pour la DPAE (service « DPAE Service plus ») : ce n'est pas celui de net-entreprises. Les accents sont retirés, la DPAE les refuse. Un mot de passe vide garde celui qui est posé."))
+                (vec![cle!(ChargePoser, valeur), cle!(ChargePoser, nom), cle!(ChargePoser, prenom)], Some("Le compte ouvert sur urssaf.fr pour la DPAE (service « DPAE Service plus ») : ce n'est pas celui de net-entreprises. Les accents sont retirés, la DPAE les refuse."))
             } else if s.avec_compte {
                 (vec![cle!(ChargePoser, valeur), cle!(ChargePoser, compte)], Some("Pour Gmail : validation en deux étapes activée, puis myaccount.google.com › Sécurité › Mots de passe des applications. C'est ce mot de passe-là, pas celui du compte."))
             } else {
