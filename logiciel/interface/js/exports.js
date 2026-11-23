@@ -365,11 +365,7 @@ function dessinerCasc(r) {
         <div class="casc-option principale">
           <h5>${echapper(e.depuis_la_boite)}</h5>
           ${e.envoi ? `
-          <div class="e-contrat-champs">
-            ${r.annees.map((a) => `<label>${echapper(a.date_libelle)}
-              <input type="date" class="casc-date" data-annee="${echapper(a.annee)}"></label>`).join("")}
-          </div>
-          <button class="primaire" id="casc-envoyer">${echapper(e.envoi.bouton)}</button>
+          <div id="casc-envoi">${boutonsDesGestes([e.envoi], () => true, "primaire")}</div>
           <p class="discret">${echapper(e.automatique)}</p>` : `
           <p>${echapper(e.automatique)}</p>`}
         </div>
@@ -391,24 +387,15 @@ function dessinerCasc(r) {
     await ouvrirEtDire(r.dossier);
   };
   brancherLesGestes(document.getElementById("casc-noter"), e.noter, {}, async () => {});
-  const envoyer = document.getElementById("casc-envoyer");
-  if (envoyer) envoyer.onclick = async () => {
-    // La charge de l'envoi est une table année → jour : une date remplie part sous son année.
-    const vire_le = {};
-    for (const c of document.querySelectorAll(".casc-date")) if (c.value) vire_le[c.dataset.annee] = c.value;
-    const mdp = await demanderMotDePasse(e.envoi.demande, { envoi: true });
-    if (!mdp) return;
-    const rendre = occupe(envoyer, e.envoi.pendant);
+  // L'envoi est un geste que la route rend : sa boîte fait saisir la date de chaque virement, puis le mot de passe. Le
+  // repère des courriels fictifs se prend avant, pour montrer ensuite ceux qui sont partis.
+  const envoi = document.querySelector("#casc-envoi [data-geste]");
+  if (envoi) envoi.onclick = async () => {
     const repere = await repereCourrielsFictifs();
-    try {
-      const e2 = await api(e.envoi.route, { vire_le, motdepasse: mdp });
-      dire(e2.phrase, "envoye");
+    await faireLeGeste(e.envoi, {}, async (e2) => {
       cible.innerHTML = `<p>${echapper(e2.phrase)}</p>`;
       fenetreCourrielsFictifs("courriel", repere);
-    } catch (x) {
-      rendre();
-      dire(x.message, "erreur");
-    }
+    }, envoi);
   };
 }
 

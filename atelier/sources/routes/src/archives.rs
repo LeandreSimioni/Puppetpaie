@@ -131,7 +131,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Exports),
+        // `exporter` la rend en geste dans la regularisation CASC-SVP, la boite posee : une date par annee.
+        ecran: Ecran::GesteAvance(Place::Exports),
     },
 ];
 
@@ -750,7 +751,7 @@ struct EcranDeLaCasc {
     depuis_la_boite: &'static str,
     automatique: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    envoi: Option<EnvoiDeLaCasc>,
+    envoi: Option<GesteDeRoute<SansCharge, SansCharge, SansCharge>>,
     a_la_main_titre: &'static str,
     a_la_main: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -762,17 +763,6 @@ struct EcranDeLaCasc {
     colonnes: [&'static str; 4],
 }
 
-/// L'ENVOI DES DEUX COURRIELS, la boite posee : sa route (`casc-envoyer`), son bouton, ce qu'il dit pendant l'envoi, la
-/// demande du mot de passe, et la case de la date de chaque virement (`date_libelle` de chaque annee). La charge,
-/// `vire_le`, est une table annee -> jour : une date par annee remplie, sous son annee.
-#[derive(Debug, Serialize)]
-struct EnvoiDeLaCasc {
-    route: Route,
-    bouton: &'static str,
-    pendant: &'static str,
-    demande: compagnie::demande::DemandeDuMotDePasse,
-}
-
 /// Ce que la boite qui note une annee regularisee montre d'abord : la cotisation de l'annee.
 #[derive(Debug, Serialize)]
 struct ValeursDeLaCasc {
@@ -781,6 +771,7 @@ struct ValeursDeLaCasc {
 }
 
 const NOTER_REGULARISEE: Affiche = Affiche::new("Noter comme régularisé");
+const ENVOYER_LES_COURRIELS: Affiche = Affiche::new("Envoyer les 2 courriels");
 
 /// Ce que l'ecran dit de la regularisation `r`, et ce qui s'y fait.
 fn ecran_de_la_casc(ctx: &Contexte, r: &crate::importation::casc::Regularisation) -> R<EcranDeLaCasc> {
@@ -799,8 +790,14 @@ fn ecran_de_la_casc(ctx: &Contexte, r: &crate::importation::casc::Regularisation
             .disant(vec![format!("CASC-SVP {} : {}, {}.", a.annee, socle::texte::euros(a.cotisation), a.libelle_dit)])
         })
         .collect();
+    // L'ENVOI DES DEUX COURRIELS, la boite posee : le geste de `casc-envoyer`, qui exige le mot de passe du logiciel ; sa
+    // case `vire_le` (une table annee -> jour) se saisit une date par annee, sous son annee (`date_libelle`).
     let envoi = match r.boite_liee {
-        true => Some(EnvoiDeLaCasc { route: Route::CascEnvoyer, bouton: "Envoyer les 2 courriels", pendant: "Envoi…", demande: crate::coffre::demande(&ctx.racine, GESTE_CASC)? }),
+        true => Some(
+            GesteDeRoute::avec_cases(Route::CascEnvoyer, SansCharge {}, ENVOYER_LES_COURRIELS, vec![cle!(ChargeCasc, vire_le)], SansCharge {}, SansCharge {})
+                .exigeant(Some(crate::coffre::demande(&ctx.racine, GESTE_CASC)?))
+                .en_parties(cle!(ChargeCasc, vire_le), r.annees.iter().map(|a| crate::fiches::PartieDeLaFiche::jour(a.annee.to_string(), a.date_libelle.clone())).collect()),
+        ),
         false => None,
     };
     Ok(EcranDeLaCasc {
@@ -1102,9 +1099,10 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
         .collect())
 }
 
-/// Le jour de chaque virement fait, par annee : un objet `{annee: jour}`.
-impl ValeurDeLaCharge<ParSaForme> for std::collections::BTreeMap<Annee, Jour> {
-    const FORME: Forme = Forme::Objet;
+/// Le jour de chaque virement fait, par annee : un objet `{annee: jour}`, une partie par annee (le geste d'envoi les
+/// rend : `ecran_de_la_casc`) ; une annee sans jour (`null`) n'a pas de virement fait.
+impl ValeurDeLaCharge<ParSaForme> for std::collections::BTreeMap<Annee, Option<Jour>> {
+    const FORME: Forme = Forme::Parties(&[]);
 }
 
 charge! {
@@ -1113,7 +1111,7 @@ charge! {
     /// logiciel tape pour l'envoi, l'enveloppe le prend (`Charge::mot_de_passe`).
     #[derive(Debug)]
     struct ChargeCasc {
-        vire_le: std::collections::BTreeMap<Annee, Jour> = dit("Virements faits", "{année: jour du virement fait, AAAA-MM-JJ}"),
+        vire_le: std::collections::BTreeMap<Annee, Option<Jour>> = dit("Virements faits", "{année: jour du virement fait, AAAA-MM-JJ}"),
     }
 }
 
@@ -1129,7 +1127,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     use crate::importation::casc::{ecrire, regularisation, Demande};
     let aujourdhui = socle::temps::jour_de_paris();
     let mut dates: Vec<(socle::mois::Annee, Jour)> = Vec::new();
-    for (a, &jour) in &c.vire_le {
+    for (a, jour) in c.vire_le.iter().filter_map(|(a, j)| j.map(|j| (a, j))) {
         if jour > aujourdhui {
             return Err(refus(format!(
                 "Le virement {} est date du {}, qui n'est pas encore arrive : le courriel annonce un virement FAIT. Rien n'est parti.",

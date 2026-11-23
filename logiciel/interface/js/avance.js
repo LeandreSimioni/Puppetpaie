@@ -580,7 +580,8 @@ function fautesDesCases(cible, cases) {
 /* ------------------------------------------------ les champs d'une fiche de route */
 
 /** Les cases de `champs` (des champs d'une fiche) : chacune sa case (`caseDeRoute`), ce que `valeurs` en dit d'abord, ses
- *  `choix` (ceux que le geste rend, sinon ceux de la fiche), et pour une case vide l'exemple que la fiche de la route
+ *  `choix` (ceux que le geste rend, sinon ceux de la fiche), ses parties quand le geste les rend (`o.parties`, sous la clé
+ *  de la case), et pour une case vide l'exemple que la fiche de la route
  *  donne de ce champ (`o.exemple`, l'exemple de la fiche : une valeur simple). `o.modifie` : la boîte modifie une chose
  *  qui existe (`modifiable`), et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
 function casesDesChamps(champs, valeurs, choix, o = {}) {
@@ -590,7 +591,7 @@ function casesDesChamps(champs, valeurs, choix, o = {}) {
   };
   const une = (c) => {
     const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix,
-      exemple: exemple(c.nom), admis: c.admis, obligatoire: c.obligatoire };
+      exemple: exemple(c.nom), admis: c.admis, obligatoire: c.obligatoire, parties: o.parties ? o.parties[c.nom] : undefined };
     return caseDeRoute(o.modifie ? modifiable(d) : d);
   };
   const avance = (c) => !!o.modifie && !!c.avance;
@@ -680,7 +681,7 @@ function champsDuGeste(g) {
 /** Ce que la boîte d'un geste dit (`phrases`), puis ses cases ; `o.modifie` : voir `casesDesChamps`. */
 function casesDuGeste(g, o = {}) {
   return `${g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
-    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple })}`;
+    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple, parties: g.parties })}`;
 }
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */

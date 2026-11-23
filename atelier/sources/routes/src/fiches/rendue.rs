@@ -316,6 +316,12 @@ impl PartieDeLaFiche {
         PartieDeLaFiche { cle: cle.to_string(), libelle: suite.to_string(), forme, aide: None, exemple: None, prerempli, choix: None, boutons: false, ouverte: true }
     }
 
+    /// Une partie jour ouverte d'une case qu'un geste fait saisir (`imprevus::GesteDeRoute::en_parties`) : son chemin dans
+    /// la valeur et son libelle, tels que la route les compose (le jour du virement d'une annee de la CASC-SVP).
+    pub(crate) fn jour(cle: String, libelle: String) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle, libelle, forme: Forme::Date, aide: None, exemple: None, prerempli: None, choix: None, boutons: false, ouverte: true }
+    }
+
     /// Une partie texte ouverte d'une case qu'un ecran rend (`CaseDeLaFiche::de_parties`) : son chemin, son libelle, son
     /// aide et l'exemple d'une partie vide.
     pub(crate) fn texte(cle: &str, libelle: crate::catalogue::Affiche, aide: String, exemple: Option<String>) -> PartieDeLaFiche {
