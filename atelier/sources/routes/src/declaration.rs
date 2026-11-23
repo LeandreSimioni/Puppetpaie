@@ -36,6 +36,11 @@ pub trait ValeurDeLaCharge<Sorte> {
     const OBLIGATOIRE: bool = true;
 }
 
+/// La forme du type `T`, celle que sa charge lui donne : une case qu'une route rend pour un champ de ce type la porte.
+pub(crate) const fn forme_du_type<S, T: ValeurDeLaCharge<S>>() -> Forme {
+    T::FORME
+}
+
 /// La forme d'une liste fermee : son type la dit (`socle::liste::ListeFermee`).
 pub enum ParLaListe {}
 /// La forme d'un autre type, dite une fois pour lui.

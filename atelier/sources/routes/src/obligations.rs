@@ -57,7 +57,7 @@ use socle::echec::erreur;
 use socle::fichiers::{repr, CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Fiche, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Fiche, Forme, Refus, MANQUE, OPERATION};
 use crate::declaration::{charge, cle, dit, Legende};
 use crate::catalogue::Affiche;
 use crate::imprevus::GesteDeRoute;
@@ -72,6 +72,8 @@ use crate::catalogue::{Ecran, Place};
 const SALARIE_ARRETE: Legende = dit("Salarié", "la clé de la fiche du salarié arrêté");
 const DERNIER_JOUR: Legende = dit("Dernier jour travaillé", "le dernier jour travaillé de l'arrêt, AAAA-MM-JJ (il désigne l'arrêt)");
 const OBLIGATIONS_REND: &str = "obligations (chacune son échéance, son état et ce qui reste à faire)";
+/// Ce que rend `arret-obligations` : les obligations, et la boite qui saisit l'arret (`imprevus::SAISIE_REND`).
+const ARRET_A_SAISIR_REND: &str = "obligations (chacune son échéance, son état et ce qui reste à faire) ; la boîte qui saisit l'arrêt : titre, cases (chacune sa clé, celle d'un champ d'arret-enregistrer, son libellé, sa forme, ses choix, sa valeur, ce que le moteur propose, prerempli, et ce qu'il dit sous elle), dit (ce que la boîte dit sous ses cases), enregistrer (arret-enregistrer : sa charge déjà remplie, où chaque case va sous sa clé, et son libellé)";
 const NON_ECRIT: Refus = Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (l'arrêt, le jour, le lieu) ; rien n'est écrit" };
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -83,10 +85,10 @@ const GESTE: Ecran = Ecran::Geste(Place::Paie);
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ArretObligations,
-        geste: "Dire ce qu'un arrêt en cours de saisie fera naître (signalement…).",
+        geste: "Lire la boîte qui saisit un arrêt, et ce qu'il fera naître (signalement…).",
         charge: &ChargeArretObligations::CHARGE,
         exemple: r#"{"motif":"01","dernier_jour":"2026-11-02","debut":"2026-11-03","fin":"2026-11-10","salarie":"SVOBODA"}"#,
-        rend: OBLIGATIONS_REND,
+        rend: ARRET_A_SAISIR_REND,
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -1326,20 +1328,18 @@ impl Dite for ObligationsDeLArret {
 }
 
 /// CE QUE RENDENT LES ROUTES DE CE MODULE : leur phrase, les obligations de l'arret, une ligne par obligation et par
-/// suite (`phrases`, `en_phrases`) et, pour un arret pas encore ecrit, ce qu'il fera naitre en une ligne (`ensuite`).
+/// suite (`phrases`, `en_phrases`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ObligationsDeLArret {
     phrase: Phrase,
     obligations: Vec<Obligation>,
     phrases: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ensuite: Option<String>,
 }
 
 impl ObligationsDeLArret {
     /// Les obligations, et leur phrase (`phrase(n)`, `n` : combien il y en a).
     fn de(obligations: Vec<Obligation>, phrase: impl FnOnce(usize) -> Phrase) -> ObligationsDeLArret {
-        ObligationsDeLArret { phrase: phrase(obligations.len()), phrases: en_phrases(&obligations), obligations, ensuite: None }
+        ObligationsDeLArret { phrase: phrase(obligations.len()), phrases: en_phrases(&obligations), obligations }
     }
 }
 
@@ -1419,12 +1419,13 @@ charge! {
 }
 
 /// Le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident, tel qu'on le dit : `arret-connaissance`, et
-/// `connu` de `arret-enregistrer`.
-#[derive(Debug, Deserialize)]
+/// `connu` de `arret-enregistrer` (la case de la boite d'un arret le montre tel qu'il est dit).
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ConnaissanceDite {
+    #[serde(skip_serializing_if = "Option::is_none")]
     jour: Option<Jour>,
-    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+    #[serde(default, deserialize_with = "jour_et_heure::saisie", skip_serializing_if = "Option::is_none")]
     heure: Option<HeureDuJour>,
 }
 
@@ -1641,37 +1642,40 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
 }
 
 charge! {
-    /// La charge de `arret-obligations` : l'arret tel qu'il se saisit, chaque champ vide tant qu'il n'est pas tape -- le
-    /// motif, le dernier jour travaille, le debut, la fin prescrite, la reprise, le salarie et le contrat suspendu (d'ou
-    /// se tire la subrogation), le jour de l'accident, et ce que la compagnie a connu (l'arret, l'accident et son heure).
-    /// Un champ absent ou nul n'est pas encore tape (`""` se refuse, `TexteDit`) ; un jour tape s'ecrit AAAA-MM-JJ. Le
-    /// contrat se choisit dans ceux qu'`arret-contrats` rend : son numero se lit (`NumeroContrat`).
+    /// La charge de `arret-obligations` : l'arret tel qu'il se saisit, chaque champ vide tant qu'il n'est pas dit -- les
+    /// champs d'`arret-enregistrer`, que les cases de sa boite portent (le salarie, le dernier jour travaille, le debut,
+    /// la fin prescrite, le motif, le jour de l'accident, ce que la compagnie a connu de l'accident, `{jour, heure}`, le
+    /// contrat suspendu, la note) ; la carte d'ou l'on vient (le numero et le debut de son contrat : c'est le sien que
+    /// l'arret suspend) ; et, pour qui lit sans la boite, la reprise et le jour ou la compagnie a connu l'arret. Un champ
+    /// absent ou nul n'est pas encore dit ; un jour s'ecrit AAAA-MM-JJ.
     #[derive(Debug)]
     pub(crate) struct ChargeArretObligations {
-        motif: Option<MotifDArret> = dit("Motif", "le motif de l'arrêt (motifs_arret des nomenclatures de imprevus)"),
+        salarie: Option<SalarieDesigne> = dit("Salarié", "le salarié : sa subrogation se tire de son contrat"),
         dernier_jour: Option<Jour> = dit("Dernier jour travaillé", "le dernier jour travaillé"),
         debut: Option<Jour> = dit("Début de l'arrêt", "le premier jour que l'avis prescrit"),
         fin: Option<Jour> = dit("Fin prescrite", "la fin prescrite"),
-        reprise: Option<Jour> = dit("Reprise", "le jour de la reprise, s'il est connu").avancee(),
-        salarie: Option<SalarieDesigne> = dit("Salarié", "le salarié : sa subrogation se tire de son contrat"),
-        contrat: Option<engagement::numeros::NumeroContrat> = dit("Contrat", "le contrat suspendu, quand plusieurs couvrent le jour").avancee(),
+        motif: Option<MotifDArret> = dit("Motif", "le motif de l'arrêt (les choix de sa case)"),
         date_accident: Option<Jour> = dit("Jour de l'accident", "le jour de l'accident").avancee(),
+        connu: Option<ConnaissanceDite> = dit("Su le", "{jour, heure} où la compagnie a su l'accident ; vide : le jour de l'accident, à minuit").avancee(),
+        contrat: Option<engagement::numeros::NumeroContrat> = dit("Contrat", "le contrat suspendu, quand plusieurs couvrent le jour").avancee(),
+        note: Option<String> = dit("Note", "une note libre").avancee(),
+        carte_numero: Option<engagement::numeros::NumeroContrat> = crate::imprevus::CARTE_NUMERO,
+        carte_debut: Option<Jour> = crate::imprevus::CARTE_DEBUT,
+        reprise: Option<Jour> = dit("Reprise", "le jour de la reprise, s'il est connu").avancee(),
         connaissance_arret: Option<Jour> = dit("Arrêt connu le", "le jour où la compagnie a connu l'arrêt").avancee(),
-        connaissance_accident: Option<Jour> = dit("Accident connu le", "le jour où la compagnie a connu l'accident ; vide : le jour de l'accident").avancee(),
-        #[serde(default, deserialize_with = "jour_et_heure::saisie")]
-        connaissance_heure: Option<HeureDuJour> = dit("Accident connu à", "l'heure où la compagnie a connu l'accident, HH:MM ; vide : minuit").avancee(),
     }
 }
 
-/// L'arret tel qu'il s'ecrirait (`imprevus::arret_a_ecrire`), sa subrogation tiree du contrat suspendu et du droit
-/// (`imprevus::subrogation_de`), comme a l'enregistrement ; ou ce qui l'empeche encore de s'ecrire (le salarie, son
-/// contrat), en phrase : c'est `arret-enregistrer` qui le refusera.
-fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &SalarieDesigne, dernier: Jour, debut: Jour, fin: Jour) -> R<ArretEcrit> {
+/// L'arret tel qu'il s'ecrirait (`imprevus::arret_a_ecrire`), sa subrogation tiree du contrat suspendu (`voulu` : le
+/// sien, ou celui qu'on a choisi ; aucun : le seul qui couvre le jour) et du droit (`imprevus::subrogation_de`), comme a
+/// l'enregistrement ; ou ce qui l'empeche encore de s'ecrire (le salarie, son contrat), en phrase : c'est
+/// `arret-enregistrer` qui le refusera.
+fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &SalarieDesigne, voulu: Option<&engagement::numeros::NumeroContrat>, dernier: Jour, debut: Jour, fin: Jour) -> R<ArretEcrit> {
     let cle = match ctx.cle_du_salarie(salarie) {
         Ok(cle) => cle,
         Err(m) => return Ok(ArretEcrit::PasEncore(m.phrase)),
     };
-    let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_ref()) {
+    let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, voulu) {
         Ok(contrat) => contrat,
         Err(e) => return Ok(ArretEcrit::PasEncore(e.phrase)),
     };
@@ -1697,16 +1701,105 @@ enum ArretEcrit {
     PasEncore(String),
 }
 
-/// `arret-obligations` : les obligations qu'un arret AINSI SAISI ferait naitre, avant d'etre enregistre (la boite de
-/// saisie les montre). Rien n'est ecrit, rien n'est verifie de l'arret lui-meme (c'est `arret-enregistrer` qui refuse) :
-/// un champ vide donne une obligation `indetermine`, qui dit pourquoi (un jour mal ecrit se refuse a la porte de la
-/// charge). Rien n'en est parti.
-fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<ObligationsDeLArret> {
+/// CE QUE REND `arret-obligations` : les obligations de l'arret ainsi saisi, et la boite qui le saisit.
+#[derive(Debug, Serialize)]
+pub(crate) struct ArretASaisir {
+    #[serde(flatten)]
+    obligations: ObligationsDeLArret,
+    #[serde(flatten)]
+    boite: crate::imprevus::SaisieDUnImprevu,
+}
+
+impl Dite for ArretASaisir {
+    fn phrase(&self) -> &Phrase {
+        &self.obligations.phrase
+    }
+}
+
+// Les libelles et les aides des cases de la boite d'un arret.
+const DERNIER_JOUR_TRAVAILLE: Affiche = Affiche::new("Dernier jour travaillé");
+const PRESCRIT_DES: Affiche = Affiche::new("Arrêt prescrit dès le");
+const PRESCRIT_JUSQU_AU: Affiche = Affiche::new("Arrêt prescrit jusqu'au");
+const MOTIF: Affiche = Affiche::new("Motif");
+const DATE_DE_L_ACCIDENT: Affiche = Affiche::new("Date de l'accident");
+const CONNU_LE_JOUR: Affiche = Affiche::new("Connu le");
+const AIDE_DEBUT: &str = "Le premier jour que l'avis prescrit ; prescrit un jour travaillé, ce jour-là, aussi le dernier jour travaillé.";
+const AIDE_DATE_ACCIDENT: &str = "La date de l'accident, ou de sa première constatation.";
+
+/// LA BOITE QUI SAISIT UN ARRET, pour les faits deja dits (`c`) et les obligations qu'ils font naitre : toujours le
+/// dernier jour travaille, le debut et la fin que l'avis prescrit, le motif (ceux qui se saisissent, `motifs_arret`) et la
+/// note ; le contrat quand plusieurs couvrent le dernier jour (`contrat`) ; la date de l'accident quand le motif en porte
+/// une (`date_accident` du motif) ; le jour et l'heure ou la compagnie l'a su quand la declaration d'accident nait (le
+/// point de depart des quarante-huit heures, ceux dont elles partent proposes, `prerempli`, et la phrase de l'heure).
+/// Elle dit qu'aucun contrat ne couvre le jour, et, le motif et le dernier jour dits, ce que l'arret fera naitre
+/// (`ensuite`).
+fn boite_de_l_arret(ctx: &Contexte, c: &ChargeArretObligations, cle: Option<&IdSalarie>, illisible: Option<String>, contrat: &crate::imprevus::ContratDeLaSaisie, obligations: &[Obligation], ensuite: Option<String>) -> R<crate::imprevus::SaisieDUnImprevu> {
+    use crate::declaration::forme_du_type;
+    use crate::fiches::{CaseDeLaFiche, PartieDeLaFiche};
+    use crate::imprevus::ChargeArretEnregistrer as E;
+    use droit::fiche::ValeurDeCase;
+    let valeur = |v: Option<&Jour>| v.and_then(ValeurDeCase::de);
+    let jour = |cle, libelle, aide, v: Option<Jour>| CaseDeLaFiche::de_la_boite(cle, libelle, forme_du_type::<_, Jour>(), aide, valeur(v.as_ref()));
+    let mut cases = vec![
+        jour(cle!(E, dernier_jour), DERNIER_JOUR_TRAVAILLE, "", c.dernier_jour),
+        jour(cle!(E, debut), PRESCRIT_DES, AIDE_DEBUT, c.debut),
+        jour(cle!(E, fin), PRESCRIT_JUSQU_AU, "", c.fin),
+    ];
+    cases.extend(contrat.case(cle!(E, contrat), c.contrat.as_ref()));
+    // Les motifs qui se saisissent, chacun son libelle, une capitale d'abord.
+    let motifs = crate::metier::imprevus::nomenclatures()?.motifs_arret.saisissables();
+    let choix = motifs
+        .iter()
+        .map(|m| crate::ouverture::Choix::de(m.code, m.libelle.chars().take(1).flat_map(char::to_uppercase).chain(m.libelle.chars().skip(1)).collect::<String>()))
+        .collect();
+    cases.push(CaseDeLaFiche::de_la_boite(cle!(E, motif), MOTIF, forme_du_type::<_, MotifDArret>(), "", c.motif.as_ref().and_then(ValeurDeCase::de)).offrant(choix));
+    let accident = c.motif.and_then(|m| motifs.iter().find(|x| x.code == m)).is_some_and(|m| m.date_accident == Some(true));
+    if accident {
+        cases.push(jour(cle!(E, date_accident), DATE_DE_L_ACCIDENT, AIDE_DATE_ACCIDENT, c.date_accident));
+    }
+    // LA CONNAISSANCE DE L'ACCIDENT, quand la declaration d'accident nait : ce qui est dit, et ce dont les quarante-huit
+    // heures partent, propose dans chaque partie.
+    let demandee = obligations.iter().find(|o| o.cle == CleDObligation::DeclarationAccident).map(|o| o.connaissance.as_ref());
+    if let Some(demandee) = demandee {
+        let (propose_jour, propose_heure) = match demandee.and_then(|d| d.quand) {
+            Some(q) => {
+                let (j, h) = jour_et_heure::champs(q);
+                (Some(j), h)
+            }
+            None => (None, None),
+        };
+        let dit = c.connu.as_ref();
+        let parties = vec![
+            PartieDeLaFiche::proposee("jour", "", forme_du_type::<_, Jour>(), valeur(propose_jour.as_ref())),
+            PartieDeLaFiche::proposee("heure", "à", forme_du_type::<_, HeureDuJour>(), propose_heure.as_ref().and_then(ValeurDeCase::de)),
+        ];
+        let heure_dite = demandee.and_then(|d| d.heure_dite).map(str::to_string);
+        cases.push(
+            CaseDeLaFiche::de_la_boite(cle!(E, connu), CONNU_LE_JOUR, Forme::Objet, "", dit.and_then(ValeurDeCase::de))
+                .en_parties(parties)
+                .disant(heure_dite.into_iter().collect()),
+        );
+    }
+    cases.push(crate::imprevus::case_de_la_note(cle!(E, note), c.note.as_ref()));
+    let dit: Vec<String> = [illisible, contrat.dit(), ensuite].into_iter().flatten().collect();
+    let titre = crate::imprevus::titre_de_la_saisie(ctx, "Un arrêt de travail", cle);
+    Ok(crate::imprevus::SaisieDUnImprevu::de(titre, cases, dit, Route::ArretEnregistrer, c.salarie.clone(), contrat))
+}
+
+/// `arret-obligations` : les obligations qu'un arret AINSI SAISI ferait naitre, avant d'etre enregistre, et la boite qui
+/// le saisit (`boite_de_l_arret`). Rien n'est ecrit, rien n'est verifie de l'arret lui-meme (c'est `arret-enregistrer`
+/// qui refuse) : un champ vide donne une obligation `indetermine`, qui dit pourquoi (un jour mal ecrit se refuse a la
+/// porte de la charge). Rien n'en est parti. Le contrat suspendu : celui de la carte d'ou l'on vient, sinon celui
+/// qu'on a choisi quand plusieurs couvrent le dernier jour (`imprevus::contrat_de_la_saisie`).
+fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<ArretASaisir> {
     let (dernier, debut, fin) = (c.dernier_jour, c.debut, c.fin);
+    let (cle, illisible) = crate::imprevus::salarie_de_la_saisie(ctx, c.salarie.as_ref());
+    let contrat = crate::imprevus::contrat_de_la_saisie(ctx, cle.as_ref(), dernier, c.carte_numero.as_ref(), c.carte_debut)?;
+    let voulu = contrat.voulu(c.contrat.as_ref());
     // L'ARRET TEL QU'IL S'ECRIRAIT, quand le salarie, son contrat et les trois jours le permettent : d'ou la subrogation
     // et le premier jour d'absence. Sinon, ce qui est tape seulement ; ce qui l'empeche se dit.
     let ecrit = match (c.salarie.as_ref(), dernier, debut, fin) {
-        (Some(s), Some(dj), Some(d), Some(f)) => Some(arret_tel_qu_il_s_ecrirait(ctx, &c, s, dj, d, f)?),
+        (Some(s), Some(dj), Some(d), Some(f)) => Some(arret_tel_qu_il_s_ecrirait(ctx, &c, s, voulu.as_ref(), dj, d, f)?),
         _ => None,
     };
     let (saisi, pas_encore) = match ecrit {
@@ -1728,12 +1821,13 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
             None => Ok(None),
         }
     };
-    let heure_accident = c.connaissance_heure;
-    let jour_accident = c.connaissance_accident.or_else(|| heure_accident.and(c.date_accident));
+    let heure_accident = c.connu.as_ref().and_then(|d| d.heure);
+    let jour_accident = c.connu.as_ref().and_then(|d| d.jour).or_else(|| heure_accident.and(c.date_accident));
     let (arret_connu, accident_connu) = (connue(c.connaissance_arret, None)?, connue(jour_accident, heure_accident)?);
     let dit = CeQueDitLaCompagnie { connaissance_arret: arret_connu.as_ref(), connaissance_accident: accident_connu.as_ref(), ..CeQueDitLaCompagnie::rien() };
     let obligations = obligations_de(ctx, &a, &[], dit, ctx.aujourdhui)?;
-    // Ce que la boite d'un arret pas encore ecrit dit de ce qu'il fera naitre, en une ligne.
+    // Ce que la boite d'un arret pas encore ecrit dit de ce qu'il fera naitre, en une ligne, le motif et le dernier jour
+    // dits.
     let suites: Vec<String> = obligations
         .iter()
         .map(|o| {
@@ -1746,12 +1840,13 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
             Ok(libelle + &quand)
         })
         .collect::<R<_>>()?;
+    let ensuite = (c.motif.is_some() && dernier.is_some() && !suites.is_empty()).then(|| format!("Il faudra ensuite : {}.", suites.join(" ; ")));
+    let boite = boite_de_l_arret(ctx, &c, cle.as_ref(), illisible, &contrat, &obligations, ensuite)?;
     let mut r = ObligationsDeLArret::de(obligations, |n| socle::phrase!("Obligations de l'arrêt : {}.", n));
-    r.ensuite = (!suites.is_empty()).then(|| format!("Il faudra ensuite : {}.", suites.join(" ; ")));
     if let Some(m) = pas_encore {
         r.phrases.push(format!("La subrogation ne se tire pas encore : {}", m));
     }
-    Ok(r)
+    Ok(ArretASaisir { obligations: r, boite })
 }
 
 #[cfg(test)]

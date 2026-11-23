@@ -34,13 +34,13 @@
    sont pas des imprévus : ils restent dans la saisie du mois.
 
    RIEN NE SE DÉCIDE ICI (règle 2) : le moteur dit ce que chaque fait ouvre
-   (`imprevus` : ses `gestes`, `a_dire`, `cachets`, `obligations` ;
-   `arret-obligations` pour un arrêt pas encore écrit), et la page ne montre
-   un bouton ou un champ que parce qu'il le dit. */
+   (`imprevus` : ses `gestes`, `a_dire`, `cachets`, `obligations` ; la boîte
+   d'un imprévu pas encore écrit, `arret-obligations` et `suspension-saisie`),
+   et la page ne montre un bouton ou un champ que parce qu'il le dit. */
 
 let IMPREVUS = null;        // la dernière lecture `imprevus` du mois affiché
 let FINS = null;            // la dernière lecture `fins-de-contrat` du mois affiché
-let NOMENCLATURES_IMPREVUS = null;   // motifs d'arrêt, de reprise, d'absence : ceux de la dernière lecture
+let NOMENCLATURES_IMPREVUS = null;   // la porte (`porte`) : celle de la dernière lecture
 
 /** Le nom d'un salarié, tel que la saisie le montre ; sa clé à défaut. */
 function nomDuSalarie(cle) {
@@ -74,7 +74,7 @@ async function rafraichirImprevus() {
   if (MOIS_AFFICHE) calculerApercu();
 }
 
-/** Les motifs (arrêt, reprise, absence) : ceux de la dernière lecture, sinon une lecture. */
+/** La porte (`porte`) : celle de la dernière lecture, sinon une lecture. */
 async function nomenclaturesImprevus() {
   if (NOMENCLATURES_IMPREVUS) return NOMENCLATURES_IMPREVUS;
   NOMENCLATURES_IMPREVUS = await api("imprevus", MOIS_AFFICHE ? { mois: MOIS_AFFICHE } : {});
@@ -246,11 +246,9 @@ function fermerMenuImprevu() {
   if (MENU_IMPREVU) { MENU_IMPREVU.remove(); MENU_IMPREVU = null; }
 }
 
-/* Ce que chaque choix de la porte ouvre : la boîte de la route qui l'enregistre (son `code`, rendu par `imprevus`). */
-const BOITES_DE_LA_PORTE = { "arret-enregistrer": (ou) => boiteArret(ou), "suspension-enregistrer": (ou) => boiteAbsence(ou) };
-
-/** Le petit menu de la porte, ancré sous le bouton : ses choix sont ceux que `imprevus` rend (`porte`). `ou` : la carte,
- *  ou `{salarie}` depuis le dossier du salarié. */
+/** Le petit menu de la porte, ancré sous le bouton : ses choix sont ceux que `imprevus` rend (`porte`), chacun la
+ *  lecture qui rend sa boîte (son `code`, `boiteDUnImprevu`). `ou` : la carte, ou `{salarie}` depuis le dossier du
+ *  salarié. */
 async function menuImprevu(ancre, ou) {
   fermerMenuImprevu();
   let n;
@@ -269,7 +267,7 @@ async function menuImprevu(ancre, ou) {
   menu.style.left = `${Math.max(8, window.scrollX + r.right - menu.offsetWidth)}px`;
   MENU_IMPREVU = menu;
   n.porte.forEach((c) => {
-    menu.querySelector(`[data-choix="${c.code}"]`).onclick = () => { fermerMenuImprevu(); BOITES_DE_LA_PORTE[c.code](ou); };
+    menu.querySelector(`[data-choix="${c.code}"]`).onclick = () => { fermerMenuImprevu(); boiteDUnImprevu(c.code, ou); };
   });
   const r2 = menu.querySelector('[data-choix="rupture"]');
   if (r2) r2.onclick = () => { fermerMenuImprevu(); ouvrirLaFin(ou.div); };
@@ -350,40 +348,6 @@ function brancherGestesImprevu(r, i, apres) {
     { titre: nomDuSalarie(i.salarie), dit: [i.quoi, i.periode].filter(Boolean).join(", ") }, apres);
 }
 
-/* ------------------------------------------------ le contrat d'un imprévu
-   Le moteur dit les contrats du salarié qui couvrent le jour
-   (`arret-contrats`). Depuis une carte, c'est le sien, et on ne demande
-   rien ; depuis le dossier du salarié, on ne demande que s'il y en a
-   plusieurs. Sans contrat ce jour-là, il n'y a rien à suspendre, et la
-   page dit ce que le moteur a répondu. */
-async function contratsDuJour(ou, jour, cible) {
-  cible.innerHTML = "";
-  if (!ou.salarie || !jour) return null;
-  let r;
-  try { r = await api("arret-contrats", { salarie: ou.salarie, jour }); }
-  catch (e) { cible.innerHTML = `<span class="erreur">${echapper(e.message)}</span>`; return null; }
-  const contrats = r.contrats;
-  if (!contrats.length) {
-    cible.innerHTML = `<span class="erreur">${echapper(r.phrase)}</span>`;
-    return null;
-  }
-  const carte = ou.carte;
-  const sien = carte && contrats.find((c) => (carte.numero && c.numero === carte.numero) || c.periode.du === carte.debut);
-  if (contrats.length === 1) return contrats[0];
-  if (sien && sien.numero) return sien;
-  cible.innerHTML = `Quel contrat
-    <select id="im-contrat">${contrats.map((c) => `<option value="${c.numero ? echapper(c.numero) : ""}"${c === sien ? " selected" : ""}>${
-      echapper(c.dit)}</option>`).join("")}</select>`;
-  return { choisir: true, contrats };
-}
-
-/** Le numéro à envoyer : seulement quand le moteur en a rendu plusieurs. */
-function contratAEnvoyer(trouve) {
-  if (!trouve || !trouve.choisir) return {};
-  const s = document.getElementById("im-contrat");
-  return s && s.value ? { contrat: s.value } : {};
-}
-
 /** D'où vient la boîte : la carte (`{div}`) ou le dossier (`{salarie}`). */
 async function provenance(ou) {
   if (ou.div) {
@@ -396,188 +360,71 @@ async function provenance(ou) {
   return { salarie: ou.salarie, carte: null, apres: ou.apres || rafraichirImprevus };
 }
 
-/* Une case que le moteur pré-remplit (le jour et l'heure de connaissance) : elle montre la valeur qu'il rend tant que
-   la personne n'y a rien tapé, et elle ne part que tapée (ou déjà dite, `dite`) — sinon le moteur reprend la sienne. */
-function suivreLaSaisie(c, dite) {
-  if (dite) c.dataset.tape = "1";
-  c.addEventListener("input", () => { c.dataset.tape = "1"; });
-}
-function preremplirCase(c, valeur) {
-  // Ce que le moteur ne propose pas laisse la case vide.
-  if (!(c.dataset.tape && c.value)) c.value = valeur ? valeur : "";
-}
-/** Ce que la personne a tapé dans la case ; rien de tapé part `null`. */
-function tapeDans(c) {
-  return c.dataset.tape && c.value ? c.value : null;
+/* ------------------------------------------------ la boîte d'un imprévu
+   Un arrêt de travail, une absence : la lecture qui rend sa boîte (le code du choix de la porte, `arret-obligations` ou
+   `suspension-saisie`) dit, pour ce qui est déjà saisi, son titre, ses cases ouvertes (leur forme, leur libellé, leurs
+   choix, ce que le moteur propose), ce qu'elle dit dessous et le geste qui l'enregistre. La page la pose par le
+   dessinateur commun (`poserLaFiche`, `js/avance.js`) et, à chaque case changée, la redemande avec ce qui est saisi,
+   puis la redessine : ce qui est tapé reste dans sa case, et le curseur aussi. Elle ne décide rien : une case n'est là
+   que parce que la route la rend (la date de l'accident, la connaissance de l'accident, le contrat à choisir). Quitter
+   la boîte avec une saisie non enregistrée se demande (`retenirLEcran`) ; « Annuler » la ferme sans rien garder.
+   Après l'enregistrement, ce que l'imprévu écrit appelle encore (`etapeSuite`). */
+
+/** Ce que disent les cases de `bloc`, chacune sous sa clé ; une case vide ne dit rien. */
+function saisiDans(bloc) {
+  return Object.fromEntries(Object.entries(lireLesCases(bloc)).filter(([, v]) => v != null));
 }
 
-/* -------------------------------------------------- un arrêt de travail
-   Toujours : le dernier jour travaillé, le début et la fin que l'avis prescrit, le motif (la
-   subrogation se tire du droit, dans le moteur). Le reste n'apparaît que si un fait l'appelle :
-     - la date de l'accident, si le motif en porte une (04, 05, 06 : le
-       moteur le dit, `date_accident` du motif) ;
-     - le jour où la compagnie l'a su, si le moteur fait naître la
-       déclaration d'accident (`arret-obligations`) : c'est le point de départ
-       des quarante-huit heures ;
-     - une note, si on la demande.
-   Après l'enregistrement, ce que l'arrêt écrit appelle encore (`etapeSuite`). */
-async function boiteArret(ou) {
+async function boiteDUnImprevu(lecture, ou) {
   const p = await provenance(ou);
-  let n;
-  try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
-  const motifs = n.motifs_arret;
+  // La boîte se lit pour ce salarié, et depuis cette carte : c'est son contrat que l'imprévu suspend.
+  const base = { salarie: p.salarie };
+  if (p.carte && p.carte.numero) base.carte_numero = p.carte.numero;
+  if (p.carte && p.carte.debut) base.carte_debut = p.carte.debut;
+  let r;
+  try { r = await api(lecture, base); } catch (e) { dire(e.message, "erreur"); return; }
   ouvrirBoite(`
-    <h3>Un arrêt de travail — ${echapper(nomDuSalarie(p.salarie))}</h3>
-    <label class="champ-boite">Dernier jour travaillé
-      <input type="date" id="ar-dernier"></label>
-    <div class="champs-deux">
-      <label class="champ-boite" title="${aideDe("debut_arret")}">Arrêt prescrit dès le
-        <input type="date" id="ar-debut"></label>
-      <label class="champ-boite">Arrêt prescrit jusqu'au
-        <input type="date" id="ar-fin"></label>
-    </div>
-    <div id="ar-contrats" class="note"></div>
-    <label class="champ-boite">Motif
-      <select id="ar-motif"><option value="">— à choisir —</option>
-        ${motifs.map((m) => `<option value="${echapper(m.code)}"${m.date_accident ? ' data-accident="1"' : ""}>${
-          echapper(m.libelle.charAt(0).toUpperCase() + m.libelle.slice(1))}</option>`).join("")}
-      </select></label>
-    <div id="ar-bloc-accident" hidden>
-      <label class="champ-boite" title="${aideDe("date_accident")}">Date de l'accident
-        <input type="date" id="ar-accident"></label>
-      <div class="champs-deux" id="ar-bloc-connu" hidden>
-        <label class="champ-boite">Connu le
-          <input type="date" id="ar-connu"></label>
-        <label class="champ-boite">à
-          <input type="time" id="ar-connu-heure"></label>
-      </div>
-      <p class="note" id="ar-connu-dit"></p>
-    </div>
-    <button type="button" class="lien" id="ar-note-btn">+ une note</button>
-    <label class="champ-boite" id="ar-note-l" hidden>Note <span class="discret">— ${aideDe("note_imprevu")}</span>
-      <input type="text" id="ar-note"></label>
-    <p class="note" id="ar-ensuite"></p>
+    <h3 data-titre></h3>
+    <div data-cases></div>
+    <div data-dit></div>
     <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="ar-ok">Enregistrer</button>
-    </div>`);
-
-  const val = (id) => document.getElementById(id).value;
-  const motif = () => (motifs.find((m) => m.code === val("ar-motif")) || null);
-  let avecDeclaration = false;
-  // CE QUE L'ARRÊT FERA NAÎTRE, demandé au moteur (`arret-obligations`, rien n'est écrit) : il décide si la connaissance
-  // de l'accident se demande, et la page le dit en une ligne, sans la loi.
-  const relireEnsuite = async () => {
-    const ligne = document.getElementById("ar-ensuite");
-    if (!val("ar-motif") || !val("ar-dernier")) { ligne.textContent = ""; avecDeclaration = false; majFaits(); return; }
-    let r;
-    try {
-      r = await api("arret-obligations", {
-        motif: val("ar-motif"), dernier_jour: val("ar-dernier"), debut: val("ar-debut") || null, fin: val("ar-fin") || null, salarie: p.salarie, ...contratAEnvoyer(trouve),
-        date_accident: val("ar-accident") || null, connaissance_accident: tapeDans(caseConnu), connaissance_heure: tapeDans(caseHeure),
-      });
-    } catch (e) { ligne.textContent = ""; dire(e.message, "erreur"); return; }
-    const declaration = r.obligations.find((o) => o.cle === "declaration_accident");
-    avecDeclaration = !!declaration;
-    // Le jour et l'heure dont partent les 48 heures, tels que le moteur les rend (le jour de l'accident, minuit, tant
-    // que rien n'est dit) : dans les cases, modifiables, avec la phrase de l'heure. `textContent` est nullable : ce que
-    // le moteur ne dit pas laisse la ligne vide.
-    const connu = declaration && declaration.connaissance;
-    preremplirCase(caseConnu, connu && connu.jour);
-    preremplirCase(caseHeure, connu && connu.heure);
-    document.getElementById("ar-connu-dit").textContent = connu && connu.heure_dite;
-    majFaits();
-    ligne.textContent = r.ensuite;
+      <button class="secondaire" data-annuler>Annuler</button>
+      <button class="primaire" data-enregistrer></button>
+    </div>`, () => oublierLEcran(bloc));
+  const boite = document.getElementById("boite");
+  const bloc = boite.querySelector("[data-cases]");
+  let vue = r;
+  // Chaque réponse se pose entière : ses cases se redessinent (ce que le moteur propose peut avoir changé), ce qui est
+  // tapé reste.
+  const poser = (x) => {
+    vue = x;
+    boite.querySelector("[data-titre]").textContent = x.titre;
+    delete bloc.dataset.posee;
+    poserLaFiche(bloc, { cases: x.cases, historique: [], avance_ouvert: false });
+    boite.querySelector("[data-dit]").innerHTML = x.dit.map((l) => `<p class="note">${echapper(l)}</p>`).join("");
+    boite.querySelector("[data-enregistrer]").textContent = x.enregistrer.libelle;
   };
-  const majFaits = () => {
-    const m = motif();
-    document.getElementById("ar-bloc-accident").hidden = !(m && m.date_accident);
-    document.getElementById("ar-bloc-connu").hidden = !avecDeclaration;
-  };
-  const caseConnu = document.getElementById("ar-connu");
-  const caseHeure = document.getElementById("ar-connu-heure");
-  suivreLaSaisie(caseConnu);
-  suivreLaSaisie(caseHeure);
-  let trouve = null;
-  const relireContrats = async () => {
-    trouve = await contratsDuJour(p, val("ar-dernier"), document.getElementById("ar-contrats"));
-  };
-  document.getElementById("ar-motif").onchange = () => { majFaits(); relireEnsuite(); };
-  document.getElementById("ar-dernier").addEventListener("change", () => { relireContrats(); relireEnsuite(); });
-  for (const id of ["ar-debut", "ar-fin","ar-accident", "ar-connu", "ar-connu-heure"]) {
-    document.getElementById(id).addEventListener("change", relireEnsuite);
-  }
-  document.getElementById("ar-note-btn").onclick = () => {
-    document.getElementById("ar-note-l").hidden = false;
-    document.getElementById("ar-note-btn").hidden = true;
-    document.getElementById("ar-note").focus();
-  };
-  majFaits();
-
-  document.getElementById("ar-ok").onclick = async () => {
-    // Ce qui part : les faits toujours dus, et ceux que les faits ont ouverts — rien d'autre.
-    const m = motif();
-    const charge = {
-      salarie: p.salarie, dernier_jour: val("ar-dernier"), debut: val("ar-debut"), fin: val("ar-fin"),
-      motif: val("ar-motif"), ...contratAEnvoyer(trouve),
-    };
-    if (m && m.date_accident && val("ar-accident")) charge.date_accident = val("ar-accident");
-    if (val("ar-note").trim()) charge.note = val("ar-note").trim();
-    if (avecDeclaration && (tapeDans(caseConnu) || tapeDans(caseHeure))) charge.connu = { jour: tapeDans(caseConnu), heure: tapeDans(caseHeure) };
-    let r;
-    try { r = await api("arret-enregistrer", charge); }
-    catch (e) { dire(e.message, "erreur"); return; }
-    await etapeSuite(r, r.arret, p);
-  };
-}
-
-/* ------------------------------------------------ une absence (bloc 65)
-   Ses deux dates et son motif — la liste que le moteur déclare
-   (`motifs_suspension` : les congés payés n'y sont pas). Le contrat est
-   celui de la carte. */
-async function boiteAbsence(ou) {
-  const p = await provenance(ou);
-  let n;
-  try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
-  const motifs = n.motifs_suspension;
-  ouvrirBoite(`
-    <h3>Une absence — ${echapper(nomDuSalarie(p.salarie))}</h3>
-    <div class="champs-deux">
-      <label class="champ-boite">Du <input type="date" id="ab-debut"></label>
-      <label class="champ-boite">Au <input type="date" id="ab-fin"></label>
-    </div>
-    <div id="ab-contrats" class="note"></div>
-    <label class="champ-boite">Motif
-      <select id="ab-motif"><option value="">— à choisir —</option>
-        ${motifs.map((m) => `<option value="${echapper(m.code)}">${echapper(m.libelle_dit || m.libelle)}</option>`).join("")}
-      </select></label>
-    <button type="button" class="lien" id="ab-note-btn">+ une note</button>
-    <label class="champ-boite" id="ab-note-l" hidden>Note <span class="discret">— ${aideDe("note_imprevu")}</span>
-      <input type="text" id="ab-note"></label>
-    <p class="note">${aideDe("absence")}</p>
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="ab-ok">Enregistrer</button>
-    </div>`);
-  const val = (id) => document.getElementById(id).value;
-  let trouve = null;
-  document.getElementById("ab-debut").addEventListener("change", async () => {
-    trouve = await contratsDuJour(p, val("ab-debut"), document.getElementById("ab-contrats"));
+  poser(r);
+  let tour = 0;
+  bloc.addEventListener("change", async () => {
+    const n = ++tour;
+    let x;
+    try { x = await api(lecture, { ...base, ...saisiDans(bloc) }); } catch (e) { dire(e.message, "erreur"); return; }
+    if (n === tour && bloc.isConnected) poser(x);
   });
-  document.getElementById("ab-note-btn").onclick = () => {
-    document.getElementById("ab-note-l").hidden = false;
-    document.getElementById("ab-note-btn").hidden = true;
-    document.getElementById("ab-note").focus();
+  const enregistrer = async () => {
+    const g = vue.enregistrer;
+    let x;
+    try { x = await api(g.route, { ...g.charge, ...saisiDans(bloc) }); }
+    catch (e) { dire(e.message, "erreur"); return false; }
+    oublierLEcran(bloc);
+    await etapeSuite(x, x.arret || x.suspension, p);
+    return true;
   };
-  document.getElementById("ab-ok").onclick = async () => {
-    const charge = { salarie: p.salarie, debut: val("ab-debut"), fin: val("ab-fin"), motif: val("ab-motif"),
-                     ...contratAEnvoyer(trouve) };
-    if (val("ab-note").trim()) charge.note = val("ab-note").trim();
-    let r;
-    try { r = await api("suspension-enregistrer", charge); }
-    catch (e) { dire(e.message, "erreur"); return; }
-    await etapeSuite(r, r.suspension, p);
-  };
+  retenirLEcran(bloc, { enregistrer });
+  boite.querySelector("[data-enregistrer]").onclick = enregistrer;
+  boite.querySelector("[data-annuler]").onclick = fermerBoite;
+  CLIC_DEHORS = async () => { if (await quitterLEcran(boite)) fermerBoite(); };
 }
 
 /* ------------------------------------- ce que l'imprévu écrit appelle encore
@@ -585,7 +432,8 @@ async function boiteAbsence(ou) {
    appelle encore (`a_dire` : le geste de ses indemnités journalières, quand
    il ouvre le maintien de salaire), et les jours que la saisie paie pendant
    l'imprévu (`cachets`) ; la réponse dit s'il appelle encore quelque chose
-   (`appelle_encore`). Rien : la boîte se ferme. Sinon, une seconde page, où
+   (`appelle_encore`), et les mots de cette page (`jours_dit`, `plus_tard`,
+   `enregistrer`). Rien : la boîte se ferme. Sinon, une seconde page, où
    rien n'est obligatoire — les indemnités se connaissent au relevé de la
    caisse, et se reprennent sous la carte. */
 
@@ -604,7 +452,7 @@ async function etapeSuite(r, i, p) {
     <p>${echapper(r.phrase)}</p>
     <h3>${echapper(r.appelle_encore)}</h3>
     ${g ? `<div id="su-geste">${casesDuGeste(g)}</div>` : ""}
-    ${jours.length ? `<div class="champ-boite">${aideDe("jours_payes")}
+    ${jours.length ? `<div class="champ-boite">${echapper(r.jours_dit)}
       <div class="liste-jours">${jours.map((c, k) => c.jours.map((j) => ici(c)
         ? `<label class="coche"><input type="checkbox" data-jour="${k}" value="${echapper(j.iso)}">
              ${echapper(j.phrase)}</label>`
@@ -613,7 +461,7 @@ async function etapeSuite(r, i, p) {
       ${jours.some((c) => !ici(c) && c.mois === MOIS_AFFICHE) ? `<p class="discret">${aideDe("imprevu_valide")}</p>` : ""}</div>` : ""}
     <div class="actions">
       <button class="secondaire" id="su-plus-tard">${echapper(r.plus_tard)}</button>
-      <button class="primaire" id="su-ok">Enregistrer</button>
+      <button class="primaire" id="su-ok">${echapper(r.enregistrer)}</button>
     </div>`);
   const finir = async () => { fermerBoite(); await p.apres(); };
   document.getElementById("su-plus-tard").onclick = finir;

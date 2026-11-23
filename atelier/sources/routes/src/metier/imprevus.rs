@@ -9,21 +9,14 @@ use engagement::imprevus::{self, ArretSaisi, Imprevu};
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::{Classe, R};
 
-/// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le salarie, son nom, le numero, sa periode, le mois qui le
-/// saisit, le spectacle (tels que l'engagement les ecrit), paye au mois ou non, sa nature ; `arret-contrats` le dit
-/// (`dit`).
-#[derive(Debug, Clone, serde::Serialize)]
+/// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le nom du salarie, le numero, sa periode et sa nature (tels que
+/// l'engagement les ecrit).
+#[derive(Debug, Clone)]
 pub(crate) struct ContratAuJour {
-    pub(crate) salarie: IdSalarie,
     pub(crate) nom: String,
     pub numero: Option<engagement::numeros::NumeroContrat>,
     pub periode: PeriodeOuverte,
-    pub(crate) mois: socle::mois::Mois,
-    pub(crate) spectacle: Option<droit::contexte::IdSpectacle>,
-    pub(crate) mensuel: bool,
     pub(crate) nature: Option<droit::natures::NatureDeContrat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) dit: Option<String>,
 }
 
 /// Un refus du magasin des imprevus (`imprevus`) : un fichier abime, un genre inconnu.
