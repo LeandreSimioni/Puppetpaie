@@ -39,7 +39,7 @@ use socle::ecran::Pastille;
 use crate::catalogue::{Ecran, Place};
 
 // LA DESIGNATION d'une declaration (`designee`) : la DSN ou la DPAE d'un mois, ou un signalement ecrit.
-const QUOI: Champ = Champ { nom: "quoi", libelle: Affiche::new("DPAE ou DSN"), forme: Forme::Texte, sens: "dpae ou dsn", avance: false };
+const QUOI: Champ = Champ { nom: "quoi", libelle: Affiche::new("DPAE ou DSN"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<Quoi>()), sens: "la déclaration (un signalement est une DSN)", avance: false };
 const ETABLISSEMENT: Champ = Champ { nom: "etablissement", libelle: Affiche::new("Établissement"), forme: Forme::Texte, sens: "le NIC de l'établissement (DSN), le principal sinon", avance: true };
 const ENGAGEMENTS: Champ = Champ { nom: "engagements", libelle: Affiche::new("Embauches"), forme: Forme::Objet, sens: "seulement ces embauches (DPAE) : [{salarie, numero}]", avance: true };
 const SIGNALEMENT: Champ = Champ { nom: "fichier", libelle: Affiche::new("Signalement"), forme: Forme::Texte, sens: "un signalement écrit, tel que sa route le rend, à la place du mois", avance: true };
@@ -125,6 +125,21 @@ pub const ROUTES: &[Fiche] = &[
 pub enum Quoi {
     Dpae,
     Dsn,
+}
+
+impl socle::liste::ListeFermee for Quoi {
+    const TOUTES: &'static [Quoi] = &[Quoi::Dpae, Quoi::Dsn];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(match self {
+            Quoi::Dpae => "DPAE",
+            Quoi::Dsn => "DSN",
+        })
+    }
 }
 
 impl Quoi {

@@ -16,8 +16,8 @@ use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, 
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 const FORMAT: Champ = Champ {
-    nom: "format", libelle: Affiche::new("Format"), forme: Forme::Texte,
-    sens: "le format des écritures (ximport, oxygene, sage, quadra, ebp) ; absent : celui du logiciel du comptable retenu (exports-periodes, compta)",
+    nom: "format", libelle: Affiche::new("Format"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<documents::plan_comptable::FormatDExport>()),
+    sens: "le format des écritures, celui d'un logiciel du comptable ; absent : celui du logiciel retenu (exports-periodes, compta)",
     avance: true,
 };
 

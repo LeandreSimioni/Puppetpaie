@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Route;
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, ListeDeChoix, Place, Refus, MANQUE, OPERATION};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use documents::contrat_ecrit::{ChampDeModele, ModeleDuContrat};
 use documents::marqueurs::ModeleLu;
@@ -44,7 +44,7 @@ const fn champ(nom: &'static str, libelle: &'static str, forme: Forme, sens: &'s
 const NATURE: Champ = champ("nature", "Nature du contrat", Forme::Texte, "la nature du contrat : cddu_spectacle, cdd, cdi…");
 const ID: Champ = champ("id", "Modèle", Forme::Texte, "l'id d'un modèle spécial (`modeles` de modeles-contrat)");
 const ID_OU_BASE: Champ = champ("id", "Modèle", Forme::Texte, "l'id d'un modèle spécial ; absent ou null : le modèle de base de la nature");
-const PARTIE: Champ = champ("partie", "Partie", Forme::Texte, "« contrat » ou « avenant » : le texte du modèle que le geste lit ou écrit");
+const PARTIE: Champ = champ("partie", "Partie", Forme::Choix(ListeDeChoix::de::<Partie>()), "le texte du modèle que le geste lit ou écrit");
 const NOM: Champ = champ("nom", "Nom", Forme::Texte, "le nom du modèle spécial");
 const NUMERO: Champ = champ("numero", "Paragraphe", Forme::Nombre, "le numéro du paragraphe (`articles[].numero` de modele-contrat), à partir de 1");
 const TITRE: Champ = champ("titre", "Titre", Forme::Texte, "le titre du paragraphe");
@@ -107,7 +107,7 @@ pub const ROUTES: &[Fiche] = &[
     geste(
         Route::DeplacerParagrapheContrat,
         "Monter ou descendre un paragraphe d'un modèle spécial.",
-        &[ID, PARTIE, NUMERO, champ("sens", "Sens", Forme::Texte, "« monter » ou « descendre »")],
+        &[ID, PARTIE, NUMERO, champ("sens", "Sens", Forme::Choix(ListeDeChoix::de::<Sens>()), "où le paragraphe se déplace")],
         r#"{"id":"m1","partie":"contrat","numero":4,"sens":"monter"}"#,
     ),
     geste(
@@ -200,6 +200,21 @@ struct Texte {
 enum Partie {
     Contrat,
     Avenant,
+}
+
+impl socle::liste::ListeFermee for Partie {
+    const TOUTES: &'static [Partie] = &[Partie::Contrat, Partie::Avenant];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(match self {
+            Partie::Contrat => "Contrat",
+            Partie::Avenant => "Avenant",
+        })
+    }
 }
 
 impl Special {
@@ -523,11 +538,26 @@ fn ajouter_paragraphe(ctx: &Contexte, c: ChargeAjouter) -> R<Modeles> {
 }
 
 /// Le sens d'un deplacement.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Sens {
     Monter,
     Descendre,
+}
+
+impl socle::liste::ListeFermee for Sens {
+    const TOUTES: &'static [Sens] = &[Sens::Monter, Sens::Descendre];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(match self {
+            Sens::Monter => "Monter",
+            Sens::Descendre => "Descendre",
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -13,7 +13,7 @@ use droit::fiche::ModeleBulletin;
 use socle::fichiers::dossier_du_code;
 use socle::echec::{Classe, R};
 
-const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "« simplifié » ou « complet »", avance: false };
+const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<ModeleBulletin>()), sens: "le modèle du bulletin d'exemple", avance: false };
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[Fiche {

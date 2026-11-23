@@ -1384,6 +1384,23 @@ impl NomDeFiche {
     }
 }
 
+/// LES TROIS FICHES SONT UNE LISTE QU'UNE CHARGE LIT (`nom` de `fiche`, `enregistrer-fiche`, `activer-fiche`).
+impl socle::liste::ListeFermee for NomDeFiche {
+    const TOUTES: &'static [NomDeFiche] = &[NomDeFiche::Entreprise, NomDeFiche::Salarie, NomDeFiche::Spectacle];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(match self {
+            NomDeFiche::Entreprise => "Entreprise",
+            NomDeFiche::Salarie => "Salarié",
+            NomDeFiche::Spectacle => "Spectacle",
+        })
+    }
+}
+
 impl std::fmt::Display for NomDeFiche {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.nom())
@@ -2920,6 +2937,20 @@ choix! {
     /// La case `modele_bulletin` de la fiche entreprise (la compagnie, pour tous) et de la fiche d'un salarie (qui
     /// l'emporte) ; la charge de la route de son bulletin d'exemple.
     pub enum ModeleBulletin { Simplifie = "simplifié", Complet = "complet" }
+}
+
+/// LES MODELES DU BULLETIN SONT UNE LISTE QU'UNE CHARGE LIT (`modele` de `bulletin-modele-apercu`) ; son libelle est son
+/// nom.
+impl socle::liste::ListeFermee for ModeleBulletin {
+    const TOUTES: &'static [ModeleBulletin] = &ModeleBulletin::TOUS;
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(self.nom())
+    }
 }
 
 impl ModeleBulletin {

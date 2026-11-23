@@ -86,6 +86,19 @@ pub const SERVICES: [Service; 3] = [
     },
 ];
 
+/// LES SERVICES DU COFFRE SONT UNE LISTE QU'UNE CHARGE NOMME (`service`), par leur nom.
+impl socle::liste::ListeFermee for Service {
+    const TOUTES: &'static [Service] = &SERVICES;
+
+    fn code(&self) -> R<String> {
+        Ok(self.nom.to_string())
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(self.libelle)
+    }
+}
+
 // ------------------------------------------------------------------ les formes
 
 /// LE COFFRE TEL QU'IL S'ECRIT (`coffre.bin`, format `VERSION`) : les parametres de la derivation du mot de passe du

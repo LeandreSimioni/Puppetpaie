@@ -67,7 +67,7 @@ const FAITE: &[Champ] = &[
     SALARIE_ARRETE,
     DERNIER_JOUR,
     Champ { nom: "le", libelle: Affiche::new("Fait le"), forme: Forme::Date, sens: "le jour où elle a été faite ; vide : la retirer", avance: false },
-    Champ { nom: "depot", libelle: Affiche::new("Où"), forme: Forme::Texte, sens: "où elle a été faite (un des lieux que l'obligation propose)", avance: false },
+    Champ { nom: "depot", libelle: Affiche::new("Où"), forme: Forme::ChoixRendu, sens: "où elle a été faite : un des lieux que l'obligation propose (ou, dans ce que rend obligations)", avance: false },
     Champ { nom: "heure", libelle: Affiche::new("Heure"), forme: Forme::Texte, sens: "l'heure, HH:MM", avance: true },
     Champ { nom: "reference", libelle: Affiche::new("Référence de l'accusé"), forme: Forme::Texte, sens: "la référence de l'accusé", avance: true },
 ];
@@ -83,7 +83,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::ArretObligations,
         geste: "Dire ce qu'un arrêt en cours de saisie fera naître (signalement…).",
         charge: &[
-            Champ { nom: "motif", libelle: Affiche::new("Motif"), forme: Forme::Texte, sens: "le motif de l'arrêt (code DSN)", avance: false },
+            Champ { nom: "motif", libelle: Affiche::new("Motif"), forme: Forme::ChoixRendu, sens: "le motif de l'arrêt (motifs_arret des nomenclatures de imprevus)", avance: false },
             Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé", avance: false },
             Champ { nom: "debut", libelle: Affiche::new("Début de l'arrêt"), forme: Forme::Date, sens: "le premier jour que l'avis prescrit", avance: false },
             Champ { nom: "fin", libelle: Affiche::new("Fin prescrite"), forme: Forme::Date, sens: "la fin prescrite", avance: false },
@@ -109,7 +109,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[
             SALARIE_ARRETE,
             DERNIER_JOUR,
-            Champ { nom: "de", libelle: Affiche::new("De"), forme: Forme::Texte, sens: "arret ou accident", avance: false },
+            Champ { nom: "de", libelle: Affiche::new("De"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<DeQuoi>()), sens: "ce que la compagnie a connu", avance: false },
             Champ { nom: "jour", libelle: Affiche::new("Jour"), forme: Forme::Date, sens: "le jour ; vide : le moteur reprend sa présomption (avec une heure, pour l'accident : le jour de l'accident)", avance: false },
             Champ { nom: "heure", libelle: Affiche::new("Heure"), forme: Forme::Texte, sens: "l'heure, HH:MM", avance: true },
         ],
@@ -395,11 +395,26 @@ fn quand_ecrit(jour: Jour, heure: Option<HeureDuJour>) -> Result<InstantOuJour, 
 }
 
 /// Ce que la compagnie a connu : l'arret, ou l'accident.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum DeQuoi {
     Arret,
     Accident,
+}
+
+impl socle::liste::ListeFermee for DeQuoi {
+    const TOUTES: &'static [DeQuoi] = &[DeQuoi::Arret, DeQuoi::Accident];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(match self {
+            DeQuoi::Arret => "L'arrêt",
+            DeQuoi::Accident => "L'accident",
+        })
+    }
 }
 
 /// Les fiches de suivi, par (cle du salarie, dernier jour travaille).

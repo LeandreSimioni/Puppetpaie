@@ -15,7 +15,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
 use socle::mois::{Annee, Mois};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, ListeDeChoix, Refus, FORME, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
 
@@ -48,7 +48,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::RetenirLogiciel,
         geste: "Retenir le logiciel du comptable, dont les écritures prennent le format.",
-        charge: &[Champ { nom: "logiciel", libelle: Affiche::new("Logiciel"), forme: Forme::Texte, sens: "son nom, parmi ceux que exports-periodes connaît ; absent : aucun", avance: false }, Champ { nom: "analytique", libelle: Affiche::new("Par spectacle"), forme: Forme::OuiNon, sens: "vrai : par spectacle", avance: true }],
+        charge: &[Champ { nom: "logiciel", libelle: Affiche::new("Logiciel"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::LogicielComptable>()), sens: "le logiciel du comptable ; absent : aucun", avance: false }, Champ { nom: "analytique", libelle: Affiche::new("Par spectacle"), forme: Forme::OuiNon, sens: "vrai : par spectacle", avance: true }],
         exemple: r#"{}"#,
         rend: "le logiciel retenu",
         refus: &[OPERATION],
@@ -77,10 +77,11 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::Exporter,
         geste: "Exporter un état (livre de paie, charges…) en tableau ou en fichier.",
         charge: &[
-            Champ { nom: "etat", libelle: Affiche::new("État"), forme: Forme::Texte, sens: "l'état, parmi ceux que exports-periodes dit", avance: false },
+            Champ { nom: "etat", libelle: Affiche::new("État"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::EtatDExport>()), sens: "l'état ; exports-periodes dit ceux que la compagnie peut exporter", avance: false },
             MOIS,
             ANNEE,
-            Champ { nom: "format", libelle: Affiche::new("Format"), forme: Forme::Texte, sens: "le format du fichier", avance: true },
+            Champ { nom: "regroupement", libelle: Affiche::new("Regroupement"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::RegroupementDEtat>()), sens: "le regroupement des lignes, parmi ceux que l'état propose (exports-periodes)", avance: true },
+            Champ { nom: "format", libelle: Affiche::new("Format"), forme: Forme::Choix(ListeDeChoix::de::<documents::plan_comptable::FormatDExport>()), sens: "le format du fichier, parmi ceux que l'état propose (exports-periodes)", avance: true },
             Champ { nom: "apercu", libelle: Affiche::new("Aperçu seulement"), forme: Forme::OuiNon, sens: "vrai : le tableau, sans écrire de fichier", avance: true },
         ],
         exemple: r#"{"etat":"livre-de-paie","mois":"2026-11","regroupement":"salarie","format":"csv","apercu":true}"#,

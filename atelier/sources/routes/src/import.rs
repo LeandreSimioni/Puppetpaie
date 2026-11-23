@@ -102,7 +102,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[
             Champ { nom: "nir", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "le numéro de sécurité sociale que la DSN déclare, sans sa clé", avance: false },
             SALARIE,
-            Champ { nom: "reponse", libelle: Affiche::new("Réponse"), forme: Forme::Texte, sens: "meme : c'est le salarié de la fiche ; autre : une autre personne", avance: false },
+            Champ { nom: "reponse", libelle: Affiche::new("Réponse"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<crate::importation::identite::ReponseDIdentite>()), sens: "la personne que la DSN déclare est-elle le salarié de la fiche", avance: false },
         ],
         exemple: r#"{"nir":"2850799999124","salarie":"TARTEMPION","reponse":"autre"}"#,
         rend: "phrase",

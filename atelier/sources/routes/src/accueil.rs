@@ -56,7 +56,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Ajouter une compagnie : neuve, ou venant d'un logiciel précédent.",
         charge: &[
             Champ { nom: "nom", libelle: Affiche::new("Nom de la compagnie"), forme: Forme::Texte, sens: "le nom de la compagnie", avance: false },
-            Champ { nom: "venue", libelle: Affiche::new("Venue"), forme: Forme::Texte, sens: "neuve, ou logiciel_precedent (elle commence par reprendre son passé)", avance: false },
+            Champ { nom: "venue", libelle: Affiche::new("Venue"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<Venue>()), sens: "d'où elle vient : venue d'un autre logiciel, elle commence par reprendre son passé", avance: false },
         ],
         exemple: r#"{"nom":"Les Tréteaux d'essai","venue":"neuve"}"#,
         rend: "id, nom, chemin (le --racine de ses routes), phrase ; logiciel bridé : une compagnie fictive ajoutée",

@@ -228,6 +228,21 @@ pub(crate) enum ReponseDIdentite {
     Autre,
 }
 
+impl socle::liste::ListeFermee for ReponseDIdentite {
+    const TOUTES: &'static [ReponseDIdentite] = &[ReponseDIdentite::Meme, ReponseDIdentite::Autre];
+
+    fn code(&self) -> socle::echec::R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(match self {
+            ReponseDIdentite::Meme => "C'est le salarié de la fiche",
+            ReponseDIdentite::Autre => "C'est une autre personne",
+        })
+    }
+}
+
 /// La charge d'`importation-identite` : le NIR que la DSN declare, la fiche sans NIR qui lui ressemble, la reponse.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

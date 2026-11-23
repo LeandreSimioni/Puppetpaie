@@ -778,6 +778,21 @@ pub enum Venue {
     LogicielPrecedent,
 }
 
+impl socle::liste::ListeFermee for Venue {
+    const TOUTES: &'static [Venue] = &[Venue::Neuve, Venue::LogicielPrecedent];
+
+    fn code(&self) -> socle::echec::R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(match self {
+            Venue::Neuve => "Une compagnie neuve",
+            Venue::LogicielPrecedent => "Elle vient d'un autre logiciel",
+        })
+    }
+}
+
 impl Venue {
     /// Le mot du geste de l'accueil et de `creation.json`.
     pub fn mot(self) -> &'static str {

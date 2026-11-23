@@ -58,6 +58,23 @@ pub const REFUS: Nature = Nature::Refus;
 pub const DPAE: Nature = Nature::Dpae;
 pub const DSN: Nature = Nature::Dsn;
 
+impl socle::liste::ListeFermee for Nature {
+    const TOUTES: &'static [Nature] = &[Nature::Logiciel, Nature::Refus, Nature::Dpae, Nature::Dsn];
+
+    fn code(&self) -> socle::echec::R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(match self {
+            Nature::Logiciel => "Défaut du logiciel",
+            Nature::Refus => "Refus",
+            Nature::Dpae => "DPAE rejetée",
+            Nature::Dsn => "DSN rejetée",
+        })
+    }
+}
+
 impl Nature {
     /// Le nom de la nature, tel qu'il s'ecrit.
     pub fn nom(self) -> &'static str {

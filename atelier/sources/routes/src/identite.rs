@@ -19,7 +19,7 @@ use socle::grandeurs::Octets;
 use documents::SorteDImage;
 use fabrique_pdf::alleger::FormatDImage;
 
-const QUOI_IDENTITE: Champ = Champ { nom: "quoi", libelle: Affiche::new("Signature, cachet ou logo"), forme: Forme::Texte, sens: "signature, cachet ou logo", avance: false };
+const QUOI_IDENTITE: Champ = Champ { nom: "quoi", libelle: Affiche::new("Signature, cachet ou logo"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<documents::SorteDImage>()), sens: "l'image de l'identité de la compagnie", avance: false };
 
 /// Les types de media d'une image qui se pose : ceux que le logiciel reconnait (`FormatDImage`).
 const IMAGES_ADMISES: &[&str] = &[FormatDImage::Png.mime(), FormatDImage::Jpeg.mime(), FormatDImage::Svg.mime()];

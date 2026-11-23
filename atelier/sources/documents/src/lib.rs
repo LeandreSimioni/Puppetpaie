@@ -54,6 +54,26 @@ impl SorteDImage {
         SorteDImage::TOUTES.into_iter().find(|s| s.nom() == nom)
     }
 
+}
+
+/// LES IMAGES DE L'IDENTITE SONT UNE LISTE QU'UNE CHARGE NOMME (`quoi`), par leur nom.
+impl socle::liste::ListeFermee for SorteDImage {
+    const TOUTES: &'static [SorteDImage] = &SorteDImage::TOUTES;
+
+    fn code(&self) -> socle::echec::R<String> {
+        Ok(self.nom().to_string())
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(match self {
+            SorteDImage::Signature => "Signature",
+            SorteDImage::Cachet => "Cachet",
+            SorteDImage::Logo => "Logo",
+        })
+    }
+}
+
+impl SorteDImage {
     /// La plus grande largeur, en points, à laquelle un document l'imprime : ce qu'il faut de pixels, et pas plus
     /// (`fabrique_pdf::alleger`). Le logo : en tête des bulletins et des contrats (`bulletin::LOGO_LARGEUR`). La
     /// signature : dans le contrat (`fabrique_pdf::style_contrat::SIGNATURE_LARGEUR`), le certificat Congés Spectacles
