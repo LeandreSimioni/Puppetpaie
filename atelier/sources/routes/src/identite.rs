@@ -34,7 +34,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Identite,
         geste: "Dire la signature, le cachet et le logo de la compagnie.",
-        charge: &[],
+        charge: &crate::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: IDENTITE_REND,
         refus: &[OPERATION],

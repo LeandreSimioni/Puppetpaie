@@ -12,10 +12,11 @@ use droit::fiche::Lue as _;
 use std::collections::HashMap;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Fiche, Refus, ILLISIBLE, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, legendes, Legende};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::{ChargeMois, Moteur};
@@ -37,7 +38,7 @@ pub(crate) type R<T> = Result<T, Echec>;
 /// boite simulee ; une route ouvre la vraie (`client_courriel`).
 pub(crate) type Ouvrir<'a> = &'a mut dyn FnMut() -> R<Box<dyn Courriel>>;
 
-const SALARIES: Champ = Champ { nom: "salaries", libelle: Affiche::new("Salariés"), forme: Forme::Liste, sens: "seulement ceux-ci (les clés de leurs fiches) ; tous sinon", avance: false };
+const SALARIES: Legende = dit("Salariés", "seulement ceux-ci (les clés de leurs fiches) ; tous sinon");
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -47,7 +48,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EnvoiApercu,
         geste: "Montrer les documents du mois de chaque salarié, et à qui ils partiraient.",
-        charge: &[MOIS],
+        charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja",
         refus: &[MANQUE, ILLISIBLE],
@@ -59,7 +60,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EnvoyerDocuments,
         geste: "Envoyer à chaque salarié ses documents du mois par courriel ; la paie se fige.",
-        charge: &[MOIS, SALARIES],
+        charge: &ChargeEnvoyerDocuments::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "phrase, partis (les salariés servis), avertissements (ceux sans courriel, la boîte qui envoie)",
         refus: &[
@@ -76,7 +77,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DocumentsImprimer,
         geste: "Imprimer les documents du mois, à remettre en main propre ; la paie se fige.",
-        charge: &[MOIS, SALARIES],
+        charge: &ChargeDocumentsImprimer::CHARGE,
         exemple: r#"{"mois":"2026-11","salaries":["SVOBODA"]}"#,
         rend: "impression (le PDF, dans sorties/<mois>/) et son chemin, salaries, avertissements",
         refus: &[Refus { classe: Classe::AucunDocument, corriger: "valider un engagement du mois" }, OPERATION],
@@ -88,7 +89,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::PiecePartie,
         geste: "Dire où est une pièce partie d'un mois, refaite à l'identique si elle manque.",
-        charge: &[MOIS, Champ { nom: "fichier", libelle: Affiche::new("Pièce"), forme: Forme::Texte, sens: "le nom de la pièce, tel que le journal le dit", avance: false }],
+        charge: &ChargePiecePartie::CHARGE,
         exemple: r#"{"mois":"2026-11","fichier":"DPAE_Novembre2026.txt"}"#,
         rend: "chemin (relatif à la compagnie)",
         refus: &[MANQUE, OPERATION],
@@ -137,13 +138,14 @@ impl Dite for PiecePartie {
 
 // ------------------------------------------------------------------ les formes
 
-/// La charge de `documents-imprimer` (et de l'horloge d'une compagnie fictive, pour ceux qui n'ont pas de courriel) :
-/// le mois, les salaries choisis (absent : tous).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeDocumentsImprimer {
-    pub(crate) mois: Mois,
-    pub(crate) salaries: Option<Vec<IdSalarie>>,
+charge! {
+    /// La charge de `documents-imprimer` (et de l'horloge d'une compagnie fictive, pour ceux qui n'ont pas de courriel) :
+    /// le mois, les salaries choisis (absent : tous).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeDocumentsImprimer {
+        pub(crate) mois: Mois = legendes::MOIS,
+        pub(crate) salaries: Option<Vec<IdSalarie>> = SALARIES,
+    }
 }
 
 /// Ce que rend `documents-imprimer` : sa phrase, le PDF a imprimer et son chemin, les salaries servis, ce que la fabrique
@@ -168,14 +170,15 @@ pub(crate) struct DocumentsEnvoyes {
     avertissements: Vec<String>,
 }
 
-/// La charge de `piece-partie` : le mois, et la piece telle que le journal la nomme (un nom ecrit ailleurs : la page,
-/// `moteur route`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargePiecePartie {
-    mois: Mois,
-    #[serde(deserialize_with = "socle::fichiers::ecrit_ailleurs::nom")]
-    fichier: NomDeFichier,
+charge! {
+    /// La charge de `piece-partie` : le mois, et la piece telle que le journal la nomme (un nom ecrit ailleurs : la page,
+    /// `moteur route`).
+    #[derive(Debug)]
+    struct ChargePiecePartie {
+        mois: Mois = legendes::MOIS,
+        #[serde(deserialize_with = "socle::fichiers::ecrit_ailleurs::nom")]
+        fichier: NomDeFichier = dit("Pièce", "le nom de la pièce, tel que le journal le dit"),
+    }
 }
 
 /// Ce que rend `piece-partie` : le chemin de la piece, relatif a la compagnie.
@@ -773,13 +776,14 @@ pub(super) fn expediteur_de(client: &dyn Courriel) -> R<droit::fiche::Courriel> 
 
 // ------------------------------------------------------------------ envoyer-documents
 
-/// La charge de `envoyer-documents` : le mois, les salaries choisis (tous sinon), et le mot de passe du logiciel tape
-/// pour l'envoi.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeEnvoyerDocuments {
-    mois: Mois,
-    salaries: Option<Vec<IdSalarie>>,
+charge! {
+    /// La charge de `envoyer-documents` : le mois, les salaries choisis (tous sinon), et le mot de passe du logiciel tape
+    /// pour l'envoi.
+    #[derive(Debug)]
+    struct ChargeEnvoyerDocuments {
+        mois: Mois = legendes::MOIS,
+        salaries: Option<Vec<IdSalarie>> = SALARIES,
+    }
 }
 
 /// Envoie a chaque salarie ses documents du mois, sur le mot de passe du logiciel tape pour l'envoi. Irreversible.
