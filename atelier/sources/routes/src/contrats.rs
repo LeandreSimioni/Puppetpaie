@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "contrats (chacun : son état, et ses gestes recu et relancer, route, charge et demande du mot de passe), boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
+        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; contrats (chacun : son état, part (ce qu'il ajoute à la charge d'un départ, coché), voir_avenant (l'aperçu de son avenant), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe), boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -122,7 +122,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        // `signature-apercu` la rend en geste.
+        ecran: Ecran::Geste(Place::Paie),
     },
     Fiche {
         route: Route::ContratRecu,
@@ -360,8 +361,16 @@ charge! {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct GesteRecu {
     route: Route,
+    libelle: &'static str,
     charge: ChargeRecu,
 }
+
+/// Un depart des contrats coches que la boite ouvre : imprimer, ou envoyer a la signature. Ses cases `contrats` et
+/// `avenants` sont les contrats coches de la liste, chacun ce qu'il y ajoute (`ContratASigner::part`).
+pub(crate) type GesteDesContrats = crate::imprevus::GesteDeRoute<crate::etapes::ChargeMois>;
+
+const IMPRIMER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Imprimer");
+const ENVOYER_A_LA_SIGNATURE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer à la signature");
 
 /// Le geste « Relancer » d'un contrat (ou d'un avenant) qu'un courriel a deja demande, ou « Envoyer par courriel » d'un
 /// contrat parti imprime seulement : la route, le mot du bouton, ce que la demande du mot de passe dit, et sa charge (le
@@ -404,6 +413,12 @@ pub(crate) struct ContratASigner {
     pourquoi: &'static str,
     pub(crate) avenant: Option<AvenantParti>,
     pub(crate) avenant_attendu: bool,
+    /// Ce qu'il ajoute a la charge d'un depart quand il est coche (lui, ou son avenant) ; seulement a envoyer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part: Option<ChargeSignature>,
+    /// L'apercu de son avenant, quand il part en avenant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    voir_avenant: Option<crate::etapes::Action>,
 }
 
 
@@ -411,6 +426,14 @@ pub(crate) struct ContratASigner {
 #[derive(Debug, Serialize)]
 pub(crate) struct ApercuSignature {
     phrase: Phrase,
+    /// Le titre de la boite qui fait partir les contrats, et celui de la boite des contrats en attente.
+    titre: &'static str,
+    titre_en_attente: &'static str,
+    /// Les departs ouverts : aucun tant qu'aucun contrat n'est a envoyer ; imprimer toujours, envoyer a la signature quand
+    /// la boite est posee, et c'est alors lui le principal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    principal: Option<GesteDesContrats>,
+    autres: Vec<GesteDesContrats>,
     mois: Mois,
     pub(crate) contrats: Vec<ContratASigner>,
     boite_liee: bool,
@@ -670,7 +693,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let phrase = socle::phrase!("{} de {} {}.", socle::texte::capitaliser(&ce), nom, if recu { "noté reçu signé" } else { "de nouveau en attente" });
     // De quoi revenir sur la note : la meme route, le mot contraire.
     let annuler = ChargeRecu { mois: c.mois, salarie: c.salarie.clone(), debut: c.debut, numero: numero_note, avenant, recu: !recu };
-    Ok(NoteRecue { phrase, salarie: c.salarie.clone(), debut: c.debut, recu: recu.then_some(quand_note), annuler: GesteRecu { route: Route::ContratRecu, charge: annuler } })
+    Ok(NoteRecue { phrase, salarie: c.salarie.clone(), debut: c.debut, recu: recu.then_some(quand_note), annuler: GesteRecu { route: Route::ContratRecu, libelle: "Annuler", charge: annuler } })
 }
 
 // ------------------------------------------------------------------ contrats-imprimer et demander-signature
@@ -1013,7 +1036,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
                     Ok(GesteRelancer { route: Route::DemanderSignature, bouton, demande: charge.demande(ctx)?, charge })
                 })
                 .transpose()?;
-            (Some(GesteRecu { route: Route::ContratRecu, charge }), relancer)
+            (Some(GesteRecu { route: Route::ContratRecu, libelle: "Reçu signé", charge }), relancer)
         } else {
             (None, None)
         };
@@ -1028,7 +1051,20 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         } else {
             None
         };
+        // COCHE, il part en contrat, ou en avenant s'il est deja parti (`en_avenant`), sous son numero, qui distingue deux
+        // contrats du meme salarie qui commencent le meme jour.
+        let (part, voir_avenant) = if !a_envoyer {
+            (None, None)
+        } else if caduc {
+            let voulu = AvenantVoulu { salarie: p.salarie.id.clone(), debut, numero: numero.clone(), mois: Some(mois), effet: None };
+            let apercu = ChargeAvenant { salarie: p.salarie.id.clone(), debut, numero: numero.clone(), mois: Some(mois) };
+            (Some(ChargeSignature::des_avenants(mois, vec![voulu])), Some(crate::etapes::action(Route::AvenantApercu, apercu, Some(Route::DemanderSignature), "voir l'avenant".into())))
+        } else {
+            (Some(ChargeSignature::des_contrats(mois, vec![ContratVise { salarie: p.salarie.id.clone(), debut, numero: numero.clone() }])), None)
+        };
         contrats.push(ContratASigner {
+            part,
+            voir_avenant,
             salarie: p.salarie.id.clone(),
             destinataire: p.salarie.email.dite().cloned(),
             spectacle: p.titre()?,
@@ -1073,8 +1109,21 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         .map(|c| format!("{} ({}) : {}", c.nom, contrat_dit(c.numero.as_ref()), match &c.destinataire { Some(d) => d.as_ref(), None => "pas de courriel : il s'imprime" }))
         .chain(avertissements.iter().cloned())
         .collect();
+    // Les departs ouverts : imprimer, et envoyer a la signature quand la boite est posee ; aucun sans contrat a envoyer.
+    let demande = ChargeSignature::des_contrats(mois, Vec::new()).demande(ctx)?;
+    let coches = vec![crate::declaration::cle!(ChargeSignature, contrats), crate::declaration::cle!(ChargeSignature, avenants)];
+    let depart = |route, libelle| GesteDesContrats::avec_cases(route, ChargeMois { mois }, libelle, coches.clone(), crate::imprevus::ValeursDeDepart::default(), crate::imprevus::ChoixDesCases::default());
+    let (principal, autres) = match (contrats.iter().any(|c| c.a_envoyer), boite_liee) {
+        (false, _) => (None, Vec::new()),
+        (true, false) => (Some(depart(Route::ContratsImprimer, IMPRIMER)), Vec::new()),
+        (true, true) => (Some(depart(Route::DemanderSignature, ENVOYER_A_LA_SIGNATURE).exigeant(Some(demande.clone()))), vec![depart(Route::ContratsImprimer, IMPRIMER)]),
+    };
     Ok(ApercuSignature {
         phrase: socle::phrase!("Contrats à faire signer : {}.", contrats.len()),
+        titre: "Faire signer les contrats",
+        titre_en_attente: "Les contrats en attente",
+        principal,
+        autres,
         mois,
         signature: boite_liee.then(|| {
             Encart::de(socle::ecran::EtatDEcran::Information, "Signature d'un clic", "Le contrat part par courriel avec un bouton « Je signe » ; la réponse du salarié est relevée toute seule, et il reçoit son contrat contresigné.")
@@ -1083,7 +1132,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         rien_en_attente: (!contrats.iter().any(|c| c.en_attente)).then_some("Aucun contrat n'attend sa signature."),
         contrats,
         boite_liee,
-        demande: ChargeSignature::des_contrats(mois, Vec::new()).demande(ctx)?,
+        demande,
         avertissements,
         phrases,
     })
