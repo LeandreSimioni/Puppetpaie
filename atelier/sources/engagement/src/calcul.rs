@@ -650,6 +650,8 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
             Some((g, p)) => {
                 g.paiement = p;
                 g.montant += l.montant;
+                // Les heures que la designation dit (« 3 services de répétition (11 h) ») sont celles du groupe entier.
+                g.heures_annexes += l.heures_annexes;
             }
             None => groupes.push(l.clone()),
         }
