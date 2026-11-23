@@ -63,11 +63,9 @@ const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exem
 
 const ORDRE: Champ = Champ { nom: "ordre", libelle: Affiche::new("Numéro d'ordre"), forme: Forme::Nombre, sens: "son numéro d'ordre ; sinon le suivant de ceux déjà partis", avance: true };
 const REMPLACE: Champ = Champ { nom: "remplace", libelle: Affiche::new("Remplace"), forme: Forme::Texte, sens: "le signalement qu'il remplace", avance: true };
-const MODE: Champ = Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::MODES), sens: "test : un fichier d'essai, marqué comme tel ; reel sinon", avance: true };
+const MODE: Champ = Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<socle::mode::Mode>()), sens: "un test écrit un fichier d'essai, marqué comme tel", avance: true };
 
 /// La nature d'un signalement d'arret (`declarations::signalement::NatureSignalement`) : 04 l'arret, 05 la reprise.
-const NATURES_DU_SIGNALEMENT: &[crate::catalogue::Choix] =
-    &[crate::catalogue::Choix { code: "04", libelle: Affiche::new("Arrêt") }, crate::catalogue::Choix { code: "05", libelle: Affiche::new("Reprise") }];
 
 /// Ou ces routes se voient a l'ecran (une place par module) : sur le chemin simple, ou hors de lui.
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -124,7 +122,7 @@ pub const ROUTES: &[Fiche] = &[
         &[SALARIE, DERNIER_JOUR, IJ_BRUTE, IJ_NETTE, IJ_BRUTE_MAJOREE, IJ_NETTE_MAJOREE, JOURS_DEJA_INDEMNISES],
         r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","ij_brute":"40.89","ij_nette":"38.15"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 600, ..fiche(Route::ArretSignaler, "Fabriquer le signalement d'un arrêt, sans le déposer.",
-        &[SALARIE, DERNIER_JOUR, Champ { nom: "nature", libelle: Affiche::new("Nature"), forme: Forme::Choix(NATURES_DU_SIGNALEMENT), sens: "04 l'arrêt, ou 05 la reprise", avance: false }, REMPLACE, ORDRE, MODE,
+        &[SALARIE, DERNIER_JOUR, Champ { nom: "nature", libelle: Affiche::new("Nature"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<declarations::signalement::NatureSignalement>()), sens: "ce que le signalement déclare", avance: false }, REMPLACE, ORDRE, MODE,
             Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","nature":"04"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, nature, type, ordre, avertissements", Acte::Ecrit, ECRAN) },
     Fiche { phrase: 400, ..fiche(Route::ArretOublier, "Retirer un arrêt qui n'a pas été déclaré.", &[SALARIE, DERNIER_JOUR],

@@ -125,7 +125,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::AdministrateurDeposer,
         geste: "Déposer d'un geste ce qui est prêt dans chaque compagnie de l'administrateur.",
         charge: &[
-            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::MODES), sens: "test, ou reel (les fichiers testés conformes)", avance: false },
+            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<socle::mode::Mode>()), sens: "le réel ne dépose que les fichiers testés conformes", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur ; sans lui, le moteur le demande à un humain", avance: false },
         ],
         exemple: r#"{"mode":"test"}"#,

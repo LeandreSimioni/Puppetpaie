@@ -406,8 +406,9 @@ pub enum Forme {
     Lignes,
     /// Une valeur composee (un objet, une liste d'objets) : le `sens` la decrit ; l'ecran ne la saisit pas d'une case.
     Objet,
-    /// Une valeur d'une liste fermee : ses valeurs et leurs libelles ; l'ecran la fait choisir.
-    Choix(&'static [Choix]),
+    /// UNE VALEUR D'UNE LISTE FERMEE : ses valeurs et leurs libelles, tires du type qui la lit (`ListeDeChoix::de`) ;
+    /// l'ecran la fait choisir dans une liste deroulante, la ligne de commande la lit telle quelle.
+    Choix(ListeDeChoix),
     /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees, sous la cle de la case : les salaries,
     /// les spectacles, les metiers et les etablissements d'une carte (`choix` de la route etat), le genre d'un avantage en
     /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
@@ -470,22 +471,50 @@ impl serde::Serialize for Forme {
     }
 }
 
-/// Une valeur d'une liste fermee (`Forme::Choix`) : ce que la charge ecrit (`code`) et ce que l'ecran en montre.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Choix {
-    pub code: &'static str,
-    pub libelle: Affiche,
+/// LES VALEURS D'UNE LISTE FERMEE (`Forme::Choix`), tirees du type qui lit le champ (`socle::liste::ListeFermee`) : elle
+/// ne se fabrique que par lui (`de`), jamais d'une liste ecrite a cote.
+#[derive(Clone, Copy)]
+pub struct ListeDeChoix(fn() -> R<Vec<ChoixEcrit>>);
+
+impl ListeDeChoix {
+    /// Les valeurs du type `T`, chacune son code et son libelle.
+    pub const fn de<T: socle::liste::ListeFermee>() -> ListeDeChoix {
+        ListeDeChoix(ecrits::<T>)
+    }
+
+    /// Les valeurs, ecrites.
+    pub fn ecrites(self) -> R<Vec<ChoixEcrit>> {
+        (self.0)()
+    }
 }
 
-/// Une valeur d'une liste fermee, telle que le catalogue l'ecrit.
+/// Deux listes sont la meme si elles viennent du meme type.
+impl PartialEq for ListeDeChoix {
+    fn eq(&self, autre: &ListeDeChoix) -> bool {
+        std::ptr::fn_addr_eq(self.0, autre.0)
+    }
+}
+
+impl Eq for ListeDeChoix {}
+
+impl std::fmt::Debug for ListeDeChoix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ListeDeChoix")
+    }
+}
+
+/// Les valeurs du type `T`, ecrites.
+fn ecrits<T: socle::liste::ListeFermee>() -> R<Vec<ChoixEcrit>> {
+    T::TOUTES.iter().map(|v| Ok(ChoixEcrit { code: v.code()?, libelle: v.libelle()? })).collect()
+}
+
+/// Une valeur d'une liste fermee, telle que le catalogue l'ecrit : ce que la charge ecrit (`code`) et ce que l'ecran en
+/// montre.
 #[derive(serde::Serialize)]
 pub struct ChoixEcrit {
-    code: &'static str,
+    code: String,
     libelle: &'static str,
 }
-
-/// Le mode d'un depot ou d'un fichier : un essai, ou le reel.
-pub const MODES: &[Choix] = &[Choix { code: "test", libelle: Affiche::new("Test") }, Choix { code: "reel", libelle: Affiche::new("Réel") }];
 
 impl Forme {
     pub fn mot(self) -> &'static str {
@@ -511,10 +540,10 @@ impl Forme {
     }
 
     /// Les valeurs d'une liste fermee, ecrites ; aucune pour une autre forme.
-    fn choix(self) -> Option<Vec<ChoixEcrit>> {
+    fn choix(self) -> R<Option<Vec<ChoixEcrit>>> {
         match self {
-            Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) => None,
+            Forme::Choix(c) => Ok(Some(c.ecrites()?)),
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) => Ok(None),
         }
     }
 
@@ -619,8 +648,8 @@ pub struct ChampEcrit {
 }
 
 impl Champ {
-    pub fn ecrit(&self) -> ChampEcrit {
-        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix(), admis: self.forme.admis(), sens: self.sens, avance: self.avance }
+    pub fn ecrit(&self) -> R<ChampEcrit> {
+        Ok(ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix()?, admis: self.forme.admis(), sens: self.sens, avance: self.avance })
     }
 }
 
@@ -718,7 +747,7 @@ impl Fiche {
         Ok(FicheEcrite {
             nom: self.nom(),
             geste: self.geste,
-            charge: self.charge.iter().map(Champ::ecrit).collect(),
+            charge: self.charge.iter().map(Champ::ecrit).collect::<R<_>>()?,
             natures: natures_de_la_carte(self.charge)?,
             exemple,
             rend: self.rend,

@@ -28,13 +28,34 @@ use socle::texte::EntierEcrit;
 
 /// UNE LISTE DU LOGICIEL que les tables des exports (`exports_tables.json`), la charge d'`exporter` et ses lecteurs
 /// nomment : chaque valeur s'ecrit, se lit et se trie par son texte ; une autre se refuse a sa lecture.
+///
+/// AVEC SES LIBELLES (`Csv = "csv" : "CSV"`) : ce que l'ecran montre de chacune ; elle est alors une liste qu'une charge
+/// peut lire (`socle::liste::ListeFermee`), et la fiche de la route en tire son champ.
 macro_rules! liste_des_exports {
+    ($(#[$m:meta])* pub enum $nom:ident, $quoi:literal { $( $var:ident = $txt:literal : $lib:literal ),* $(,)? }) => {
+        liste_des_exports! { $(#[$m])* pub enum $nom, $quoi { $( $var = $txt ),* } }
+
+        impl socle::liste::ListeFermee for $nom {
+            const TOUTES: &'static [$nom] = $nom::TOUTES;
+
+            fn code(&self) -> R<String> {
+                Ok(self.as_str().to_string())
+            }
+
+            fn libelle(&self) -> R<&'static str> {
+                Ok(match self { $( $nom::$var => $lib ),* })
+            }
+        }
+    };
     ($(#[$m:meta])* pub enum $nom:ident, $quoi:literal { $( $var:ident = $txt:literal ),* $(,)? }) => {
         $(#[$m])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum $nom { $( $var ),* }
 
         impl $nom {
+            /// Chacune, dans l'ordre de la liste.
+            pub const TOUTES: &'static [$nom] = &[$( $nom::$var ),*];
+
             /// Son texte.
             pub fn as_str(self) -> &'static str {
                 match self { $( $nom::$var => $txt ),* }
@@ -49,7 +70,7 @@ macro_rules! liste_des_exports {
             pub fn lire(texte: &str) -> R<$nom> {
                 match texte {
                     $( $txt => Ok($nom::$var), )*
-                    _ => Err(socle::refus!(concat!($quoi, " : « {} »."), texte)),
+                    _ => Err(socle::echec::refus(socle::liste::pas_de_la_liste($quoi, texte, &[$($txt),*]))),
                 }
             }
         }
@@ -91,32 +112,32 @@ liste_des_exports! {
     /// UN ETAT QUE LA PAGE DES EXPORTS PROPOSE (`etats` et `au_mois` des tables) : ce qu'`exporter` fait, ce qu'une
     /// convention ou la taxe sur les salaires reserve, l'etat d'un tableau rendu.
     pub enum EtatDExport, "État inconnu" {
-        LivreDePaie = "livre-de-paie",
-        LivreDePaieDetaille = "livre-de-paie-detaille",
-        RecapitulatifAnnuel = "recapitulatif-annuel",
-        MasseSalariale = "masse-salariale",
-        EtatDesVirements = "etat-des-virements",
-        PrelevementALaSource = "prelevement-a-la-source",
-        CotisationsParOrganisme = "cotisations-par-organisme",
-        VersementsOrganismes = "versements-organismes",
-        BordereauUrssaf = "bordereau-urssaf",
-        ReductionGenerale = "reduction-generale",
-        Assiettes = "assiettes",
-        RegularisationCascSvp = "regularisation-casc-svp",
-        FcapSvp = "fcap-svp",
-        Afdas2642 = "afdas-2642",
-        ParitarismeBranche = "paritarisme-branche",
-        EcrituresComptables = "ecritures-comptables",
-        GrandLivrePaie = "grand-livre-paie",
-        BalancePaie = "balance-paie",
-        TaxeSurLesSalaires = "taxe-sur-les-salaires",
-        CoutParSpectacle = "cout-par-spectacle",
-        HeuresEtCachets = "heures-et-cachets",
-        Contrats = "contrats",
-        RegistreDuPersonnel = "registre-du-personnel",
-        FichierDuPersonnel = "fichier-du-personnel",
-        JournalDesDeclarations = "journal-des-declarations",
-        ProvisionConges = "provision-conges",
+        LivreDePaie = "livre-de-paie" : "Livre de paie",
+        LivreDePaieDetaille = "livre-de-paie-detaille" : "Livre de paie détaillé",
+        RecapitulatifAnnuel = "recapitulatif-annuel" : "Récapitulatif annuel par salarié",
+        MasseSalariale = "masse-salariale" : "Masse salariale par mois",
+        EtatDesVirements = "etat-des-virements" : "État des virements de salaires",
+        PrelevementALaSource = "prelevement-a-la-source" : "Prélèvement à la source",
+        CotisationsParOrganisme = "cotisations-par-organisme" : "Cotisations par organisme",
+        VersementsOrganismes = "versements-organismes" : "Versements aux organismes",
+        BordereauUrssaf = "bordereau-urssaf" : "Bordereau Urssaf",
+        ReductionGenerale = "reduction-generale" : "Réduction générale des cotisations",
+        Assiettes = "assiettes" : "Assiettes de cotisation",
+        RegularisationCascSvp = "regularisation-casc-svp" : "Régularisation de la CASC-SVP",
+        FcapSvp = "fcap-svp" : "FCAP-SVP",
+        Afdas2642 = "afdas-2642" : "Contributions Afdas",
+        ParitarismeBranche = "paritarisme-branche" : "Paritarisme de la branche",
+        EcrituresComptables = "ecritures-comptables" : "Journal de paie — écritures comptables",
+        GrandLivrePaie = "grand-livre-paie" : "Grand livre des comptes de paie",
+        BalancePaie = "balance-paie" : "Balance des comptes de paie",
+        TaxeSurLesSalaires = "taxe-sur-les-salaires" : "Taxe sur les salaires",
+        CoutParSpectacle = "cout-par-spectacle" : "Coût employeur par spectacle",
+        HeuresEtCachets = "heures-et-cachets" : "Heures et cachets (annexes 8 et 10)",
+        Contrats = "contrats" : "Liste des contrats",
+        RegistreDuPersonnel = "registre-du-personnel" : "Registre unique du personnel",
+        FichierDuPersonnel = "fichier-du-personnel" : "Fichier du personnel",
+        JournalDesDeclarations = "journal-des-declarations" : "Journal des déclarations et envois",
+        ProvisionConges = "provision-conges" : "Provision pour congés payés",
     }
 }
 
@@ -124,19 +145,19 @@ liste_des_exports! {
     /// LE FORMAT D'UN EXPORT : les six de la machinerie des tableaux (`tableaux_export::FORMATS_TABLEAU`), puis ceux des
     /// logiciels du comptable (`etats_compta::FORMATS_ECRITURES`).
     pub enum FormatDExport, "Format inconnu" {
-        Csv = "csv",
-        Tsv = "tsv",
-        Xlsx = "xlsx",
-        Pdf = "pdf",
-        Html = "html",
-        Json = "json",
-        Fec = "fec",
-        Ximport = "ximport",
-        Oxygene = "oxygene",
-        Sage = "sage",
-        Quadra = "quadra",
-        Ebp = "ebp",
-        Pennylane = "pennylane",
+        Csv = "csv" : "CSV",
+        Tsv = "tsv" : "TSV",
+        Xlsx = "xlsx" : "Classeur Excel",
+        Pdf = "pdf" : "PDF",
+        Html = "html" : "Page web",
+        Json = "json" : "JSON",
+        Fec = "fec" : "Fichier des écritures comptables (FEC)",
+        Ximport = "ximport" : "Ciel (XImport)",
+        Oxygene = "oxygene" : "Oxygène",
+        Sage = "sage" : "Sage",
+        Quadra = "quadra" : "Quadra",
+        Ebp = "ebp" : "EBP",
+        Pennylane = "pennylane" : "Pennylane",
     }
 }
 
@@ -144,10 +165,10 @@ liste_des_exports! {
     /// LE REGROUPEMENT D'UN ETAT : les groupes du livre de paie (par salarie, par mois, par spectacle), ceux des
     /// cotisations (par organisme, par mois).
     pub enum RegroupementDEtat, "Regroupement inconnu" {
-        Mois = "mois",
-        Organisme = "organisme",
-        Salarie = "salarie",
-        Spectacle = "spectacle",
+        Mois = "mois" : "Par mois",
+        Organisme = "organisme" : "Par organisme",
+        Salarie = "salarie" : "Par salarié",
+        Spectacle = "spectacle" : "Par spectacle",
     }
 }
 
@@ -172,9 +193,26 @@ liste_des_exports! {
 liste_des_exports! {
     /// LA PERIODE QU'UN ETAT PROPOSE (`periodes` d'un etat) : une annee, un mois, toutes les annees.
     pub enum PeriodeDExport, "Période inconnue" {
-        Annee = "annee",
-        Mois = "mois",
-        Toutes = "toutes",
+        Annee = "annee" : "Une année",
+        Mois = "mois" : "Un mois",
+        Toutes = "toutes" : "Toutes les années",
+    }
+}
+
+/// LE LOGICIEL DU COMPTABLE EST UNE LISTE QU'UNE CHARGE LIT : son libelle est le nom que ses tables lui donnent
+/// (`exports_tables.json`, `logiciels[].nom`).
+impl socle::liste::ListeFermee for LogicielComptable {
+    const TOUTES: &'static [LogicielComptable] = LogicielComptable::TOUTES;
+
+    fn code(&self) -> R<String> {
+        Ok(self.as_str().to_string())
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        match tables().logiciels.iter().find(|l| l.logiciel == *self) {
+            Some(l) => Ok(l.nom.as_str()),
+            None => Err(socle::echec::erreur(socle::echec::Classe::DefautDuLogiciel, format!("Défaut du logiciel : le logiciel du comptable {} n'est pas dans ses tables.", self))),
+        }
     }
 }
 

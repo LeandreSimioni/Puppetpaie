@@ -45,6 +45,22 @@ impl NatureSignalement {
     }
 }
 
+/// LA NATURE D'UN SIGNALEMENT EST UNE LISTE QU'UNE CHARGE LIT : son code est celui qu'elle ecrit (`04`, `05`).
+impl socle::liste::ListeFermee for NatureSignalement {
+    const TOUTES: &'static [NatureSignalement] = &NatureSignalement::TOUS;
+
+    fn code(&self) -> socle::echec::R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(match self {
+            NatureSignalement::Arret => "Arrêt",
+            NatureSignalement::Reprise => "Reprise",
+        })
+    }
+}
+
 impl serde::Serialize for NatureSignalement {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         self.nature().serialize(s)

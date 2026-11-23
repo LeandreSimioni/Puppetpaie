@@ -28,6 +28,25 @@ pub enum Cible {
     NetSansFrais,
 }
 
+/// CE QUI SE VISE EST UNE LISTE QU'UNE CHARGE LIT : le net a payer d'abord, celui sur lequel la liste s'ouvre.
+impl socle::liste::ListeFermee for Cible {
+    const TOUTES: &'static [Cible] = &[Cible::Net, Cible::NetSansFrais, Cible::Brut, Cible::Cout, Cible::CoutAvecFrais];
+
+    fn code(&self) -> socle::echec::R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(match self {
+            Cible::Net => "Net, indemnités comprises",
+            Cible::NetSansFrais => "Net, sans les indemnités",
+            Cible::Brut => "Brut",
+            Cible::Cout => "Coût, sans les indemnités",
+            Cible::CoutAvecFrais => "Coût, indemnités comprises",
+        })
+    }
+}
+
 /// Les indemnites de frais de la paie `p` : ses lignes hors assiette qui remboursent un frais (`HorsAssiette::Frais`).
 fn frais_de(ctx: &Contexte, p: &Paie) -> R<Montant> {
     let mut total = Montant::ZERO;

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalogue::{Acte, Affiche, Champ, Choix, Forme, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, ListeDeChoix, Place, FORME, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::fiches::{creer_dossier, ecrire, refus};
@@ -103,8 +103,8 @@ const LIBELLE: Champ = Champ { nom: "libelle", libelle: Affiche::new("Nom"), for
 const CADRE_A_LA_CREATION: Champ = Champ {
     nom: "cadre",
     libelle: Affiche::new("Cadre"),
-    forme: Forme::Choix(&[Choix { code: "cadre", libelle: Affiche::new("Cadre") }, Choix { code: "non_cadre", libelle: Affiche::new("Non cadre") }]),
-    sens: "cadre, ou non_cadre",
+    forme: Forme::Choix(ListeDeChoix::de::<emplois::Encadrement>()),
+    sens: "le métier créé est-il un métier de cadre",
     avance: false,
 };
 /// Cadre ou non, pour un metier deja cree.

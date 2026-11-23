@@ -73,7 +73,7 @@ pub const ROUTES: &[Fiche] = &[
             ETABLISSEMENT,
             ENGAGEMENTS,
             SIGNALEMENT,
-            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::MODES), sens: "test, ou reel : le dépôt réel (le mot de passe du logiciel, tapé par un humain au moment de l'acte)", avance: false },
+            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<socle::mode::Mode>()), sens: "le réel demande le mot de passe du logiciel, tapé par un humain au moment de l'acte", avance: false },
             Champ { nom: "forcer", libelle: Affiche::new("Annule et remplace"), forme: Forme::OuiNon, sens: "vrai : l'annule-et-remplace d'une DSN déjà déposée, après l'avertissement", avance: true },
             Champ { nom: "contournement", libelle: Affiche::new("Motif d'un dépôt réel sans test"), forme: Forme::Texte, sens: "le motif écrit d'un dépôt réel sans test", avance: true },
         ],

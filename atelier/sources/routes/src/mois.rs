@@ -59,15 +59,6 @@ const MODIFICATIONS: Champ = Champ {
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
 
-/// Ce qui se vise (`engagement::viser::Cible`) : le net et le cout, chacun avec ou sans les indemnites de frais, et le brut.
-/// Le premier, le net a payer, est celui sur lequel la liste s'ouvre.
-const CIBLES: &[crate::catalogue::Choix] = &[
-    crate::catalogue::Choix { code: "net", libelle: Affiche::new("Net, indemnités comprises") },
-    crate::catalogue::Choix { code: "net_sans_frais", libelle: Affiche::new("Net, sans les indemnités") },
-    crate::catalogue::Choix { code: "brut", libelle: Affiche::new("Brut") },
-    crate::catalogue::Choix { code: "cout", libelle: Affiche::new("Coût, sans les indemnités") },
-    crate::catalogue::Choix { code: "cout_avec_frais", libelle: Affiche::new("Coût, indemnités comprises") },
-];
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
@@ -145,8 +136,8 @@ pub const ROUTES: &[Fiche] = &[
             Champ {
                 nom: "cible",
                 libelle: Affiche::new("Ce qui se vise"),
-                forme: Forme::Choix(CIBLES),
-                sens: "net (indemnités de frais comprises : repas, nuitées, défraiements), net_sans_frais, brut, cout (sans les indemnités) ou cout_avec_frais ; l'acompte reste retiré du net",
+                forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<engagement::viser::Cible>()),
+                sens: "le montant que la paie atteint ; les indemnités de frais sont les repas, nuitées et défraiements, et l'acompte reste retiré du net",
                 avance: false,
             },
             Champ { nom: "montant", libelle: Affiche::new("Montant voulu"), forme: Forme::Nombre, sens: "le montant voulu, en euros", avance: false },
