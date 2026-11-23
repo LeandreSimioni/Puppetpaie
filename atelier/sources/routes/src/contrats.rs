@@ -76,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Faire signer par courriel les contrats et avenants cochés, même imprimés.",
         charge: &ChargeSignature::CHARGE,
         exemple: r#"{"mois":"2026-11","contrats":[{"salarie":"FULLER","debut":"2026-11-27"}]}"#,
-        rend: "phrase (un contrat ou un avenant qu'un courriel a déjà demandé part en rappel, et elle le dit), partis, contrats (les contrats et les avenants partis, tels que le journal les note), avertissements (ceux sans courriel), signatures (compagnie fictive : revenues aussitôt)",
+        rend: "phrase (un contrat ou un avenant qu'un courriel a déjà demandé part en rappel, et elle le dit), titre (contrats, avenants, ou les deux), partis, contrats (les contrats et les avenants partis, tels que le journal les note), avertissements (ceux sans courriel), signatures (compagnie fictive : revenues aussitôt)",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est parti" },
             Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe), ou imprimer" },
@@ -471,11 +471,13 @@ pub(crate) struct Imprimes {
     impression: Impression,
 }
 
-/// Ce que rend `demander-signature` : sa phrase, les adresses servies, les contrats et les avenants partis, ce qui n'est
-/// pas parti (pas de courriel), et, dans une compagnie fictive, les signatures revenues aussitot.
+/// Ce que rend `demander-signature` : sa phrase, le titre de ce qui est parti (des contrats, des avenants, ou les deux),
+/// les adresses servies, les contrats et les avenants partis, ce qui n'est pas parti (pas de courriel), et, dans une
+/// compagnie fictive, les signatures revenues aussitot.
 #[derive(Debug, Serialize)]
 pub(crate) struct SignaturesDemandees {
     phrase: Phrase,
+    titre: &'static str,
     partis: Vec<droit::fiche::Courriel>,
     contrats: Vec<ContratParti>,
     avertissements: Vec<String>,
@@ -842,8 +844,15 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         }
         signatures = Some(releve.dite());
     }
+    let titre = match (n_contrats, n_avenants) {
+        (1, 0) => "Contrat à signer",
+        (_, 0) => "Contrats à signer",
+        (0, 1) => "Avenant à signer",
+        (0, _) => "Avenants à signer",
+        _ => "Contrats et avenants à signer",
+    };
     let ContratsEnvoyes { partis, contrats, avertissements } = r;
-    Ok(SignaturesDemandees { phrase: Phrase::jointes(phrases.into_iter().filter(|p| !p.est_vide()), " "), partis, contrats, avertissements, signatures })
+    Ok(SignaturesDemandees { phrase: Phrase::jointes(phrases.into_iter().filter(|p| !p.est_vide()), " "), titre, partis, contrats, avertissements, signatures })
 }
 
 /// Les avenants, regroupes par salarie.

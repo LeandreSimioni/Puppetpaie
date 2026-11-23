@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Envoyer à chaque salarié ses documents du mois par courriel ; la paie se fige.",
         charge: &ChargeEnvoyerDocuments::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "phrase, partis (les salariés servis), avertissements (ceux sans courriel, la boîte qui envoie)",
+        rend: "phrase, titre (ce qui est parti), partis (les salariés servis), avertissements (ceux sans courriel, la boîte qui envoie)",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est écrit" },
             Refus { classe: Classe::AucunDocument, corriger: "valider un engagement du mois" },
@@ -163,11 +163,12 @@ pub(crate) struct DocumentsImprimes {
     phrases: Vec<String>,
 }
 
-/// Ce que rend `envoyer-documents` : sa phrase, les adresses servies, ce qui n'est pas parti (pas de courriel) et la
-/// boite qui envoie.
+/// Ce que rend `envoyer-documents` : sa phrase, le titre de ce qui est parti, les adresses servies, ce qui n'est pas
+/// parti (pas de courriel) et la boite qui envoie.
 #[derive(Debug, Serialize)]
 pub(crate) struct DocumentsEnvoyes {
     phrase: Phrase,
+    titre: &'static str,
     partis: Vec<droit::fiche::Courriel>,
     avertissements: Vec<String>,
 }
@@ -1198,6 +1199,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     noter(ctx, journal::Ligne::Documents(par_courriel(le_mois, qui, true, &en_liste(&partis, ", "), &reponse, detail(&recus), Some(versions))))?;
     Ok(DocumentsEnvoyes {
         phrase: socle::phrase!("Documents {} envoyés à {} : {}.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
+        titre: "Documents aux salariés",
         partis,
         avertissements,
     })
