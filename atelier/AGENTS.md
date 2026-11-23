@@ -129,6 +129,12 @@ perd rien ») : chaque case, bouton, phrase, condition d'affichage et geste, ave
 la route en dit déjà. Ce que le passage ferait perdre ne se retire ni ne se garde d'office : c'est une question à
 Léandre, une par chose (« on la garde ou pas, et si oui, comment »).
 
+**Quitter sans enregistrer se demande, partout** (Léandre, 23/11/2026 : « ça doit être une règle générale »). Dès
+qu'une case d'un écran porte une saisie qui n'est pas enregistrée, quitter cet écran ouvre la même boîte
+(`demanderSiEnregistrer` : enregistrer, jeter, ou rester) ; rien si l'on n'a rien changé, ou si l'on est revenu à ce
+qui était. C'est le dessinateur qui le tient, depuis les cases qu'il a dessinées et leur valeur à l'ouverture : un
+écran ne l'écrit pas pour lui-même, et un écran qui passe au dessinateur l'a sans rien faire.
+
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
 catalogue joue l'exemple de sa fiche par `moteur route` (`moteur/tests/fichiers/structure.rs`), la relecture du diff à
