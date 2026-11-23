@@ -2115,7 +2115,8 @@ libellé, sa forme, sa place (de base, ou « Avancé » quand la table la dit av
 données, dans la grille de la carte ; la page relit les cases par `lireLesCases` ; ce qu'on
 tape repart à la même route, qui redit les cases, leurs fautes et l'encart : un seul appel. L'écriture reste
 `enregistrer-fiche`. Les trois fiches passent par là, et la case que « Pour démarrer » fait remplir (`case_rendue` de
-`pour-demarrer`). « Avancé » ne s'ouvre que sur un écart, et c'est la route qui le dit (`avance_ouvert`, d'après
+`pour-demarrer`, avec ce qui l'enregistre, `enregistrer` : la route et la fiche, la case partant dans ses
+`changements`). « Avancé » ne s'ouvre que sur un écart, et c'est la route qui le dit (`avance_ouvert`, d'après
 `Champ::ecart`), jamais le dessin d'après une valeur présente. Ce que la route récrit de la saisie, elle le nomme
 (`reecrites`), et la page le montre tel qu'elle le rend : les quinze chiffres d'un NIR collé se répartissent entre le
 numéro et sa clé, le métier choisi remplit l'intitulé, le PCS-ESE, le statut et les classements (`emplois::resoudre`) ; ce

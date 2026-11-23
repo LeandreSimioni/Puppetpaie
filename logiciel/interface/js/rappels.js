@@ -86,27 +86,10 @@ function htmlPoses() {
 const DEMARRAGE_VIDE = { titre: "", note: "", manques: [], dsn: null, poses_titre: null, trouver_dit: "", enregistrer: null, configuration_dit: "" };
 let DEMARRAGE = DEMARRAGE_VIDE;
 
-/* La case qu'une ligne propose, telle que sa fiche la décrit : `{nom, fiche,
- * c}`, ou null quand elle ne se remplit pas ici (un organisme, le barème, le
- * taux AT/MP, un accès : la ligne mène à sa place). Une case de structure se
- * dessine seule, dans sa structure. */
-function caseDuManque(m) {
-  const conf = ETAT.configuration;
-  const nom = ["salarie", "spectacle", "entreprise"].includes(m.onglet) ? m.onglet : null;
-  if (!nom || !m.case) return null;
-  const fiche = nom === "entreprise" ? conf.entreprise
-    : (nom === "salarie" ? conf.salaries : conf.spectacles).find((f) => f.cle === (m.salarie || m.spectacle));
-  if (!fiche) return null;
-  const [racine] = m.case.split(".");
-  // LA CASE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose) : le dessinateur commun la dessine,
-  // comme dans sa fiche (`caseDeRoute`, `modifiable`). Sans elle, la ligne mène à sa place.
-  return m.case_rendue ? { nom, fiche, rendue: m.case_rendue, racine } : null;
-}
-
-/* Le dessin de la case : celui de la fiche. */
-function caseDemarrageHtml(k) {
-  return caseDeRoute(modifiable(k.rendue));
-}
+/* LA CASE D'UNE LIGNE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose, sinon celle de la fiche)
+ * avec ce qui l'enregistre (`enregistrer`) : le dessinateur commun la dessine, comme dans sa fiche (`caseDeRoute`,
+ * `modifiable`). Sans elle (un organisme, le barème, le taux AT/MP, un accès), la ligne mène à sa place. */
+const seRemplitIci = (m) => !!(m.case_rendue && m.enregistrer);
 
 function htmlDemarrage(manques) {
   if (!manques.length && !DEMARRAGE.dsn) return htmlPoses();
@@ -124,8 +107,7 @@ function htmlDemarrage(manques) {
       ${casesDuGeste(g)}</div>`).join("");
   const ligne = (m) => {
     const i = manques.indexOf(m);
-    const k = caseDuManque(m);
-    if (!k) {
+    if (!seRemplitIci(m)) {
       return `<li class="demarrage-ligne">
         <b>${echapper(m.libelle)}</b> ${lien(m)}
         ${pour(m)}
@@ -134,7 +116,7 @@ function htmlDemarrage(manques) {
       </li>`;
     }
     return `<li class="demarrage-ligne" data-demarrage="${i}">
-      <div class="demarrage-case">${caseDemarrageHtml(k)}</div>
+      <div class="demarrage-case">${caseDeRoute(modifiable(m.case_rendue))}</div>
       ${pour(m)}
       ${aEnregistrer(m, i)}
       <div class="actions">${lien(m)}</div>
@@ -185,36 +167,25 @@ function gestesDemarrage(liste) {
   });
 }
 
-/* CE QUE LA LISTE PORTE ET QUI N'EST PAS ENREGISTRÉ : par fiche (l'entreprise,
- * chaque salarié, chaque spectacle), les cases remplies qui disent autre chose que la fiche.
- * Une case de structure part dans sa structure entière, celle de la fiche
- * complétée : le moteur remplace la structure (`enregistrer-fiche`). */
+/* CE QUE LA LISTE PORTE, ÉCRITURE PAR ÉCRITURE : les lignes que la même route enregistre avec la même charge (une
+ * fiche : l'entreprise, un salarié, un spectacle) partent ensemble, chacune sa case dans les `changements` de la charge
+ * (`casesDeLaCharge`, comme la fiche), telle qu'elle la dit ; la route garde ce qui ne change pas. Deux lignes des
+ * parties d'une même case (une structure) en font une : la seconde pose ses parties sur ce que la première a dit. */
 function changementsDemarrage(liste) {
-  const parFiche = new Map();
-  const memes = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  // Une case de structure dont aucune sous-case n'est remplie (`signataire`, `banque`) est vide, comme une case seule.
-  const vide = (v) => v === null || v === undefined || v === "" || (typeof v === "object" && Object.values(v).every(vide));
-  const fondre = (a, b) => {
-    if (!a || typeof a !== "object" || !b || typeof b !== "object") return b;
-    const o = { ...a };
-    Object.entries(b).forEach(([x, v]) => { o[x] = fondre(o[x], v); });
-    return o;
-  };
+  const parEcriture = new Map();
   liste.querySelectorAll("[data-demarrage]").forEach((li) => {
     const m = DEMARRAGE.manques[+li.dataset.demarrage];
-    const k = m && caseDuManque(m);
-    if (!k) return;
-    const sel = `[data-demarrage-liste="${liste.dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"] .demarrage-case`;
-    const lu = lireLesCases(document.querySelector(sel));
-    const v = lu[k.racine];
-    const avant = k.fiche.donnees[k.racine];
-    if (vide(v) || (v === false && !avant) || memes(v, avant)) return;
-    const cle = k.nom + "|" + (k.nom === "entreprise" ? "" : k.fiche.cle);
-    const f = parFiche.get(cle) || { nom: k.nom, ...(k.nom === "entreprise" ? {} : { cle: k.fiche.cle }), donnees: {} };
-    f.donnees[k.racine] = fondre(f.donnees[k.racine] ?? avant, v);
-    parFiche.set(cle, f);
+    if (!m || !seRemplitIci(m)) return;
+    const cle = JSON.stringify(m.enregistrer);
+    const e = parEcriture.get(cle) || { route: m.enregistrer.route, charge: m.enregistrer.charge, donnees: {} };
+    lesCasesLues(li.querySelector(".demarrage-case")).forEach(([c, v]) => {
+      const x = li.querySelector(`.demarrage-case .case[data-cle="${CSS.escape(c)}"] > [data-case]`);
+      const deja = e.donnees[c];
+      e.donnees[c] = deja != null && x.dataset.forme === "parties" ? lireLesParties(x, deja) : v;
+    });
+    parEcriture.set(cle, e);
   });
-  return [...parFiche.values()].map(({ donnees, ...f }) => ({ ...f, ...casesDeLaCharge(donnees) }));
+  return [...parEcriture.values()].map((e) => ({ route: e.route, charge: { ...e.charge, ...casesDeLaCharge(e.donnees) } }));
 }
 /* ENREGISTRER « POUR DÉMARRER » : tout ce que la liste porte, une écriture
  * par fiche (`enregistrer-fiche`), puis chaque geste que le moteur dit de
@@ -230,14 +201,14 @@ async function enregistrerDemarrage(liste) {
   dit.hidden = true;
   let phrase = "";
   try {
-    for (const charge of fiches) {
-      let r = await api("enregistrer-fiche", charge);
+    for (const { route, charge } of fiches) {
+      let r = await api(route, charge);
       if (r.avertissement) {
         const rendre = mettreDeCote();
         const reponse = await demanderDateDEffet(r.avertissement);
         if (rendre) rendre();
         if (!reponse) { if (bouton) bouton.disabled = false; return false; }
-        r = await api("enregistrer-fiche", { ...charge, ...reponse, confirme: true });
+        r = await api(route, { ...charge, ...reponse, confirme: true });
       }
       phrase = r.phrase;
     }

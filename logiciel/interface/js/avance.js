@@ -86,9 +86,11 @@ function partiesDe(val, o) {
 
 /** CE QUE DISENT LES PARTIES de `x` (un élément qui porte `data-valeur`, la valeur telle qu'elle était, et `data-parties`,
  *  les chemins des parties que la route décrit) : la valeur d'avant, chaque partie montrée par-dessus, une partie décrite
- *  mais fermée vidée (elle n'a pas de sens pour ce qu'on saisit) ; une clé que la route ne décrit pas se garde. */
-function lireLesParties(x) {
-  const lu = JSON.parse(x.dataset.valeur || "null") || {};
+ *  mais fermée vidée (elle n'a pas de sens pour ce qu'on saisit) ; une clé que la route ne décrit pas se garde. `sur` :
+ *  la valeur que d'autres cases de la même clé ont déjà dite dans l'écran (« Pour démarrer » pose une ligne par partie
+ *  qui manque), sur laquelle ses parties se posent à la place de la valeur d'avant. */
+function lireLesParties(x, sur) {
+  const lu = sur != null ? JSON.parse(JSON.stringify(sur)) : JSON.parse(x.dataset.valeur || "null") || {};
   const montrees = new Map([...x.querySelectorAll(":scope > [data-partie]")].map((p) => [p.dataset.partie, p]));
   (x.dataset.parties ? x.dataset.parties.split(" ") : []).forEach((k) => {
     const p = montrees.get(k);

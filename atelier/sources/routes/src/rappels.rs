@@ -86,7 +86,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information) et poses_titre ; les mots de la liste : trouver_dit (ce qui ouvre où trouver une valeur), enregistrer (le bouton qui enregistre, quand une ligne a une case ou un geste), configuration_dit",
+        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; enregistrer : la route qui écrit sa case et la part fixe de sa charge, la fiche et sa clé, la case partant dans ses changements, une écriture par fiche ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information) et poses_titre ; les mots de la liste : trouver_dit (ce qui ouvre où trouver une valeur), enregistrer (le bouton qui enregistre, quand une ligne a une case ou un geste), configuration_dit",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -1801,6 +1801,18 @@ struct ManqueVu {
     /// (`fiches::case_a_remplir`) : sa valeur est celle que le moteur propose (`propose`), sinon celle de la fiche.
     #[serde(skip_serializing_if = "Option::is_none")]
     case_rendue: Option<crate::fiches::CaseDeLaFiche>,
+    /// CE QUI ENREGISTRE LA CASE RENDUE : sa route (`enregistrer-fiche`) et la part fixe de sa charge (la fiche et sa
+    /// cle) ; la case part dans ses `changements` (`[{case, valeur}]`, la case sous la cle que la case rendue porte), une
+    /// ecriture par fiche.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enregistrer: Option<EnregistrerLaCase>,
+}
+
+/// La route qui enregistre une case de « Pour démarrer », et la part fixe de sa charge.
+#[derive(Debug, Serialize)]
+struct EnregistrerLaCase {
+    route: Route,
+    charge: crate::redire::ChargeDUneFiche,
 }
 
 /// L'EFFECTIF D'UNE ANNEE, en geste que « Enregistrer » joue, dans la forme que la page dessine (`js/avance.js`) : la
@@ -1834,6 +1846,12 @@ impl ManqueVu {
     /// reprises donnent, et sa phrase. `listes` : celles de la fiche d'un salarie, lues une fois pour toutes les lignes.
     fn de(ctx: &Contexte, listes: &std::cell::OnceCell<crate::fiches::ListesDuSalarie>, mut manque: Manque) -> socle::echec::R<ManqueVu> {
         let proposee = manque.propose.as_ref().and_then(droit::fiche::ValeurDeCase::de);
+        let fiche = match (&manque.spectacle, &manque.salarie, manque.onglet.as_str()) {
+            (Some(s), _, _) => Some(droit::fiche::FicheNommee::Spectacle(s.clone())),
+            (None, Some(s), _) => Some(droit::fiche::FicheNommee::Salarie(s.clone())),
+            (None, None, "entreprise") => Some(droit::fiche::FicheNommee::Entreprise),
+            _ => None,
+        };
         let case_rendue = match (&manque.spectacle, &manque.salarie, manque.onglet.as_str(), &manque.case) {
             (Some(s), _, _, Some(chemin)) => match ctx.spectacles.get(s) {
                 Some(f) => {
@@ -1869,7 +1887,11 @@ impl ManqueVu {
                 phrases: vec![e.phrase],
             })
             .collect();
-        Ok(ManqueVu { manque, a_enregistrer, case_rendue })
+        let enregistrer = match (&case_rendue, fiche) {
+            (Some(_), Some(f)) => Some(EnregistrerLaCase { route: Route::EnregistrerFiche, charge: crate::redire::ChargeDUneFiche::de(&f) }),
+            _ => None,
+        };
+        Ok(ManqueVu { manque, a_enregistrer, case_rendue, enregistrer })
     }
 }
 
