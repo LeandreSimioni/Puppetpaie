@@ -15,8 +15,9 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
 use socle::mois::{Annee, Mois};
-use crate::catalogue::{Acte, Forme, Fiche, Refus, FORME, MANQUE, OPERATION};
-use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, Refus, FORME, MANQUE, OPERATION};
+use crate::declaration::{charge, cle, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::imprevus::GesteDeRoute;
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
 
@@ -47,8 +48,8 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
-    lecture(Route::DossierFormes, "Dire ce que peut porter le dossier d'un salarié : catégories, périodes.", "salaries, categories, periodes, demande (du mot de passe, avant l'envoi)"),
-    lecture(Route::ExportsPeriodes, "Dire ce qui s'exporte : mois, années, états, formats, logiciel comptable.", "mois, annees, etats, formats, logiciel retenu"),
+    lecture(Route::DossierFormes, "Dire ce que peut porter le dossier d'un salarié : catégories, périodes.", "gestes (l'aperçu, l'écrire, et l'envoyer quand une boîte est posée, avec la demande du mot de passe : leurs cases, montrant la dernière année et offrant les salariés), ecran (ce que les cases veulent dire, dit ; le bouton du dossier, dossier_dit), le dossier où il s'écrit"),
+    lecture(Route::ExportsPeriodes, "Dire ce qui s'exporte : mois, années, états, formats, logiciel comptable.", "mois, annees, familles (chacune ses états : leurs questions, les formats et regroupements offerts et proposés, ce que dit le regroupement, la période proposée), logiciel retenu, ecran (les mots des cases et des boutons)"),
     Fiche {
         route: Route::RetenirLogiciel,
         geste: "Retenir le logiciel du comptable, dont les écritures prennent le format.",
@@ -234,72 +235,100 @@ fn annees_de(dispo: &[Mois]) -> Vec<Annee> {
     annees
 }
 
-/// Un salarie que la page propose : sa cle, son nom, s'il est actif, s'il a un courriel.
-#[derive(Debug, Serialize)]
-struct SalariePropose {
-    cle: droit::contexte::IdSalarie,
-    nom: String,
-    actif: bool,
-    email: bool,
+/// Un geste sur le dossier d'un salarie : l'apercu, l'ecrire (`dossier-salarie`), l'envoyer (`dossier-envoyer`, une
+/// boite posee : il exige le mot de passe du logiciel). Leurs cases se saisissent ensemble, une fois chacune ; chaque
+/// geste n'en prend que les siennes.
+type GesteDuDossier = GesteDeRoute<DemandeDeDossier, ValeursDuDossier, ChoixDuDossier>;
+
+/// Ce que les cases du dossier montrent d'abord : la derniere annee qu'il y a matiere a exporter.
+#[derive(Debug, Clone, Default, Serialize)]
+struct ValeursDuDossier {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annee: Option<Annee>,
 }
 
-/// Une categorie a cocher : son nom, et ce qu'elle porte.
-#[derive(Debug, Serialize)]
-struct CategorieProposee {
-    categorie: documents::CategorieDeDocument,
-    quoi: &'static str,
+/// Ce qu'offrent les cases du dossier : les salaries, ceux en activite d'abord, puis les archives (ainsi dits).
+#[derive(Debug, Clone, Default, Serialize)]
+struct ChoixDuDossier {
+    salaries: Vec<crate::ouverture::Choix>,
 }
 
-/// Ce que rend `dossier-formes` : les salaries, les categories a cocher, les mois et les annees, si une boite est posee
-/// (l'envoi), et le dossier ou le dossier s'ecrit.
+/// Ce que l'ecran dit du dossier : ce que ses cases veulent dire (`dit`), et le bouton qui ouvre le dossier ou il
+/// s'ecrit (`dossier_dit`).
+#[derive(Debug, Serialize)]
+struct EcranDuDossier {
+    dit: Vec<&'static str>,
+    dossier_dit: &'static str,
+}
+
+/// Ce que rend `dossier-formes` : sa phrase, les gestes du dossier (leurs cases, ce qu'elles montrent et offrent), ce que
+/// l'ecran en dit, et le dossier ou le dossier s'ecrit.
 #[derive(Debug, Serialize)]
 struct FormesDuDossier {
     phrase: Phrase,
-    salaries: Vec<SalariePropose>,
-    categories: Vec<CategorieProposee>,
-    mois: Vec<Mois>,
-    annees: Vec<Annee>,
-    boite_liee: bool,
-    /// Une boite posee : la demande du mot de passe avant `dossier-envoyer`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    demande: Option<compagnie::demande::DemandeDuMotDePasse>,
+    gestes: Vec<GesteDuDossier>,
+    ecran: EcranDuDossier,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: PathBuf,
 }
 
-/// Les salaries que la page propose.
-fn salaries_de_la_page(ctx: &Contexte) -> Vec<SalariePropose> {
+const APERCU_DU_DOSSIER: Affiche = Affiche::new("Aperçu");
+const ECRIRE_LE_DOSSIER: Affiche = Affiche::new("Écrire le dossier");
+const ENVOYER_LE_DOSSIER: Affiche = Affiche::new("L'envoyer à chaque salarié");
+
+/// Les salaries qu'offrent les cases du dossier : ceux en activite, puis les archives ; chacun par sa cle, sous son nom.
+fn salaries_offerts(ctx: &Contexte) -> Vec<crate::ouverture::Choix> {
     let mut fiches: Vec<(&droit::contexte::IdSalarie, &droit::fiche::FicheSalarie)> = ctx.salaries.iter().collect();
-    fiches.sort_by(|a, b| a.0.cmp(b.0));
+    fiches.sort_by(|a, b| a.1.archivee().cmp(&b.1.archivee()).then(a.0.cmp(b.0)));
     fiches
         .into_iter()
-        .map(|(k, v)| SalariePropose {
-            cle: k.clone(),
-            nom: documents::tableaux_export::qui_souple(v),
-            actif: !v.archivee(),
-            email: v.email.is_some(),
+        .map(|(k, v)| {
+            let nom = documents::tableaux_export::qui_souple(v);
+            crate::ouverture::Choix::de(k.as_str(), if v.archivee() { format!("{} — archivé", nom) } else { nom })
         })
         .collect()
 }
 
-/// Ce que la page propose -- les salaries,
-/// les categories a cocher, les periodes, et si l'envoi est possible.
+/// `dossier-formes` : les gestes du dossier d'un salarie -- l'apercu et l'ecrire, et, une boite posee, l'envoyer --,
+/// leurs cases montrant la derniere annee et offrant les salaries.
 fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
-    let salaries = salaries_de_la_page(ctx);
+    let salaries = salaries_offerts(ctx);
     // `periodes_exportables` : les mois, puis (sans rien en dire) le logiciel du comptable.
     let mois = mois_disponibles(ctx)?;
     let annees = annees_de(&mois);
     etat_logiciel(ctx)?;
-    let categories: Vec<CategorieProposee> = documents::CategorieDeDocument::TOUTES.iter().map(|c| CategorieProposee { categorie: *c, quoi: c.libelle() }).collect();
     let boite_liee = crate::ouverture::boite_liee(ctx)?;
+    let n = salaries.len();
+    let valeurs = ValeursDuDossier { annee: annees.first().cloned() };
+    let choix = ChoixDuDossier { salaries };
+    let periode = [cle!(DemandeDeDossier, salaries), cle!(DemandeDeDossier, mois), cle!(DemandeDeDossier, annee), cle!(DemandeDeDossier, toutes_les_annees), cle!(DemandeDeDossier, categories)];
+    let mut ecrire: Vec<&'static str> = periode.to_vec();
+    ecrire.push(cle!(DemandeDeDossier, ensemble));
+    let mut gestes = vec![
+        GesteDeRoute::avec_cases(Route::DossierSalarie, DemandeDeDossier { apercu: Some(true), ..DemandeDeDossier::default() }, APERCU_DU_DOSSIER, ecrire.clone(), valeurs.clone(), choix.clone()),
+        GesteDeRoute::avec_cases(Route::DossierSalarie, DemandeDeDossier::default(), ECRIRE_LE_DOSSIER, ecrire, valeurs.clone(), choix.clone()),
+    ];
+    if boite_liee {
+        let envoyer = vec![
+            cle!(ChargeDossierEnvoyer, salaries),
+            cle!(ChargeDossierEnvoyer, mois),
+            cle!(ChargeDossierEnvoyer, annee),
+            cle!(ChargeDossierEnvoyer, toutes_les_annees),
+            cle!(ChargeDossierEnvoyer, categories),
+        ];
+        gestes.push(GesteDeRoute::avec_cases(Route::DossierEnvoyer, DemandeDeDossier::default(), ENVOYER_LE_DOSSIER, envoyer, valeurs, choix).exigeant(Some(crate::coffre::demande(&ctx.racine, GESTE_DOSSIER)?)));
+    }
     Ok(FormesDuDossier {
-        phrase: socle::phrase!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(salaries.len(), "salarié", "salariés"), categories.len()),
-        salaries,
-        categories,
-        mois,
-        annees,
-        boite_liee,
-        demande: if boite_liee { Some(crate::coffre::demande(&ctx.racine, GESTE_DOSSIER)?) } else { None },
+        phrase: socle::phrase!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(n, "salarié", "salariés"), documents::CategorieDeDocument::TOUTES.len()),
+        gestes,
+        ecran: EcranDuDossier {
+            dit: vec![
+                "Aucun salarié coché : le dossier de chacun.",
+                "Une période : un mois, une année, ou toutes les années.",
+                "Aucune sorte cochée : toutes. Une seule : un PDF. Plusieurs : un ZIP, un PDF par sorte.",
+            ],
+            dossier_dit: "Ouvrir le dossier",
+        },
         dossier: documents::DossierHorsDuMois::DossiersDeSalaries.sous(&ctx.racine),
     })
 }
@@ -307,11 +336,13 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
 // ------------------------------------------------- le logiciel du comptable
 
 /// Un logiciel du comptable que la page propose : tel que les tables des exports le livrent
-/// (`documents::plan_comptable::tables`), et ce que l'ecran en dit une fois choisi.
+/// (`documents::plan_comptable::tables`), son libelle dans la liste (son nom et son format), et ce que l'ecran en dit une
+/// fois choisi.
 #[derive(Debug, Serialize)]
 struct LogicielPropose {
     #[serde(flatten)]
     livre: documents::plan_comptable::Logiciel,
+    libelle: String,
     dit: String,
 }
 
@@ -335,7 +366,7 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
     // Ce que l'ecran dit de chaque logiciel, une fois choisi.
     let logiciels = livres
         .iter()
-        .map(|l| LogicielPropose { dit: format!("Fichier {} : {}. Retenu pour les prochaines fois.", l.format_lisible, l.pourquoi), livre: l.clone() })
+        .map(|l| LogicielPropose { libelle: format!("{} — {}", l.nom, l.format_lisible), dit: format!("Fichier {} : {}. Retenu pour les prochaines fois.", l.format_lisible, l.pourquoi), livre: l.clone() })
         .collect();
     Ok(LogicielDuComptable { logiciels, logiciel: choix.logiciel, analytique: choix.analytique, controle })
 }
@@ -385,27 +416,121 @@ struct ExportsPossibles {
     phrase: Phrase,
     mois: Vec<Mois>,
     annees: Vec<Annee>,
-    etats: Vec<documents::plan_comptable::EtatLivre>,
-    formats: Vec<documents::plan_comptable::FormatLivre>,
-    regroupements: Vec<documents::plan_comptable::RegroupementLivre>,
+    familles: Vec<FamilleDEtats>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: PathBuf,
     compta: LogicielDuComptable,
     ecran: EcranDesExports,
 }
 
-/// CE QUE L'ECRAN DES EXPORTS DIT : rien a exporter, les regroupements, l'analytique, le format, les coordonnees, le
-/// dossier, les categories du dossier d'un salarie.
+/// Les etats d'une famille (son libelle des tables), dans l'ordre des tables : la page les propose sous elle.
+#[derive(Debug, Serialize)]
+struct FamilleDEtats {
+    libelle: String,
+    etats: Vec<EtatPropose>,
+}
+
+/// Un etat que la compagnie peut exporter, tel que les tables le livrent, et ce que l'ecran en dit : les formats et les
+/// regroupements qu'il offre (`formats_offerts`, `regroupements_offerts`), ceux que ses cases montrent d'abord, ce que
+/// dit son regroupement (`regroupement_dit`), et la periode que son calendrier montre d'abord (`periode_proposee`).
+#[derive(Debug, Serialize)]
+struct EtatPropose {
+    #[serde(flatten)]
+    livre: documents::plan_comptable::EtatLivre,
+    formats_offerts: Vec<crate::ouverture::Choix>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format_propose: Option<FormatDExport>,
+    regroupements_offerts: Vec<crate::ouverture::Choix>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    regroupement_propose: Option<RegroupementDEtat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    regroupement_dit: Option<&'static str>,
+    periode_proposee: PeriodeProposee,
+}
+
+/// La periode que le calendrier d'un etat montre d'abord : la plus recente qu'il admet (le dernier mois, sinon la
+/// derniere annee, sinon toutes les annees), et ce qu'elle dit.
+#[derive(Debug, Serialize)]
+struct PeriodeProposee {
+    quand: documents::plan_comptable::PeriodeDExport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    periode: Option<String>,
+    dit: String,
+}
+
+/// CE QUE L'ECRAN DES EXPORTS DIT : rien a exporter, les mots de ses cases et de ses boutons, l'analytique, le format,
+/// les coordonnees, le dossier.
 #[derive(Debug, Serialize)]
 struct EcranDesExports {
     vide: Option<&'static str>,
-    regroupement_livre: &'static str,
-    regroupement: &'static str,
+    quoi: &'static str,
+    lequel: &'static str,
+    choisir: &'static str,
+    quand: &'static str,
+    tout: &'static str,
+    toutes_dit: &'static str,
+    regroupement_libelle: &'static str,
+    logiciel_libelle: &'static str,
+    aucun_logiciel: &'static str,
+    analytique_libelle: &'static str,
+    format_libelle: &'static str,
+    coordonnees_libelle: &'static str,
+    apercu: &'static str,
+    dossier_dit: &'static str,
+    raccourcir: &'static str,
     analytique: &'static str,
     format_libre: &'static str,
     coordonnees: &'static str,
     dossier: String,
-    categories: &'static str,
+}
+
+/// Ce que dit le regroupement du livre de paie : ses trois regroupements disent chacun a qui il sert.
+const REGROUPEMENT_LIVRE: &str = "Par salarié, ce qu'on envoie au comptable ; par mois, ce qu'on rapproche de la banque ; par spectacle, ce qui justifie une subvention. Les trois disent la même chose, et le total ne bouge pas.";
+/// Ce que dit le regroupement d'un autre etat.
+const REGROUPEMENT: &str = "Le total ne bouge pas : seule la répartition des lignes change.";
+/// Ce que dit la periode de toutes les annees.
+const TOUTES_LES_ANNEES_DIT: &str = "toutes les années";
+
+/// L'etat `e`, tel que l'ecran le propose (`EtatPropose`), aux mois `mois` qu'il y a matiere a exporter, dans l'ordre.
+fn etat_propose(e: documents::plan_comptable::EtatLivre, mois: &[Mois]) -> EtatPropose {
+    use documents::plan_comptable::PeriodeDExport as P;
+    let t = tables();
+    let formats_offerts = t.formats.iter().filter(|f| e.formats.contains(&f.format)).map(|f| crate::ouverture::Choix::de(f.format, &f.quoi)).collect();
+    let regroupements_offerts = e
+        .regroupements
+        .iter()
+        .filter_map(|r| t.regroupements.iter().find(|x| x.regroupement == *r))
+        .map(|r| crate::ouverture::Choix::de(r.regroupement, &r.quoi))
+        .collect();
+    let a_des_regroupements = e.questions.iter().any(|q| q == "regroupement");
+    let regroupement_dit = a_des_regroupements.then_some(if e.etat == EtatDExport::LivreDePaie { REGROUPEMENT_LIVRE } else { REGROUPEMENT });
+    let dernier = mois.last().copied();
+    let periode_proposee = match dernier {
+        Some(m) if e.periodes.contains(&P::Mois) => PeriodeProposee { quand: P::Mois, periode: Some(m.to_string()), dit: m.libelle(socle::mois::Graphie::Accentuee) },
+        Some(m) if e.periodes.contains(&P::Annee) => PeriodeProposee { quand: P::Annee, periode: Some(m.annee().to_string()), dit: m.annee().to_string() },
+        _ => PeriodeProposee { quand: P::Toutes, periode: None, dit: TOUTES_LES_ANNEES_DIT.to_string() },
+    };
+    EtatPropose {
+        formats_offerts,
+        format_propose: e.formats.contains(&FormatDExport::Csv).then_some(FormatDExport::Csv),
+        regroupements_offerts,
+        regroupement_propose: e.regroupements.first().copied(),
+        regroupement_dit,
+        periode_proposee,
+        livre: e,
+    }
+}
+
+/// Les etats ranges par famille, chacune a la place de son premier etat.
+fn familles_de(etats: Vec<EtatPropose>) -> Vec<FamilleDEtats> {
+    let mut familles: Vec<FamilleDEtats> = Vec::new();
+    for e in etats {
+        match familles.iter_mut().find(|f| f.libelle == e.livre.famille) {
+            Some(f) => f.etats.push(e),
+            None => familles.push(FamilleDEtats { libelle: e.livre.famille.clone(), etats: vec![e] }),
+        }
+    }
+    familles
 }
 
 /// Les mois et les annees qu'il y a matiere a exporter, les etats, les formats, et le logiciel du comptable.
@@ -422,25 +547,36 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
         .is_some_and(|p| p.ouverts());
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
-    let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();
+    let etats: Vec<EtatPropose> = t.etats().filter(|(e, piece)| etat_concerne(ctx, e.etat, *piece, permanents, taxe_due)).map(|(e, _)| etat_propose(e.clone(), &mois)).collect();
+    let n = etats.len();
     let dossier = documents::DossierDeTravail::Exports.sous(&ctx.racine);
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
-        regroupement_livre: "Par salarié, ce qu'on envoie au comptable ; par mois, ce qu'on rapproche de la banque ; par spectacle, ce qui justifie une subvention. Les trois disent la même chose, et le total ne bouge pas.",
-        regroupement: "Le total ne bouge pas : seule la répartition des lignes change.",
+        quoi: "Quoi",
+        lequel: "Lequel",
+        choisir: "— choisir —",
+        quand: "Quand",
+        tout: "Tout",
+        toutes_dit: TOUTES_LES_ANNEES_DIT,
+        regroupement_libelle: "Regroupement",
+        logiciel_libelle: "Logiciel du comptable",
+        aucun_logiciel: "Aucun",
+        analytique_libelle: "Analytique par spectacle",
+        format_libelle: "Format",
+        coordonnees_libelle: "Coordonnées des salariés",
+        apercu: "Aperçu",
+        dossier_dit: "Ouvrir le dossier",
+        raccourcir: "Les raccourcir",
         analytique: "Les salaires bruts ventilés par spectacle. Le code de chaque spectacle se règle sur sa fiche : Configuration › Spectacles, case « Code analytique ». Vide, il est tiré du titre.",
         format_libre: "Le format se choisit ci-dessous.",
         coordonnees: "Le NIR, la naissance, l'adresse. Sans la case, rien de tout cela ne sort ; un fichier qui les porte ne s'envoie qu'à qui en a besoin.",
         dossier: format!("{} — et nulle part ailleurs : un export emporte des salaires", dossier.display()),
-        categories: "Une seule case : un PDF. Plusieurs : un ZIP, un PDF par catégorie.",
     };
     Ok(ExportsPossibles {
-        phrase: socle::phrase!("Exports : {} ; mois payés : {} ; années : {}.", socle::ecran::compte(etats.len(), "état", "états"), mois.len(), annees.len()),
+        phrase: socle::phrase!("Exports : {} ; mois payés : {} ; années : {}.", socle::ecran::compte(n, "état", "états"), mois.len(), annees.len()),
         mois,
         annees,
-        etats,
-        formats: t.formats.clone(),
-        regroupements: t.regroupements.clone(),
+        familles: familles_de(etats),
         dossier,
         compta: etat_logiciel(ctx)?,
         ecran,

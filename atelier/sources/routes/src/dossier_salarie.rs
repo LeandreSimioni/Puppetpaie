@@ -89,15 +89,23 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
 charge! {
     /// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
     /// chacun), UNE periode (le mois, l'annee, ou toutes les annees), ce qu'il porte (rien : tout), un seul fichier pour
-    /// tous (`ensemble`), et `apercu` pour dire ce qui s'ecrirait sans rien ecrire.
-    #[derive(Debug, Clone, Default)]
+    /// tous (`ensemble`), et `apercu` pour dire ce qui s'ecrirait sans rien ecrire. Les gestes de `dossier-formes` la
+    /// portent (`archives::GesteDuDossier`) : ce qu'elle ne dit pas ne s'ecrit pas.
+    #[derive(Debug, Clone, Default, Serialize)]
     pub(crate) struct DemandeDeDossier {
-        pub(crate) salaries: Option<Vec<IdSalarie>> = dit("Salariés", "les clés des salariés"),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) salaries: Option<Vec<IdSalarie>> = dit("Salariés", "les clés des salariés ; aucun : chacun"),
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) mois: Option<Mois> = legendes::MOIS,
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) annee: Option<socle::mois::Annee> = crate::historique::ANNEE,
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) toutes_les_annees: Option<bool> = crate::archives::TOUTES_LES_ANNEES,
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) categories: Option<Vec<CategorieDeDocument>> = dit("Sortes de documents", "les sortes de documents (bulletins, contrats…) ; toutes par défaut").avancee(),
-        pub(crate) ensemble: Option<bool> = dit("Un seul fichier", "vrai : un seul fichier pour tous").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) ensemble: Option<bool> = dit("Un seul fichier, qui ne s'envoie pas", "vrai : un seul fichier pour tous ; il ne s'envoie à personne").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) apercu: Option<bool> = dit("Aperçu seulement", "vrai : dire ce qui serait assemblé, sans rien écrire").avancee(),
     }
 }
@@ -156,12 +164,38 @@ pub(crate) struct DossierRendu {
     phrases: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     envoi: Option<DossierEnvoye>,
+    titre: String,
+    lignes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ecrit_dit: Option<String>,
 }
 
 impl DossierRendu {
+    /// Le dossier rendu, et ce que l'ecran en dit : son titre, une ligne par salarie (ses pages, par categorie), les
+    /// fichiers ecrits (`ecrit_dit`, s'il y en a).
     pub(crate) fn de(d: Dossier, phrase: Phrase, envoi: Option<DossierEnvoye>) -> DossierRendu {
         let phrases = d.avertissements.iter().chain(&d.refus).cloned().collect();
+        let lignes = d
+            .salaries
+            .iter()
+            .map(|s| {
+                let pages: Vec<String> = d
+                    .pages
+                    .get(s.as_str())
+                    .map(|p| CategorieDeDocument::TOUTES.iter().filter_map(|c| p.get(c.texte()).map(|n| format!("{} : {} p.", c.libelle(), n))).collect())
+                    .unwrap_or_default();
+                if pages.is_empty() {
+                    format!("{} : aucune page", s.as_str())
+                } else {
+                    format!("{} : {}", s.as_str(), pages.join(" · "))
+                }
+            })
+            .collect();
+        let ecrit_dit = (!d.fichiers.is_empty()).then(|| format!("Écrit : {}", d.fichiers.iter().map(|f| f.display().to_string()).collect::<Vec<_>>().join(", ")));
         DossierRendu {
+            titre: format!("Dossier — {}", d.periode),
+            lignes,
+            ecrit_dit,
             phrase,
             salaries: d.salaries,
             categories: d.categories,
