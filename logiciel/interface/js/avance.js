@@ -111,6 +111,38 @@ function casesACocher(v, choix) {
           <input type="checkbox" value="${echapper(c.code)}"${(v || []).includes(c.code) ? " checked" : ""}> ${echapper(c.libelle)}</label>`).join("")}</span>`;
 }
 
+/** LE CALENDRIER DES PÉRIODES : les périodes que la route offre (`choix` : code, libellé, et pour une année et ses mois
+ *  le groupe de l'année) ; toutes les années en tête, puis une ligne par année, l'année et ses douze mois. Une période
+ *  que la route n'offre pas ne se clique pas. La case porte le code choisi (`data-valeur`), et son libellé dessous. */
+function calendrierDesPeriodes(v, offertes) {
+  const par = new Map(offertes.map((c) => [c.code, c]));
+  const toutes = offertes.filter((c) => c.groupe == null);
+  const annees = [...new Set(offertes.filter((c) => c.groupe != null).map((c) => c.groupe))];
+  const bouton = (code, texte, classe, tout) => {
+    const c = par.get(code);
+    return `<button type="button"${classe ? ` class="${classe}"` : ""}${tout ? " data-tout" : ""}${c
+      ? ` data-periode="${echapper(code)}" title="${echapper(c.libelle)}"` : " disabled"}>${echapper(texte)}</button>`;
+  };
+  return `<span class="calendrier" data-case data-valeur="${echapper(v == null ? "" : String(v))}">
+    ${toutes.map((c) => `<span class="rangee">${bouton(c.code, c.libelle, "", true)}</span>`).join("")}
+    ${annees.map((a) => `<span class="rangee">${bouton(a, a, "an")}${
+      MOIS_ABR.map((n, i) => bouton(`${a}-${String(i + 1).padStart(2, "0")}`, n)).join("")}</span>`).join("")}
+    <small class="case-dit" data-periode-dit></small></span>`;
+}
+
+/** Marque dans le calendrier `x` la période choisie (une année : ses mois aussi ; toutes les années : tout), et dit son
+ *  libellé. */
+function marquerLaPeriode(x) {
+  const v = x.dataset.valeur;
+  const choisi = v ? x.querySelector(`button[data-periode="${CSS.escape(v)}"]`) : null;
+  const tout = !!choisi && choisi.hasAttribute("data-tout");
+  x.querySelectorAll("button[data-periode]").forEach((b) => {
+    const p = b.dataset.periode;
+    b.classList.toggle("pris", tout || p === v || (!!v && p.startsWith(v + "-")));
+  });
+  x.querySelector("[data-periode-dit]").textContent = choisi ? choisi.title : "";
+}
+
 /** LA TABLE : à chaque forme, sa case (`html`, ce qu'elle montre de `v` ; `o.choix` : ce qu'un choix offre, `o.unite` :
  *  l'unité d'une quantité, `o.prerempli` : ce que le moteur prend pour elle vide, `o.parties` : les parties d'une valeur
  *  faite de parties) et sa lecture (`lire`, la valeur que la route lit ; `null` : une case vide). Chaque case porte
@@ -171,9 +203,12 @@ const CASES = {
   // Plusieurs valeurs d'une liste fermée : une case à cocher par choix, son libellé à côté ; les codes cochés, dans
   // l'ordre de la liste.
   plusieurs_choix: {
-    html: (v, o) => casesACocher(v, o.choix || []),
+    html: (v, o) => casesACocher(v, o.choix || []).replace(/<\/span>$/,
+      `<button type="button" class="lien" data-tout-cocher>${aideDe("tout_cocher")}</button></span>`),
     lire: (x) => [...x.querySelectorAll("input:checked")].map((c) => c.value),
   },
+  // UNE PÉRIODE : le calendrier des périodes (`calendrierDesPeriodes`), d'un clic ; la case porte le code choisi.
+  periode: { html: (v, o) => calendrierDesPeriodes(v, o.choix || []), lire: (x) => x.dataset.valeur || null },
   // Un choix vide que le moteur pré-remplit (`o.prerempli` : le métier que la paie applique) montre ce qu'il prend dans
   // sa case vide ; choisir une valeur de la liste l'écrit, celle qui est montrée comprise ; le vide n'écrit aucune valeur : la carte n'en dit pas, et le pré-rempli se montre.
   choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix, o.prerempli)}</select>`, lire: (x) => x.value || null },
@@ -307,6 +342,26 @@ function brancherLesCases(bloc, o = {}) {
     };
   });
   bloc.querySelectorAll(".case-html").forEach((x) => { if (x.dataset.rendu == null) x.dataset.rendu = x.innerHTML; });
+  // Tout cocher d'une case à plusieurs choix, ou tout décocher quand tout l'est déjà.
+  bloc.querySelectorAll("[data-tout-cocher]").forEach((b) => {
+    b.onclick = () => {
+      const cases = [...b.parentElement.querySelectorAll('input[type="checkbox"]')];
+      const cocher = cases.some((c) => !c.checked);
+      cases.forEach((c) => { c.checked = cocher; });
+      b.parentElement.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+  });
+  // Une période se choisit d'un clic dans son calendrier.
+  bloc.querySelectorAll('[data-forme="periode"]').forEach((x) => {
+    x.querySelectorAll("button[data-periode]").forEach((b) => {
+      b.onclick = () => {
+        x.dataset.valeur = b.dataset.periode;
+        marquerLaPeriode(x);
+        x.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+    });
+    marquerLaPeriode(x);
+  });
   // Un fichier choisi se lit en base64 (sans l'en-tête de l'adresse data:) ; le moteur reconnaît son format à ses
   // premiers octets, pas à son extension.
   bloc.querySelectorAll('input[type="file"][data-case]').forEach((x) => {
@@ -503,7 +558,7 @@ function caseDeRoute(c) {
   // Des choix que la route dit en boutons à cocher (`boutons`) se cochent.
   const forme = c.boutons && c.choix ? "boutons" : c.forme;
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
-  const balise = ["parties", "rangees", "html", "boutons"].includes(forme) ? "div" : "label";
+  const balise = ["parties", "rangees", "html", "boutons", "periode", "plusieurs_choix"].includes(forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
     ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis, obligatoire: c.obligatoire })}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${

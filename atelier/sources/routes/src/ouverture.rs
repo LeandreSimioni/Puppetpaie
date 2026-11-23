@@ -104,6 +104,7 @@ const AIDES: &[(&str, &str)] = &[
     ("dater_depuis", "À partir du"),
     ("dater_note", "ajouter une note"),
     ("dater_motif", "motif"),
+    ("tout_cocher", "tout cocher / tout décocher"),
     ("valeur_vide", "vide"),
     ("valeur_effacee", "effacé"),
     ("refus_titre", "Enregistrement refusé"),

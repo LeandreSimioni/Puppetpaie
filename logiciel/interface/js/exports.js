@@ -26,7 +26,7 @@ async function dessinerExports() {
   try { EXPORTS = await api("exports-periodes"); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
   const p = EXPORTS;
-  if (!p.mois.length) {
+  if (p.ecran.vide) {
     cible.innerHTML = `<p class="discret">${echapper(p.ecran.vide)}</p>`;
     document.getElementById("exports-resultat").innerHTML = "";
     return;
@@ -153,11 +153,8 @@ function dessinerQuestions(opt) {
   document.getElementById("exports-resultat").innerHTML = "";
   document.getElementById("x-suite").innerHTML = `
     <div class="champs">
-      ${q.has("periode") ? `<div class="champ pleine">
-        <label>${echapper(e.quand)} <span class="discret" id="x-quand-dit"></span></label>
-        <input type="hidden" id="x-quand"><input type="hidden" id="x-periode">
-        <div class="calendrier" id="x-calendrier"></div>
-      </div>` : ""}
+      ${q.has("periode") ? `<div class="champ pleine" id="x-periode">${caseDeRoute({ cle: "periode", libelle: e.quand,
+        forme: "periode", valeur: forme.periode_proposee, choix: forme.periodes_offertes })}</div>` : ""}
       ${q.has("regroupement") ? `<div class="champ">
         <label for="x-par">${echapper(e.regroupement_libelle)}</label>
         <select id="x-par">
@@ -197,7 +194,11 @@ function dessinerQuestions(opt) {
       <button class="primaire" id="x-ecrire">${echapper(forme.bouton)}</button>
       <button class="lien" id="x-dossier" title="${echapper(e.dossier)}">${echapper(e.dossier_dit)}</button>
     </div>`;
-  if (q.has("periode")) dessinerCalendrier(forme.periodes, forme.periode_proposee);
+  if (q.has("periode")) {
+    const periode = document.getElementById("x-periode");
+    brancherLesCases(periode);
+    periode.addEventListener("change", () => { document.getElementById("exports-resultat").innerHTML = ""; });
+  }
   if (q.has("logiciel")) {
     const retenir = async () => {
       document.getElementById("exports-resultat").innerHTML = "";
@@ -294,54 +295,19 @@ async function ouvrirCourts(format, phrase) {
   };
 }
 
-/** LE CALENDRIER DES EXPORTS. Une ligne par année,
- *  ses douze mois ; on clique une année, un mois, ou « Tout ». Seuls les
- *  mois que des engagements touchent se cliquent, et ce que l'état admet (`periodes`,
- *  dit par le moteur) : un état annuel n'offre pas les mois. Le moteur prend
- *  UNE période ; le choix se range dans `x-quand` / `x-periode`. D'abord, celle
- *  que le moteur propose (`propose`). */
-function dessinerCalendrier(periodes, propose) {
-  const cal = document.getElementById("x-calendrier");
-  const dispo = new Set(EXPORTS.mois);
-  const annees = EXPORTS.annees.map(String);
-  const peutMois = periodes.includes("mois");
-  const peutAn = periodes.includes("annee");
-  cal.innerHTML = `
-    ${periodes.includes("toutes") ? `<div class="rangee"><button type="button" data-quand="toutes" data-periode="" data-dit="${
-      echapper(EXPORTS.ecran.toutes_dit)}">${echapper(EXPORTS.ecran.tout)}</button></div>` : ""}
-    ${annees.map((a) => `<div class="rangee">
-      <button type="button" class="an" data-quand="annee" data-periode="${a}" data-dit="${a}"${peutAn ? "" : " disabled"}>${a}</button>
-      ${MOIS_ABR.map((n, i) => {
-        const m = `${a}-${String(i + 1).padStart(2, "0")}`;
-        const ok = peutMois && dispo.has(m);
-        return `<button type="button" data-quand="mois" data-periode="${m}" data-dit="${echapper(moisEnClair(m))}"${ok ? "" : " disabled"}
-          title="${echapper(moisEnClair(m))}">${n}</button>`;
-      }).join("")}
-    </div>`).join("")}`;
-  const choisir = (quand, periode, dit) => {
-    document.getElementById("x-quand").value = quand;
-    document.getElementById("x-periode").value = periode;
-    cal.querySelectorAll("button").forEach((b) => {
-      const d = b.dataset;
-      const pris = quand === "toutes" ? d.quand === "toutes" || (d.quand === "mois" && !b.disabled)
-        : quand === "annee" ? (d.quand === "annee" && d.periode === periode) || (d.quand === "mois" && d.periode.startsWith(periode + "-") && dispo.has(d.periode))
-        : d.quand === "mois" && d.periode === periode;
-      b.classList.toggle("pris", !!pris);
-    });
-    document.getElementById("x-quand-dit").textContent = dit ? "— " + dit : "";
-    document.getElementById("exports-resultat").innerHTML = "";
-  };
-  cal.querySelectorAll("button").forEach((b) => {
-    b.onclick = () => choisir(b.dataset.quand, b.dataset.periode, b.dataset.dit);
-  });
-  choisir(propose.quand, propose.periode || "", propose.dit);
+/** `exporter` prend encore la période en trois champs (`mois`, `annee`, `toutes_les_annees`) : le code choisi dans le
+ *  calendrier (`AAAA-MM`, `AAAA`, ou celui de toutes les années) va dans le sien. */
+function periodeEnTrois(code) {
+  if (/^\d{4}-\d{2}$/.test(code)) return { mois: code };
+  if (/^\d{4}$/.test(code)) return { annee: Number(code) };
+  return { toutes_les_annees: true };
 }
 
 async function lancerExport(apercu) {
   // Une case absente ou vide n'est pas dite : elle ne part pas.
   const val = (id) => { const e = document.getElementById(id); return e && e.value !== "" ? e.value : undefined; };
-  const quand = val("x-quand");
-  const periode = val("x-periode");
+  const casePeriode = document.querySelector('#x-periode .case[data-cle="periode"] > [data-case]');
+  const periode = casePeriode ? lireLaCase(casePeriode) : null;
   const coord = document.getElementById("x-coordonnees");
   const charge = {
     etat: val("x-etat"),
@@ -357,9 +323,7 @@ async function lancerExport(apercu) {
     charge.analytique = !champ.classList.contains("cachee")
       && document.getElementById("x-analytique").checked;
   }
-  if (quand === "mois") charge.mois = periode;
-  else if (quand === "annee") charge.annee = Number(periode);
-  else charge.toutes_les_annees = true;
+  if (periode) Object.assign(charge, periodeEnTrois(periode));
   const cible = document.getElementById("exports-resultat");
   cible.innerHTML = `<p class="discret">…</p>`;
   let r;
