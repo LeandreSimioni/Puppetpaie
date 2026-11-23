@@ -242,26 +242,31 @@ function fermerMenuImprevu() {
   if (MENU_IMPREVU) { MENU_IMPREVU.remove(); MENU_IMPREVU = null; }
 }
 
-/** Le petit menu de la porte, ancré sous le bouton. `ou` : la carte, ou `{salarie}` depuis le dossier du salarié. */
-function menuImprevu(ancre, ou) {
+/* Ce que chaque choix de la porte ouvre : la boîte de la route qui l'enregistre (son `code`, rendu par `imprevus`). */
+const BOITES_DE_LA_PORTE = { "arret-enregistrer": (ou) => boiteArret(ou), "suspension-enregistrer": (ou) => boiteAbsence(ou) };
+
+/** Le petit menu de la porte, ancré sous le bouton : ses choix sont ceux que `imprevus` rend (`porte`). `ou` : la carte,
+ *  ou `{salarie}` depuis le dossier du salarié. */
+async function menuImprevu(ancre, ou) {
   fermerMenuImprevu();
+  let n;
+  try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
   const rupture = ou.div ? ruptureOuverte(ou.div) : null;
   const menu = document.createElement("div");
   menu.className = "menu-imprevu";
   menu.setAttribute("role", "menu");
   menu.innerHTML = `
-    <button type="button" data-choix="arret">Un arrêt de travail
-      <span class="discret">maladie, accident, maternité</span></button>
-    <button type="button" data-choix="absence">Une absence
-      <span class="discret">congé parental, sans solde</span></button>
+    ${n.porte.map((c) => `<button type="button" data-choix="${echapper(c.code)}">${echapper(c.libelle)}
+      <span class="discret">${echapper(c.dit)}</span></button>`).join("")}
     ${rupture ? `<button type="button" data-choix="rupture">${echapper(rupture)}</button>` : ""}`;
   document.body.appendChild(menu);
   const r = ancre.getBoundingClientRect();
   menu.style.top = `${window.scrollY + r.bottom + 4}px`;
   menu.style.left = `${Math.max(8, window.scrollX + r.right - menu.offsetWidth)}px`;
   MENU_IMPREVU = menu;
-  menu.querySelector('[data-choix="arret"]').onclick = () => { fermerMenuImprevu(); boiteArret(ou); };
-  menu.querySelector('[data-choix="absence"]').onclick = () => { fermerMenuImprevu(); boiteAbsence(ou); };
+  n.porte.forEach((c) => {
+    menu.querySelector(`[data-choix="${c.code}"]`).onclick = () => { fermerMenuImprevu(); BOITES_DE_LA_PORTE[c.code](ou); };
+  });
   const r2 = menu.querySelector('[data-choix="rupture"]');
   if (r2) r2.onclick = () => { fermerMenuImprevu(); ouvrirLaFin(ou.div); };
   setTimeout(() => {

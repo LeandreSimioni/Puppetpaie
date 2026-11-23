@@ -85,7 +85,7 @@ const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 pub const ROUTES: &[Fiche] = &[
     fiche(Route::Imprevus, "Lire les imprévus d'un mois ou d'un salarié, et ce qu'on peut en saisir.",
         &ChargeImprevus::CHARGE,
-        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures ; pour un mois, dus et dus_titre : ce qui est dû de ses arrêts, le plus pressé d'abord (rang), chaque obligation avec qui et ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
+        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures, porte (ce qui s'ouvre pour un salarié : chaque choix, la route qui l'enregistre en code, son libellé et ce qu'il couvre) ; pour un mois, dus et dus_titre : ce qui est dû de ses arrêts, le plus pressé d'abord (rang), chaque obligation avec qui et ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
     fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &SansCharge::CHARGE, "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
     fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &ChargeMois::CHARGE,
         r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où) ; dus et dus_titre : celles qui sont dues, dans leur rang (rang), une fin due avec ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
@@ -374,7 +374,17 @@ struct ReponseImprevus {
     motifs_arret: Vec<CodeDuBloc60<MotifDArret>>,
     motifs_reprise: Vec<CodeDuBloc60<MotifDeReprise>>,
     motifs_suspension: Vec<MotifSuspension>,
+    porte: Vec<crate::ouverture::Choix>,
     phrases: Vec<String>,
+}
+
+/// LA PORTE D'UN IMPREVU, sur la carte d'un engagement et dans le dossier d'un salarie : ce qui s'y ouvre, chaque choix
+/// par la route qui l'enregistre (son code), son libelle et ce qu'il couvre (`dit`).
+fn porte() -> Vec<crate::ouverture::Choix> {
+    vec![
+        crate::ouverture::Choix::de(Route::ArretEnregistrer.nom(), "Un arrêt de travail").disant(Some("maladie, accident, maternité".to_string())),
+        crate::ouverture::Choix::de(Route::SuspensionEnregistrer.nom(), "Une absence").disant(Some("congé parental, sans solde".to_string())),
+    ]
 }
 
 /// `arrets` : tous les arrets resumes, ceux qui restent a signaler, et les nomenclatures du bloc 60.
@@ -1549,6 +1559,7 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
         motifs_arret: n.motifs_arret.saisissables(),
         motifs_reprise: n.motifs_reprise.saisissables(),
         motifs_suspension: motifs_de_suspension()?,
+        porte: porte(),
     })
 }
 
