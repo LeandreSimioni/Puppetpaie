@@ -4,7 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, FORME, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Place, Refus, FORME, MANQUE, OPERATION};
+use crate::declaration::{charge, cle, dit, Legende};
 use crate::catalogue::Route;
 use crate::ecran::{EcranRendu, RangDeLEcran};
 use crate::Encart;
@@ -19,7 +20,7 @@ use socle::grandeurs::Octets;
 use documents::SorteDImage;
 use fabrique_pdf::alleger::FormatDImage;
 
-const QUOI_IDENTITE: Champ = Champ { nom: "quoi", libelle: Affiche::new("Signature, cachet ou logo"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<documents::SorteDImage>()), sens: "l'image de l'identité de la compagnie", avance: false };
+const QUOI_IDENTITE: Legende = dit("Signature, cachet ou logo", "l'image de l'identité de la compagnie");
 
 /// Les types de media d'une image qui se pose : ceux que le logiciel reconnait (`FormatDImage`).
 const IMAGES_ADMISES: &[&str] = &[FormatDImage::Png.mime(), FormatDImage::Jpeg.mime(), FormatDImage::Svg.mime()];
@@ -46,7 +47,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IdentiteImage,
         geste: "Rendre l'image de la signature, du tampon ou du logo.",
-        charge: &[QUOI_IDENTITE],
+        charge: &ChargeQuoi::CHARGE,
         exemple: r#"{"quoi":"cachet"}"#,
         rend: "phrase, media (son type), image (en base64)",
         refus: &[OPERATION, FORME],
@@ -58,11 +59,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::PoserIdentite,
         geste: "Poser la signature, le cachet ou le logo (une image PNG, JPEG ou SVG).",
-        charge: &[
-            QUOI_IDENTITE,
-            Champ { nom: "contenu", libelle: Affiche::new("Image"), forme: Forme::Fichier(IMAGES_ADMISES), sens: "l'image en base64 (une adresse data: aussi)", avance: false },
-            Champ { nom: "poids", libelle: Affiche::new("Poids visé en Ko"), forme: Forme::Nombre, sens: "le poids visé de l'image dans chaque document, en Ko (le geste de la route identite en propose un)", avance: false },
-        ],
+        charge: &ChargePoser::CHARGE,
         exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","poids":20}"#,
         rend: IDENTITE_REND,
         refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "une image lisible (PNG, JPEG, SVG), de 2 Mo au plus" }, FORME, MANQUE],
@@ -74,7 +71,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::RetirerIdentite,
         geste: "Retirer la signature, le cachet ou le logo posé.",
-        charge: &[QUOI_IDENTITE],
+        charge: &ChargeQuoi::CHARGE,
         exemple: r#"{"quoi":"logo"}"#,
         rend: IDENTITE_REND,
         refus: &[OPERATION, MANQUE],
@@ -138,23 +135,25 @@ struct ValeursDeLaPose {
     poids: Option<Octets>,
 }
 
-/// La charge de `poser-identite` : quoi, l'image en base64 (une adresse data: aussi), et le poids vise, lu en Ko tapes
-/// (« 20,5 »).
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargePoser {
-    quoi: String,
-    contenu: String,
-    #[serde(deserialize_with = "Octets::ko")]
-    poids: Octets,
+charge! {
+    /// La charge de `poser-identite` : quoi, l'image en base64 (une adresse data: aussi), et le poids vise, lu en Ko tapes
+    /// (« 20,5 »).
+    #[derive(Debug, Clone)]
+    struct ChargePoser {
+        quoi: String = QUOI_IDENTITE,
+        contenu: String = dit("Image", "l'image en base64 (une adresse data: aussi)").fichier(IMAGES_ADMISES),
+        #[serde(deserialize_with = "Octets::ko")]
+        poids: Octets = dit("Poids visé en Ko", "le poids visé de l'image dans chaque document, en Ko (le geste de la route identite en propose un)"),
+    }
 }
 
-/// La charge de `retirer-identite` et de `identite-image`, et ce qui designe une image aux gestes de l'ecran : quoi. La
-/// fenetre la lit aussi, pour servir l'image a la page (`interface::Fenetre::identite`).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeQuoi {
-    pub quoi: String,
+charge! {
+    /// La charge de `retirer-identite` et de `identite-image`, et ce qui designe une image aux gestes de l'ecran : quoi. La
+    /// fenetre la lit aussi, pour servir l'image a la page (`interface::Fenetre::identite`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub struct ChargeQuoi {
+        pub quoi: String = QUOI_IDENTITE,
+    }
 }
 
 /// Ce que rend `identite-image` : la phrase, le type de media de l'image et ses octets en base64. La fenetre le lit
@@ -391,7 +390,7 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
             gestes.push(GesteDeRoute::avec_cases(Route::RetirerIdentite, designe(), retirer, Vec::new(), sans_valeur(), super::SansCharge {}));
         }
         gestes.push(
-            GesteDeRoute::avec_cases(Route::PoserIdentite, designe(), if e.pose { MODIFIER } else { IMPORTER }, vec!["contenu", "poids"], ValeursDeLaPose { poids: Some(POIDS_VISE) }, super::SansCharge {})
+            GesteDeRoute::avec_cases(Route::PoserIdentite, designe(), if e.pose { MODIFIER } else { IMPORTER }, vec![cle!(ChargePoser, contenu), cle!(ChargePoser, poids)], ValeursDeLaPose { poids: Some(POIDS_VISE) }, super::SansCharge {})
                 .disant(vec![INTRO.to_string()]),
         );
         RangDeLEcran { titre, dit: vec![dit], pastille: pastille_de(e), etat, montre, gestes }
