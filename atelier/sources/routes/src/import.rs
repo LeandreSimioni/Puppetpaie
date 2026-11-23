@@ -69,7 +69,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Reprendre les pièces du dossier d'import : fiches, engagements importés.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort), mots (les titres du compte rendu), cloture (ce qui est repris et ses notes)",
+        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort), mots (les titres du compte rendu), cloture (ce qui est repris, les fichiers écrits et ses notes ; avant d'écrire, ce que Reprendre reprendrait et les questions des personnes mises de côté)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,

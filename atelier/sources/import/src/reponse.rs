@@ -816,7 +816,8 @@ pub struct Importation {
     pub parametrage: Vec<String>,
     pub declarations_dit: String,
     pub titre_dit: &'static str,
-    /// Ce que le bouton reprendrait.
+    /// Ce que le bouton reprendrait, que le compte rendu de l'import dit dans ce qui le clot (`routes::import`).
+    #[serde(skip)]
     pub reprendre: String,
     pub pastilles: ParSort<Pastille>,
     /// L'encart de ce qui est repris, ou qu'il n'y a rien a reprendre : fait.
@@ -826,7 +827,9 @@ pub struct Importation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub couleur: Option<&'static str>,
     /// Les individus que les DSN declarent et que l'import met de cote, le temps que la compagnie dise s'ils sont le
-    /// salarie d'une fiche sans NIR (`QuestionDIdentite`).
+    /// salarie d'une fiche sans NIR (`QuestionDIdentite`) ; leurs questions, le compte rendu de l'import les dit dans ce
+    /// qui le clot (`routes::import`).
+    #[serde(skip)]
     pub identites: Vec<QuestionDIdentite>,
     /// Ce qu'une DSN reprise par cet import declare d'un contrat repris ou d'un matricule autrement que la carte ou la
     /// fiche, et ce qu'il en advient (`ValeurDeLaDsn`).
