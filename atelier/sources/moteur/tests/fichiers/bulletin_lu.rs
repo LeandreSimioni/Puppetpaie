@@ -109,6 +109,8 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
                 {"quantite": "2", "libelle": "Cachets isolés", "taux": "140.00", "montant": "280.00", "soumis": true, "rubrique": "cachet", "heures": null},
             ],
             "brut": "590.00",
+            // L'abattement que le bulletin imprime en tête (« Abattement 0 ») : lu, et dit tel quel.
+            "abattement": "0",
             "total_employeur": "255.53",
             "total_salarie": "112.18",
             "net_social": "477.82",
