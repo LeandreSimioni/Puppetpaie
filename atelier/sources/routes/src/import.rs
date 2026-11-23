@@ -86,7 +86,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        // importation-etat la rend en geste (`ADire::enregistrer`).
+        ecran: Ecran::Geste(Place::Import),
     },
     Fiche {
         route: Route::ImportationIdentite,
