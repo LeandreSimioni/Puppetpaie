@@ -1241,7 +1241,7 @@ fn ecran_du_coffre(ctx: &Contexte, e: &EtatDuCoffre) -> R<EcranDuCoffre> {
         GesteDeRoute::avec_cases(route, ServiceDuRang { service }, libelle, cases, CompteMontre::default(), SansCharge {})
     };
     let encart = if fictive {
-        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Compagnie fictive : les champs sont grisés", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
+        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Compagnie fictive : rien ne se pose ici", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
     } else if !e.cle_poste {
         Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Cet ordinateur n'a pas encore sa clé du coffre", "Rien n'est perdu : elle se refait toute seule la prochaine fois que le mot de passe du logiciel est tapé (ou posé, ci-dessous). Elle vit à part des données, pour qu'une sauvegarde n'emporte jamais de quoi ouvrir le coffre."))
     } else {
