@@ -35,6 +35,8 @@ function ouvrirGeste(action, mois, seulement, sur) {
       return action.puis === "contrat-recu" ? boiteContratsEnAttente(m) : boiteSignature(m, seulement);
     case "envoi-apercu": return boiteEnvoi(m);
     case "historique-mois": return ouvrirMoisHistorique(m);
+    // Une pièce partie dont le fichier manque : la route la refait et rend son chemin, qui s'ouvre.
+    case "piece-partie": return api(action.route, c).then((r) => ouvrirEtDire(r.chemin), (e) => dire(e.message, "erreur"));
     case "contrat-recu": return noterRecu(m, c);
     case "avenant-apercu": return boiteAvenant(m, c.salarie, c.debut, c.numero);
     // La carte du contrat, sur la première case qui manque (`objet.a_saisir`) ; elle s'écrit par `puis`.

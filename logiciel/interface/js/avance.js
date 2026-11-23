@@ -651,6 +651,12 @@ function boutonsDesGestes(gestes, garde = () => true) {
 /** Un geste dont la route est avancée (sa fiche : `avance`) se range sous « Avancé ». */
 const gesteAvance = (g) => !!CATALOGUE[g.route].avance;
 
+/** Les boutons des gestes, ceux dont la route est avancée rangés sous « Avancé ». */
+function boutonsRanges(gestes) {
+  return `${boutonsDesGestes(gestes, (x) => !gesteAvance(x))}${gestes.some(gesteAvance)
+    ? `<details class="e-avance"><summary>Avancé</summary>${boutonsDesGestes(gestes, gesteAvance)}</details>` : ""}`;
+}
+
 /** Les champs de la fiche de la route du geste que sa boîte fait saisir (`cases`), dans l'ordre de la fiche. */
 function champsDuGeste(g) {
   return CATALOGUE[g.route].charge.filter((c) => g.cases.includes(c.nom));
@@ -837,8 +843,7 @@ function poserLEcranRendu(cible, r, relire) {
           ${g.dit.map((l) => `<span class="discret">${echapper(l)}</span>`).join("")}
           <div>${pastilleDeLEtat(g.pastille)}${g.etat ? ` <span class="discret">${echapper(g.etat)}</span>` : ""}</div>
         </div>
-        <div class="rang-actions">${boutonsDesGestes(g.gestes, (x) => !gesteAvance(x))}${g.gestes.some(gesteAvance)
-          ? `<details class="e-avance"><summary>Avancé</summary>${boutonsDesGestes(g.gestes, gesteAvance)}</details>` : ""}</div>
+        <div class="rang-actions">${boutonsRanges(g.gestes)}</div>
       </div>`).join("")}</div>`;
   const g = r.enregistrer;
   const cases = !r.cases ? "" : `<div data-ecran-cases>${casesDeLaFiche({ cases: r.cases, historique: r.historique || [] })}</div>

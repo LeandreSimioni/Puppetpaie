@@ -9,48 +9,38 @@
    l'endroit où l'on FAIT le mois ; l'Historique, celui où l'on VOIT ce qu'il a
    produit, envoyé et reçu.
 
-   Une ligne par mois. Elle se déplie sur la vue technique du mois, que le
-   moteur rend (`historique-mois`) : ses documents, chacun ouvrable ; ses
-   envois, tests de ce logiciel compris (repliés, marqués « test ») ; et sous
-   chacun ses retours dans l'ordre d'arrivée, LUS par le moteur — l'organisme,
-   le statut, le verdict, les anomalies — avec la pièce archivée à ouvrir en
-   dernier recours. La page n'y décide rien : elle affiche.
-
-   Le lien vers la page Paie ne reste que pour un mois où il y a encore
-   quelque chose à faire (`a_faire`, décidé par le moteur) ; un mois fini se
-   lit ici, en entier. */
+   Une ligne par mois (`etat`, `historique`) : son titre, sa pastille, ce que
+   la route en dit, et le geste qui le reprend s'il reste à faire
+   (`reprendre`). Elle se déplie sur la vue technique du mois, que le
+   moteur rend (`historique-mois`) : ses mots (`ecran`), ses documents, chacun
+   ouvrable ; ses gestes ; ses envois, tests de ce logiciel compris (repliés) ;
+   et sous chacun ses retours dans l'ordre d'arrivée, LUS par le moteur —
+   l'organisme, le statut, le verdict, les anomalies — avec la pièce archivée
+   à ouvrir en dernier recours. La page n'y décide rien : elle affiche ce que
+   les routes rendent, mots et gestes compris. */
 function dessinerHistorique() {
   dessinerReprise();
   dessinerExercices();
   dessinerRegularisation();
   const cible = document.getElementById("historique");
   if (!ETAT.historique.length) {
-    cible.innerHTML = `<p class="discret">Aucun mois</p>`;
+    cible.innerHTML = `<p class="discret">${echapper(ETAT.historique_dit)}</p>`;
     return;
   }
-  // L'état de la DSN, en mots et en couleur : c'est ce qu'on cherche en
-  // premier dans un mois passé. Mots et couleur sont au moteur
-  // (`bilan_des_mois`, `pastille`).
-  const majuscule = (t) => t.charAt(0).toUpperCase() + t.slice(1);
-  cible.innerHTML = ETAT.historique.map((m) => {
-    const p = m.pastille;
-    const couleur = CLASSE_DE_COULEUR[p.couleur];
-    const mots = p.mots;
-    const depose = m.depose_dit ? " " + m.depose_dit : "";
-    return `
-    <details class="mois-hist" data-mois="${echapper(m.mois)}" data-retard="${m.dsn === "en_retard" ? 1 : 0}"
-             data-a-faire="${m.a_faire ? 1 : 0}">
+  // L'état de la DSN, en mots et en couleur : c'est ce qu'on cherche en premier dans un mois passé (`pastille`).
+  cible.innerHTML = ETAT.historique.map((m) => `
+    <details class="mois-hist" data-mois="${echapper(m.mois)}">
       <summary class="rang mois">
-        <span class="rang-nom">${echapper(majuscule(moisEnClair(m.mois)))}</span>
-        <span class="rang-etat"><span class="pastille ${couleur}">${echapper(mots)}${echapper(depose)}</span>${
-          m.clos ? ` <span class="pastille">clos</span>` : ""}</span>
+        <span class="rang-nom">${echapper(m.titre)}</span>
+        <span class="rang-etat"><span class="pastille ${CLASSE_DE_COULEUR[m.pastille.couleur]}">${echapper(m.pastille.mots)}${
+          m.depose_dit ? " " + echapper(m.depose_dit) : ""}</span>${
+          m.clos_dit ? ` <span class="pastille">${echapper(m.clos_dit)}</span>` : ""}</span>
         <span class="rang-infos">${m.documents_dit ? echapper(m.documents_dit) : ""}</span>
         <span class="rang-actions">
         </span>
       </summary>
       <div class="mois-vue"><p class="discret">Lecture…</p></div>
-    </details>`;
-  }).join("");
+    </details>`).join("");
   cible.querySelectorAll("details.mois-hist").forEach((d) => {
     d.addEventListener("toggle", () => { if (d.open) dessinerMoisHistorique(d); });
   });
@@ -67,9 +57,11 @@ async function ouvrirMoisHistorique(mois) {
 }
 
 
-/** La vue technique d'un mois : ses documents, ses envois et leurs retours, tels que le moteur les lit. */
+/** La vue technique d'un mois : le geste qui le reprend, ses documents et ses gestes, ses envois et leurs retours, tels
+ *  que les routes les rendent. */
 async function dessinerMoisHistorique(d) {
   const mois = d.dataset.mois;
+  const m = ETAT.historique.find((x) => x.mois === mois);
   const vue = d.querySelector(".mois-vue");
   let h;
   try {
@@ -78,74 +70,60 @@ async function dessinerMoisHistorique(d) {
     vue.innerHTML = `<p class="discret">${echapper(e.message)}</p>`;
     return;
   }
-  const paie = d.dataset.aFaire === "1"
-    ? `<p><button class="secondaire" data-faire="${echapper(mois)}">Reprendre ce mois</button>
-       <span class="discret">— reste à faire</span></p>` : "";
+  const r = m.reprendre;
+  const paie = r ? `<p><button class="secondaire" data-reprendre>${echapper(r.libelle)}</button>${
+    m.reste_dit ? ` <span class="discret">— ${echapper(m.reste_dit)}</span>` : ""}</p>` : "";
 
-  // Les documents, par sorte, dans l'ordre que le moteur donne.
+  // Les documents, rangés sous leur sorte, dans l'ordre que le moteur donne.
   const sortes = [];
-  for (const doc of h.documents) {
+  h.documents.forEach((doc, i) => {
     let s = sortes.find((x) => x.nom === doc.sorte);
     if (!s) sortes.push(s = { nom: doc.sorte, docs: [] });
-    s.docs.push(doc);
-  }
+    s.docs.push(i);
+  });
   const documents = sortes.length ? sortes.map((s) => `
-    <div class="docs-sorte"><b>${echapper(s.nom)}</b>${s.docs.map((x) =>
-      `<button class="lien" data-piece="${echapper(x.chemin)}"${x.fichier ? ` data-refaire="${echapper(x.fichier)}"` : ""} title="${echapper(x.chemin)}">${echapper(x.nom)}</button>`).join("")}
-    </div>`).join("") : `<p class="discret">Aucun document</p>`;
+    <div class="docs-sorte"><b>${echapper(s.nom)}</b>${s.docs.map((i) =>
+      `<button class="lien" data-document="${i}" title="${echapper(h.documents[i].chemin)}">${echapper(h.documents[i].nom)}</button>`).join("")}
+    </div>`).join("") : `<p class="discret">${echapper(h.documents_dit)}</p>`;
 
-  const envois = h.envois.length ? h.envois.map(dessinerEnvoi).join("")
-    : `<p class="discret">Rien n'est parti</p>`;
-
-  // Avancé : les documents du mois déposés dans le Drive de la compagnie (route `archiver`, sa phrase dit ce qui est parti).
-  const archive = h.documents.length ? `<details><summary>Avancé</summary>
-      <p><button class="secondaire" data-archiver>Déposer dans le Drive</button>
-      <span class="discret" data-archive></span></p></details>` : "";
+  const envois = h.envois.length ? h.envois.map((e) => dessinerEnvoi(e, h.ecran)).join("")
+    : `<p class="discret">${echapper(h.envois_dit)}</p>`;
 
   vue.innerHTML = `${paie}
-    <h3>Les documents</h3>${documents}${archive}
-    <h3>Envois et retours</h3>${envois}`;
+    <h3>${echapper(h.ecran.documents)}</h3>${documents}
+    <div data-gestes>${boutonsRanges(h.gestes)}</div>
+    <h3>${echapper(h.ecran.envois)}</h3>${envois}`;
 
+  // Un document s'ouvre ; un document parti dont le fichier manque passe d'abord par son geste (`refaire`).
+  vue.querySelectorAll("[data-document]").forEach((b) => {
+    const x = h.documents[+b.dataset.document];
+    b.onclick = () => (x.refaire ? ouvrirGeste(x.refaire, mois) : ouvrirEtDire(x.chemin));
+  });
   vue.querySelectorAll("[data-piece]").forEach((b) => {
-    b.onclick = async () => {
-      // Une pièce partie dont le fichier manque (`fichier`) : `piece-partie` la refait et rend son chemin.
-      try {
-        const chemin = b.dataset.refaire ? (await api("piece-partie", { mois, fichier: b.dataset.refaire })).chemin : b.dataset.piece;
-        await ouvrirEtDire(chemin);
-      } catch (e) { dire(e.message, "erreur"); }
-    };
+    b.onclick = () => ouvrirEtDire(b.dataset.piece);
   });
-  const archiver = vue.querySelector("[data-archiver]");
-  if (archiver) archiver.onclick = async () => {
-    const dit = vue.querySelector("[data-archive]");
-    archiver.disabled = true;
-    dit.textContent = "dépôt…";
-    try { dit.textContent = (await api("archiver", { mois })).phrase; }
-    catch (e) { dit.textContent = e.message; }
-    archiver.disabled = false;
+  brancherLesGestes(vue.querySelector("[data-gestes]"), h.gestes, { titre: m.titre }, async () => {});
+  const reprendre = vue.querySelector("[data-reprendre]");
+  if (reprendre) reprendre.onclick = async () => {
+    // Quitter d'abord ce qui porte une saisie non enregistrée : l'onglet Paie, ensuite, ne redemande rien.
+    if (!(await quitterLEcran())) return;
+    document.querySelector('.onglets button[data-vue="paie"]').click();
+    await chargerMois(mois);
+    // Le geste que la route rend : le mois, déjà ouvert (`etat-du-mois`), ou la boîte du dépôt de sa DSN en retard.
+    ouvrirGeste(r, mois);
   };
-  vue.querySelectorAll("[data-faire]").forEach((b) => {
-    b.onclick = async () => {
-      // Quitter d'abord ce qui porte une saisie non enregistrée : l'onglet Paie, ensuite, ne redemande rien.
-      if (!(await quitterLEcran())) return;
-      document.querySelector('.onglets button[data-vue="paie"]').click();
-      await chargerMois(mois);
-      // Un mois dont la DSN est en retard : elle se fabrique et part, en retard.
-      if (d.dataset.retard === "1") boiteDepot({ quoi: "dsn", mois }, { testerDabord: true });
-    };
-  });
 }
 
 /** Un envoi : ce qui est parti, quand, et sous lui ses retours. Un réel s'ouvre ; un test reste replié. */
-function dessinerEnvoi(e) {
+function dessinerEnvoi(e, ecran) {
   const test = e.mode === "test";
   const id = e.identite;
-  const retours = e.retours.length ? e.retours.map(dessinerRetour).join("")
-    : e.attend_retour ? `<p class="discret retour">Aucun retour</p>` : "";
+  const retours = e.retours.length ? e.retours.map((r) => dessinerRetour(r, ecran)).join("")
+    : e.retours_dit ? `<p class="discret retour">${echapper(e.retours_dit)}</p>` : "";
   return `
     <details class="envoi ${test ? "test" : "reel"}" ${test ? "" : "open"}>
       <summary><b>${echapper(e.acte)}</b>
-        ${test ? `<span class="pastille">test</span>` : ""}
+        ${test ? `<span class="pastille">${echapper(e.mode)}</span>` : ""}
         <span class="discret">— ${echapper(e.resume)}</span></summary>
       ${id ? `<div class="envoi-id">${echapper(id)}</div>` : ""}
       ${retours}
@@ -153,16 +131,16 @@ function dessinerEnvoi(e) {
 }
 
 /** Un retour, lu : l'organisme, ce que dit sa pièce, ses anomalies ; la pièce elle-même en dernier recours. */
-function dessinerRetour(r) {
+function dessinerRetour(r, ecran) {
   // Un retour d'organisme dit son titre, sa date et ses anomalies (`titre_dit`, `quand_dit`, `anomalies`) ; un autre,
   // son titre seul. Une case d'anomalie que la pièce ne dit pas reste vide.
   const titre = r.titre_dit || r.titre;
   const cellule = (v) => (v ? echapper(v) : "");
   const anomalies = r.anomalies && r.anomalies.length ? `
-    <table class="anomalies"><tr><th>code</th><th>message</th><th>rubrique</th><th>salarié</th></tr>
+    <table class="anomalies"><tr>${ecran.anomalies.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
     ${r.anomalies.map((a) => `<tr><td>${a.code ? `<code>${echapper(a.code)}</code>` : ""}</td>
       <td>${cellule(a.message)}${a.categorie ? ` <span class="discret">(${echapper(a.categorie)})</span>` : ""}${
-        a.nombre && a.nombre !== "1" ? ` <span class="discret">× ${echapper(a.nombre)}</span>` : ""}</td>
+        a.fois ? ` <span class="discret">${echapper(a.fois)}</span>` : ""}</td>
       <td>${cellule(a.rubrique)}</td>
       <td>${cellule(a.salarie)}</td></tr>`).join("")}</table>` : "";
   return `
@@ -174,7 +152,7 @@ function dessinerRetour(r) {
         ${r.nature_dit ? `<p class="discret">${echapper(r.nature_dit)}</p>` : ""}
         ${r.phrases.map((p) => `<p>${echapper(p)}</p>`).join("")}
         ${anomalies}
-        ${r.piece ? `<p><button class="lien" data-piece="${echapper(r.piece)}">Ouvrir la pièce</button>
+        ${r.piece ? `<p><button class="lien" data-piece="${echapper(r.piece)}">${echapper(ecran.ouvrir_piece)}</button>
           </p>` : ""}
       </div>
     </details>`;
@@ -190,6 +168,7 @@ async function rafraichirHistorique() {
   try { etat = await api("etat"); } catch (e) { dire(e.message, "erreur"); return; }
   if (JSON.stringify(etat.historique) === JSON.stringify(ETAT.historique)) return;
   ETAT.historique = etat.historique;
+  ETAT.historique_dit = etat.historique_dit;
   if (document.getElementById("vue-historique").classList.contains("cachee")) return;
   const ouverts = [...document.querySelectorAll("details.mois-hist[open]")].map((d) => d.dataset.mois);
   dessinerHistorique();
