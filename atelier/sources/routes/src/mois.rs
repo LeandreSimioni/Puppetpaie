@@ -45,16 +45,16 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant, MontantUnitaire};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
-use crate::engagement::SAISIE_INCOMPLETE;
+use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::engagement::{CHANGEMENTS, IDENTITE, SAISIE_INCOMPLETE};
 use crate::catalogue::{Ecran, Place};
 
-const MODIFICATIONS: Champ = Champ {
-    nom: "modifications", libelle: Affiche::new("Modifications en cours"), forme: Forme::Objet,
-    sens: "les engagements validés ouverts pour être modifiés, pas encore écrits : [{engagement (son identité), changements (comme modifier-engagement)}] ; [] sans aucun. Une carte en saisie se lit telle qu'elle est enregistrée",
-    avance: false,
-};
+const MODIFICATIONS: Legende = dit(
+    "Modifications en cours",
+    "les engagements validés ouverts pour être modifiés, pas encore écrits : [{engagement (son identité), changements (comme modifier-engagement)}] ; [] sans aucun. Une carte en saisie se lit telle qu'elle est enregistrée",
+);
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -77,7 +77,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Apercu,
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
-        charge: &[MOIS, MODIFICATIONS],
+        charge: &ChargeApercu::CHARGE,
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
         rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
@@ -101,7 +101,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ContratsPasses,
         geste: "Lire les contrats déclarés d'un mois importé.",
-        charge: &[MOIS, Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé d'un salarié, pour ne lire que les siens ; null : tous", avance: true }],
+        charge: &ChargeContratsPasses::CHARGE,
         exemple: r#"{"mois":"2026-11","salarie":null}"#,
         rend: "contrats : ceux que les engagements importés attestent ; non_lus : les contrats repris qui ne se lisent pas",
         refus: &[MANQUE],
@@ -113,11 +113,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EnregistrerSaisie,
         geste: "Changer des cases du brouillon d'une carte, et l'écrire.",
-        charge: &[
-            MOIS,
-            Champ { nom: "carte", libelle: Affiche::new("Carte"), forme: Forme::Objet, sens: "{\"neuve\": sa nature (l'une des `nouvelle_carte.natures` de la route saisie)} pour une carte neuve, ou {\"ecrite\": son identité, celle que le moteur a rendue}", avance: false },
-            super::engagement::CHANGEMENTS,
-        ],
+        charge: &ChargeCase::CHARGE,
         exemple: r#"{"mois":"2026-11","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"FULLER"},{"case":"spectacle","valeur":"le-banc-des-menteurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":150,"lieu":null,"dates":["2026-11-20"],"planning":[]}]}]}"#,
         rend: "engagement (l'identité écrite, à passer à valider-engagement), brouillon (chacune des cases de sa nature, null tant qu'elle n'est pas remplie ; chaque grandeur écrite par elle-même), a_completer (ce qui lui manque pour être validé, ou null), enregistre_a",
         refus: &[OPERATION, FORME, MANQUE],
@@ -129,19 +125,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Ajuster,
         geste: "Trouver le taux qui donne un net, un brut ou un coût voulu.",
-        charge: &[
-            MOIS,
-            MODIFICATIONS,
-            super::engagement::IDENTITE,
-            Champ {
-                nom: "cible",
-                libelle: Affiche::new("Ce qui se vise"),
-                forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<engagement::viser::Cible>()),
-                sens: "le montant que la paie atteint ; les indemnités de frais sont les repas, nuitées et défraiements, et l'acompte reste retiré du net",
-                avance: false,
-            },
-            Champ { nom: "montant", libelle: Affiche::new("Montant voulu"), forme: Forme::Nombre, sens: "le montant voulu, en euros", avance: false },
-        ],
+        charge: &ChargeAjuster::CHARGE,
         exemple: r#"{"mois":"2026-11","modifications":[],"engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"cible":"brut","montant":200}"#,
         rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent), paies ; rien n'est écrit",
         refus: &[OPERATION, FORME, SAISIE_INCOMPLETE],
@@ -173,43 +157,55 @@ pub(crate) enum CarteVisee {
     Ecrite(Identite),
 }
 
-/// LA CHARGE DES CHANGEMENTS D'UNE CARTE (`enregistrer-saisie`) : le mois de l'ecran, la carte visee, et ses changements,
-/// dans l'ordre.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeCase {
-    pub(crate) mois: Mois,
-    pub(crate) carte: CarteVisee,
-    pub(crate) changements: Changements,
+/// Dans une charge, une modification en cours et la carte visee se disent d'un objet.
+impl ValeurDeLaCharge<ParSaForme> for ModificationEnCours {
+    const FORME: Forme = Forme::Objet;
+}
+impl ValeurDeLaCharge<ParSaForme> for CarteVisee {
+    const FORME: Forme = Forme::Objet;
 }
 
-/// La charge de l'apercu : le mois, et les modifications pas encore ecrites d'engagements valides (`mois_designe`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeApercu {
-    mois: Mois,
-    modifications: Vec<ModificationEnCours>,
+charge! {
+    /// LA CHARGE DES CHANGEMENTS D'UNE CARTE (`enregistrer-saisie`) : le mois de l'ecran, la carte visee, et ses
+    /// changements, dans l'ordre.
+    #[derive(Debug, Clone)]
+    pub(crate) struct ChargeCase {
+        pub(crate) mois: Mois = legendes::MOIS,
+        pub(crate) carte: CarteVisee = dit("Carte", "{\"neuve\": sa nature (l'une des `nouvelle_carte.natures` de la route saisie)} pour une carte neuve, ou {\"ecrite\": son identité, celle que le moteur a rendue}"),
+        pub(crate) changements: Changements = CHANGEMENTS,
+    }
 }
 
-/// La charge du montant vise : le mois et ses modifications pas encore ecrites, l'engagement a ajuster (son identite),
-/// ce qui se vise et combien.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeAjuster {
-    mois: Mois,
-    modifications: Vec<ModificationEnCours>,
-    engagement: Identite,
-    cible: Cible,
-    /// Le montant vise, un nombre, ou tel qu'il est tape (« 1 850,00 € »), converti a la porte (`Charge::lire`).
-    montant: Montant,
+charge! {
+    /// La charge de l'apercu : le mois, et les modifications pas encore ecrites d'engagements valides (`mois_designe`).
+    #[derive(Debug)]
+    struct ChargeApercu {
+        mois: Mois = legendes::MOIS,
+        modifications: Vec<ModificationEnCours> = MODIFICATIONS,
+    }
 }
 
-/// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeContratsPasses {
-    mois: Mois,
-    salarie: Option<IdSalarie>,
+charge! {
+    /// La charge du montant vise : le mois et ses modifications pas encore ecrites, l'engagement a ajuster (son
+    /// identite), ce qui se vise et combien.
+    #[derive(Debug)]
+    struct ChargeAjuster {
+        mois: Mois = legendes::MOIS,
+        modifications: Vec<ModificationEnCours> = MODIFICATIONS,
+        engagement: Identite = IDENTITE,
+        cible: Cible = dit("Ce qui se vise", "le montant que la paie atteint ; les indemnités de frais sont les repas, nuitées et défraiements, et l'acompte reste retiré du net"),
+        /// Le montant vise, un nombre, ou tel qu'il est tape (« 1 850,00 € »), converti a la porte (`Charge::lire`).
+        montant: Montant = dit("Montant voulu", "le montant voulu, en euros"),
+    }
+}
+
+charge! {
+    /// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
+    #[derive(Debug)]
+    struct ChargeContratsPasses {
+        mois: Mois = legendes::MOIS,
+        salarie: Option<IdSalarie> = dit("Salarié", "la clé d'un salarié, pour ne lire que les siens ; null : tous").avancee(),
+    }
 }
 
 // ------------------------------------------------------------------ les reponses
