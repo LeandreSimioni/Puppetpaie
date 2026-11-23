@@ -50,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les documents du mois de chaque salarié, et à qui ils partiraient.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja",
+        rend: "titre, colonnes, changements_titre, pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja (titre, quand_dit) ; les départs ouverts, chacun un geste (route, charge, libellé, la case salaries : les clés cochées, tous d'abord ; demande du mot de passe) : principal (envoyer par courriel quand la boîte est posée, imprimer sinon) et autres ; aucun tant que rien n'est prêt",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -72,7 +72,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 300,
-        ecran: ECRAN,
+        // `envoi-apercu` la rend en geste.
+        ecran: Ecran::Geste(Place::Paie),
     },
     Fiche {
         route: Route::DocumentsImprimer,
@@ -84,7 +85,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        // `envoi-apercu` la rend en geste.
+        ecran: Ecran::Geste(Place::Paie),
     },
     Fiche {
         route: Route::PiecePartie,
@@ -206,13 +208,31 @@ struct MessageVu {
 /// Le dernier depart des documents, quand tous sont deja partis.
 #[derive(Debug, Serialize)]
 struct DejaPartis {
+    titre: &'static str,
     quand: socle::paris::InstantOuJour,
     quand_dit: String,
 }
 
+/// Un depart des documents que la boite ouvre : imprimer, ou envoyer par courriel. Sa case `salaries` est la colonne
+/// cochee de la liste des messages (tous coches d'abord).
+type GesteDesDocuments = crate::imprevus::GesteDeRoute<ChargeMois>;
+
+const IMPRIMER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Imprimer");
+const ENVOYER_PAR_COURRIEL: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer par courriel");
+
 /// Ce que rend `envoi-apercu`.
 #[derive(Debug, Serialize)]
 struct ApercuEnvoi {
+    titre: &'static str,
+    /// Les colonnes de la liste des messages : le salarie, son adresse (la boite posee), les pieces.
+    colonnes: Vec<&'static str>,
+    /// Ce que dit un renvoi, au-dessus de ses changements.
+    changements_titre: &'static str,
+    /// Les departs ouverts : aucun tant que rien n'est pret ; imprimer toujours, envoyer par courriel quand la boite est
+    /// posee, et c'est alors lui le principal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    principal: Option<GesteDesDocuments>,
+    autres: Vec<GesteDesDocuments>,
     phrase: Phrase,
     expediteur: String,
     expediteur_dit: String,
@@ -655,7 +675,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         .map(|p| p.quand)
         .max()
         .filter(|_| tous_a_jour)
-        .map(|q| DejaPartis { quand: q, quand_dit: format!("Le {}.", q.dit()) });
+        .map(|q| DejaPartis { titre: "Déjà partis", quand: q, quand_dit: format!("Le {}.", q.dit()) });
     let messages: Vec<MessageVu> = messages
         .into_iter()
         .map(|x| {
@@ -686,7 +706,22 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         })
         .collect();
     phrases.extend(prets.empechements.iter().chain(&avertissements).chain(&prets.informations).cloned());
+    let demande = demande_documents(ctx, mois)?;
+    // Les departs ouverts : rien ne part tant qu'un empechement reste ou qu'aucun message n'est du.
+    let salaries = vec![crate::declaration::cle!(ChargeDocumentsImprimer, salaries)];
+    let depart = |route, libelle| GesteDesDocuments::avec_cases(route, ChargeMois { mois }, libelle, salaries.clone(), crate::imprevus::ValeursDeDepart::default(), crate::imprevus::ChoixDesCases::default());
+    let (principal, autres) = match (pret && !messages.is_empty(), prets.boite_liee) {
+        (false, _) => (None, Vec::new()),
+        (true, false) => (Some(depart(Route::DocumentsImprimer, IMPRIMER)), Vec::new()),
+        (true, true) => (Some(depart(Route::EnvoyerDocuments, ENVOYER_PAR_COURRIEL).exigeant(Some(demande.clone()))), vec![depart(Route::DocumentsImprimer, IMPRIMER)]),
+    };
+    let colonnes = if prets.boite_liee { vec!["Salarié", "Adresse", "Pièces"] } else { vec!["Salarié", "Pièces"] };
     Ok(ApercuEnvoi {
+        titre: "Les documents",
+        colonnes,
+        changements_titre: "Ce qui a changé",
+        principal,
+        autres,
         phrase: socle::phrase!("Documents à envoyer par courriel, de {} : {}.", expediteur, socle::ecran::compte(messages.len(), "message", "messages")),
         expediteur_dit: format!("Courriels depuis {}", expediteur),
         expediteur,
@@ -697,7 +732,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         empechements: prets.empechements,
         informations: prets.informations,
         boite_liee: prets.boite_liee,
-        demande: demande_documents(ctx, mois)?,
+        demande,
         phrases,
     })
 }

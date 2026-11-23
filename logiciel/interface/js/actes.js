@@ -429,9 +429,13 @@ async function boiteEnvoi(mois) {
     a = await api("envoi-apercu", { mois });
   } catch (e) { dire(e.message, "erreur"); return; }
 
-  const peut = a.pret && a.messages.length;
+  // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont la case `salaries` est la colonne
+  // cochée de la liste ; celui qui exige le mot de passe (`demande`) le fait taper.
+  const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
+  const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
+    + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
   ouvrirBoite(`
-    <h3>Les documents</h3>
+    <h3>${echapper(a.titre)}</h3>
     ${moisEnGros(mois)}
     ${a.boite_liee && a.expediteur_dit ? `<p class="discret">${echapper(a.expediteur_dit)}</p>` : ""}
     ${a.empechements.map((x) =>
@@ -440,7 +444,7 @@ async function boiteEnvoi(mois) {
       `<div class="encart info">${echapper(x)}</div>`).join("")}
     ${!a.messages.length ? "" : `<table class="table-envoi">
       <colgroup><col class="c-coche"><col class="c-salarie">${a.boite_liee ? `<col class="c-adresse">` : ""}<col class="c-pieces"></colgroup>
-      <tr><th></th><th>Salarié</th>${a.boite_liee ? "<th>Adresse</th>" : ""}<th>Pièces</th></tr>
+      <tr><th></th>${a.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
       ${a.messages.map((m) => `
         <tr>
           <td><input type="checkbox" class="e-qui" value="${echapper(m.cle)}" checked
@@ -449,53 +453,43 @@ async function boiteEnvoi(mois) {
           ${a.boite_liee ? `<td>${echapper(m.destinataire)}</td>` : ""}
           <td class="pieces">${m.sortes.map((x) => `<div>${echapper(x)}</div>`).join("")}</td>
         </tr>
-        ${m.renvoi ? `<tr><td></td><td colspan="${a.boite_liee ? 3 : 2}" class="discret">Ce qui a changé
+        ${m.renvoi ? `<tr><td></td><td colspan="${a.colonnes.length}" class="discret">${echapper(a.changements_titre)}
           <ul>${m.changements.map((c) => `<li>${echapper(c)}</li>`).join("")}</ul></td></tr>` : ""}`).join("")}
     </table>`}
-    ${a.deja ? `<div class="encart attention"><b>Déjà partis</b>
+    ${a.deja ? `<div class="encart attention"><b>${echapper(a.deja.titre)}</b>
       ${echapper(a.deja.quand_dit)}</div>` : ""}
-    ${peut && a.boite_liee ? noteFictive() : ""}
-    <div class="actions">
+    ${gestes.some((g) => g.demande) ? noteFictive() : ""}
+    <div class="actions" id="e-departs">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      ${peut ? `<button class="${a.boite_liee ? "secondaire" : "primaire"}" id="e-imprimer"
-        >Imprimer</button>` : ""}
-      ${peut && a.boite_liee ? `<button class="primaire envoi" id="e-envoyer">Envoyer par courriel</button>` : ""}
+      ${boutons((g) => g !== a.principal, "secondaire")}
+      ${boutons((g) => g === a.principal, "primaire")}
     </div>`);
 
-  const coches = () => [...document.querySelectorAll(".e-qui:checked")].map((c) => c.value);
-  const imprimer = document.getElementById("e-imprimer");
-  if (imprimer) imprimer.onclick = async () => {
-    const salaries = coches();
-    const rendre = occupe(imprimer, "Impression…");
-    try {
-      const r = await api("documents-imprimer", { mois, salaries });
-      fermerBoite();
-      await ouvrirEtDire(r.chemin, r.phrase);
-      await rafraichirActions();
-    } catch (e) {
-      rendre();
-      dire(e.message, "erreur");
-    }
-  };
-  const envoyer = document.getElementById("e-envoyer");
-  if (envoyer) envoyer.onclick = async () => {
-    const salaries = coches();
-    const mdp = await demanderMotDePasse(a.demande, { envoi: true });
-    if (!mdp) return;
-    const rendre = occupe(envoyer, "Envoi…");
-    const repere = await repereCourrielsFictifs();
-    try {
-      const r = await api("envoyer-documents", { mois, salaries, motdepasse: mdp });
-      fermerBoite();
-      dire(r.phrase, "envoye");
-      afficherEnvoi("Documents aux salariés", mois, r.phrase, r.avertissements);
-      fenetreCourrielsFictifs("documents", repere);
-      await rafraichirActions();
-    } catch (e) {
-      rendre();
-      dire(e.message, "erreur");
-    }
-  };
+  document.querySelectorAll("#e-departs [data-geste]").forEach((b) => {
+    const g = gestes[+b.dataset.geste];
+    b.onclick = async () => {
+      const charge = { ...g.charge, [g.cases[0]]: [...document.querySelectorAll(".e-qui:checked")].map((c) => c.value) };
+      const mdp = g.demande ? await demanderMotDePasse(g.demande, { envoi: true }) : null;
+      if (g.demande && !mdp) return;
+      const rendre = occupe(b);
+      const repere = g.demande ? await repereCourrielsFictifs() : null;
+      try {
+        const r = await api(g.route, mdp ? { ...charge, motdepasse: mdp } : charge);
+        fermerBoite();
+        // L'impression rend le PDF, qui s'ouvre ; l'envoi par courriel, ce qui est parti.
+        if (!g.demande) await ouvrirEtDire(r.chemin, r.phrase);
+        else {
+          dire(r.phrase, "envoye");
+          afficherEnvoi("Documents aux salariés", mois, r.phrase, r.avertissements);
+          fenetreCourrielsFictifs("documents", repere);
+        }
+        await rafraichirActions();
+      } catch (e) {
+        rendre();
+        dire(e.message, "erreur");
+      }
+    };
+  });
 }
 
 /* --------------------------------------------- les contrats à faire signer */
