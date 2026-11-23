@@ -58,14 +58,15 @@ use socle::fichiers::{repr, CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, ChampDuType, Legende};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 
-const SALARIE_ARRETE: Champ = Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé de la fiche du salarié arrêté", avance: false };
-const DERNIER_JOUR: Champ = Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé de l'arrêt, AAAA-MM-JJ (il désigne l'arrêt)", avance: false };
+const SALARIE_ARRETE: Legende = dit("Salarié", "la clé de la fiche du salarié arrêté");
+const DERNIER_JOUR: Legende = dit("Dernier jour travaillé", "le dernier jour travaillé de l'arrêt, AAAA-MM-JJ (il désigne l'arrêt)");
 const FAITE: &[Champ; 6] = &[
-    SALARIE_ARRETE,
-    DERNIER_JOUR,
+    ChampDuType::du_type::<_, SalarieDesigne>("salarie", SALARIE_ARRETE).champ,
+    ChampDuType::du_type::<_, Jour>("dernier_jour", DERNIER_JOUR).champ,
     Champ { nom: "le", libelle: Affiche::new("Fait le"), forme: Forme::Date, sens: "le jour où elle a été faite ; vide : la retirer", avance: false },
     Champ { nom: "depot", libelle: Affiche::new("Où"), forme: Forme::ChoixRendu, sens: "où elle a été faite : un des lieux que l'obligation propose (ou, dans ce que rend obligations)", avance: false },
     Champ { nom: "heure", libelle: Affiche::new("Heure"), forme: Forme::Texte, sens: "l'heure, HH:MM", avance: true },
@@ -82,19 +83,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ArretObligations,
         geste: "Dire ce qu'un arrêt en cours de saisie fera naître (signalement…).",
-        charge: &[
-            Champ { nom: "motif", libelle: Affiche::new("Motif"), forme: Forme::ChoixRendu, sens: "le motif de l'arrêt (motifs_arret des nomenclatures de imprevus)", avance: false },
-            Champ { nom: "dernier_jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé", avance: false },
-            Champ { nom: "debut", libelle: Affiche::new("Début de l'arrêt"), forme: Forme::Date, sens: "le premier jour que l'avis prescrit", avance: false },
-            Champ { nom: "fin", libelle: Affiche::new("Fin prescrite"), forme: Forme::Date, sens: "la fin prescrite", avance: false },
-            Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "le salarié : sa subrogation se tire de son contrat", avance: false },
-            Champ { nom: "contrat", libelle: Affiche::new("Contrat"), forme: Forme::Texte, sens: "le contrat suspendu, quand plusieurs couvrent le jour", avance: true },
-            Champ { nom: "date_accident", libelle: Affiche::new("Jour de l'accident"), forme: Forme::Date, sens: "le jour de l'accident", avance: true },
-            Champ { nom: "reprise", libelle: Affiche::new("Reprise"), forme: Forme::Date, sens: "le jour de la reprise, s'il est connu", avance: true },
-            Champ { nom: "connaissance_arret", libelle: Affiche::new("Arrêt connu le"), forme: Forme::Date, sens: "le jour où la compagnie a connu l'arrêt", avance: true },
-            Champ { nom: "connaissance_accident", libelle: Affiche::new("Accident connu le"), forme: Forme::Date, sens: "le jour où la compagnie a connu l'accident ; vide : le jour de l'accident", avance: true },
-            Champ { nom: "connaissance_heure", libelle: Affiche::new("Accident connu à"), forme: Forme::Texte, sens: "l'heure où la compagnie a connu l'accident, HH:MM ; vide : minuit", avance: true },
-        ],
+        charge: &ChargeArretObligations::CHARGE,
         exemple: r#"{"motif":"01","dernier_jour":"2026-11-02","debut":"2026-11-03","fin":"2026-11-10","salarie":"SVOBODA"}"#,
         rend: OBLIGATIONS_REND,
         refus: &[OPERATION],
@@ -106,13 +95,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ArretConnaissance,
         geste: "Dire le jour où la compagnie a connu un arrêt ou un accident.",
-        charge: &[
-            SALARIE_ARRETE,
-            DERNIER_JOUR,
-            Champ { nom: "de", libelle: Affiche::new("De"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<DeQuoi>()), sens: "ce que la compagnie a connu", avance: false },
-            Champ { nom: "jour", libelle: Affiche::new("Jour"), forme: Forme::Date, sens: "le jour ; vide : le moteur reprend sa présomption (avec une heure, pour l'accident : le jour de l'accident)", avance: false },
-            Champ { nom: "heure", libelle: Affiche::new("Heure"), forme: Forme::Texte, sens: "l'heure, HH:MM", avance: true },
-        ],
+        charge: &ChargeConnaissance::CHARGE,
         exemple: r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","de":"arret","jour":"2026-11-02"}"#,
         rend: OBLIGATIONS_REND,
         refus: &[NON_ECRIT, MANQUE],
@@ -1350,17 +1333,18 @@ fn reponse(ctx: &Contexte, a: &ArretSaisi, phrase: impl FnOnce(usize) -> Phrase)
     Ok(ObligationsDeLArret::de(de_l_arret(ctx, a, &suivi, ctx.aujourdhui)?, phrase))
 }
 
-/// La charge de `arret-connaissance` : l'arret (le salarie et son dernier jour travaille), ce que la compagnie a connu
-/// (`de`), le jour (vide : le moteur reprend sa presomption) et l'heure.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeConnaissance {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
-    de: DeQuoi,
-    jour: Option<Jour>,
-    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
-    heure: Option<HeureDuJour>,
+charge! {
+    /// La charge de `arret-connaissance` : l'arret (le salarie et son dernier jour travaille), ce que la compagnie a
+    /// connu (`de`), le jour (vide : le moteur reprend sa presomption) et l'heure.
+    #[derive(Debug)]
+    pub(crate) struct ChargeConnaissance {
+        salarie: SalarieDesigne = SALARIE_ARRETE,
+        dernier_jour: Jour = DERNIER_JOUR,
+        de: DeQuoi = dit("De", "ce que la compagnie a connu"),
+        jour: Option<Jour> = dit("Jour", "le jour ; vide : le moteur reprend sa présomption (avec une heure, pour l'accident : le jour de l'accident)"),
+        #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+        heure: Option<HeureDuJour> = dit("Heure", "l'heure, HH:MM").avancee(),
+    }
 }
 
 /// Le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident, tel qu'on le dit : `arret-connaissance`, et
@@ -1584,26 +1568,27 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     })
 }
 
-/// La charge de `arret-obligations` : l'arret tel qu'il se saisit, chaque champ vide tant qu'il n'est pas tape -- le
-/// motif, le dernier jour travaille, le debut, la fin prescrite, la reprise, le salarie et le contrat suspendu (d'ou se
-/// tire la subrogation), le jour de l'accident, et ce que la compagnie a connu (l'arret, l'accident et son heure). Un champ
-/// absent ou nul n'est pas encore tape (`""` se refuse, `TexteDit`) ; un jour tape s'ecrit AAAA-MM-JJ. Le contrat se
-/// choisit dans ceux qu'`arret-contrats` rend : son numero se lit (`NumeroContrat`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeArretObligations {
-    motif: Option<MotifDArret>,
-    dernier_jour: Option<Jour>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
-    reprise: Option<Jour>,
-    salarie: Option<SalarieDesigne>,
-    contrat: Option<engagement::numeros::NumeroContrat>,
-    date_accident: Option<Jour>,
-    connaissance_arret: Option<Jour>,
-    connaissance_accident: Option<Jour>,
-    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
-    connaissance_heure: Option<HeureDuJour>,
+charge! {
+    /// La charge de `arret-obligations` : l'arret tel qu'il se saisit, chaque champ vide tant qu'il n'est pas tape -- le
+    /// motif, le dernier jour travaille, le debut, la fin prescrite, la reprise, le salarie et le contrat suspendu (d'ou
+    /// se tire la subrogation), le jour de l'accident, et ce que la compagnie a connu (l'arret, l'accident et son heure).
+    /// Un champ absent ou nul n'est pas encore tape (`""` se refuse, `TexteDit`) ; un jour tape s'ecrit AAAA-MM-JJ. Le
+    /// contrat se choisit dans ceux qu'`arret-contrats` rend : son numero se lit (`NumeroContrat`).
+    #[derive(Debug)]
+    pub(crate) struct ChargeArretObligations {
+        motif: Option<MotifDArret> = dit("Motif", "le motif de l'arrêt (motifs_arret des nomenclatures de imprevus)"),
+        dernier_jour: Option<Jour> = dit("Dernier jour travaillé", "le dernier jour travaillé"),
+        debut: Option<Jour> = dit("Début de l'arrêt", "le premier jour que l'avis prescrit"),
+        fin: Option<Jour> = dit("Fin prescrite", "la fin prescrite"),
+        reprise: Option<Jour> = dit("Reprise", "le jour de la reprise, s'il est connu").avancee(),
+        salarie: Option<SalarieDesigne> = dit("Salarié", "le salarié : sa subrogation se tire de son contrat"),
+        contrat: Option<engagement::numeros::NumeroContrat> = dit("Contrat", "le contrat suspendu, quand plusieurs couvrent le jour").avancee(),
+        date_accident: Option<Jour> = dit("Jour de l'accident", "le jour de l'accident").avancee(),
+        connaissance_arret: Option<Jour> = dit("Arrêt connu le", "le jour où la compagnie a connu l'arrêt").avancee(),
+        connaissance_accident: Option<Jour> = dit("Accident connu le", "le jour où la compagnie a connu l'accident ; vide : le jour de l'accident").avancee(),
+        #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+        connaissance_heure: Option<HeureDuJour> = dit("Accident connu à", "l'heure où la compagnie a connu l'accident, HH:MM ; vide : minuit").avancee(),
+    }
 }
 
 /// L'arret tel qu'il s'ecrirait (`imprevus::arret_a_ecrire`), sa subrogation tiree du contrat suspendu et du droit
