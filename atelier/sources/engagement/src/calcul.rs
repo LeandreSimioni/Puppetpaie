@@ -56,6 +56,12 @@ pub struct LigneBrut<P = PaiementDeLigne> {
     pub montant: Montant,
     #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub heures_annexes: Heures,
+    /// LES HEURES DE TRAVAIL que la ligne a saisies (sa quantite fois ses heures par unite), que le bulletin imprime
+    /// (C. trav. R. 3243-1, 5° : « le nombre d'heures de travail auxquels se rapporte le salaire ») ; jamais un forfait
+    /// d'heures de sa rubrique, qui compte des heures qui n'ont pas ete faites (`heures_annexes`). Vide : la ligne n'en
+    /// saisit pas, ou une paie ecrite avant qu'elle les porte.
+    #[serde(default, with = "socle::grandeurs::ecrit::nombre::option", skip_serializing_if = "Option::is_none")]
+    pub heures_faites: Option<Heures>,
     pub soumis: bool,
     pub imposable: bool,
     pub conges_spectacles: bool,
@@ -150,10 +156,10 @@ impl LigneBrut {
         };
         // LES HEURES DE TRAVAIL AUXQUELLES LE SALAIRE SE RAPPORTE (C. trav. R. 3243-1, 5°,
         // `atelier/reference/sources/code-du-travail/articles-20261028.md`, l. 442) : celles qu'une ligne comptee en
-        // services, en journees ou en semaines a saisies, toutes ensemble (« 2 services de répétition (8 h) »). Le
-        // cachet compte un forfait d'heures qui n'ont pas ete faites (annexe X, art. 3) : il ne les dit pas.
-        match self.unite {
-            Unite::Service | Unite::Jour | Unite::Semaine if !self.heures_annexes.est_nul() => format!("{} ({})", dite, socle::texte::heures(self.heures_annexes)),
+        // services, en journees ou en semaines a saisies, toutes ensemble (« 2 services de répétition (8 h) ») : jamais
+        // un forfait d'heures (`heures_faites`), qui compte des heures qui n'ont pas ete faites.
+        match (self.unite, self.heures_faites.filter(|h| !h.est_nul())) {
+            (Unite::Service | Unite::Jour | Unite::Semaine, Some(h)) => format!("{} ({})", dite, socle::texte::heures(h)),
             _ => dite,
         }
     }
@@ -172,8 +178,9 @@ pub(crate) fn ligne_brut(l: &LignePaie, ctx: &Contexte) -> R<LigneBrut> {
     let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
     let paiement = l.paiement(r.unite)?;
     let heures_annexes = heures_annexes(&r, &paiement, l.heures())?;
+    let heures_faites = heures_faites(&r, &paiement, l.heures())?;
     let montant = r.sens.de(paiement.montant().au_centime());
-    ligne_de(r, paiement, heures_annexes, montant, l.genre(), l.precision())
+    ligne_de(r, paiement, heures_annexes, heures_faites, montant, l.genre(), l.precision())
 }
 
 /// LA LIGNE D'UN BULLETIN IMPORTE RATTACHEE A LA RUBRIQUE `code` (`importe::LigneImprimee::rattachee`) : son montant tel
@@ -181,16 +188,16 @@ pub(crate) fn ligne_brut(l: &LignePaie, ctx: &Contexte) -> R<LigneBrut> {
 /// Un forfait imprime a son seul montant ne dit pas ce qu'il paie : il ne compte aucune heure.
 pub(crate) fn ligne_rattachee(code: &droit::catalogue::CodeDeRubrique, paiement: Option<PaiementDeLigne>, heures: Option<socle::grandeurs::HeuresParUnite>, montant: Montant, ctx: &Contexte) -> R<LigneRattachee> {
     let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
-    let heures_annexes = match &paiement {
-        Some(p) => heures_annexes(&r, p, heures)?,
-        None => r.sens.de(courte(Heures::ZERO)),
+    let (heures_annexes, heures_faites) = match &paiement {
+        Some(p) => (heures_annexes(&r, p, heures)?, heures_faites(&r, p, heures)?),
+        None => (r.sens.de(courte(Heures::ZERO)), None),
     };
-    ligne_de(r, paiement, heures_annexes, montant, None, None)
+    ligne_de(r, paiement, heures_annexes, heures_faites, montant, None, None)
 }
 
-/// La ligne de remuneration rattachee a sa rubrique `r`, le genre d'un avantage en nature et sa precision quand elle les
-/// dit.
-fn ligne_de<P>(r: droit::catalogue::Rubrique, paiement: P, heures_annexes: Heures, montant: Montant, genre: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>, precision: Option<&str>) -> R<LigneBrut<P>> {
+/// La ligne de remuneration rattachee a sa rubrique `r`, ses heures, le genre d'un avantage en nature et sa precision
+/// quand elle les dit.
+fn ligne_de<P>(r: droit::catalogue::Rubrique, paiement: P, heures_annexes: Heures, heures_faites: Option<Heures>, montant: Montant, genre: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>, precision: Option<&str>) -> R<LigneBrut<P>> {
     let dsn_autres_bruts = code_54(&r, genre)?;
     Ok(LigneBrut {
         code: r.code.into(),
@@ -199,6 +206,7 @@ fn ligne_de<P>(r: droit::catalogue::Rubrique, paiement: P, heures_annexes: Heure
         paiement,
         montant,
         heures_annexes,
+        heures_faites,
         soumis: r.soumis,
         imposable: r.imposable,
         conges_spectacles: r.conges_spectacles,
@@ -210,6 +218,16 @@ fn ligne_de<P>(r: droit::catalogue::Rubrique, paiement: P, heures_annexes: Heure
         dsn_autres_bruts,
         precision: precision.map(String::from),
     })
+}
+
+/// LES HEURES DE TRAVAIL QU'UNE LIGNE A SAISIES (`LigneBrut::heures_faites`) : sa quantite fois les heures par unite
+/// qu'elle dit, quand sa rubrique les fait saisir (`Rubrique::heures_a_saisir` : aucun forfait), sous le signe de la
+/// rubrique ; aucune sinon.
+fn heures_faites(r: &droit::catalogue::Rubrique, paiement: &PaiementDeLigne, saisies: Option<socle::grandeurs::HeuresParUnite>) -> R<Option<Heures>> {
+    match saisies.filter(|_| r.heures_a_saisir()) {
+        Some(h) => Ok(Some(r.sens.de(paiement.heures(Some(h))?))),
+        None => Ok(None),
+    }
 }
 
 /// LES HEURES DES ANNEXES 8 ET 10 de ce que paie une ligne rattachee a sa rubrique `r`, a ses heures par unite quand elle
@@ -652,6 +670,8 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
                 g.montant += l.montant;
                 // Les heures que la designation dit (« 3 services de répétition (11 h) ») sont celles du groupe entier.
                 g.heures_annexes += l.heures_annexes;
+                // Une ligne du groupe qui ne les dit pas : le groupe ne les dit pas non plus (une part ne vaut pas le tout).
+                g.heures_faites = g.heures_faites.zip(l.heures_faites).map(|(a, b)| a + b);
             }
             None => groupes.push(l.clone()),
         }
@@ -2646,7 +2666,7 @@ mod tests {
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
             code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: PaiementDeLigne::PartDuMois(socle::grandeurs::Coefficient::UN, lue(montant)),
-            montant: lue(montant), heures_annexes: lue(heures), soumis, imposable: soumis, conges_spectacles: false,
+            montant: lue(montant), heures_annexes: lue(heures), heures_faites: None, soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,
         }

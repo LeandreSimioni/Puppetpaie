@@ -1264,7 +1264,9 @@ fn chiffres_egaux(a: &PaieEcrite, b: &PaieEcrite) -> bool {
 
 /// Deux paies egales hors de leurs avertissements, ceux de leurs periodes compris, et hors de la part que l'abattement de
 /// la CSG a abattue (`calcul::Contenu::part_abattue_csg`) : elle n'est ni payee, ni cotisee, ni declaree, et une paie ecrite
-/// avant qu'elle s'ecrive ne la porte pas ; ce qu'elle change dans la paie (l'assiette de la CSG) se compare, lui. Une paie
+/// avant qu'elle s'ecrive ne la porte pas ; ce qu'elle change dans la paie (l'assiette de la CSG) se compare, lui. Les
+/// heures de travail d'une ligne (`LigneBrut::heures_faites`) non plus : le bulletin les dit, une paie ecrite avant
+/// qu'elles s'ecrivent ne les porte pas, et ses heures (`heures_annexes`) se comparent. Une paie
 /// dont aucun montant ne change ne se rectifie pas, et sa paie recalculee s'ecrit avec elle (`rafraichir`). Une ligne de
 /// cotisation dont la base et les deux montants sont nuls ne porte aucun chiffre : qu'une paie l'imprime et l'autre non
 /// (la tranche 2 ou la contribution d'equilibre technique qui ne sont pas dues, `calcul::calculer`) n'est pas un ecart.
@@ -1282,6 +1284,7 @@ fn egales_sans_avis(a: &FormeDePaie<Avis>, b: &FormeDePaie<Avis>) -> bool {
         Some(FormeDePaie {
             avertissements: Vec::new(),
             part_abattue_csg: None,
+            remuneration: p.remuneration.iter().map(|l| crate::calcul::LigneBrut { heures_faites: None, ..l.clone() }).collect(),
             lignes: p.lignes.iter().filter(|l| !(l.base.est_nulle() && l.montant_pat.est_nul() && l.montant_sal.est_nul())).cloned().collect(),
             bases: p.bases.iter().filter(|(a, _)| autre.bases.contains_key(*a)).map(|(a, b)| (*a, b.clone())).collect(),
             periodes: p.periodes.iter().zip(&autre.periodes).map(|(q, o)| sans_avis(q, o)).collect::<Option<_>>()?,
