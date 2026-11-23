@@ -939,7 +939,10 @@ pub(crate) struct ResumeDeSuspension {
 /// route, sa charge (`C` : ce qui designe un imprevu, une question d'identite de l'import...), son libelle, et ce que sa
 /// boite fait saisir : les cases de la fiche de sa route qu'elle montre (`cases` ; aucune : le geste part tel quel), ce
 /// qu'elles montrent d'abord (`valeurs`, `V` : celles d'un imprevu par defaut), les choix d'une case qui se choisit
-/// (`choix`, `X`) et ce que la boite dit au-dessus (`phrases`). Le moteur ne rend que ceux qu'il ouvre.
+/// (`choix`, `X`) et ce que la boite dit au-dessus (`phrases` ; un geste sans case qui en dit ouvre sa boite, pour les
+/// dire avant de partir : une confirmation). `demande` : le mot de passe du logiciel que le geste exige, que la page fait
+/// taper dans sa boite du mot de passe avant de partir (`js/boites.js`, `demanderMotDePasse`) ; aucune : il n'en exige
+/// pas. Le moteur ne rend que ceux qu'il ouvre.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct GesteDeRoute<C, V = ValeursDeDepart, X = ChoixDesCases> {
     route: Route,
@@ -949,18 +952,25 @@ pub(crate) struct GesteDeRoute<C, V = ValeursDeDepart, X = ChoixDesCases> {
     valeurs: V,
     choix: X,
     phrases: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demande: Option<compagnie::demande::DemandeDuMotDePasse>,
 }
 
 impl<C, V, X> GesteDeRoute<C, V, X> {
     /// Le geste dont la boite fait saisir les cases `cases` de la fiche de sa route, montrant d'abord `valeurs`, et
     /// offrant `choix` aux cases qui se choisissent.
     pub(crate) fn avec_cases(route: Route, charge: C, libelle: Affiche, cases: Vec<&'static str>, valeurs: V, choix: X) -> GesteDeRoute<C, V, X> {
-        GesteDeRoute { route, charge, libelle: libelle.texte(), cases, valeurs, choix, phrases: Vec::new() }
+        GesteDeRoute { route, charge, libelle: libelle.texte(), cases, valeurs, choix, phrases: Vec::new(), demande: None }
     }
 
     /// Le meme geste, sa boite disant `phrases` au-dessus de ses cases.
     pub(crate) fn disant(self, phrases: Vec<String>) -> GesteDeRoute<C, V, X> {
         GesteDeRoute { phrases, ..self }
+    }
+
+    /// Le meme geste, exigeant le mot de passe du logiciel que `demande` dit (aucune : il n'en exige pas).
+    pub(crate) fn exigeant(self, demande: Option<compagnie::demande::DemandeDuMotDePasse>) -> GesteDeRoute<C, V, X> {
+        GesteDeRoute { demande, ..self }
     }
 }
 
@@ -1028,6 +1038,7 @@ impl<C> GesteDeRoute<C> {
             valeurs: ValeursDeDepart::default(),
             choix: ChoixDesCases::default(),
             phrases: Vec::new(),
+            demande: None,
         }
     }
 }

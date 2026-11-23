@@ -76,8 +76,7 @@ function ajouterToutCocher(racine) {
   });
 }
 
-/* CE QUI S'OUVRE S'OUVRE D'UN CLIC SUR LUI-MÊME. Une carte d'engagement, la ligne d'une fiche, la ligne
- * d'un mot de passe : aucun bouton « Voir le détail » ni « Modifier » pour
+/* CE QUI S'OUVRE S'OUVRE D'UN CLIC SUR LUI-MÊME. Une carte d'engagement, la ligne d'une fiche : aucun bouton « Voir le détail » ni « Modifier » pour
  * les ouvrir, la ligne entière est le geste. UN SEUL MÉCANISME pour toute la
  * page : `rendreOuvrable(el, ouvrir)` pose la fonction, l'écoute ci-dessous
  * la joue. Ce qui, dans la ligne, fait autre chose (un bouton, un lien, une
