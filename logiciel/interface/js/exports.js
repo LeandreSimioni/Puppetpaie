@@ -67,11 +67,10 @@ async function dessinerExports() {
 
 /* ------------------------------------------- le dossier d'un salarié */
 
-/** TOUS SES DOCUMENTS, EN UNE FOIS. On coche ce qu'on
- *  sort : une catégorie donne un PDF, plusieurs un ZIP d'un PDF par
- *  catégorie. Le moteur réédite ce qui se recrée — aux numéros lus, jamais
- *  neufs — et prend tel quel ce qui ne se recrée pas (contrat signé, AER,
- *  CoolPaie). La page ne décide rien : elle coche, le moteur répond. */
+/** TOUS SES DOCUMENTS, EN UNE FOIS : les gestes que `dossier-formes` rend (l'aperçu, l'écrire, l'envoyer), leurs cases
+ *  saisies ensemble, une fois chacune (`casesDesChamps`, depuis la fiche de leur route), et ce que la route en dit.
+ *  Chaque geste ne prend que ses cases (`chargeDuGeste`) ; celui qui exige le mot de passe le fait taper, comme tout
+ *  envoi. La page ne décide rien : elle coche, le moteur répond. */
 let DOSSIER = null;
 async function dessinerDossier() {
   const cible = document.getElementById("dossier-formulaire");
@@ -79,124 +78,64 @@ async function dessinerDossier() {
   try { DOSSIER = await api("dossier-formes"); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
   const f = DOSSIER;
-  const opt = (v, t) => `<option value="${echapper(v)}">${echapper(t)}</option>`;
+  // Les cases de tous les gestes, chacune une fois, dans l'ordre où ils les nomment.
+  const champs = [];
+  const valeurs = {};
+  const choix = {};
+  for (const g of f.gestes) for (const c of champsDuGeste(g)) {
+    if (champs.some((x) => x.nom === c.nom)) continue;
+    champs.push(c);
+    valeurs[c.nom] = g.valeurs[c.nom];
+    if (g.choix[c.nom]) choix[c.nom] = g.choix[c.nom];
+  }
+  // VENU D'UNE FICHE SALARIÉ (« Exporter ses documents ») : ce salarié, coché.
+  const venu = DOSSIER_PRECHOIX && (choix.salaries || []).some((s) => s.code === DOSSIER_PRECHOIX);
+  if (venu) valeurs.salaries = [DOSSIER_PRECHOIX];
   cible.innerHTML = `
-    <div class="champs">
-      <div class="champ">
-        <!-- QUI SE COCHE, COMME DANS LES PAIES : une
-             case par salarié, et une case « Tous ». Un dossier chacun. -->
-        <label>Qui</label>
-        <div class="d-qui-liste" style="display:flex;flex-direction:column;gap:2px;max-height:12em;overflow:auto">
-          <label class="coche"><input type="checkbox" id="d-tous" checked> <b>Tous</b></label>
-          ${[...f.salaries.filter((s) => s.actif), ...f.salaries.filter((s) => !s.actif)].map((s) => `<label class="coche">
-            <input type="checkbox" class="d-sal" value="${echapper(s.cle)}" checked>
-            ${echapper(s.nom)}${s.actif ? "" : ' <span class="discret">— archivé</span>'}</label>`).join("")}
-        </div>
-      </div>
-      <div class="champ">
-        <label for="d-quand">Quand</label>
-        <select id="d-quand">
-          ${opt("toutes", "Toute la période")}${opt("annee", "Une année")}${opt("mois", "Un mois")}
-        </select>
-        <select id="d-periode" class="cachee"></select>
-      </div>
-      <div class="champ pleine">
-        <label>Quoi <button type="button" class="lien d-tout" data-cocher="tout cocher" data-decocher="tout décocher">tout décocher</button></label>
-        <div class="d-cats">${f.categories.map((c) => `<label class="coche">
-          <input type="checkbox" class="d-cat" value="${echapper(c.categorie)}" checked>
-          ${echapper(c.quoi)}</label>`).join("")}</div>
-        <div class="aide">${echapper(EXPORTS.ecran.categories)}</div>
-      </div>
-      <div class="champ pleine">
-        <label class="coche"><input type="checkbox" id="d-ensemble">
-          Un seul fichier <span class="discret">(ne s'envoie à personne)</span></label>
-      </div>
-    </div>
+    ${f.ecran.dit.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
+    <div id="d-cases">${casesDesChamps(champs, valeurs, choix)}</div>
     <div class="actions">
-      <button class="secondaire" id="d-apercu">Aperçu</button>
-      <button class="primaire" id="d-ecrire">Écrire le dossier</button>
-      ${f.boite_liee ? `<button class="secondaire" id="d-envoyer">L'envoyer à chaque salarié</button>` : ""}
-      <button class="lien" id="d-ouvrir" title="${echapper(f.dossier)}">Ouvrir le dossier</button>
+      ${boutonsDesGestes(f.gestes)}
+      <button class="lien" id="d-ouvrir" title="${echapper(f.dossier)}">${echapper(f.ecran.dossier_dit)}</button>
     </div>`;
-  // « Tous » coche ou décoche chacun ; chacun remet « Tous » d'accord.
-  const tous = document.getElementById("d-tous");
-  const sals = [...cible.querySelectorAll(".d-sal")];
-  // Personne de coché : rien à écrire, les boutons s'éteignent.
-  const majBoutons = () => cible.querySelectorAll("#d-apercu, #d-ecrire, #d-envoyer").forEach((b) => { b.disabled = !sals.some((x) => x.checked); });
-  tous.onchange = () => { sals.forEach((c) => { c.checked = tous.checked; }); majBoutons(); };
-  sals.forEach((c) => { c.onchange = () => { tous.checked = sals.every((x) => x.checked); majBoutons(); }; });
-  const tout = cible.querySelector(".d-tout");
-  tout.onclick = () => {
-    const cases = [...cible.querySelectorAll(".d-cat")];
-    const cocher = cases.every((c) => !c.checked);
-    cases.forEach((c) => { c.checked = cocher; });
-    tout.textContent = cocher ? tout.dataset.decocher : tout.dataset.cocher;
-  };
-  document.getElementById("d-quand").onchange = () => {
-    const quand = document.getElementById("d-quand").value;
-    const sel = document.getElementById("d-periode");
-    sel.classList.toggle("cachee", quand === "toutes");
-    const liste = quand === "mois" ? f.mois.slice().reverse() : f.annees;
-    sel.innerHTML = liste.map((v) => opt(v, quand === "mois" ? moisEnClair(v) : v)).join("");
-  };
-  // VENU D'UNE FICHE SALARIE (« Exporter ses documents ») : ce
-  // salarie, l'annee la plus recente, toutes les categories cochees.
-  if (DOSSIER_PRECHOIX && f.salaries.some((s) => s.cle === DOSSIER_PRECHOIX)) {
-    sals.forEach((c) => { c.checked = c.value === DOSSIER_PRECHOIX; });
-    tous.checked = sals.every((x) => x.checked);
-    if (f.annees.length) {
-      document.getElementById("d-quand").value = "annee";
-      document.getElementById("d-quand").onchange();
-      document.getElementById("d-periode").value = [...f.annees].map(String).sort().pop();
-    }
+  const bloc = document.getElementById("d-cases");
+  brancherLesCases(bloc);
+  cible.querySelectorAll("[data-geste]").forEach((b) => {
+    b.onclick = () => lancerDossier(f.gestes[+b.dataset.geste], bloc);
+  });
+  if (venu) {
     document.getElementById("carte-dossier").open = true;
     cible.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   DOSSIER_PRECHOIX = null;
-  document.getElementById("d-apercu").onclick = () => lancerDossier("dossier-salarie", true);
-  document.getElementById("d-ecrire").onclick = () => lancerDossier("dossier-salarie", false);
-  if (f.boite_liee) document.getElementById("d-envoyer").onclick = () => lancerDossier("dossier-envoyer", false);
   document.getElementById("d-ouvrir").onclick = async () => {
     await ouvrirEtDire(DOSSIER.dossier);
   };
 }
 
-async function lancerDossier(route, apercu) {
-  const coches = [...document.querySelectorAll(".d-sal:checked")].map((c) => c.value);
-  const quand = document.getElementById("d-quand").value;
-  const periode = document.getElementById("d-periode").value;
-  const charge = {
-    categories: [...document.querySelectorAll(".d-cat:checked")].map((c) => c.value),
-  };
-  // Tous cochés : aucune liste, ce qui veut dire « chaque salarié » pour le moteur.
-  if (!document.getElementById("d-tous").checked) charge.salaries = coches;
-  // L'envoi refait le dossier de chacun : ni aperçu, ni dossier d'ensemble.
-  if (route !== "dossier-envoyer") Object.assign(charge, { ensemble: document.getElementById("d-ensemble").checked, apercu });
-  if (quand === "mois") charge.mois = periode;
-  else if (quand === "annee") charge.annee = Number(periode);
-  else charge.toutes_les_annees = true;
-  if (route === "dossier-envoyer") {
-    const mdp = await demanderMotDePasse(DOSSIER.demande, { envoi: true });
+/** Le geste `g` du dossier, avec ce que ses cases disent dans `bloc` ; un geste qui exige le mot de passe le fait taper
+ *  d'abord, et l'envoi montre les courriels fictifs. Le résultat : ce que la route en dit. */
+async function lancerDossier(g, bloc) {
+  const charge = chargeDuGeste(bloc, g) || { ...g.charge };
+  if (marquerLesManquantes(bloc, champsDuGeste(g), charge)) return;
+  if (g.demande) {
+    const mdp = await demanderMotDePasse(g.demande, { envoi: true });
     if (!mdp) return;
     charge.motdepasse = mdp;
   }
   const cible = document.getElementById("dossier-resultat");
   cible.innerHTML = `<p class="discret">…</p>`;
-  const repere = route === "dossier-envoyer" ? await repereCourrielsFictifs() : null;
+  const repere = g.demande ? await repereCourrielsFictifs() : null;
   let r;
-  try { r = await api(route, charge); }
+  try { r = await api(g.route, charge); }
   catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
   if (r.envoi) fenetreCourrielsFictifs("documents", repere);
-  const lignes = r.salaries.map((c) => `<tr><td>${echapper(c)}</td><td>${
-    // Un salarié sans pièce n'a pas de pages.
-    (c in r.pages ? Object.entries(r.pages[c]) : []).map(([k, n]) => echapper(r.libelles[k]) + " : " + n + " p.").join(" · ")
-  }</td></tr>`).join("");
   cible.innerHTML = `
-    <h3>Dossier — ${echapper(r.periode)}</h3>
+    <h3>${echapper(r.titre)}</h3>
     ${r.refus.map((a) => `<div class="encart alerte">${echapper(a)}</div>`).join("")}
     ${r.avertissements.map((a) => `<div class="encart">${echapper(a)}</div>`).join("")}
-    <table class="tableau"><tr><th>Salarié</th><th>Pages</th></tr>${lignes}</table>
-    ${r.fichiers.length ? `<p class="note">Écrit : ${r.fichiers.map((x) => `<code>${echapper(x)}</code>`).join(", ")}</p>` : ""}
+    ${r.lignes.map((l) => `<p>${echapper(l)}</p>`).join("")}
+    ${r.ecrit_dit ? `<p class="note">${echapper(r.ecrit_dit)}</p>` : ""}
     ${r.envoi ? `<div class="encart ok">${echapper(r.phrase)}</div>` : ""}`;
 }
 

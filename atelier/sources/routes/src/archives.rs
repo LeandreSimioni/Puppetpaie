@@ -15,8 +15,9 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
 use socle::mois::{Annee, Mois};
-use crate::catalogue::{Acte, Forme, Fiche, Refus, FORME, MANQUE, OPERATION};
-use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, Refus, FORME, MANQUE, OPERATION};
+use crate::declaration::{charge, cle, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::imprevus::GesteDeRoute;
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
 
@@ -47,7 +48,7 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
-    lecture(Route::DossierFormes, "Dire ce que peut porter le dossier d'un salarié : catégories, périodes.", "salaries, categories, periodes, demande (du mot de passe, avant l'envoi)"),
+    lecture(Route::DossierFormes, "Dire ce que peut porter le dossier d'un salarié : catégories, périodes.", "gestes (l'aperçu, l'écrire, et l'envoyer quand une boîte est posée, avec la demande du mot de passe : leurs cases, montrant la dernière année et offrant les salariés), ecran (ce que les cases veulent dire, dit ; le bouton du dossier, dossier_dit), le dossier où il s'écrit"),
     lecture(Route::ExportsPeriodes, "Dire ce qui s'exporte : mois, années, états, formats, logiciel comptable.", "mois, annees, etats, formats, logiciel retenu"),
     Fiche {
         route: Route::RetenirLogiciel,
@@ -234,72 +235,100 @@ fn annees_de(dispo: &[Mois]) -> Vec<Annee> {
     annees
 }
 
-/// Un salarie que la page propose : sa cle, son nom, s'il est actif, s'il a un courriel.
-#[derive(Debug, Serialize)]
-struct SalariePropose {
-    cle: droit::contexte::IdSalarie,
-    nom: String,
-    actif: bool,
-    email: bool,
+/// Un geste sur le dossier d'un salarie : l'apercu, l'ecrire (`dossier-salarie`), l'envoyer (`dossier-envoyer`, une
+/// boite posee : il exige le mot de passe du logiciel). Leurs cases se saisissent ensemble, une fois chacune ; chaque
+/// geste n'en prend que les siennes.
+type GesteDuDossier = GesteDeRoute<DemandeDeDossier, ValeursDuDossier, ChoixDuDossier>;
+
+/// Ce que les cases du dossier montrent d'abord : la derniere annee qu'il y a matiere a exporter.
+#[derive(Debug, Clone, Default, Serialize)]
+struct ValeursDuDossier {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annee: Option<Annee>,
 }
 
-/// Une categorie a cocher : son nom, et ce qu'elle porte.
-#[derive(Debug, Serialize)]
-struct CategorieProposee {
-    categorie: documents::CategorieDeDocument,
-    quoi: &'static str,
+/// Ce qu'offrent les cases du dossier : les salaries, ceux en activite d'abord, puis les archives (ainsi dits).
+#[derive(Debug, Clone, Default, Serialize)]
+struct ChoixDuDossier {
+    salaries: Vec<crate::ouverture::Choix>,
 }
 
-/// Ce que rend `dossier-formes` : les salaries, les categories a cocher, les mois et les annees, si une boite est posee
-/// (l'envoi), et le dossier ou le dossier s'ecrit.
+/// Ce que l'ecran dit du dossier : ce que ses cases veulent dire (`dit`), et le bouton qui ouvre le dossier ou il
+/// s'ecrit (`dossier_dit`).
+#[derive(Debug, Serialize)]
+struct EcranDuDossier {
+    dit: Vec<&'static str>,
+    dossier_dit: &'static str,
+}
+
+/// Ce que rend `dossier-formes` : sa phrase, les gestes du dossier (leurs cases, ce qu'elles montrent et offrent), ce que
+/// l'ecran en dit, et le dossier ou le dossier s'ecrit.
 #[derive(Debug, Serialize)]
 struct FormesDuDossier {
     phrase: Phrase,
-    salaries: Vec<SalariePropose>,
-    categories: Vec<CategorieProposee>,
-    mois: Vec<Mois>,
-    annees: Vec<Annee>,
-    boite_liee: bool,
-    /// Une boite posee : la demande du mot de passe avant `dossier-envoyer`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    demande: Option<compagnie::demande::DemandeDuMotDePasse>,
+    gestes: Vec<GesteDuDossier>,
+    ecran: EcranDuDossier,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: PathBuf,
 }
 
-/// Les salaries que la page propose.
-fn salaries_de_la_page(ctx: &Contexte) -> Vec<SalariePropose> {
+const APERCU_DU_DOSSIER: Affiche = Affiche::new("Aperçu");
+const ECRIRE_LE_DOSSIER: Affiche = Affiche::new("Écrire le dossier");
+const ENVOYER_LE_DOSSIER: Affiche = Affiche::new("L'envoyer à chaque salarié");
+
+/// Les salaries qu'offrent les cases du dossier : ceux en activite, puis les archives ; chacun par sa cle, sous son nom.
+fn salaries_offerts(ctx: &Contexte) -> Vec<crate::ouverture::Choix> {
     let mut fiches: Vec<(&droit::contexte::IdSalarie, &droit::fiche::FicheSalarie)> = ctx.salaries.iter().collect();
-    fiches.sort_by(|a, b| a.0.cmp(b.0));
+    fiches.sort_by(|a, b| a.1.archivee().cmp(&b.1.archivee()).then(a.0.cmp(b.0)));
     fiches
         .into_iter()
-        .map(|(k, v)| SalariePropose {
-            cle: k.clone(),
-            nom: documents::tableaux_export::qui_souple(v),
-            actif: !v.archivee(),
-            email: v.email.is_some(),
+        .map(|(k, v)| {
+            let nom = documents::tableaux_export::qui_souple(v);
+            crate::ouverture::Choix::de(k.as_str(), if v.archivee() { format!("{} — archivé", nom) } else { nom })
         })
         .collect()
 }
 
-/// Ce que la page propose -- les salaries,
-/// les categories a cocher, les periodes, et si l'envoi est possible.
+/// `dossier-formes` : les gestes du dossier d'un salarie -- l'apercu et l'ecrire, et, une boite posee, l'envoyer --,
+/// leurs cases montrant la derniere annee et offrant les salaries.
 fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
-    let salaries = salaries_de_la_page(ctx);
+    let salaries = salaries_offerts(ctx);
     // `periodes_exportables` : les mois, puis (sans rien en dire) le logiciel du comptable.
     let mois = mois_disponibles(ctx)?;
     let annees = annees_de(&mois);
     etat_logiciel(ctx)?;
-    let categories: Vec<CategorieProposee> = documents::CategorieDeDocument::TOUTES.iter().map(|c| CategorieProposee { categorie: *c, quoi: c.libelle() }).collect();
     let boite_liee = crate::ouverture::boite_liee(ctx)?;
+    let n = salaries.len();
+    let valeurs = ValeursDuDossier { annee: annees.first().cloned() };
+    let choix = ChoixDuDossier { salaries };
+    let periode = [cle!(DemandeDeDossier, salaries), cle!(DemandeDeDossier, mois), cle!(DemandeDeDossier, annee), cle!(DemandeDeDossier, toutes_les_annees), cle!(DemandeDeDossier, categories)];
+    let mut ecrire: Vec<&'static str> = periode.to_vec();
+    ecrire.push(cle!(DemandeDeDossier, ensemble));
+    let mut gestes = vec![
+        GesteDeRoute::avec_cases(Route::DossierSalarie, DemandeDeDossier { apercu: Some(true), ..DemandeDeDossier::default() }, APERCU_DU_DOSSIER, ecrire.clone(), valeurs.clone(), choix.clone()),
+        GesteDeRoute::avec_cases(Route::DossierSalarie, DemandeDeDossier::default(), ECRIRE_LE_DOSSIER, ecrire, valeurs.clone(), choix.clone()),
+    ];
+    if boite_liee {
+        let envoyer = vec![
+            cle!(ChargeDossierEnvoyer, salaries),
+            cle!(ChargeDossierEnvoyer, mois),
+            cle!(ChargeDossierEnvoyer, annee),
+            cle!(ChargeDossierEnvoyer, toutes_les_annees),
+            cle!(ChargeDossierEnvoyer, categories),
+        ];
+        gestes.push(GesteDeRoute::avec_cases(Route::DossierEnvoyer, DemandeDeDossier::default(), ENVOYER_LE_DOSSIER, envoyer, valeurs, choix).exigeant(Some(crate::coffre::demande(&ctx.racine, GESTE_DOSSIER)?)));
+    }
     Ok(FormesDuDossier {
-        phrase: socle::phrase!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(salaries.len(), "salarié", "salariés"), categories.len()),
-        salaries,
-        categories,
-        mois,
-        annees,
-        boite_liee,
-        demande: if boite_liee { Some(crate::coffre::demande(&ctx.racine, GESTE_DOSSIER)?) } else { None },
+        phrase: socle::phrase!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(n, "salarié", "salariés"), documents::CategorieDeDocument::TOUTES.len()),
+        gestes,
+        ecran: EcranDuDossier {
+            dit: vec![
+                "Aucun salarié coché : le dossier de chacun.",
+                "Une période : un mois, une année, ou toutes les années.",
+                "Aucune sorte cochée : toutes. Une seule : un PDF. Plusieurs : un ZIP, un PDF par sorte.",
+            ],
+            dossier_dit: "Ouvrir le dossier",
+        },
         dossier: documents::DossierHorsDuMois::DossiersDeSalaries.sous(&ctx.racine),
     })
 }
@@ -395,7 +424,7 @@ struct ExportsPossibles {
 }
 
 /// CE QUE L'ECRAN DES EXPORTS DIT : rien a exporter, les regroupements, l'analytique, le format, les coordonnees, le
-/// dossier, les categories du dossier d'un salarie.
+/// dossier.
 #[derive(Debug, Serialize)]
 struct EcranDesExports {
     vide: Option<&'static str>,
@@ -405,7 +434,6 @@ struct EcranDesExports {
     format_libre: &'static str,
     coordonnees: &'static str,
     dossier: String,
-    categories: &'static str,
 }
 
 /// Les mois et les annees qu'il y a matiere a exporter, les etats, les formats, et le logiciel du comptable.
@@ -432,7 +460,6 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
         format_libre: "Le format se choisit ci-dessous.",
         coordonnees: "Le NIR, la naissance, l'adresse. Sans la case, rien de tout cela ne sort ; un fichier qui les porte ne s'envoie qu'à qui en a besoin.",
         dossier: format!("{} — et nulle part ailleurs : un export emporte des salaires", dossier.display()),
-        categories: "Une seule case : un PDF. Plusieurs : un ZIP, un PDF par catégorie.",
     };
     Ok(ExportsPossibles {
         phrase: socle::phrase!("Exports : {} ; mois payés : {} ; années : {}.", socle::ecran::compte(etats.len(), "état", "états"), mois.len(), annees.len()),
