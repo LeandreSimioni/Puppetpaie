@@ -973,7 +973,7 @@ pub struct LignePaie {
     pub heures: Option<HeuresParUnite>,
     /// LES HEURES DE TRAVAIL QUE LA LIGNE IMPRIME, toutes ensemble, telles qu'imprimees (« 2 services de répétition
     /// (8 h) » : 8 h ; C. trav. R. 3243-1, 5°).
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", skip_serializing_if = "Option::is_none")]
     pub heures_imprimees: Option<Heures>,
 }
 

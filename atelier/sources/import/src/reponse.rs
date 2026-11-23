@@ -439,7 +439,11 @@ impl FicheImportee {
             .anomalies
             .iter()
             .filter(|a| a.gravite == declarations::champs::Gravite::Erreur)
-            .map(|a| format!("{} : {}", a.libelle.clone().unwrap_or_else(|| a.champ.to_string()), a.message))
+            // Une anomalie se dit sous le libelle de sa case ; celle d'une case sans libelle, sous son champ.
+            .map(|a| match &a.libelle {
+                Some(l) => format!("{} : {}", l, a.message),
+                None => format!("{} : {}", a.champ, a.message),
+            })
             .collect();
         let ouvrable = self.etat == EtatFiche::Creee && self.fiche.nommee().is_some() && !self.fautes.is_empty();
         self.completer_la_fiche = ouvrable.then_some("Compléter la fiche");

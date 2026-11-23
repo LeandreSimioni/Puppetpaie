@@ -586,7 +586,7 @@ function fichesImportees(fiches, titre) {
     // la route les rend.
     const fautes = (f.fautes || []).map((x) => `<div class="acte-dernier faute">${echapper(x)}</div>`).join("");
     const ouvrir = f.completer_la_fiche ? `<div class="acte-dernier"><button type="button" class="petit" data-ouvrir-fiche="${echapper(f.nom)}"
-            data-ouvrir-cle="${echapper(f.cle)}">${echapper(f.completer_la_fiche)}</button></div>` : "";
+            ${f.cle == null ? "" : `data-ouvrir-cle="${echapper(f.cle)}"`}>${echapper(f.completer_la_fiche)}</button></div>` : "";
     const reste = `${ouvrir}${fautes}`;
     return `<div class="rang import">
       <span class="rang-nom">${echapper(f.libelle)}</span>

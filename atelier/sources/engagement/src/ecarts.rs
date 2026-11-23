@@ -127,6 +127,16 @@ impl TotalDuBulletin {
             TotalDuBulletin::NetImposable => "net_imposable",
         }
     }
+
+    /// Son nom en mots, tel que l'arrete du 25/02/2016 (le modele du bulletin) le nomme.
+    pub fn dit(self) -> &'static str {
+        match self {
+            TotalDuBulletin::CotisationsSalariales => "le total des cotisations salariales",
+            TotalDuBulletin::CotisationsPatronales => "le total des cotisations patronales",
+            TotalDuBulletin::NetSocial => "le montant net social",
+            TotalDuBulletin::NetImposable => "le net imposable",
+        }
+    }
 }
 
 impl RegroupementDeComparaison {
