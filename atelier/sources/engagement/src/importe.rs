@@ -237,6 +237,16 @@ pub struct PaieVersee {
         deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
     )]
     pub duree_du_travail: Option<Heures>,
+    /// L'ABATTEMENT QUE LE BULLETIN IMPRIME en en-tete (« Abattement : 21 »), en pourcent : la deduction forfaitaire
+    /// specifique que l'ancien logiciel a appliquee (arrete du 4 septembre 2025, art. 9). Vide : il n'en imprime pas, ou
+    /// une paie rangee avant qu'elle le porte.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "socle::grandeurs::ecrit::texte::option::serialize",
+        deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
+    )]
+    pub abattement: Option<socle::grandeurs::Taux>,
     /// Les cachets du mois, ecrits comme les heures : la DSN les declare en decimal (« 3.00 »).
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub cachets: Option<Cachets>,
@@ -496,6 +506,7 @@ impl PaieVersee {
             bases: BTreeMap::new(),
             heures: None,
             duree_du_travail: None,
+            abattement: None,
             cachets: None,
             jours: None,
             spectacle: None,

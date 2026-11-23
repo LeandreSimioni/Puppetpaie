@@ -358,7 +358,7 @@ fn piece_dite(s: Source) -> String {
 }
 
 /// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul.
-fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&ContratRelu>, dpae: EtatDeCarte) -> R<CarteImportee> {
+fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&ContratRelu>, dpae: EtatDeCarte, connus: &[&crate::ecarts::EcartConnuNote]) -> R<CarteImportee> {
     let p = paie.map(|x| &x.paie);
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
@@ -590,6 +590,11 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     for &(k, libelle, porte) in &montants {
         cases.push(case(libelle, porte.map(|(v, _)| socle::texte::euros(v)), porte.map(|(_, s)| piece_dite(s)), k));
     }
+    // CE QUE L'ANCIEN LOGICIEL A APPLIQUE AUTREMENT QUE LE TEXTE, deja releve (`engagement::ecarts_connus`) : la carte
+    // dit l'explication et l'ecart chiffre.
+    for k in connus {
+        cases.push(CaseLue { libelle: "Écart connu", valeur: Some(k.phrase()), source: Some(format!("bulletin {}", k.logiciel.as_str())), vide_dit: None, non_lu: false, pourquoi: None });
+    }
 
     // LES LIGNES DU BULLETIN : ce que chacune paie, telle qu'une phrase le dit, et son montant.
     let lignes: Vec<RangeeRendue> = p
@@ -693,13 +698,17 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let embauches = etats::embauches_par_depot(&lignes);
     let (certifiees, _) = envois::reprise_journal::embauches_attestees(ctx)?;
+    let connus = crate::ecarts::ecarts_connus_notes(&ctx.racine)?;
     let mut cartes = Vec::new();
     for i in importes {
         let contrat = i.contrat_lu()?;
         let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let dpae = dpae_de(&embauches, &certifiees, brut.salarie.as_ref(), brut.numero.as_ref(), brut.debut);
-        cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae)?);
+        // Les ecarts connus que la comparaison de cette paie a constates (`crate::ecarts::EcartConnuNote`).
+        let empreinte = i.paies().get(&mois).map(|p| engagement::ecarts::empreinte(&i, mois, p));
+        let siens: Vec<&crate::ecarts::EcartConnuNote> = connus.iter().filter(|k| Some(&k.paie) == empreinte.as_ref()).collect();
+        cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae, &siens)?);
     }
     cartes.sort_by(|a, b| (&a.debut, &a.nom).cmp(&(&b.debut, &b.nom)));
     Ok(cartes)

@@ -1362,6 +1362,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | ce qui diffère dans un écart de la comparaison (la base, un taux, un montant, une cotisation d'un seul côté) | `CeQuiDiffere` | `engagement/src/ecarts.rs` |
+| écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json`), la part dont il dit le taux, et l'écart connu constaté sur une paie importée (les deux montants de la part ; sa note dans `journal/ecarts-connus.json`, `import::ecarts::EcartConnuNote`) | `EcartConnu`, `PartDuTaux`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
+| paie importée qui ne se compare pas (la sorte de sa raison, tirée de l'endroit et de la classe du refus, jamais de sa phrase, et le refus qui la dit ; la sorte fait le genre de son incident, sans aucune valeur du cas) | `NonComparee`, `SorteDeNonComparaison` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
@@ -2804,7 +2806,14 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   pourquoi. Deux contrôles sans correction (le brut vaut la somme des lignes soumises ; le net se retrouve) : un écart
   avertit, le bulletin est repris avec ce qu'il imprime. Chaque bulletin est rapproché de la paie que sa DSN déclare
   (NIR, début, fin) et la complète (`importation/bulletins.rs`) ; sans DSN, il fait foi seul. Un bulletin d'un salarié
-  qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée.
+  qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée. **L'abattement** que
+  l'en-tête imprime (« Abattement : 21 », la déduction forfaitaire spécifique appliquée, un choix de la compagnie
+  salarié par salarié ; Léandre, 23/11/2026 : « on fait l'abattement qu'on veut ») se garde dans la paie importée
+  (`PaieVersee::abattement`) et complète la fiche du salarié comme ses autres cases, sans rien écraser : la profession
+  dont le taux de l'année de la période est celui-là (`DfsDuBareme::professions_au_taux`), quand elle est seule ; un
+  taux que plusieurs professions partagent (la catégorie 25 % : dramatique, lyrique, chorégraphique) ne choisit rien,
+  et la réponse de l'import dit pourquoi (`importation::bulletins::profession_de_l_abattement`). Une paie dont le bulletin
+  imprime un abattement ne se compare qu'une fois la profession dite sur la fiche (`SorteDeNonComparaison::CaseDeLaCompagnie`).
 - **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`importation/ecrite.rs`) : les fiches à créer, par le même
   chemin que l'écran (`routes::fiches::ecrire_fiche`) ; dans une fiche qui existe, seulement ce qui y est vide ou
   « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
@@ -2938,16 +2947,31 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   l'ouverture de la compagnie pour les paies importées pas encore comparées (`journal/ecarts-import.json`), chaque paie
   importée se compare à ce que le moteur aurait calculé de la même saisie, avec les barèmes et la configuration à la
   date de la période. Rien ne change dans l'engagement importé. Les écarts partent chez l'éditeur comme un incident de
-  fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart), sans rien afficher ni demander :
+  fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart ; son genre ne nomme que la cause,
+  des codes du logiciel : la cotisation, la grandeur et le logiciel d'un écart, la sorte de raison d'une paie non
+  comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; ce qui distingue deux
+  rapports d'une cause est dans leur détail, signé, et le registre `journal/ecarts-import-notes.json` garde les
+  signatures notées), sans rien afficher ni demander :
   ils ne désignent personne (ni nom, NIR, naissance, adresse, ni salaire ou montant d'une paie ; seulement la
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
-  caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
+  caviardage. Une paie se compare une fois. **Les écarts connus des anciens logiciels** (`ecarts-connus-base.json`,
+  `engagement::ecarts_connus` ; Léandre, 23/11/2026 : « on ne relève plus les défauts déjà relevés ») : un taux qu'un
+  ancien logiciel a appliqué autrement que le texte, déjà relevé, avec la source du taux du texte. Une part qui retombe
+  exactement sur une ligne (le taux du bulletin est celui appliqué quand le nôtre est celui du texte ; son montant est le
+  nôtre, chaque ligne au taux du texte refaite au taux appliqué, à la tolérance de la comparaison) n'est pas un écart,
+  ni le total des cotisations de sa part pour ce qu'elle en explique ; elle ne fait pas d'incident, se note dans
+  `journal/ecarts-connus.json`, et la carte de la paie importée dit l'explication et l'écart chiffré (« Écart connu »,
+  `import::mois`). Ce qui n'y retombe pas exactement sonne comme avant. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique). Ce que le logiciel ne livre pas pour calculer une paie (le barème de son année,
   la couche de sa convention : `droit::contexte::RienDeLivre`, que `Contexte::de_quoi_calculer` rend à part) ne l'inscrit pas au registre : la
   version qui le livrera la comparera à l'ouverture. Avant 2026 (`engagement::ecarts::COMPAREE_TOUJOURS_DES`, une
   décision de l'éditeur), ce manque ne fait aucun incident : la paie entre dans l'historique sans comparaison ; à partir
-  de 2026, il en fait un. Une case qui manque à la compagnie reste ce qu'elle est, quelle que soit l'année. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
+  de 2026, il en fait un. Une case qui manque à la compagnie reste ce qu'elle est, quelle que soit l'année, sauf
+  l'effectif d'une année d'avant (Léandre, 23/11/2026, « B ») : tant que la compagnie ne l'a pas dit, la comparaison
+  prend celui que « Pour démarrer » propose d'après les paies reprises (`EffectifRepris`), en mémoire et sans rien
+  écrire (`Contexte::avec_les_effectifs_proposes` ; ce que la compagnie a écrit l'emporte), et le dit
+  (`Comparaison::effectif_propose`) ; une année qui ne se propose pas reste non comparée. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
   (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), son motif de recours (celui que sa DSN
   déclare, S21.G00.40.021 : `Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa
   carte, d'un mois que le contrat et la paie couvrent entier (`ecarts::contrat_au_mois`, `salaire_et_heures`). Le

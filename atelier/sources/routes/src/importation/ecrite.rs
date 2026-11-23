@@ -143,6 +143,7 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
     remplit(&mut ligne.verse_le, &b.verse_le);
     remplit(&mut ligne.heures, &b.heures);
     gagne(&mut ligne.duree_du_travail, &b.duree_du_travail);
+    gagne(&mut ligne.abattement, &b.abattement);
     remplit(&mut ligne.cachets, &b.cachets);
     remplit(&mut ligne.jours, &b.jours);
     for (l, x) in [(&mut ligne.spectacle, &b.spectacle), (&mut ligne.analytique, &b.analytique)] {

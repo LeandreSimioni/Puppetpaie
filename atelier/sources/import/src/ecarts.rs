@@ -5,9 +5,13 @@
 //! incidents et le registre des paies comparees (`journal/ecarts-import.json`, leurs empreintes).
 //!
 //! UN INCIDENT DE FONCTIONNEMENT COMME LES AUTRES : rien ne s'affiche ni ne se demande. Nature `logiciel`, `ou` =
-//! `ecarts_import`, un incident par sorte d'ecart (la cotisation, la grandeur, le logiciel d'origine) pour que le
-//! serveur les regroupe d'une compagnie a l'autre ; une paie qui ne se compare pas en fait un par raison, et les
-//! libelles de cotisation que la table de lecture ne rattache a rien, un par logiciel. Puis l'envoi ordinaire
+//! `ecarts_import`, un incident par sorte d'ecart (la cotisation, la grandeur, le logiciel d'origine) ; une paie qui ne
+//! se compare pas en fait un par raison, et les libelles de cotisation que la table de lecture ne rattache a rien, un
+//! par logiciel. LE GENRE NOMME LA CAUSE, JAMAIS LE CAS : des codes du logiciel (la cotisation, la grandeur et le
+//! logiciel d'un ecart ; la sorte de raison d'une paie non comparee, `engagement::ecarts::SorteDeNonComparaison` ; le
+//! logiciel des lignes non rattachees), sans aucune valeur de la compagnie, pour que le serveur range sous un meme ticket
+//! une cause, d'une compagnie a l'autre ; ce qui distingue deux rapports d'une cause est dans leur detail, signe
+//! (`noter`). Puis l'envoi ordinaire
 //! (`incidents::envoyer`), qui ne part que si l'envoi a l'editeur est actif sur ce poste.
 //!
 //! CE QUI PART NE DESIGNE PERSONNE : ni nom, prenom, NIR, naissance ou adresse, ni salaire, brut, net ou montant d'une
@@ -22,8 +26,8 @@
 //! UNE PAIE SE COMPARE UNE FOIS, sauf quand le calcul l'a refusee (une configuration a completer) ou que le logiciel ne
 //! livre pas de quoi la calculer : elle se compare de nouveau a l'ouverture suivante. Une paie d'avant
 //! `engagement::ecarts::COMPAREE_TOUJOURS_DES` que le logiciel ne sait pas calculer n'est pas une comparaison : ni
-//! incident, ni registre. UN RAPPORT DEJA NOTE NE SE NOTE PAS DEUX FOIS (meme empreinte, meme resume, meme
-//! detail) : un import rejoue ne renvoie rien.
+//! incident, ni registre. UN RAPPORT DEJA NOTE NE SE NOTE PAS DEUX FOIS (meme resume, meme detail : sa
+//! signature, que garde `journal/ecarts-import-notes.json`) : un import rejoue ne renvoie rien.
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
@@ -37,7 +41,7 @@ use crate::caviardage::{self, Connus};
 use compagnie::incidents;
 use droit::contexte::Contexte;
 use droit::fiche::AnnexeConvention;
-use engagement::ecarts::{CeQuiDiffere, Comparaison, MesureDeLEcart, OrigineDuTauxAtmp, RegroupementDeComparaison};
+use engagement::ecarts::{CeQuiDiffere, Comparaison, MesureDeLEcart, OrigineDuTauxAtmp, RegroupementDeComparaison, SorteDeNonComparaison};
 use engagement::importe::LogicielDUnBulletin;
 use socle::echec::R;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
@@ -70,6 +74,7 @@ pub enum Detail {
         cas: Vec<Cas>,
     },
     NonComparee {
+        sorte: SorteDeNonComparaison,
         raison: String,
         idcc: Option<droit::fiche::Idcc>,
         annexe: Option<AnnexeConvention>,
@@ -139,6 +144,9 @@ pub struct Cas {
     leur_taux: Option<socle::grandeurs::Taux>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
     ecart_relatif: Option<socle::grandeurs::Coefficient>,
+    /// Les annees dont le calcul a pris l'effectif que les paies reprises proposent (`Comparaison::effectif_propose`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    effectif_propose: Vec<socle::mois::Annee>,
 }
 
 fn montant() -> &'static Regex {
@@ -189,15 +197,119 @@ fn comparees(racine: &Path) -> R<BTreeSet<EmpreinteCourte>> {
     Ok(lues.into_iter().collect())
 }
 
-/// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, et les empreintes des
+/// Le registre des rapports deja notes au journal des incidents (leurs signatures : `noter`).
+fn registre_des_notes(racine: &Path) -> PathBuf {
+    racine.join(envois::journal::JOURNAL).join("ecarts-import-notes.json")
+}
+
+/// Les signatures des rapports deja notes ; aucune tant que leur registre n'existe pas.
+fn signatures_notees(racine: &Path) -> R<BTreeSet<EmpreinteCourte>> {
+    let p = registre_des_notes(racine);
+    if !socle::fichiers::existe(&p) {
+        return Ok(BTreeSet::new());
+    }
+    let lues: Vec<EmpreinteCourte> = socle::forme::lire_fichier(&p, "Le registre des écarts d'import notés ne se lit pas : le signaler au développeur.")?;
+    Ok(lues.into_iter().collect())
+}
+
+/// Le detail d'un rapport tel qu'il se note : sa signature (ce qui le distingue d'un autre rapport de la meme cause), et
+/// ce qu'il dit.
+#[derive(Serialize)]
+struct DetailSigne<'a> {
+    signature: EmpreinteCourte,
+    #[serde(flatten)]
+    detail: &'a Detail,
+}
+
+/// UN ECART CONNU NOTE SUR UNE PAIE IMPORTEE (`engagement::ecarts_connus::EcartConnuConstate`), une ligne de
+/// `journal/ecarts-connus.json` : la paie (son empreinte, `engagement::ecarts::empreinte`), ce que la ligne connue dit
+/// et les deux montants de sa part, le notre (au taux du texte) et celui du bulletin. Ce que la carte de la paie importee
+/// explique a la compagnie (`mois`) ; une paie se compare une fois, ce qu'elle a constate se garde.
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EcartConnuNote {
+    pub paie: EmpreinteCourte,
+    pub logiciel: LogicielDUnBulletin,
+    pub cotisation: RegroupementDeComparaison,
+    pub grandeur: engagement::ecarts_connus::PartDuTaux,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub applique: socle::grandeurs::Taux,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub texte: socle::grandeurs::Taux,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub notre: socle::grandeurs::Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub leur: socle::grandeurs::Montant,
+    pub explication: String,
+}
+
+impl EcartConnuNote {
+    /// Ce que la carte de la paie importee en dit : l'explication, et l'ecart chiffre de la part.
+    pub fn phrase(&self) -> String {
+        let part = match self.grandeur {
+            engagement::ecarts_connus::PartDuTaux::Employeur => "part employeur",
+            engagement::ecarts_connus::PartDuTaux::Salarie => "part salariale",
+        };
+        format!(
+            "{} Sur ce bulletin ({}) : {} au lieu de {}, soit {} d'écart.",
+            self.explication,
+            part,
+            socle::texte::euros(self.leur),
+            socle::texte::euros(self.notre),
+            socle::texte::euros((self.leur - self.notre).abs())
+        )
+    }
+}
+
+/// Le registre des ecarts connus notes sur les paies importees.
+fn registre_des_connus(racine: &Path) -> PathBuf {
+    racine.join(envois::journal::JOURNAL).join("ecarts-connus.json")
+}
+
+/// LES ECARTS CONNUS NOTES SUR LES PAIES IMPORTEES (`EcartConnuNote`), la seule lecture ; aucun tant que leur registre
+/// n'existe pas.
+pub fn ecarts_connus_notes(racine: &Path) -> R<Vec<EcartConnuNote>> {
+    let p = registre_des_connus(racine);
+    if !socle::fichiers::existe(&p) {
+        return Ok(Vec::new());
+    }
+    socle::forme::lire_fichier(&p, "Le registre des écarts connus des paies importées ne se lit pas : le signaler au développeur.")
+}
+
+/// Ce qu'une revue des paies importees rend : les rapports, les empreintes des paies qui ne sont plus a comparer, et les
+/// ecarts connus que les paies comparees ont constates.
+pub struct Revue {
+    pub rapports: Vec<Rapport>,
+    pub faites: Vec<EmpreinteCourte>,
+    pub connus: Vec<EcartConnuNote>,
+}
+
+/// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, les empreintes des
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
-/// refusee se compare de nouveau la fois suivante).
-pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<EmpreinteCourte>)> {
+/// refusee se compare de nouveau la fois suivante), et les ecarts connus constates sur celles-ci.
+pub fn rapports(ctx: &Contexte) -> R<Revue> {
     let importes = engagement::importe::tous(&ctx.racine)?;
     let deja = comparees(&ctx.racine)?;
     let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
     let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
-    Ok((rapports_de(ctx, &comparaisons)?, faites))
+    let connus = comparaisons
+        .iter()
+        .filter(|c| !c.a_refaire)
+        .flat_map(|c| {
+            c.connus.iter().map(|k| EcartConnuNote {
+                paie: c.empreinte.clone(),
+                logiciel: k.connu.logiciel.clone(),
+                cotisation: k.connu.cotisation.clone(),
+                grandeur: k.connu.grandeur,
+                applique: k.connu.applique,
+                texte: k.connu.texte,
+                notre: k.notre,
+                leur: k.leur,
+                explication: k.connu.explication.clone(),
+            })
+        })
+        .collect();
+    Ok(Revue { rapports: rapports_de(ctx, &comparaisons)?, faites, connus })
 }
 
 fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> {
@@ -219,17 +331,18 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         notre_taux: None,
         leur_taux: None,
         ecart_relatif: None,
+        effectif_propose: c.effectif_propose.clone(),
     };
 
     let mut ecarts: BTreeMap<(RegroupementDeComparaison, CeQuiDiffere, LogicielDuRapport), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
-    let mut refus: BTreeMap<String, Vec<Cas>> = BTreeMap::new();
+    let mut refus: BTreeMap<(SorteDeNonComparaison, String), Vec<Cas>> = BTreeMap::new();
     let mut seules: BTreeMap<LogicielDuRapport, Vec<String>> = BTreeMap::new();
     for c in comparaisons {
         match &c.ecarts {
-            Err(raison) => {
-                let raison = montant().replace_all(&propre.texte(&raison.phrase), "<MONTANT>").into_owned();
+            Err(non) => {
+                let raison = montant().replace_all(&propre.texte(&non.raison.phrase), "<MONTANT>").into_owned();
                 let x = Cas { logiciel: c.logiciel.clone(), taux_atmp: None, ..cas(c) };
-                refus.entry(raison).or_default().push(x);
+                refus.entry((non.sorte, raison)).or_default().push(x);
             }
             Ok(liste) => {
                 for e in liste {
@@ -276,7 +389,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
             logiciel,
             cas.len()
         );
-        let genre = format!("{} · {} · {}", cotisation, grandeur.code(), logiciel);
+        let genre = genre_d_un_ecart(&cotisation, grandeur, &logiciel);
         let detail = Detail::Ecart {
             cotisation,
             libelles: propre.textes(&libelles),
@@ -287,21 +400,27 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
             organisation_patronale: propre.organisation(organisation.as_ref()),
             cas,
         };
-        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
+        sortie.push(Rapport { genre, resume: propre.texte(&resume), detail });
     }
-    for (raison, cas) in refus {
+    for ((sorte, raison), cas) in refus {
         let resume = format!("Paie importée non comparée : {} ; {} paie(s).", raison, cas.len());
-        let genre: String = format!("non comparée : {}", raison).chars().take(120).collect();
-        let detail = Detail::NonComparee { raison: propre.texte(&raison), idcc: idcc.clone(), annexe, cas };
-        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
+        let genre = format!("non comparée · {}", sorte.code());
+        let detail = Detail::NonComparee { sorte, raison: propre.texte(&raison), idcc: idcc.clone(), annexe, cas };
+        sortie.push(Rapport { genre, resume: propre.texte(&resume), detail });
     }
     for (logiciel, libelles) in seules {
         let resume = format!("Lignes de cotisation non comparées (bulletin {}) : la table de lecture ne les rattache à aucune cotisation : {}.", logiciel, libelles.join(" ; "));
         let genre = format!("cotisation non rattachée · {}", logiciel);
         let detail = Detail::NonRattachees { logiciel, libelles: propre.textes(&libelles), idcc: idcc.clone() };
-        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
+        sortie.push(Rapport { genre, resume: propre.texte(&resume), detail });
     }
     Ok(sortie)
+}
+
+/// LE GENRE D'UN ECART, sa cause et rien de son cas : la cotisation (du bareme, ou le regroupement que le modele du
+/// bulletin imprime), ce qui differe, le logiciel reconnu (une cle de la table de lecture, ou « autre »).
+fn genre_d_un_ecart(cotisation: &RegroupementDeComparaison, grandeur: CeQuiDiffere, logiciel: &LogicielDuRapport) -> String {
+    format!("{} · {} · {}", cotisation, grandeur.code(), logiciel)
 }
 
 /// A la fin d'un import : les rapports notes, puis l'envoi ordinaire. Ne dit rien a l'ecran : rend le nombre de rapports
@@ -324,24 +443,42 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
     if engagement::importe::tous(racine)?.is_empty() {
         return Ok(0);
     }
-    let (rapports, faites) = rapports(ctx)?;
-    let deja = incidents::lire(racine, Some(incidents::LOGICIEL), false)?;
+    let Revue { rapports, faites, connus } = rapports(ctx)?;
+    let mut signees = signatures_notees(racine)?;
+    let avant = signees.len();
     let mut notes = 0;
     for r in rapports {
-        // Ce qui reconnait un rapport deja note : le journal tronque les longs textes et ne relit pas un detail, le
-        // rapport se reconnait a la signature de ce qu'il dit en entier, que son genre porte (et donc son empreinte).
+        // CE QUI RECONNAIT UN RAPPORT DEJA NOTE : la signature de ce qu'il dit en entier (son resume et son detail), que
+        // le registre des rapports notes garde ; le genre ne dit que la cause, pour que le serveur regroupe sous un meme
+        // ticket tous les rapports d'une cause, d'une compagnie a l'autre.
         let signature = Empreinte::des_octets(format!("{}|{}", r.resume, socle::ecriture::json_en_ligne(&r.detail)).as_bytes()).courte();
-        let genre = format!("{} · {}", r.genre, signature);
-        let empreinte = incidents::empreinte(incidents::LOGICIEL, OU, &genre);
-        if deja.iter().any(|l| l.empreinte == empreinte) {
+        if signees.contains(&signature) {
             continue;
         }
-        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &genre, detail: &r.detail, trace: None, sans_contexte: true };
+        let detail = DetailSigne { signature: signature.clone(), detail: &r.detail };
+        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &r.genre, detail: &detail, trace: None, sans_contexte: true };
         match incidents::noter(racine, &note) {
-            Ok(Some(_)) => notes += 1,
+            Ok(Some(_)) => {
+                notes += 1;
+                signees.insert(signature);
+            }
             Ok(None) => {}
             Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", e.phrase),
         }
+    }
+    if signees.len() > avant {
+        socle::ecriture::ecrire_json(&registre_des_notes(racine), &signees, 0)?;
+    }
+    // Les ecarts connus constates, avant le registre qui dit leurs paies comparees : une paie qui les a constates ne se
+    // compare plus, ils se gardent.
+    if !connus.is_empty() {
+        let mut notes_connus = ecarts_connus_notes(racine)?;
+        for k in connus {
+            if !notes_connus.contains(&k) {
+                notes_connus.push(k);
+            }
+        }
+        socle::ecriture::ecrire_json(&registre_des_connus(racine), &notes_connus, 2)?;
     }
     if !faites.is_empty() {
         let mut toutes = comparees(racine)?;
