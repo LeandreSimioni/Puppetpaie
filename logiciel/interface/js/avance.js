@@ -204,8 +204,8 @@ const CASES = {
         encodeURIComponent(JETON)}&t=${Date.now()}`)}" target="_blank" rel="noopener">${echapper(c.exemple.libelle)}</a>` : "");
       return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}${
         v == null && o.prerempli != null ? ` data-prerempli="${echapper(String(o.prerempli))}"` : ""}>${(o.choix || []).filter((c) => c.code !== "")
-        .map((c) => `<label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${coche === c.code ? " checked" : ""}> ${
-          echapper(c.libelle)}</label>${exemple(c)}`).join("")}</span>`;
+        .map((c) => `<span class="choix-et-exemple"><label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${coche === c.code ? " checked" : ""}> ${
+          echapper(c.libelle)}</label>${exemple(c)}</span>`).join("")}</span>`;
     },
     lire: (x) => {
       const c = x.querySelector("input:checked");
