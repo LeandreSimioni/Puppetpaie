@@ -5,11 +5,12 @@ use droit::contexte::Contexte;
 use envois::simulation_courriels::CourrielsJoues;
 use socle::echec::{erreur, R};
 
-/// La charge de `courriels-fictifs` : seulement ceux d'apres ce fichier (vide ou absent : tous).
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeCourrielsFictifs {
-    pub apres: Option<String>,
+crate::declaration::charge! {
+    /// La charge de `courriels-fictifs` : seulement ceux d'apres ce fichier (vide ou absent : tous).
+    #[derive(Debug, Default)]
+    pub struct ChargeCourrielsFictifs {
+        pub apres: Option<String> = crate::declaration::dit("Depuis", "seulement ceux d'après cet instant").avancee(),
+    }
 }
 
 /// Les courriels joues de la compagnie fictive ; refuse une compagnie reelle.

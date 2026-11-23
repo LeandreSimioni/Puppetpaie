@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, Refus, OPERATION};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::Moteur;
@@ -180,7 +180,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CourrielsFictifs,
         geste: "Dire les courriels joués d'une compagnie fictive.",
-        charge: &[Champ { nom: "apres", libelle: Affiche::new("Depuis"), forme: Forme::Texte, sens: "seulement ceux d'après cet instant", avance: true }],
+        charge: &crate::simulation_courriels::ChargeCourrielsFictifs::CHARGE,
         exemple: r#"{}"#,
         rend: "les courriels joués (à qui, quoi, quand)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "rien : seulement dans une compagnie fictive" }],
