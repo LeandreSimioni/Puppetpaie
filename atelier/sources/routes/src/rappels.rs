@@ -754,7 +754,8 @@ impl Echeance {
             echeance_depot: self.echeance_depot.clone(),
             obligation: self.obligation.clone(),
             objet: self.objet.clone(),
-            action: self.action()?,
+            // Le geste qui fait l'echeance est le principal de sa boite.
+            action: self.action()?.map(crate::etapes::Action::principale),
             gestes: self.gestes()?,
         })
     }

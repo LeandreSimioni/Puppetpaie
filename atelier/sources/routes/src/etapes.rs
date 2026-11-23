@@ -145,14 +145,16 @@ impl EtatCase {
 
 /// LE GESTE D'UN CLIC, en routes du catalogue, celles que l'ecran et le LLM appellent : la route qu'il ouvre (`route`,
 /// un apercu le plus souvent), sa charge (`charge`, en sa forme), la route de l'acte qui suit, s'il y en a un (`puis`), et
-/// ce que dit le bouton (`libelle`). La page ouvre sa boite d'apres la route. `tester` : le depot d'une DSN, dont le test
-/// part des qu'elle est ecrite.
+/// ce que dit le bouton (`libelle`), et son rang dans son ecran (`rang`, `RangDuGeste` : la page en tire la forme du
+/// bouton). La page ouvre sa boite d'apres la route. `tester` : le depot d'une DSN, dont le test part des qu'elle est
+/// ecrite.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Action {
     route: Route,
     charge: ChargeDeLAction,
     puis: Option<Route>,
     libelle: String,
+    rang: RangDuGeste,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     tester: bool,
     /// La vue qu'il ouvre, quand sa route en a deux (`VueDuGeste`) ; aucune pour une route qui n'en a qu'une.
@@ -270,12 +272,19 @@ charge_du_geste! {
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
 /// (`ChargeDUneVue`) : son action se fait par `vers`.
 pub(crate) fn action(route: Route, charge: impl Into<ChargeDuGeste>, puis: Option<Route>, libelle: String) -> Action {
-    Action { route, charge: ChargeDeLAction::Route(charge.into()), puis, libelle, tester: false, vue: None }
+    Action { route, charge: ChargeDeLAction::Route(charge.into()), puis, libelle, rang: RangDuGeste::Second, tester: false, vue: None }
+}
+
+impl Action {
+    /// La meme, le geste principal de son ecran (celui d'un rappel).
+    pub(crate) fn principale(self) -> Action {
+        Action { rang: RangDuGeste::Principal, ..self }
+    }
 }
 
 /// L'`Action` qui ouvre la vue `vue` de sa route, sur `charge`.
 pub(crate) fn vers(vue: VueDuGeste, charge: impl Into<ChargeDUneVue>, puis: Option<Route>, libelle: String) -> Action {
-    Action { route: vue.route(), charge: ChargeDeLAction::Vue(charge.into()), puis, libelle, tester: false, vue: Some(vue) }
+    Action { route: vue.route(), charge: ChargeDeLAction::Vue(charge.into()), puis, libelle, rang: RangDuGeste::Second, tester: false, vue: Some(vue) }
 }
 
 /// Le compte d'une case : un nombre, ou ce qui est revenu sur ce qui est parti.

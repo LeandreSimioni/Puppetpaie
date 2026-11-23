@@ -165,7 +165,7 @@ function rangFin(f, k) {
     f.qui_dit, f.obligation.butoir_dit, boutonsDesGestes(f.gestes),
     f.avant_signaler ? `<div class="du-manque"><p>${echapper(f.avant_signaler)}</p>
       ${f.a_saisir.map((m, i) => `<p><b>${echapper(m.case)}</b> : ${echapper(m.dire)}
-        <button class="lien" data-case="${i}">${echapper(f.la_dire)}</button></p>`).join("")}</div>` : "",
+        <button class="${classeDuGeste(f.la_dire)}" data-case="${i}">${echapper(f.la_dire.libelle)}</button></p>`).join("")}</div>` : "",
     pourquoiDu(f.obligation));
 }
 

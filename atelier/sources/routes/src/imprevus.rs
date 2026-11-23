@@ -2912,13 +2912,21 @@ pub(crate) struct FinLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     avant_signaler: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    la_dire: Option<&'static str>,
+    la_dire: Option<VersLaCase>,
     rang: String,
     gestes: Vec<GesteDEcheance>,
 }
 
-/// Ce que l'ecran dit d'une fin a qui il manque une case, et le mot qui mene a la case.
-const LA_DIRE: &str = "La dire";
+/// LE MOT QUI MENE A LA CASE QUI MANQUE A UNE FIN (`a_saisir`), dans la carte de son contrat : son libelle et son rang
+/// (`RangDuGeste`, la page en tire la forme du bouton).
+#[derive(Debug, Clone, Serialize)]
+struct VersLaCase {
+    libelle: &'static str,
+    rang: RangDuGeste,
+}
+
+/// Ce que l'ecran dit d'une fin a qui il manque une case, et le mot qui mene a la case, un geste second.
+const LA_DIRE: VersLaCase = VersLaCase { libelle: "La dire", rang: RangDuGeste::Second };
 
 /// LA FIN D'UNE CARTE VALIDEE QUI NE SE LIT PLUS (son contrat finit avant de commencer, son salarie n'est plus dit) : on
 /// ne sait ni si elle finit ce mois-ci, ni si elle se signale. Elle ne porte que ce qu'il faut corriger (`a_corriger`)
