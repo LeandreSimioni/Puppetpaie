@@ -1077,7 +1077,7 @@ fn libelles_a_dater(nom: NomDeFiche, a_dater: &[CaseDeFiche]) -> R<Vec<String>> 
 
 // ------------------------------------------------------------------ poser des cases
 
-/// POSER DES CASES D'UNE FICHE QUI EXISTE (un geste qui ne touche que quelques cases : le modele de bulletin, la case des
+/// POSER DES CASES D'UNE FICHE QUI EXISTE (un geste qui ne touche que quelques cases : la case des
 /// permanents, le compte des DPAE, l'anciennete d'un salarie, une fiche archivee, ce que l'import complete) : face a la
 /// fiche telle qu'elle est sur le disque a `lue_au` (`ecrire_datee`), l'ancien fichier sauvegarde. Ni derivation ni
 /// verification : chaque case est deja dans sa forme. `cle` : celle d'un salarie ou d'un spectacle, `None` pour

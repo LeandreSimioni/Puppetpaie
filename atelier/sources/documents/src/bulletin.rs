@@ -494,8 +494,8 @@ const LARGEURS_ANNEXE: [Mesure; 6] = [mesure!("0.46"), mesure!("0.11"), mesure!(
 ///   n'ajoute donc ni colonne « Taux employeur » ni lignes « dont ... » DANS la rubrique, que Q 10 refuse.
 ///   L'annexe est une page qui suit celle du bulletin.
 ///
-/// QUI CHOISIT : la compagnie, pour tous (`modele_bulletin` de la fiche entreprise, pose par le selecteur de
-/// Configuration) ; un salarie qui demande l'autre modele l'obtient par la case `modele_bulletin` de sa fiche (Avance),
+/// QUI CHOISIT : la compagnie, pour tous (`modele_bulletin` de la fiche entreprise, ou il se
+/// choisit) ; un salarie qui demande l'autre modele l'obtient par la case `modele_bulletin` de sa fiche (Avance),
 /// qui l'emporte. Sans choix : le simplifie. Le modele est un choix de la fiche (`droit::fiche::ModeleBulletin`), lu par
 /// sa forme : une valeur inconnue refuse la fiche (regle 1).
 ///

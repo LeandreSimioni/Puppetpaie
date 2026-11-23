@@ -2918,7 +2918,7 @@ choix! {
     /// LES DEUX MODELES DU BULLETIN (`documents::bulletin`, ou chacun se decrit) : le simplifie, le modele de l'arrete
     /// du 25/02/2016, art. 1, I ; le complet, le meme bulletin suivi d'une page annexe qui detaille chaque cotisation.
     /// La case `modele_bulletin` de la fiche entreprise (la compagnie, pour tous) et de la fiche d'un salarie (qui
-    /// l'emporte) ; la charge des routes du modele.
+    /// l'emporte) ; la charge de la route de son bulletin d'exemple.
     pub enum ModeleBulletin { Simplifie = "simplifié", Complet = "complet" }
 }
 
@@ -2929,21 +2929,6 @@ impl ModeleBulletin {
         match self {
             ModeleBulletin::Simplifie => "Simplifié",
             ModeleBulletin::Complet => "Complet",
-        }
-    }
-
-    /// Ce que la page en dit, sous l'apercu.
-    pub fn description(self) -> &'static str {
-        match self {
-            ModeleBulletin::Simplifie => {
-                "Le bulletin clarifié du modèle réglementaire (arrêté du 25 février 2016) : les cotisations regroupées \
-                 sous les lignes du modèle, le taux de la part salariale, les contributions de l'employeur en une ligne."
-            }
-            ModeleBulletin::Complet => {
-                "Le même bulletin, ligne pour ligne, suivi d'une page annexe qui détaille chaque cotisation et \
-                 contribution sous la ligne du bulletin qui la regroupe : sa base, le taux et le montant de la part \
-                 salariale et de la part employeur."
-            }
         }
     }
 

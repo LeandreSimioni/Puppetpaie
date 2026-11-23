@@ -1223,12 +1223,36 @@ pub(crate) struct Choix {
     /// Les parties d'une valeur faite de parties que ce choix ouvre (`catalogue::Forme::Parties`).
     #[serde(skip_serializing_if = "Option::is_none")]
     ouvre: Option<Vec<&'static str>>,
+    /// Le document qui montre ce choix, qu'on ouvre a cote de lui (le bulletin d'exemple d'un modele du bulletin).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exemple: Option<ExempleDuChoix>,
+}
+
+/// L'EXEMPLE D'UN CHOIX : le document qui le montre, que la route nomme par son adresse (servie par la fenetre), et le
+/// lien qui l'ouvre. Le modele du bulletin de la fiche Entreprise : le bulletin d'exemple de chaque modele
+/// (`bulletin::adresse_apercu`, que fait la route `bulletin-modele-apercu`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ExempleDuChoix {
+    libelle: &'static str,
+    adresse: String,
+}
+
+impl ExempleDuChoix {
+    /// Le document a l'adresse `adresse`, ouvert par le lien `libelle`.
+    pub(crate) fn de(libelle: &'static str, adresse: String) -> ExempleDuChoix {
+        ExempleDuChoix { libelle, adresse }
+    }
 }
 
 impl Choix {
     /// Un code et son libelle, sans defaut.
     pub(crate) fn de(code: impl std::fmt::Display, libelle: impl std::fmt::Display) -> Choix {
-        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None, ouvre: None }
+        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None, ouvre: None, exemple: None }
+    }
+
+    /// Le document qui le montre.
+    pub(crate) fn montre_par(self, exemple: ExempleDuChoix) -> Choix {
+        Choix { exemple: Some(exemple), ..self }
     }
 
     /// Le code que le choix porte.

@@ -1094,7 +1094,7 @@ impl Fenetre {
     }
 
     /// L'apercu d'un modele de bulletin : le PDF d'une paie fictive, que la route `bulletin-modele-apercu` fait dans le
-    /// processus de la fenetre, comme toute route ; le lecteur de la fenetre l'affiche (Configuration).
+    /// processus de la fenetre, comme toute route ; la fiche Entreprise l'ouvre a cote de chaque modele.
     fn apercu_bulletin(&self, r: &Requete) -> Reponse {
         let interdit = Reponse::nouvelle(403, "text/plain", Vec::new());
         let Phase::Ouverte { racine, .. } = self.phase() else { return interdit };

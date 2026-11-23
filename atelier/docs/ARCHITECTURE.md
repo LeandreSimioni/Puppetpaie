@@ -1179,7 +1179,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
 | fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, si « Avancé » s'ouvre, les cases dont la route a récrit la saisie, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
-| case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix et s'ils se cochent en boutons, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | où une case de fiche renvoie, rendu sous elle (le sous-onglet des métiers, ou la case d'une autre fiche : l'option de la déduction forfaitaire de l'entreprise) | `routes::fiches::RenvoiDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | ce qui se fait depuis la fiche d'un salarié enregistré, dans son en-tête (sa clé, d'où ses imprévus et ses droits se lisent, et le geste vers ses documents) | `routes::fiches::SalarieDeLEntete` | `routes/src/fiches/rendue.rs` |
 | fiche d'un salarié neuf à faire remplir par la personne, dans son en-tête (ce que la demande fait, son geste `fiche-demander` ou ce qui lui manque, la demande du mot de passe) | `routes::fiches::InvitationDeLaFiche` | `routes/src/fiches/rendue.rs` |
@@ -1189,6 +1189,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | complémentaire santé d'un salarié au mois telle que sa fiche la fait dire (hors fiche, ce qui manque pour la payer, ou les niveaux où l'on choisit) | `routes::fiches::SanteDuSalarie` | `routes/src/fiches/rendue.rs` |
 | texte tapé d'une case que son type refuse (les quinze chiffres d'un NIR collé) | `routes::fiches::CaseTapee` | `routes/src/fiches/rendue.rs` |
 | niveau de garantie de la complémentaire santé que le barème du jour offre (son code et son libellé) | `routes::ouverture::NiveauDeSante` | `routes/src/ouverture.rs` |
+| exemple d'un choix, qu'on ouvre à côté de lui (le document que la route nomme par son adresse, et le lien qui l'ouvre : le bulletin d'exemple de chaque modèle du bulletin) | `routes::ouverture::ExempleDuChoix` | `routes/src/ouverture.rs` |
 | partie d'une case de fiche faite de cases, ou de chaque rangée d'une liste (son chemin, son libellé, sa forme, son aide, ses choix, si elle est ouverte) | `routes::fiches::PartieDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | largeur d'une case de fiche à l'écran (toute la ligne, ou la moitié) | `declarations::champs::Largeur` | `declarations/src/champs.rs` |
 | case qui ne s'ouvre que si une autre est trop longue (le complément d'adresse, au-delà de ce que la DSN admet) | `declarations::champs::PlusLong` | `declarations/src/champs.rs` |
@@ -1437,7 +1438,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   1, I) ou le complet (le même, suivi d'une page annexe) ; un choix de la fiche (`modele_bulletin`, écrit `simplifié`,
   `complet`), celui du salarié l'emportant ; sans choix, le simplifié, que l'arrêté donne
   (`documents::bulletin::modele_de_la_compagnie`, qui le cite). Que portent les fiches Entreprise et Salarié, la charge
-  et la réponse des routes du modèle ; l'adresse d'un aperçu l'écrit sans accent (`dans_l_adresse`).
+  et la réponse de la route de son bulletin d'exemple (`bulletin-modele-apercu`) ; l'adresse d'un aperçu l'écrit sans accent (`dans_l_adresse`).
 - **catégorie d'un document** : une sorte de pièce du dossier d'un salarié : bulletins, contrats, contrats signés,
   certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative. Une liste du logiciel, dans
   l'ordre où le dossier se lit : `TOUTES` ; écrite `bulletins`, `contrats-signes`… Que portent la charge du dossier, le
@@ -2117,7 +2118,10 @@ titre quand le bloc change. Une case faite de cases rend ses parties (`routes::f
 choix, son aide, si elle est ouverte ; une clé que la route ne décrit pas se garde à l'écriture), une liste de cases
 ses rangées ; ce que le moteur sait d'une case vient avec elle (`dit`, `prerempli`, ses choix) : la convention et
 l'Urssaf se choisissent dans les listes du moteur, le taux AT/MP dit sous lui ce que dit `taux-atmp`, la taxe sur les
-salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle. Sur la fiche d'un salarié, les deux
+salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle, le modèle du bulletin se coche
+entre ses deux modèles (`boutons`), chacun avec son bulletin d'exemple, que la route nomme par son adresse
+(`routes::ouverture::ExempleDuChoix`), et sans choix écrit montre coché le simplifié, qu'il n'écrit pas tant qu'on
+n'en coche pas un autre. Sur la fiche d'un salarié, les deux
 pays se choisissent dans leurs listes (la table « Pays » de la DSN, le COG de l'INSEE) ; avec un pays de nationalité de
 la liste, la nationalité DSN s'en déduit, ne s'ouvre pas et se dit sous le pays ; le métier se choisit dans ceux d'une
 fiche ; la complémentaire santé dans les niveaux du barème du jour (ou dit pourquoi elle ne se choisit pas ici) ; les

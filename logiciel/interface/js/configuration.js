@@ -69,12 +69,6 @@ function dessinerConfig() {
     dessinerOrganismes(liste);
     return;
   }
-  // Le modèle du bulletin : `modeles-bulletin.js`.
-  if (FICHE_ACTIVE === "bulletin") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerModelesBulletin(liste);
-    return;
-  }
   // Les modèles de contrat et les clauses particulières : `modeles-contrat.js`.
   if (FICHE_ACTIVE === "contrats") {
     document.getElementById("config-formulaire").innerHTML = "";

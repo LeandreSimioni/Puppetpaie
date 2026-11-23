@@ -193,17 +193,23 @@ const CASES = {
       return l.length ? l : null;
     },
   },
-  // DES BOUTONS À COCHER (les choix d'une partie, chacun une phrase entière) ; un oui-non y écrit vrai ou faux.
+  // DES BOUTONS À COCHER (les choix d'une partie ou d'une case, chacun une phrase entière) ; un oui-non y écrit vrai ou
+  // faux. Une case vide que le moteur pré-remplit (`o.prerempli`) montre coché ce qu'il prend : le garder n'écrit rien,
+  // en cocher un autre l'écrit. Un choix qui a son exemple (`exemple` : le document que la route nomme) l'ouvre à côté.
   boutons: {
     html: (v, o) => {
       const nom = `boutons-${++NUMERO_DES_BOUTONS}`;
-      return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}>${(o.choix || []).filter((c) => c.code !== "")
-        .map((c) => `<label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${v != null && String(v) === c.code ? " checked" : ""}> ${
-          echapper(c.libelle)}</label>`).join("")}</span>`;
+      const coche = v != null ? String(v) : o.prerempli != null ? String(o.prerempli) : null;
+      const exemple = (c) => (c.exemple ? ` <a class="lien" href="${echapper(`${c.exemple.adresse}${c.exemple.adresse.includes("?") ? "&" : "?"}jeton=${
+        encodeURIComponent(JETON)}`)}" target="_blank" rel="noopener">${echapper(c.exemple.libelle)}</a>` : "");
+      return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}${
+        v == null && o.prerempli != null ? ` data-prerempli="${echapper(String(o.prerempli))}"` : ""}>${(o.choix || []).filter((c) => c.code !== "")
+        .map((c) => `<label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${coche === c.code ? " checked" : ""}> ${
+          echapper(c.libelle)}</label>${exemple(c)}`).join("")}</span>`;
     },
     lire: (x) => {
       const c = x.querySelector("input:checked");
-      if (!c) return null;
+      if (!c || c.value === x.dataset.prerempli) return null;
       return x.dataset.booleen != null ? c.value === "true" : c.value;
     },
   },
@@ -448,17 +454,19 @@ function lireLesLignes(bloc) {
 
 /** UNE CASE QU'UNE ROUTE DÉCRIT, et la seule façon d'en dessiner une (la carte d'un engagement, une fiche, la boîte d'un
  *  geste, les champs d'une route) : `c.cle`, `c.libelle`, `c.forme`, `c.aide` (la bulle au survol), `c.valeur`,
- *  `c.prerempli` (ce que le moteur prend pour elle vide), `c.choix`, `c.parties` (`caseDeForme`), `c.temps` (la valeur
+ *  `c.prerempli` (ce que le moteur prend pour elle vide), `c.choix` (en boutons à cocher quand `c.boutons`), `c.parties` (`caseDeForme`), `c.temps` (la valeur
  *  d'avant et celle à venir, en mots). Sous la case : ce que la valeur choisie dit d'elle-même (`dit` d'un choix : un
  *  motif de rupture), puis ses temps ; sa faute se pose à part (`fautesDesCases`), à chaque réponse. */
 function caseDeRoute(c) {
   const choisi = (c.choix || []).find((o) => o.code !== "" && o.code === String(c.valeur));
   const temps = c.temps ? [c.temps.avant, c.temps.a_venir].filter(Boolean).map((l) => `<small class="case-dit">${
     echapper(l.valeur)} · ${echapper(l.dit)}${l.note ? ` · ${echapper(l.note)}` : ""}</small>`).join("") : "";
+  // Des choix que la route dit en boutons à cocher (`boutons`) se cochent.
+  const forme = c.boutons && c.choix ? "boutons" : c.forme;
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
-  const balise = ["parties", "rangees", "html"].includes(c.forme) ? "div" : "label";
+  const balise = ["parties", "rangees", "html", "boutons"].includes(forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
-    ${caseDeForme(c.forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps })}${
+    ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps })}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${
     c.renvoi ? `<button type="button" class="lien case-renvoi" data-renvoi="${echapper(JSON.stringify(c.renvoi))}">${echapper(c.renvoi.libelle)}</button>` : ""}</${balise}>`;
 }

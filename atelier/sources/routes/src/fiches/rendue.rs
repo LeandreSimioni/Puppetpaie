@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Forme;
 use crate::enveloppe::{Dite, Phrase};
-use crate::ouverture::Choix;
+use crate::ouverture::{Choix, ExempleDuChoix};
 use crate::temps::{CaseDatee, TempsDeLaCase};
 use declarations::champs::{self, Anomalie, Case, Champ, CheminDeFiche, FicheAJuger, Gravite, Largeur, Libelles};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
@@ -153,7 +153,8 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
 /// UNE CASE OUVERTE D'UNE FICHE, telle que la page la dessine : sa cle, son bloc (le titre sous lequel elle se range,
 /// `""` : aucun) et sa largeur, son libelle, sa forme, sa place, son aide (la bulle au survol), l'exemple d'une case vide,
 /// sa valeur (celle de la fiche, ou ce que le moteur propose d'y ecrire : « Pour démarrer »), ce que le moteur prend pour
-/// elle vide (`prerempli`), les choix d'une case qui se choisit (code et libelle), ses parties (une case faite de cases,
+/// elle vide (`prerempli`), les choix d'une case qui se choisit (code et libelle), s'ils se montrent en boutons a cocher,
+/// chacun avec le document qui le montre quand il en a un (`boutons`, le modele du bulletin), ses parties (une case faite de cases,
 /// ou chaque rangee d'une liste), le bouton qui ajoute une rangee, ce que le moteur dit sous elle (`dit`) et ou elle
 /// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots) et sa faute.
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +173,8 @@ pub(crate) struct CaseDeLaFiche {
     prerempli: Option<ValeurDeCase>,
     #[serde(skip_serializing_if = "Option::is_none")]
     choix: Option<Vec<Choix>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    boutons: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     parties: Option<Vec<PartieDeLaFiche>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -480,6 +483,7 @@ fn case_du_champ(c: &Champ, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(&[&str
         exemple: Some(c.exemple.clone()).filter(|e| !e.is_empty()),
         prerempli: None,
         choix,
+        boutons: false,
         parties,
         ajouter: c.ligne.as_ref().map(|l| format!("+ Ajouter un {}", l)),
         dit: Vec::new(),
@@ -813,7 +817,9 @@ struct CaseTapee {
 /// les conventions qu'il sait servir (l'IDCC se choisit dans leur liste) ; les organismes Urssaf (le code se choisit, et
 /// le vide dit celui que le code postal tape donne) ; sous le taux AT/MP, ce que `taux-atmp` dit, et la date qu'une ligne
 /// neuve propose ; pour la taxe sur les salaires, les questions que sa conclusion ouvre, l'aide et les reponses de la
-/// franchise chiffrees au bareme de l'annee, et ce qui en decoule (`fiches::regime_de_la_taxe`, CGI art. 231, 1).
+/// franchise chiffrees au bareme de l'annee, et ce qui en decoule (`fiches::regime_de_la_taxe`, CGI art. 231, 1) ; les
+/// deux modeles du bulletin en boutons, chacun avec son bulletin d'exemple, et sans choix ecrit celui que le moteur
+/// applique.
 fn completer_l_entreprise(ctx: &Contexte, e: &ChampsEntreprise, case: &mut CaseDeLaFiche) -> R<()> {
     let est = |k: CaseEntreprise| case.cle == CaseDeFiche::from(k);
     if est(CaseEntreprise::Idcc) {
@@ -850,6 +856,19 @@ fn completer_l_entreprise(ctx: &Contexte, e: &ChampsEntreprise, case: &mut CaseD
             }
         }
         case.dit = vec![r.consequence.to_string()];
+    } else if est(CaseEntreprise::ModeleBulletin) {
+        // Les deux modeles en boutons, chacun avec son bulletin d'exemple ; sans choix ecrit, celui que le moteur applique
+        // (`documents::bulletin::modele_de_la_compagnie`) se montre choisi, et rien ne s'ecrit tant qu'on n'en change pas.
+        case.boutons = true;
+        case.choix = Some(
+            droit::fiche::ModeleBulletin::TOUS
+                .iter()
+                .map(|m| Choix::de(m, m.nom()).montre_par(ExempleDuChoix::de("voir l'exemple", crate::bulletin::adresse_apercu(*m))))
+                .collect(),
+        );
+        if e.modele_bulletin.dite().is_none() {
+            case.prerempli = Some(ValeurDeCase::texte(documents::bulletin::modele_de_la_compagnie(e).to_string()));
+        }
     }
     Ok(())
 }

@@ -8,10 +8,10 @@
 //! sienne.
 //!
 //! UN MODULE PAR PLACE DE L'ECRAN (`catalogue::Place`) : la Paie (`mois`, `etapes`, `engagement`, `contrats`,
-//! `documents`, `depots`, `imprevus`, `rappels`), la Configuration (`fiches`, `metiers`, `identite`, `bulletin`,
+//! `documents`, `depots`, `imprevus`, `rappels`), la Configuration (`fiches`, `metiers`, `identite`,
 //! `modeles_contrat`, `coffre`, `import`), l'Historique (`historique`), les Exports (`archives`, `dossier_salarie`),
 //! « Un probleme, une idee ? » (`filet`), l'accueil des compagnies (`accueil` : les routes de l'installation), et les
-//! lectures que les ecrans partagent (`ouverture`). Chacun dit ses routes et leurs fiches (`ROUTES`, `catalogue::FICHES`) ;
+//! lectures que les ecrans partagent (`ouverture`, et `bulletin` : le bulletin d'exemple d'un modele). Chacun dit ses routes et leurs fiches (`ROUTES`, `catalogue::FICHES`) ;
 //! l'aiguillage (`servir`) ne fait rien d'autre que les servir.
 //!
 //! BRANCHER UN MODULE SUR L'ENVELOPPE :
