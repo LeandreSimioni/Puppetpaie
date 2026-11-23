@@ -29,20 +29,21 @@ use socle::fichiers::NomDeFichier;
 use crate::gestes::administrateur;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
+use crate::declaration::{charge, dit, Legende};
 use crate::enveloppe::{en_json, Charge, Dite, Options, Phrase, Rendu};
 use socle::echec::{erreur, Classe, Echec, R};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Accueil);
 
-const COMPAGNIE: Champ = Champ { nom: "compagnie", libelle: Affiche::new("Compagnie"), forme: Forme::Texte, sens: "l'identifiant de la compagnie, tel que `compagnies` le rend", avance: false };
+const COMPAGNIE: Legende = dit("Compagnie", "l'identifiant de la compagnie, tel que `compagnies` le rend");
 
 /// Les routes de l'installation, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Compagnies,
         geste: "Dire les compagnies de cette installation, et où est chacune.",
-        charge: &[],
+        charge: &crate::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "compagnies (id, nom, lieu, chemin — le --racine de ses routes —, reelle, remise_a_zero, couleur), bride, a_garder (au déblocage), phrase, phrases (une par compagnie), auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
@@ -54,10 +55,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CompagnieAjouter,
         geste: "Ajouter une compagnie : neuve, ou venant d'un logiciel précédent.",
-        charge: &[
-            Champ { nom: "nom", libelle: Affiche::new("Nom de la compagnie"), forme: Forme::Texte, sens: "le nom de la compagnie", avance: false },
-            Champ { nom: "venue", libelle: Affiche::new("Venue"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<Venue>()), sens: "d'où elle vient : venue d'un autre logiciel, elle commence par reprendre son passé", avance: false },
-        ],
+        charge: &ChargeAjouter::CHARGE,
         exemple: r#"{"nom":"Les Tréteaux d'essai","venue":"neuve"}"#,
         rend: "id, nom, chemin (le --racine de ses routes), phrase ; logiciel bridé : une compagnie fictive ajoutée",
         refus: &[MANQUE, OPERATION],
@@ -69,7 +67,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CompagnieCouleur,
         geste: "Choisir la couleur d'une compagnie.",
-        charge: &[COMPAGNIE, Champ { nom: "couleur", libelle: Affiche::new("Couleur"), forme: Forme::Texte, sens: "#RRGGBB", avance: false }],
+        charge: &ChargeCouleur::CHARGE,
         exemple: r##"{"compagnie":"cie:la-compagnie","couleur":"#2E5A7D"}"##,
         rend: "couleur, phrase",
         refus: &[MANQUE, Refus { classe: Classe::Refuse, corriger: "une couleur #RRGGBB, une compagnie réelle ; rien n'est écrit" }],
@@ -81,7 +79,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CompagnieRemettreAZero,
         geste: "Remettre une compagnie fictive livrée dans son état d'origine.",
-        charge: &[COMPAGNIE],
+        charge: &ChargeCompagnie::CHARGE,
         exemple: r#"{"compagnie":"fictive:fictive-essai"}"#,
         rend: "phrase",
         refus: &[MANQUE, Refus { classe: Classe::Refuse, corriger: "une compagnie fictive livrée ; rien n'est effacé" }],
@@ -93,10 +91,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CompagniesGarder,
         geste: "Au déblocage : garder les compagnies créées en démo, ou les supprimer.",
-        charge: &[
-            Champ { nom: "garder", libelle: Affiche::new("À garder"), forme: Forme::Liste, sens: "les identifiants des compagnies à garder (elles deviennent réelles)", avance: false },
-            Champ { nom: "ne_pas_garder", libelle: Affiche::new("À supprimer"), forme: Forme::Liste, sens: "les identifiants des compagnies à supprimer", avance: false },
-        ],
+        charge: &ChargeGarder::CHARGE,
         exemple: r#"{"garder":["fictive:ajoutee-demo"],"ne_pas_garder":[]}"#,
         rend: "gardees, supprimees, erreurs, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "une compagnie créée en démo, d'un logiciel débloqué ; rien n'a changé" }],
@@ -108,10 +103,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AdministrateurTableau,
         geste: "Dire les déclarations à faire de chaque compagnie de l'administrateur.",
-        charge: &[
-            Champ { nom: "garde", libelle: Affiche::new("Tableau gardé"), forme: Forme::OuiNon, sens: "vrai : le tableau gardé, sans calcul", avance: false },
-            Champ { nom: "relever", libelle: Affiche::new("Relever d'abord les comptes rendus"), forme: Forme::OuiNon, sens: "vrai : relever d'abord les comptes rendus attendus", avance: false },
-        ],
+        charge: &ChargeTableau::CHARGE,
         exemple: r#"{}"#,
         rend: "compagnies (chacune ses déclarations triées par urgence, et où en est leur fichier), groupe (ce que le dépôt groupé propose)",
         refus: &[OPERATION],
@@ -139,13 +131,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AdministrateurSuivre,
         geste: "Après un dépôt groupé réel, relever les retours de chaque déclaration partie.",
-        charge: &[Champ {
-            nom: "suivis",
-            libelle: Affiche::new("Déclarations à suivre"),
-            forme: Forme::Objet,
-            sens: "la liste des « suivre » des résultats partis en réel, tels qu'administrateur-deposer les rend",
-            avance: false,
-        }],
+        charge: &ChargeSuivre::CHARGE,
         exemple: r#"{"suivis":[]}"#,
         rend: "fini (toutes tranchées), suivies (par déclaration : la compagnie, passée ou refusée, la phrase et sa couleur), phrase",
         refus: &[OPERATION],
@@ -157,7 +143,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::PortableCompleter,
         geste: "Ajouter au dossier les systèmes qui lui manquent (Windows, Linux, macOS).",
-        charge: &[Champ { nom: "portable", libelle: Affiche::new("Rendre ce dossier portable"), forme: Forme::OuiNon, sens: "vrai : faire aussi de ce dossier un dossier portable, pour une clé USB (PORTABLE.json)", avance: false }],
+        charge: &ChargePortable::CHARGE,
         exemple: r#"{"portable":true}"#,
         rend: "ajoutes, absents (les systèmes que la version n'a pas), version, portable, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le réseau, la mise à jour en attente, ou ce que la phrase dit ; rien n'est posé" }],
@@ -169,7 +155,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Basculer,
         geste: "Brider le logiciel (la démo) ou le débloquer, sur ce poste.",
-        charge: &[],
+        charge: &crate::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "bride (vrai : la démo), phrase ; un paquet soudé ne change pas",
         refus: &[OPERATION],
@@ -188,45 +174,50 @@ pub fn installation(o: &Options) -> PathBuf {
     }
 }
 
-/// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeAjouter {
-    pub nom: String,
-    pub venue: compagnies::Venue,
+charge! {
+    /// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
+    #[derive(Debug)]
+    pub struct ChargeAjouter {
+        pub nom: String = dit("Nom de la compagnie", "le nom de la compagnie"),
+        pub venue: compagnies::Venue = dit("Venue", "d'où elle vient : venue d'un autre logiciel, elle commence par reprendre son passé"),
+    }
 }
 
-/// La charge de `compagnie-couleur`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCouleur {
-    compagnie: IdDeCompagnie,
-    couleur: CouleurDeCompagnie,
+charge! {
+    /// La charge de `compagnie-couleur`.
+    #[derive(Debug)]
+    struct ChargeCouleur {
+        compagnie: IdDeCompagnie = COMPAGNIE,
+        couleur: CouleurDeCompagnie = dit("Couleur", "#RRGGBB"),
+    }
 }
 
-/// La charge qui nomme une compagnie de l'accueil.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCompagnie {
-    compagnie: IdDeCompagnie,
+charge! {
+    /// La charge qui nomme une compagnie de l'accueil.
+    #[derive(Debug)]
+    struct ChargeCompagnie {
+        compagnie: IdDeCompagnie = COMPAGNIE,
+    }
 }
 
-/// La charge de `compagnies-garder` : les compagnies a garder, et celles a supprimer.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeGarder {
-    garder: Vec<IdDeCompagnie>,
-    ne_pas_garder: Vec<IdDeCompagnie>,
+charge! {
+    /// La charge de `compagnies-garder` : les compagnies a garder, et celles a supprimer.
+    #[derive(Debug)]
+    struct ChargeGarder {
+        garder: Vec<IdDeCompagnie> = dit("À garder", "les identifiants des compagnies à garder (elles deviennent réelles)"),
+        ne_pas_garder: Vec<IdDeCompagnie> = dit("À supprimer", "les identifiants des compagnies à supprimer"),
+    }
 }
 
-/// La charge de `administrateur-tableau` : le tableau garde, ou refait (apres un releve, s'il est demande).
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeTableau {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub garde: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub relever: Option<bool>,
+charge! {
+    /// La charge de `administrateur-tableau` : le tableau garde, ou refait (apres un releve, s'il est demande).
+    #[derive(Debug, Default, Serialize)]
+    pub struct ChargeTableau {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub garde: Option<bool> = dit("Tableau gardé", "vrai : le tableau gardé, sans calcul"),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub relever: Option<bool> = dit("Relever d'abord les comptes rendus", "vrai : relever d'abord les comptes rendus attendus"),
+    }
 }
 
 /// La charge de `administrateur-deposer` : en reel, ou en test (le mot de passe est a l'enveloppe).
@@ -236,19 +227,21 @@ struct ChargeDeposer {
     mode: socle::mode::Mode,
 }
 
-/// La charge de `administrateur-suivre` : les declarations a suivre, telles que le depot groupe les a rendues
-/// (`suivre` de chaque resultat parti en reel).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeSuivre {
-    suivis: Vec<administrateur::ASuivre>,
+charge! {
+    /// La charge de `administrateur-suivre` : les declarations a suivre, telles que le depot groupe les a rendues
+    /// (`suivre` de chaque resultat parti en reel).
+    #[derive(Debug)]
+    struct ChargeSuivre {
+        suivis: Vec<administrateur::ASuivre> = dit("Déclarations à suivre", "la liste des « suivre » des résultats partis en réel, tels qu'administrateur-deposer les rend"),
+    }
 }
 
-/// La charge de `portable-completer`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargePortable {
-    portable: Option<bool>,
+charge! {
+    /// La charge de `portable-completer`.
+    #[derive(Debug)]
+    struct ChargePortable {
+        portable: Option<bool> = dit("Rendre ce dossier portable", "vrai : faire aussi de ce dossier un dossier portable, pour une clé USB (PORTABLE.json)"),
+    }
 }
 
 /// Une compagnie de l'accueil, telle qu'une tuile la montre.
