@@ -118,7 +118,7 @@ fn le_seuil_de_smic() {
             points += 1;
             let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(|s| socle::forme::lire::<Coefficient>(s, "seuil illisible")).transpose();
             vus.push(essai(section(bar).and_then(|rg| match seuil? {
-                Some(s) => au_dela_du_seuil(rg.as_ref(), grandeur::<Montant>(b.as_str().unwrap()), grandeur::<Heures>(h), s),
+                Some(s) => au_dela_du_seuil(rg.as_ref(), grandeur::<Montant>(b.as_str().unwrap()), None, grandeur::<Heures>(h), s),
                 None => Ok(true),
             }).map(Value::Bool)));
         }

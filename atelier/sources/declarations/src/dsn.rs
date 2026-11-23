@@ -890,8 +890,10 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let mut sous_le_deplafonne: Option<Cotisation> = None;
     // Le 131 de la tranche 1 (celui qui fait la somme de `retraite_t1`), sous la base duquel se declare le 142.
     let mut de_la_tranche_1: Option<Cotisation> = None;
+    // La deduction forfaitaire specifique de la paie, que le seuil d'un taux reduit retranche (`au_dela_du_seuil`).
+    let deduction = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n)).transpose()? == Some(false) {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, deduction, p.heures_travaillees, n)).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;

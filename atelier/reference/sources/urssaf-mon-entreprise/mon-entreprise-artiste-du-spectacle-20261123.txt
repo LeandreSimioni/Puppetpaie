@@ -1,0 +1,40 @@
+Salarié   🤝 › Régimes spécifiques › Taux réduits cas particuliers › Profession ›
+Artiste du spectacle                        🎭
+Concerne uniquement les artistes des employeurs du spectacle vivant. Les techniciens ne sont pas
+concernés.
+
+
+Valeur : Non applicable
+
+@
+
+       Cette règle est non applicable car elle appartient à l’espace de nom :
+       Taux réduits cas particuliers non
+
+
+Comment cette donnée est-elle calculée ?
+
+
+Références
+
+ ●   Taux réduits pour les artistes du spectacle
+
+
+
+
+Informations techniques
+
+Si vous êtes développeur/euse vous trouverez ci-dessous des informations techniques utiles pour
+l'intégration de cette règle dans votre application.
+
+
+
+
+     Règle et situation
+Réutiliser ce calcul (API REST / Paquet NPM)
+
+
+
+
+Dépendances et effets de la règle
+

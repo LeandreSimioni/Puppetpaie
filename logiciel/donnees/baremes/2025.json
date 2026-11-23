@@ -1137,10 +1137,38 @@
       "famille": "SANTÉ",
       "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
       "base": "brut",
-      "taux_pat": 9.1,
+      "taux_pat": 4.9,
       "taux_sal": null,
+      "complement": {
+        "taux": 4.2,
+        "seuil_smic": 2.25
+      },
       "source": {
         "sources": [
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "L241-2-1",
+            "citation": "Le taux des cotisations d'assurance maladie est réduit de 6 points pour les salariés dont l'employeur entre dans le champ d'application du II de l'article L. 241-13"
+          },
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "D241-1-2",
+            "citation": "Le montant prévu à l'article L. 241-2-1 est égal à 2,25 fois le montant, calculé selon les modalités définies aux II à IV de l'article D. 241-7"
+          },
+          {
+            "fichier": "atelier/reference/sources/decret-2025-318-reduction-cotisations/legifrance-decret-2025-318-20250406.txt",
+            "emetteur": "loi",
+            "article": "décret n° 2025-318 du 4 avril 2025, art. 5 (l. 190-195) : le 1° de l'art. 1er (D. 241-1-2) vaut depuis le 01/01/2025",
+            "citation": "Les dispositions des articles 1er à 3 s'appliquent aux cotisations et contributions dues sur les rémunérations afférentes aux périodes d'emploi courant à compter du 1er janvier 2025"
+          },
+          {
+            "fichier": "atelier/reference/sources/legifrance-versions-datees/legifrance-css-L241-13-20250228.txt",
+            "emetteur": "loi",
+            "article": "CSS L. 241-13, II (version du 28/02/2025 au 31/12/2025)",
+            "citation": "versés aux salariés au titre desquels l'employeur est soumis à l'obligation édictée par l'article L. 5422-13 du code du travail"
+          },
           {
             "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
             "emetteur": "loi",
@@ -1152,9 +1180,29 @@
             "emetteur": "loi",
             "article": "arrete du 24 janvier 1975, art. (taux a 70 % des taux applicables aux salaries)",
             "citation": "sont fixés à raison de 70 % des taux applicables aux salariés."
+          },
+          {
+            "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+            "emetteur": "urssaf",
+            "article": "Les taux réduits cas particuliers, les artistes du spectacle, tableau des taux (l. 67-68)",
+            "citation": "Taux réduit : 4,90 %"
+          },
+          {
+            "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+            "emetteur": "urssaf",
+            "article": "Les taux réduits cas particuliers, les artistes du spectacle, tableau des taux (l. 67-68)",
+            "citation": "Taux plein : 9,10 %"
+          },
+          {
+            "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261029.csv",
+            "emetteur": "urssaf",
+            "article": "table des CTP en vigueur, 636 complément maladie des artistes",
+            "citation": "'636';COMPLEMENT MALADIE ABATT. 30%;COMPLT MALADIE 30%;E;;4.20;;01/01/2019;;"
           }
-        ]
-      }
+        ],
+        "raisonnement": "La loi (L. 241-2-1, version en vigueur du 01/01/2025 au 01/01/2026) réduit de 6 points le taux maladie des salariés dont l'employeur entre dans le champ du II de L. 241-13 (en 2025 : l'employeur soumis à l'assurance chômage, L. 5422-13, ce qu'est l'employeur d'intermittents) et dont la rémunération ne dépasse pas 2,25 fois le SMIC (D. 241-1-2) ; elle n'exclut pas les artistes. Le taux plein est 13 % (D. 242-3), l'artiste cotise à 70 % (arrêté du 24/01/1975) : 13 x 0,70 = 9,10 plein, (13 - 6) x 0,70 = 4,90 réduit, et 6 x 0,70 = 4,20 de complément au-delà du seuil. L'Urssaf (organisme) donne pour l'artiste « Taux réduit : 4,90 % / Taux plein : 9,10 % » et code ce complément à 4,20 (CTP 636). INFÉRENCE sur les heures : le SMIC du seuil se calcule « selon les modalités définies aux II à IV de l'article D. 241-7 » (D. 241-1-2), à proportion de la durée de travail du contrat ; aucun texte déposé ne dit la durée de travail d'un cachet pour ce calcul : le moteur compte les heures de la paie (`droit::reduction::au_dela_du_seuil`), soit 12 h par cachet (`cachet.heures_forfait`, `rubriques-base.json`, les heures des annexes VIII et X)."
+      },
+      "note": "Maladie 2025 de l'artiste : taux réduit 4,90 % sous 2,25 SMIC, complément de 4,20 points au-delà (L. 241-2-1 en vigueur en 2025, au taux abattu de 30 % de l'arrêté du 24/01/1975), comme le technicien (7 + 6, `par_statut.technicien`). Abrogé au 01/01/2026 (L. 241-2-1, version ABROGE, fin le 01/01/2026) : le barème 2026 n'a pas de seuil."
     },
     {
       "id": "prevoyance",
@@ -1364,10 +1412,38 @@
       "famille": "FAMILLE",
       "libelle": "Allocations familiales",
       "base": "brut",
-      "taux_pat": 3.68,
+      "taux_pat": 2.42,
       "taux_sal": null,
+      "complement": {
+        "taux": 1.26,
+        "seuil_smic": 3.3
+      },
       "source": {
         "sources": [
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "L241-6-1",
+            "citation": "Le taux des cotisations d'allocations familiales est réduit de 1,8 point pour les salariés dont l'employeur entre dans le champ d'application du II de l'article L. 241-13"
+          },
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "D241-3-2",
+            "citation": "Le montant prévu à l'article L. 241-6-1 est égal à 3,3 fois le montant, calculé selon les modalités définies aux II à IV de l'article D. 241-7"
+          },
+          {
+            "fichier": "atelier/reference/sources/decret-2025-318-reduction-cotisations/legifrance-decret-2025-318-20250406.txt",
+            "emetteur": "loi",
+            "article": "décret n° 2025-318 du 4 avril 2025, art. 5 (l. 190-195) : le 3° de l'art. 1er (D. 241-3-2) vaut depuis le 01/01/2025",
+            "citation": "Les dispositions des articles 1er à 3 s'appliquent aux cotisations et contributions dues sur les rémunérations afférentes aux périodes d'emploi courant à compter du 1er janvier 2025"
+          },
+          {
+            "fichier": "atelier/reference/sources/legifrance-versions-datees/legifrance-css-L241-13-20250228.txt",
+            "emetteur": "loi",
+            "article": "CSS L. 241-13, II (version du 28/02/2025 au 31/12/2025)",
+            "citation": "versés aux salariés au titre desquels l'employeur est soumis à l'obligation édictée par l'article L. 5422-13 du code du travail"
+          },
           {
             "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
             "emetteur": "loi",
@@ -1379,9 +1455,29 @@
             "emetteur": "loi",
             "article": "arrete du 24 janvier 1975, art. (taux a 70 % des taux applicables aux salaries)",
             "citation": "sont fixés à raison de 70 % des taux applicables aux salariés."
+          },
+          {
+            "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+            "emetteur": "urssaf",
+            "article": "Les taux réduits cas particuliers, les artistes du spectacle, tableau des taux (l. 80-81)",
+            "citation": "Taux réduit : 2,42 %"
+          },
+          {
+            "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+            "emetteur": "urssaf",
+            "article": "Les taux réduits cas particuliers, les artistes du spectacle, tableau des taux (l. 80-81)",
+            "citation": "Taux plein : 3,68 %"
+          },
+          {
+            "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261029.csv",
+            "emetteur": "urssaf",
+            "article": "table des CTP en vigueur, 432 complément d'allocations familiales des artistes",
+            "citation": "'432';COMPLEMENT AF ABATT. 30 %;COMPLT AF ABATT.30 %;E;;1.26;;01/01/2015;;"
           }
-        ]
-      }
+        ],
+        "raisonnement": "La loi (L. 241-6-1, version en vigueur du 01/01/2025 au 01/01/2026) réduit de 1,8 point le taux d'allocations familiales des salariés dont l'employeur entre dans le champ du II de L. 241-13 (l'employeur soumis à l'assurance chômage, L. 5422-13) et dont la rémunération ne dépasse pas 3,3 fois le SMIC (D. 241-3-2) ; elle n'exclut pas les artistes. Le taux plein est 5,25 % (D. 241-3-1), l'artiste cotise à 70 % (arrêté du 24/01/1975) : 5,25 x 0,70 = 3,675 plein, (5,25 - 1,8) x 0,70 = 2,415 réduit, 1,8 x 0,70 = 1,26 de complément. L'Urssaf (organisme) arrondit et donne pour l'artiste « Taux réduit : 2,42 % / Taux plein : 3,68 % », et code le complément à 1,26 (CTP 432). INFÉRENCE sur les heures : comme la maladie (`rubriques_bulletin[maladie]`), le SMIC du seuil se compte sur les heures de la paie, 12 h par cachet ; aucun texte déposé ne dit la durée de travail d'un cachet pour ce calcul."
+      },
+      "note": "Allocations familiales 2025 de l'artiste : taux réduit 2,42 % sous 3,3 SMIC, complément de 1,26 point au-delà (L. 241-6-1 en vigueur en 2025, au taux abattu de 30 %), comme le technicien (3,45 + 1,8). Abrogé au 01/01/2026 (L. 241-6-1, version ABROGE, fin le 01/01/2026)."
     },
     {
       "id": "chomage",
@@ -1735,13 +1831,32 @@
       "base": "brut",
       "taux": 1.26,
       "base78": "brut",
+      "seuil_smic": 3.3,
       "source": {
         "sources": [
           {
-            "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+            "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261029.csv",
             "emetteur": "urssaf",
-            "article": "table des CTP, 430 complément de cotisation AF",
-            "citation": "'430';COMPLEMENT COTISATION AF;AF TAUX PLEIN;E;;1.8;;2015-01-01;;"
+            "article": "table des CTP en vigueur, 432 complément d'allocations familiales des artistes",
+            "citation": "'432';COMPLEMENT AF ABATT. 30 %;COMPLT AF ABATT.30 %;E;;1.26;;01/01/2015;;"
+          },
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "L241-6-1",
+            "citation": "Le taux des cotisations d'allocations familiales est réduit de 1,8 point"
+          },
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "D241-3-2",
+            "citation": "Le montant prévu à l'article L. 241-6-1 est égal à 3,3 fois le montant"
+          },
+          {
+            "fichier": "atelier/reference/sources/decret-2025-318-reduction-cotisations/legifrance-decret-2025-318-20250406.txt",
+            "emetteur": "loi",
+            "article": "décret n° 2025-318 du 4 avril 2025, art. 5 (l. 190-195) : le 3° de l'art. 1er (D. 241-3-2) vaut depuis le 01/01/2025",
+            "citation": "Les dispositions des articles 1er à 3 s'appliquent aux cotisations et contributions dues sur les rémunérations afférentes aux périodes d'emploi courant à compter du 1er janvier 2025"
           },
           {
             "fichier": "atelier/reference/sources/arrete-1975-artistes-du-spectacle/articles-20261010.md",
@@ -1750,7 +1865,7 @@
             "citation": "sont fixés à raison de 70 % des taux applicables aux salariés."
           }
         ],
-        "raisonnement": "L'Urssaf code le complément d'allocations familiales (taux plein moins taux réduit) en CTP 430 à 1,8 % ; l'artiste est à 70 % : 1,8 x 0,70 = 1,26."
+        "raisonnement": "La loi réduit le taux d'allocations familiales de 1,8 point (L. 241-6-1, en vigueur en 2025) sous 3,3 SMIC (D. 241-3-2), l'artiste à 70 % (arrêté du 24/01/1975) : le complément déclaré au-delà du seuil est 1,8 x 0,70 = 1,26, que l'Urssaf code en CTP 432 « complément AF abatt. 30 % » à 1,26. Le seuil se compte sur les heures de la paie, 12 h par cachet : une INFÉRENCE (`rubriques_bulletin[famille]`)."
       }
     },
     {
@@ -1798,13 +1913,32 @@
       "base": "brut",
       "taux": 4.2,
       "base78": "brut",
+      "seuil_smic": 2.25,
       "source": {
         "sources": [
           {
-            "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+            "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261029.csv",
             "emetteur": "urssaf",
-            "article": "table des CTP, 635 complément de cotisation maladie",
-            "citation": "'635';COMPLEMENT COTISATION MALADIE;MALADIE TAUX PLEIN;E;;6.0;;2019-01-01;;"
+            "article": "table des CTP en vigueur, 636 complément maladie des artistes",
+            "citation": "'636';COMPLEMENT MALADIE ABATT. 30%;COMPLT MALADIE 30%;E;;4.20;;01/01/2019;;"
+          },
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "L241-2-1",
+            "citation": "Le taux des cotisations d'assurance maladie est réduit de 6 points"
+          },
+          {
+            "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+            "emetteur": "loi",
+            "article": "D241-1-2",
+            "citation": "Le montant prévu à l'article L. 241-2-1 est égal à 2,25 fois le montant"
+          },
+          {
+            "fichier": "atelier/reference/sources/decret-2025-318-reduction-cotisations/legifrance-decret-2025-318-20250406.txt",
+            "emetteur": "loi",
+            "article": "décret n° 2025-318 du 4 avril 2025, art. 5 (l. 190-195) : le 1° de l'art. 1er (D. 241-1-2) vaut depuis le 01/01/2025",
+            "citation": "Les dispositions des articles 1er à 3 s'appliquent aux cotisations et contributions dues sur les rémunérations afférentes aux périodes d'emploi courant à compter du 1er janvier 2025"
           },
           {
             "fichier": "atelier/reference/sources/arrete-1975-artistes-du-spectacle/articles-20261010.md",
@@ -1813,7 +1947,7 @@
             "citation": "sont fixés à raison de 70 % des taux applicables aux salariés."
           }
         ],
-        "raisonnement": "L'Urssaf code le complément d'assurance maladie (taux plein moins taux réduit) en CTP 635 à 6,0 % ; l'artiste est à 70 % : 6 x 0,70 = 4,20."
+        "raisonnement": "La loi réduit le taux d'assurance maladie de 6 points (L. 241-2-1, en vigueur en 2025) sous 2,25 SMIC (D. 241-1-2), l'artiste à 70 % (arrêté du 24/01/1975) : le complément déclaré au-delà du seuil est 6 x 0,70 = 4,20, que l'Urssaf code en CTP 636 « complément maladie abatt. 30 % » à 4,20. Le seuil se compte sur les heures de la paie, 12 h par cachet : une INFÉRENCE (`rubriques_bulletin[maladie]`)."
       }
     },
     {
@@ -2068,6 +2202,33 @@
     },
     "note": "Prévoyance des intermittents (non cadres) en DSN, S21.G00.54 type 93 : parts patronales prévoyance et fonds santé, 1,04 % patronal (0,34 + 0,70) et 0,12 % salarial en 2025 ; fiche de paramétrage Audiens 139, groupe prévoyance ETAM, 1,16 %.\nS21.G00.54, type 93 - Cotisation prevoyance et retraite supplementaire\nPrevoyance INTERBRANCHE des intermittents non cadres (groupe ETAM) : 1,16 % en 2025 -- fiche de parametrage Audiens version 139 du 13/12/2025 (atelier/reference/fiches-parametrage/audiens-2025-12-13-fiche139-expurgee.xml), periode de validite 01/01/2025-31/12/2025 -- contre 1,23 en 2026. Repartition 1,04 employeur / 0,12 salarie, lue au centime dans les DSN 2025 : l'assiette CSG porte brut x 0,9825 + brut x 1,04 (387,23 pour 390,00 ; 129,08 pour 130,00 ; 297,87 pour 300,00), et le 059 vaut la ligne employeur plus la ligne salarie, chacune arrondie (390 : 4,06 + 0,47 = 4,53, que 390 x 1,16 = 4,52 ne donne pas).",
     "base": "t1_journaliere"
+  },
+  "reduction_generale": {
+    "smic_horaire_reference": 11.88,
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+          "emetteur": "loi",
+          "article": "D241-1-2",
+          "citation": "Le montant prévu à l'article L. 241-2-1 est égal à 2,25 fois le montant, calculé selon les modalités définies aux II à IV de l'article D. 241-7, du salaire minimum de croissance applicable au 1er janvier 2025"
+        },
+        {
+          "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+          "emetteur": "loi",
+          "article": "D241-3-2",
+          "citation": "Le montant prévu à l'article L. 241-6-1 est égal à 3,3 fois le montant, calculé selon les modalités définies aux II à IV de l'article D. 241-7, du salaire minimum de croissance applicable au 1er janvier 2025"
+        },
+        {
+          "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+          "emetteur": "boss",
+          "article": "SMIC_H_METROP, SMIC horaire brut de 2025",
+          "citation": "SMIC horaire brut;11,88;01/01/2025;31/12/2025;OK"
+        }
+      ],
+      "raisonnement": "Les seuils des taux réduits de 2025 (D. 241-1-2 pour la maladie, D. 241-3-2 pour les allocations familiales) se calculent sur le SMIC applicable au 1er janvier 2025, selon les modalités du SMIC de la réduction générale (D. 241-7, II à IV) ; le BOSS (administration) donne ce SMIC horaire, 11,88 euros, du 01/01 au 31/12/2025."
+    },
+    "note": "Le SMIC de référence des seuils de l'artiste (`droit::reduction::au_dela_du_seuil`, ses compléments maladie et allocations familiales), le même que celui de la réduction générale du technicien (`par_statut.technicien.reduction_generale`, qui remplace cette section pour lui). Sans `statuts`, cette section n'ouvre la réduction générale à aucun statut (`droit::reduction::reduction_generale`) : elle ne donne au corps que ce SMIC."
   },
   "statuts": [
     "artiste"
