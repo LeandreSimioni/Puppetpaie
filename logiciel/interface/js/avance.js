@@ -766,7 +766,7 @@ async function faireLeGeste(g, entete, apres, bouton) {
     <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="geste-ok">${g.cases.length ? "Enregistrer" : echapper(g.libelle)}</button>
+      <button class="primaire" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
