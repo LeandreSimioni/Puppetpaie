@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les échéances du mois et de l'année.",
         charge: &SansCharge::CHARGE,
         exemple: "{}",
-        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_mois (l'année qui vient, mois par mois : le mois et les titres de ce qui y tombe)",
+        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ouvrir_a_l_ouverture : vrai quand il y a quelque chose à faire (un rappel, une échéance du mois, une ligne de « Pour démarrer », ce qu'une DSN donnerait) ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_mois (l'année qui vient, mois par mois : le mois et les titres de ce qui y tombe)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -245,6 +245,9 @@ struct Echeancier {
     ce_mois: Vec<EcheanceDite>,
     a_venir: Vec<EcheanceDite>,
     a_faire: usize,
+    /// LA BOITE DE L'OUVERTURE S'OUVRE-T-ELLE : quand il y a quelque chose a faire, et seulement alors (un rappel du, une
+    /// echeance du mois a faire, une ligne de « Pour démarrer », ce qu'une DSN pourrait donner).
+    ouvrir_a_l_ouverture: bool,
     /// CE QUE L'ECRAN EN MONTRE, sous la date et la bienvenue, dans cet ordre : « Ce mois-ci » (aucun titre quand tout ce
     /// qui est du ce mois, un rappel le dit), ses echeances, ou « Rien à faire » ; puis « L'année qui vient » et ses
     /// echeances. Une chose se dit une fois : une echeance qu'un rappel dit n'est pas un rang du mois.
@@ -355,6 +358,19 @@ impl Dite for Faite {
     }
 }
 
+/// CE QUE LA COMPAGNIE PEUT REMPLIR D'AVANCE (`declarations::demarrage::route`), avec les acces aux organismes et le
+/// Drive qui se proposent (`acces_proposes`), et la pastille de ce qui est simule quand rien ne part de la compagnie. Ce
+/// qu'une DSN pourrait donner se range a part quand l'import n'en a repris aucune.
+fn pour_demarrer(ctx: &Contexte) -> socle::echec::R<(declarations::demarrage::PourDemarrer, Option<Pastille>)> {
+    let (proposes, simules) = acces_proposes(ctx)?;
+    let (simule, pastille_simulee) = match simules {
+        Some((pose, pastille)) => (Some(pose), Some(pastille)),
+        None => (None, None),
+    };
+    let repris = crate::importation::parametrage::ce_que_l_import_a_repris(ctx)?;
+    Ok((declarations::demarrage::route(ctx, proposes, simule, repris)?, pastille_simulee))
+}
+
 /// Une route de ce module.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
@@ -373,14 +389,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // (gris) ; les acces aux organismes et le Drive se proposent (`acces_proposes`).
         Route::PourDemarrer => {
             let SansCharge {} = charge.lire()?;
-            let (proposes, simules) = acces_proposes(ctx)?;
-            let (simule, pastille_simulee) = match simules {
-                Some((pose, pastille)) => (Some(pose), Some(pastille)),
-                None => (None, None),
-            };
-            // Ce qu'une DSN pourrait donner se range a part quand l'import n'en a repris aucune.
-            let repris = crate::importation::parametrage::ce_que_l_import_a_repris(ctx)?;
-            let d = declarations::demarrage::route(ctx, proposes, simule, repris)?;
+            let (d, pastille_simulee) = pour_demarrer(ctx)?;
             // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
             let n = d.poses.len();
             let poses: Vec<PoseVue> = d
@@ -984,6 +993,9 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         None => socle::phrase!("{} ce mois-ci, {} à venir.", ce_mois_dit, a_venir_dit),
     };
     let a_faire = ce_mois.iter().filter(|x| !x.due && matches!(x.etat, AFaire | EnRetard)).count();
+    // Les rappels sont les echeances dues (`rappels`) ; ce que « Pour démarrer » demande se lit de sa route.
+    let (demarrage, _) = pour_demarrer(ctx)?;
+    let ouvrir_a_l_ouverture = ce_mois.iter().any(|e| e.due) || a_faire > 0 || !demarrage.manques.is_empty() || demarrage.dsn.is_some();
     // CE QUI EST FAIT NE SE RAPPELLE PAS : une echeance faite se tait, sauf celle qui se coche, qui reste pour se
     // decocher ; faite, elle ne dit plus ni quand ni quoi. UNE CHOSE SE DIT UNE FOIS : celle qu'un rappel dit, avec sa date
     // et son geste, n'est pas un rang du mois.
@@ -1028,6 +1040,7 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         ce_mois,
         a_venir,
         a_faire,
+        ouvrir_a_l_ouverture,
         ce_mois_titre,
         ce_mois_rangs,
         ce_mois_vide,

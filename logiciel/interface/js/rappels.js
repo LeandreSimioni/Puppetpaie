@@ -29,10 +29,9 @@ async function montrerRappels(lu = api) {
   try { manques = await lireDemarrage(lu); } catch (e) { dire(e.message, "erreur"); }
   const liste = r.rappels;
   // L'ÉCHÉANCIER : « un pop-up au démarrage : on est le…,
-  // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle s'ouvrait
-  // aussi une fois par jour quand rien n'attendait : elle n'apparaît
-  // que s'il y a quelque chose à faire.
-  if (!liste.length && !(ech && ech.a_faire) && !manques.length && !DEMARRAGE.dsn) return;
+  // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle n'apparaît que s'il y a quelque chose à faire, et
+  // c'est l'échéancier qui le dit (`ouvrir_a_l_ouverture`) ; refusé, il ne dit rien, et la boîte ne s'ouvre pas.
+  if (!ech || !ech.ouvrir_a_l_ouverture) return;
   // Ce qu'une DSN pourrait donner compte dans ce que la boîte a montré : qu'il change, et elle se rouvre.
   RAPPELS_MONTRES = { liste, ech, manques, dsn: DEMARRAGE.dsn };
   if (dejaMontres(RAPPELS_MONTRES)) return;
