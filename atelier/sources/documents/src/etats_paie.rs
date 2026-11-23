@@ -85,7 +85,7 @@ fn dossier_de(ctx: &Contexte, quand: &PeriodeDemandee) -> PathBuf {
     }
 }
 
-const UNE_PERIODE: &str = "Un état se demande pour UNE période : un mois (--mois AAAA-MM), une année (--annee AAAA), ou toutes les années (--toutes-les-annees).";
+const UNE_PERIODE: &str = "Un état se demande pour UNE période : un mois (AAAA-MM), une année (AAAA), ou toutes les années (toutes).";
 
 /// Ce qu'on a demande, les mois qu'on a, et d'ou ils viennent.
 pub struct Periode {
@@ -655,7 +655,7 @@ fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::impo
         d.mois,
         d.annee,
         d.toutes,
-        "Un livre de paie se demande pour UNE période : un mois (--mois AAAA-MM), une année (--annee AAAA), ou toutes les années (--toutes-les-annees).",
+        "Un livre de paie se demande pour UNE période : un mois (AAAA-MM), une année (AAAA), ou toutes les années (toutes).",
     )?;
     let format = match d.format {
         Some(f @ (FormatDExport::Csv | FormatDExport::Xlsx | FormatDExport::Pdf)) => f,

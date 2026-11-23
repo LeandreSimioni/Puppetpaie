@@ -295,14 +295,6 @@ async function ouvrirCourts(format, phrase) {
   };
 }
 
-/** `exporter` prend encore la période en trois champs (`mois`, `annee`, `toutes_les_annees`) : le code choisi dans la
- *  liste (`AAAA-MM`, `AAAA`, ou celui de toutes les années) va dans le sien. */
-function periodeEnTrois(code) {
-  if (/^\d{4}-\d{2}$/.test(code)) return { mois: code };
-  if (/^\d{4}$/.test(code)) return { annee: Number(code) };
-  return { toutes_les_annees: true };
-}
-
 async function lancerExport(apercu) {
   // Une case absente ou vide n'est pas dite : elle ne part pas.
   const val = (id) => { const e = document.getElementById(id); return e && e.value !== "" ? e.value : undefined; };
@@ -323,7 +315,7 @@ async function lancerExport(apercu) {
     charge.analytique = !champ.classList.contains("cachee")
       && document.getElementById("x-analytique").checked;
   }
-  if (periode) Object.assign(charge, periodeEnTrois(periode));
+  if (periode) charge.periode = periode;
   const cible = document.getElementById("exports-resultat");
   cible.innerHTML = `<p class="discret">…</p>`;
   let r;
