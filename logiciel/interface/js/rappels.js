@@ -365,50 +365,37 @@ async function peindreDemarrageDans(conteneur) {
   brancherDemarrage(conteneur);
 }
 
-/* L'en-tête de la boîte : la date, la bienvenue, ce qui est à faire ce
- * mois-ci, et l'année qui vient repliée. Tout vient du moteur
- * : la page ne sait pas ce qu'est une échéance. */
+/* L'en-tête de la boîte : la date, la bienvenue, puis ce que la route `echeancier` en montre, tel qu'elle le rend :
+ * « Ce mois-ci » (`ce_mois_titre`) et ses rangs, ou ce qu'il dit sans eux (`ce_mois_vide`) ; l'année qui vient repliée
+ * (`annee_titre`, ses rangs). Chaque rang : sa pastille, son titre, ce qu'il dit, ses gestes. */
 function htmlEcheancier(ech) {
   if (!ech) return "";
-  const pastille = (x) => pastilleDeLEtat(x.pastille);
-  const avant = (x) => x.quand && x.etat !== "fait"
-    ? ` <span class="discret">— ${echapper(x.quand)}</span>` : "";
-  const ligne = (x) => `
-    <li class="echeance ${echapper(x.etat)}">
-      <div class="echeance-titre">${pastille(x)} ${echapper(x.titre)}${avant(x)}</div>
-      ${x.etat === "fait" ? "" : `<div class="note">${echapper(x.detail)}</div>`}
-      ${x.cochable ? `<button class="secondaire petit" data-echeance="${echapper(x.cle)}"
-        data-fait="${x.etat === "fait" ? "non" : "oui"}">${echapper(x.bouton_coche)}</button>` : ""}
-    </li>`;
-  const parMois = {};
-  ech.a_venir.forEach((x) => { (parMois[x.tombe] ||= []).push(x); });
-  const annee = Object.keys(parMois).map((m) => `
-    <li><b>${echapper(moisEnClair(m))}</b>
-      <ul>${parMois[m].map((x) => `<li>${echapper(x.titre)}${x.etat === "fait" ? " ✓" : ""}</li>`).join("")}</ul>
+  const rangs = (liste, ou) => liste.map((x, i) => `
+    <li class="echeance" data-rang-echeance="${ou}" data-i="${i}">
+      <div class="echeance-titre">${pastilleDeLEtat(x.pastille)} ${echapper(x.titre)}</div>
+      ${x.dit.map((l) => `<div class="note">${echapper(l)}</div>`).join("")}
+      ${x.gestes.length ? `<div class="actions">${boutonsDesGestes(x.gestes)}</div>` : ""}
     </li>`).join("");
-  // CE QUI EST FAIT NE SE RAPPELLE PAS : la DSN de septembre,
-  // déposée, ne s'affiche plus « fait ». Une échéance cochable reste, pour
-  // pouvoir la décocher ; les autres faites se taisent.
-  // UNE CHOSE SE DIT UNE FOIS : la DSN qu'un rappel réclame
-  // (`rappel`, le moteur le dit) se dit dans ce rappel, sous l'en-tête, avec
-  // sa date et son geste ; ici elle se dirait en double.
-  const ceMois = ech.ce_mois.filter((x) => (x.etat !== "fait" || x.cochable) && !x.rappel);
-  const ditAilleurs = ech.ce_mois.some((x) => x.rappel);
   return `
     <div class="accueil">
       <p class="accueil-date">${echapper(ech.date_dit)}</p>
       <h2 class="accueil-titre">${echapper(ech.bienvenue)}</h2>
-      ${ceMois.length
-        ? `<h3>Ce mois-ci</h3><ul class="echeances">${ceMois.map(ligne).join("")}</ul>`
-        : ditAilleurs ? "" : `<h3>Ce mois-ci</h3><p class="discret">Rien à faire</p>`}
-      ${annee ? `<details class="accueil-annee"><summary>L'année qui vient</summary>
-        <ul class="echeances-annee">${annee}</ul></details>` : ""}
+      ${ech.ce_mois_titre ? `<h3>${echapper(ech.ce_mois_titre)}</h3>` : ""}
+      ${ech.ce_mois_rangs.length ? `<ul class="echeances">${rangs(ech.ce_mois_rangs, "ce_mois_rangs")}</ul>` : ""}
+      ${ech.ce_mois_vide ? `<p class="discret">${echapper(ech.ce_mois_vide)}</p>` : ""}
+      ${ech.annee_titre ? `<details class="accueil-annee"><summary>${echapper(ech.annee_titre)}</summary>
+        <ul class="echeances echeances-annee">${rangs(ech.annee_rangs, "annee_rangs")}</ul></details>` : ""}
     </div>`;
 }
 
-function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
-  const html = htmlDemarrage(manques) + htmlEcheancier(ech) + liste.map((r, i) => `
-    <div class="rappel ${r.en_retard ? "retard" : ""}">
+/* L'ÉCHÉANCIER ET LES RAPPELS, dans la boîte : chacun ses gestes, tels que la route les rend (`brancherLesGestes`, leur
+ * boîte par-dessus celle-ci) ; après un geste, ils se relisent, et « Pour démarrer », au-dessus d'eux, garde ce qu'on y a
+ * tapé. */
+function poserLesRappels(liste, ech, fermerDit) {
+  const cible = document.querySelector("#boite [data-rappels-du-jour]");
+  if (!cible) return;
+  cible.innerHTML = htmlEcheancier(ech) + liste.map((r, i) => `
+    <div class="rappel ${r.en_retard ? "retard" : ""}" data-rappel="${i}">
       <h3>${echapper(r.titre)}${r.pastille ? ` ${pastilleDeLEtat(r.pastille)}` : ""}${r.quand
         ? ` <span class="discret">— ${echapper(r.quand)}</span>` : ""}</h3>
       ${r.question ? `<p class="rappel-question">${echapper(r.question)}</p>` : ""}
@@ -417,10 +404,32 @@ function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
         `<li>${echapper(s.titre)} <span class="discret">— ${echapper(s.numero_objet || "aucun numéro")}</span></li>`).join("")}</ul>` : ""}
       <div class="actions">${boutonRappel(r, i)}</div>
     </div>`).join("");
+  document.getElementById("rappels-fermer").textContent = fermerDit;
+  const relire = async () => {
+    await relireEtat();
+    let r2, ech2 = null;
+    try { r2 = await api("rappels"); } catch (e) { dire(e.message, "erreur"); return; }
+    try { ech2 = await api("echeancier"); } catch (e) { dire(e.message, "erreur"); }
+    poserLesRappels(r2.rappels, ech2, r2.fermer_dit);
+  };
+  cible.querySelectorAll("[data-rang-echeance]").forEach((li) => {
+    const x = ech[li.dataset.rangEcheance][+li.dataset.i];
+    brancherLesGestes(li, x.gestes, { titre: x.titre, pardessus: true }, relire);
+  });
+  cible.querySelectorAll("[data-rappel]").forEach((bloc) => {
+    const r = liste[+bloc.dataset.rappel];
+    const b = document.getElementById("rappel-" + bloc.dataset.rappel);
+    if (b) b.onclick = () => agirSurRappel(r);
+    brancherLesGestes(bloc, r.gestes, { titre: r.titre, pardessus: true }, relire);
+  });
+}
+
+function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
   ouvrirBoite(`
-    <div class="boite-rappels"></div>${html}
+    <div class="boite-rappels"></div>${htmlDemarrage(manques)}
+    <div data-rappels-du-jour></div>
     <div class="actions">
-      <button class="secondaire" id="rappels-fermer">${echapper(fermerDit)}</button>
+      <button class="secondaire" id="rappels-fermer"></button>
     </div>`, () => {
     // FERMÉE, ELLE SORT DE LA PAGE : cachée sous le voile, elle gardait
     // ses boutons `[data-manque-champ]`, périmés dès que la fiche change, et
@@ -432,31 +441,16 @@ function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
   const fermer = async () => { if (await quitterLEcran(document.getElementById("boite"))) fermerBoite(); };
   document.getElementById("rappels-fermer").onclick = fermer;
   CLIC_DEHORS = fermer;
-  liste.forEach((r, i) => {
-    const b = document.getElementById("rappel-" + i);
-    if (b) b.onclick = () => agirSurRappel(r);
-  });
+  poserLesRappels(liste, ech, fermerDit);
   brancherDemarrage(document.getElementById("boite"));
-  document.querySelectorAll("[data-echeance]").forEach((b) => {
-    b.onclick = async () => {
-      try {
-        await api("echeance-faite", { cle: b.dataset.echeance, fait: b.dataset.fait === "oui" });
-        const ech2 = await api("echeancier");
-        const r2 = await api("rappels");
-        boiteRappels(r2.rappels, ech2, manques, r2.fermer_dit);
-      } catch (e) { dire(e.message, "erreur"); }
-    };
-  });
 }
 
-/* CE QUI EST DÛ, ET SON GESTE : le moteur rend l'`action` de chaque rappel, une route du catalogue (sa `charge`, la
+/* CE QUI EST DÛ, ET SES GESTES : le moteur rend l'`action` de chaque rappel, une route du catalogue (sa `charge`, la
    route de l'acte qui suit, `puis`, et le mot du bouton, `libelle`) ; la boîte s'ouvre d'après la route
-   (`ouvrirGeste`), comme une case du mois. */
+   (`ouvrirGeste`), comme une case du mois. Ses `gestes` (« C'est fait »…) sont ceux d'un écran rendu. */
 function boutonRappel(r, i) {
   const libelle = r.action && r.action.libelle;
-  // UNE ÉCHÉANCE QUE SEULE LA COMPAGNIE PEUT DIRE FAITE (`cochable`) : « C'est fait », comme dans l'échéancier.
-  const coche = r.cochable ? `<button class="secondaire" data-echeance="${echapper(r.cle)}" data-fait="oui">${echapper(r.bouton_coche)}</button>` : "";
-  return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + coche;
+  return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + boutonsDesGestes(r.gestes);
 }
 
 /* Le geste d'un rappel mène ailleurs : tout écran qui porte une saisie non enregistrée se quitte d'abord (la boîte, et

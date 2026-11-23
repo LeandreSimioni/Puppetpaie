@@ -31,7 +31,10 @@ use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
 use declarations::champs::FicheAJuger;
 use socle::echec::{erreur, Classe};
-use crate::catalogue::{Ecran, Place};
+use crate::catalogue::{Affiche, Ecran, Place};
+use crate::ecran::RangDeLEcran;
+use crate::etapes::ChargeDuGeste;
+use crate::imprevus::GesteDeRoute;
 
 // ------------------------------------------------------------------ les refus
 
@@ -47,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie a à faire ce jour : DSN, fins de contrat, DPAE…",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton)",
+        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; les spectacles que sa revue demande, chacun dit avec son numéro d'objet ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait », choisir les spectacles qui continuent), fermer_dit : le bouton qui ferme la boîte",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -59,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les échéances du mois et de l'année.",
         charge: &SansCharge::CHARGE,
         exemple: "{}",
-        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état et si un rappel la dit",
+        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_rangs (l'année qui vient, chacune avec son mois)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -100,7 +103,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::Dessine(Place::Paie),
+        ecran: Ecran::Geste(Place::Paie),
     },
 ];
 
@@ -117,9 +120,10 @@ charge! {
 }
 
 charge! {
-    /// La charge de `echeance-faite` : l'echeance « quoi:AAAA », cochee sauf `fait: false`.
-    #[derive(Debug)]
-    struct ChargeFaite {
+    /// La charge de `echeance-faite` : l'echeance « quoi:AAAA », cochee sauf `fait: false`. Le geste « C'est fait » d'une
+    /// echeance l'ecrit aussi (`Echeance::gestes`).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeFaite {
         cle: CleDEcheance = dit("Échéance", "l'échéance et son année, « quoi:AAAA » (celle que rappels ou echeancier rendent)"),
         fait: Option<bool> = dit("Faite", "faux : la décocher"),
     }
@@ -241,8 +245,49 @@ struct Echeancier {
     ce_mois: Vec<EcheanceDite>,
     a_venir: Vec<EcheanceDite>,
     a_faire: usize,
+    /// CE QUE L'ECRAN EN MONTRE, sous la date et la bienvenue, dans cet ordre : « Ce mois-ci » (aucun titre quand tout ce
+    /// qui est du ce mois, un rappel le dit), ses echeances, ou « Rien à faire » ; puis « L'année qui vient » et ses
+    /// echeances. Une chose se dit une fois : une echeance qu'un rappel dit n'est pas un rang du mois.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ce_mois_titre: Option<&'static str>,
+    ce_mois_rangs: Vec<RangDEcheance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ce_mois_vide: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annee_titre: Option<&'static str>,
+    annee_rangs: Vec<RangDEcheance>,
     phrases: Vec<String>,
 }
+
+/// Une echeance en rang de l'echeancier : son titre, ce qu'elle dit, sa pastille et ses gestes.
+type RangDEcheance = RangDeLEcran<ChargeDuGeste, ValeursDeLEcheance, ChoixDeLEcheance>;
+
+/// Un geste d'une echeance (`Echeance::gestes`) : la charge de sa route, ce que ses cases montrent d'abord, ce qu'elles
+/// offrent.
+type GesteDEcheance = GesteDeRoute<ChargeDuGeste, ValeursDeLEcheance, ChoixDeLEcheance>;
+
+/// Ce que les cases d'un geste d'une echeance montrent d'abord : les spectacles de la revue, tous cochés.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct ValeursDeLEcheance {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    continuent: Option<Vec<droit::contexte::IdSpectacle>>,
+}
+
+/// Ce qu'offrent les cases d'un geste d'une echeance : les spectacles de la revue, chacun dit avec son numero d'objet.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct ChoixDeLEcheance {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    continuent: Option<Vec<crate::ouverture::Choix>>,
+}
+
+/// Le titre de l'echeancier du mois, ce qu'il dit quand il n'a rien, et celui de l'annee qui vient.
+const CE_MOIS: &str = "Ce mois-ci";
+const RIEN_A_FAIRE: &str = "Rien à faire";
+const L_ANNEE_QUI_VIENT: &str = "L'année qui vient";
+
+/// Les libelles du geste « C'est fait » d'une echeance que seule la compagnie peut dire faite, et de celui qui le defait.
+const C_EST_FAIT: Affiche = Affiche::new("C'est fait");
+const PAS_ENCORE_FAIT: Affiche = Affiche::new("Pas encore fait");
 
 /// Ce que rend `revue-spectacles`.
 #[derive(Debug, Serialize)]
@@ -729,8 +774,7 @@ impl Echeance {
             en_retard: self.etat == EnRetard,
             rappel: self.due,
             etape: self.etape,
-            cochable: self.cochable,
-            pastille: Pastille::de(self.etat.a_l_ecran(), self.etat.mots()),
+            pastille: self.pastille(),
             mois: self.mois,
             annee: self.annee,
             fichier: self.fichier.clone(),
@@ -743,9 +787,33 @@ impl Echeance {
             obligation: self.obligation.clone(),
             objet: self.objet.clone(),
             action: self.action()?,
-            bouton_coche: if self.etat == Fait { "Pas encore fait" } else { "C'est fait" },
+            gestes: self.gestes(),
             titre_boite: self.annee.map(|a| format!("Les spectacles de {}", a)),
         })
+    }
+
+    /// LES GESTES QUE SA BOITE FAIT, tels que la page les dessine en boutons (`js/avance.js`, `brancherLesGestes`) : une
+    /// echeance que seule la compagnie peut dire faite se coche (« C'est fait », `echeance-faite`), et se decoche une fois
+    /// faite (« Pas encore fait »).
+    fn gestes(&self) -> Vec<GesteDEcheance> {
+        let mut gestes = Vec::new();
+        if self.cochable {
+            let fait = self.etat != Fait;
+            let charge = ChargeFaite { cle: self.cle.clone(), fait: Some(fait) };
+            let libelle = if fait { C_EST_FAIT } else { PAS_ENCORE_FAIT };
+            gestes.push(GesteDeRoute::avec_cases(Route::EcheanceFaite, charge.into(), libelle, Vec::new(), ValeursDeLEcheance::default(), ChoixDeLEcheance::default()));
+        }
+        gestes
+    }
+
+    /// Sa pastille : la couleur et les mots de son etat.
+    fn pastille(&self) -> Pastille {
+        Pastille::de(self.etat.a_l_ecran(), self.etat.mots())
+    }
+
+    /// L'echeance en rang de l'echeancier, disant `dit`.
+    fn en_rang(&self, dit: Vec<String>) -> RangDEcheance {
+        RangDeLEcran { titre: self.titre.clone(), dit, pastille: self.pastille(), etat: None, montre: None, gestes: self.gestes() }
     }
 }
 
@@ -770,7 +838,6 @@ pub(crate) struct EcheanceDite {
     pub(crate) rappel: bool,
     #[serde(serialize_with = "etape_ecrite")]
     pub(crate) etape: Option<EtapeDEcheance>,
-    pub(crate) cochable: bool,
     /// Sa pastille : la couleur et les mots de son etat.
     pub(crate) pastille: Pastille,
     pub(crate) mois: Option<Mois>,
@@ -790,8 +857,8 @@ pub(crate) struct EcheanceDite {
     pub(crate) objet: Option<Objet>,
     /// Le geste qui la fait (`etapes::action` : une route du catalogue et son bouton).
     pub(crate) action: Option<crate::etapes::Action>,
-    /// La case « C'est fait ».
-    pub(crate) bouton_coche: &'static str,
+    /// Les gestes que sa boite fait (`Echeance::gestes`).
+    pub(crate) gestes: Vec<GesteDEcheance>,
     /// Le titre de sa boite.
     pub(crate) titre_boite: Option<String>,
 }
@@ -891,6 +958,26 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         None => socle::phrase!("{} ce mois-ci, {} à venir.", ce_mois_dit, a_venir_dit),
     };
     let a_faire = ce_mois.iter().filter(|x| !x.due && matches!(x.etat, AFaire | EnRetard)).count();
+    // CE QUI EST FAIT NE SE RAPPELLE PAS : une echeance faite se tait, sauf celle qui se coche, qui reste pour se
+    // decocher ; faite, elle ne dit plus ni quand ni quoi. UNE CHOSE SE DIT UNE FOIS : celle qu'un rappel dit, avec sa date
+    // et son geste, n'est pas un rang du mois.
+    let ce_mois_rangs: Vec<RangDEcheance> = ce_mois
+        .iter()
+        .filter(|e| (e.etat != Fait || e.cochable) && !e.due)
+        .map(|e| {
+            let dit = if e.etat == Fait { Vec::new() } else { [&e.quand_dit, &e.detail].into_iter().filter(|l| !l.is_empty()).cloned().collect() };
+            e.en_rang(dit)
+        })
+        .collect();
+    let dit_ailleurs = ce_mois.iter().any(|e| e.due);
+    let (ce_mois_titre, ce_mois_vide) = match (ce_mois_rangs.is_empty(), dit_ailleurs) {
+        (false, _) => (Some(CE_MOIS), None),
+        (true, false) => (Some(CE_MOIS), Some(RIEN_A_FAIRE)),
+        (true, true) => (None, None),
+    };
+    // L'annee qui vient : chacune avec le mois ou elle tombe.
+    let annee_rangs: Vec<RangDEcheance> = a_venir.iter().map(|e| e.en_rang(e.tombe.map(|m| m.libelle(Graphie::Accentuee)).into_iter().collect())).collect();
+    let annee_titre = (!annee_rangs.is_empty()).then_some(L_ANNEE_QUI_VIENT);
     let ce_mois: Vec<EcheanceDite> = ce_mois.iter().map(Echeance::dite).collect::<R<_>>()?;
     let a_venir: Vec<EcheanceDite> = a_venir.iter().map(Echeance::dite).collect::<R<_>>()?;
     let ligne = |x: &EcheanceDite| format!("{} ({}{})", x.titre, x.pastille.mots, if x.quand_dit.is_empty() { String::new() } else { format!(", {}", x.quand_dit) });
@@ -906,6 +993,11 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         ce_mois,
         a_venir,
         a_faire,
+        ce_mois_titre,
+        ce_mois_rangs,
+        ce_mois_vide,
+        annee_titre,
+        annee_rangs,
         phrases,
     })
 }

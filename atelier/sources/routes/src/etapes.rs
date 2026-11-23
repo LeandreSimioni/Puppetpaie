@@ -169,6 +169,7 @@ pub(crate) enum ChargeDuGeste {
     ObligationDArret(ChargeObligationDArret),
     Annee(ChargeAnnee),
     Revue(crate::rappels::ChargeRevue),
+    Faite(crate::rappels::ChargeFaite),
     Piece(crate::documents::ChargePiecePartie),
 }
 
@@ -206,6 +207,7 @@ charge_du_geste! {
     ChargeObligationDArret => ObligationDArret,
     ChargeAnnee => Annee,
     crate::rappels::ChargeRevue => Revue,
+    crate::rappels::ChargeFaite => Faite,
     crate::documents::ChargePiecePartie => Piece,
 }
 

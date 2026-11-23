@@ -1132,12 +1132,10 @@ pre.reponse {
 .echeance:first-child { border-top: 0; }
 .echeance-titre { font-weight: bold; }
 .echeance .note { margin: 2px 0 0; }
-.echeance.fait .echeance-titre { color: var(--discret); font-weight: normal; }
-.echeance button.petit { margin-top: 6px; padding: 3px 10px; font-size: 12px; }
+.echeance .actions { margin-top: 4px; }
 .accueil-annee { margin-top: 10px; }
 .accueil-annee summary { cursor: pointer; color: var(--discret); }
-.echeances-annee { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
-.echeances-annee ul { margin: 0 0 4px; padding-left: 16px; }
+.echeances-annee { margin: 8px 0 0; font-size: 13px; }
 .tableau-compta { max-height: 50vh; overflow: auto; margin: 10px 0; }
 table.compta { border-collapse: collapse; font-size: 12px; width: 100%; }
 table.compta th, table.compta td { padding: 3px 6px; border-bottom: 1px solid var(--bord); text-align: left; }
