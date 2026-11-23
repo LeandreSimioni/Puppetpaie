@@ -2936,7 +2936,7 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique). Ce que le logiciel ne livre pas pour calculer une paie (le barème de son année,
-  la couche de sa convention : `droit::contexte::RienDeLivre`, reconnu par son type) ne l'inscrit pas au registre : la
+  la couche de sa convention : `droit::contexte::RienDeLivre`, que `Contexte::de_quoi_calculer` rend à part) ne l'inscrit pas au registre : la
   version qui le livrera la comparera à l'ouverture. Avant 2026 (`engagement::ecarts::COMPAREE_TOUJOURS_DES`, une
   décision de l'éditeur), ce manque ne fait aucun incident : la paie entre dans l'historique sans comparaison ; à partir
   de 2026, il en fait un. Une case qui manque à la compagnie reste ce qu'elle est, quelle que soit l'année. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates

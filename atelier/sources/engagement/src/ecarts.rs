@@ -307,7 +307,7 @@ const ECART_DE_TAUX_TOLERE: Taux = Taux::CINQ_DIX_MILLIEMES;
 const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
 
 /// LA PREMIERE ANNEE DONT CHAQUE PAIE IMPORTEE SE COMPARE TOUJOURS : une decision de l'editeur, pas un texte (Leandre,
-/// 24/11/2026 : « Si ça arrive avant 2026, on compare pas d'après moi. » « On aura toujours les barèmes pour comparer. »
+/// 23/11/2026 : « Si ça arrive avant 2026, on compare pas d'après moi. » « On aura toujours les barèmes pour comparer. »
 /// « On n'a pas les barèmes de toutes les conventions »). Avant, une paie dont le logiciel ne livre pas de quoi la
 /// calculer (`RienDeLivre`) entre dans l'historique sans comparaison ni incident ; a partir d'elle, ce manque fait un
 /// incident.
