@@ -129,6 +129,16 @@ perd rien ») : chaque case, bouton, phrase, condition d'affichage et geste, ave
 la route en dit déjà. Ce que le passage ferait perdre ne se retire ni ne se garde d'office : c'est une question à
 Léandre, une par chose (« on la garde ou pas, et si oui, comment »).
 
+**Les routes priment, la page ne fait que montrer** (Léandre, 23/11/2026 : « c'est les routes qui priment partout »,
+« la page, elle ne fait que montrer ce qu'on a décidé avec les routes », « le LLM, il a besoin de voir la même chose
+que l'humain », « j'ai pas à faire deux mises en page »). Il n'y a qu'une mise en page, celle que les routes rendent :
+qui lit la réponse d'une route en ligne de commande voit ce que la personne voit à l'écran, les mêmes cases, les mêmes
+choix, les mêmes phrases, et ce qui se regarde (un aperçu, un exemple) est un fichier que la route nomme. Passer un
+écran se fait donc dans ce sens, et jamais dans l'autre : **on enlève la page faite main**, le dessinateur montre ce
+que les routes rendent, **on regarde ce qu'on a perdu**, et pour chaque chose perdue Léandre décide si elle entre dans
+la route (alors tout le monde la voit) ou si l'on s'en passe. On ne recopie jamais d'office une page dans une route :
+ce serait faire primer la page. Une chose qui manque à l'écran est un manque de la route.
+
 **Quitter sans enregistrer se demande, partout** (Léandre, 23/11/2026 : « ça doit être une règle générale »). Dès
 qu'une case d'un écran porte une saisie qui n'est pas enregistrée, quitter cet écran ouvre la même boîte
 (`demanderSiEnregistrer` : enregistrer, jeter, ou rester) ; rien si l'on n'a rien changé, ou si l'on est revenu à ce
