@@ -382,7 +382,6 @@ struct Diagnostic {
     paies_annuelles: Vec<AnneePartie>,
     groupes: Vec<Groupe>,
     pastille: Pastille,
-    ecran: EcranDuDiagnostic,
     #[serde(skip_serializing_if = "Option::is_none")]
     bilan: Option<BilanIncidents>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -624,7 +623,6 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let envoi = incidents::envoi(racine)?;
     let dernier_envoi = partis.into_iter().max();
     let total = lignes.len();
-    let ecran = ecran_du_diagnostic(envoi, &serveur, total, partis_total, dernier_envoi, annees.first());
     Ok(Diagnostic {
         phrase: socle::phrase!(
             "Signalement des dysfonctionnements : {} ; incidents gardés : {}, partis : {}, en attente : {}.",
@@ -642,7 +640,6 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
         dernier_envoi,
         paies_annuelles: annees,
         groupes: liste,
-        ecran,
         bilan: None,
         couleur: None,
     })
@@ -699,60 +696,6 @@ fn phrase_d_incident(l: &Ligne) -> String {
 /// Un paquet d'incidents semblables : combien, sa nature, ce qu'il dit, le dernier.
 fn phrase_de_paquet(p: &Paquet) -> String {
     format!("{} fois · {} · {} — le dernier le {}", p.combien, p.quoi.nom(), p.resume, p.derniere.dit())
-}
-
-/// La boite qui avertit avant de couper l'envoi.
-#[derive(Debug, Serialize)]
-struct Desactiver {
-    titre: &'static str,
-    phrase: &'static str,
-    note: &'static str,
-    question: &'static str,
-}
-
-/// CE QUE L'ECRAN DU FILET DIT (`ecran` des routes `diagnostic-*`) : la ligne de son etat, la boite qui avertit avant de
-/// couper l'envoi, et celle qui montre ce qui est parti.
-#[derive(Debug, Serialize)]
-struct EcranDuDiagnostic {
-    compte: Option<String>,
-    couper: &'static str,
-    desactiver: Desactiver,
-    parti: String,
-    rien: &'static str,
-}
-
-fn ecran_du_diagnostic(envoi: bool, serveur: &socle::garde_reseau::Url,total: usize, partis: u64, dernier_envoi: Option<Moment>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
-    let mut compte = match (envoi, dernier_envoi) {
-        (false, _) => Some("désactivé : les incidents restent sur cet ordinateur, rien ne part".to_string()),
-        (true, Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, d.dit())),
-        (true, None) if total > 0 => Some("rien n'est encore parti".to_string()),
-        (true, None) => None,
-    };
-    if let (true, Some(a)) = (envoi, annee) {
-        let mut paies = format!("nombre de paies de {}", a.annee);
-        if let Some(q) = a.parti_le {
-            paies.push_str(&format!(" parti le {}", q.dit()));
-        }
-        compte = Some(match compte {
-            Some(c) => format!("{} · {}", c, paies),
-            None => paies,
-        });
-    }
-    EcranDuDiagnostic {
-        compte,
-        couper: if envoi { "Désactiver" } else { "Réactiver" },
-        desactiver: Desactiver {
-            titre: "Désactiver le signalement des dysfonctionnements ?",
-            phrase: "Si vous le désactivez, l'éditeur ne verra plus les problèmes de votre logiciel, et risque de ne pas pouvoir les corriger avant qu'ils vous arrivent, ou qu'ils arrivent à d'autres compagnies. Il ne saura plus non plus combien de paies PuppetPaie fait chez vous : le logiciel est gratuit, c'est sa seule façon de savoir s'il sert.",
-            note: "Ce qui part : chaque dysfonctionnement avec de quoi le reproduire (ce que le logiciel faisait, ses données, les 3 minutes d'avant, cet ordinateur), et une fois par an, à partir du 16 janvier, le nombre de paies faites l'année précédente. Les noms, NIR, adresses, IBAN et coordonnées de vos salariés n'en partent pas : ils sont remplacés par leur forme. Les incidents resteront notés sur cet ordinateur, et vous pourrez réactiver l'envoi à tout moment.",
-            question: "Voulez-vous vraiment continuer ?",
-        },
-        parti: format!(
-            "Quand quelque chose casse, PuppetPaie le note et l'envoie au serveur de l'éditeur, pour qu'il le corrige. Une fois par an, à partir du 16 janvier, il envoie aussi le nombre de paies faites l'année précédente : le logiciel est gratuit, c'est la seule façon pour l'éditeur de savoir s'il sert. Ce qui part est affiché ici tel quel : ce que le logiciel faisait et ses données (montants, dates, codes, spectacles, lieux), ce que vous et le logiciel avez fait les 3 minutes d'avant, et cet ordinateur (système, version, mémoire, disque, écran). Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones des salariés sont remplacés par leur forme (« salarié n°2 », « NIR présent, clé valide ») ; la compagnie n'est pas nommée et le poste est désigné par un numéro tiré au hasard. Serveur : {}.",
-            serveur
-        ),
-        rien: "Rien n'a été noté.",
-    }
 }
 
 /// CE QUE LA BOITE « Un problème, une idée ? » DIT (`ecran` de `signalements` et `signalement-envoyer`) : la question, les

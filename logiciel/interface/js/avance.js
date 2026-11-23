@@ -235,9 +235,10 @@ const CASES = {
     html: (v, o) => `<input type="file" data-case${o.admis ? ` accept="${echapper(o.admis.join(","))}"` : ""}>`,
     lire: (x) => (x.dataset.contenu == null ? null : x.dataset.contenu),
   },
-  // UN MOT DE PASSE QU'UN HUMAIN TAPE : masqué, jamais pré-rempli, que le navigateur ne propose pas ; le journal des gestes
-  // de la page ne dit que qu'il a été tapé (`js/tuyau.js`). Il part tel qu'il est tapé, blancs compris.
-  mot_de_passe: { html: () => `<input type="password" autocomplete="new-password" data-case>`, lire: (x) => (x.value === "" ? null : x.value) },
+  // UN MOT DE PASSE QU'UN HUMAIN TAPE : masqué, jamais pré-rempli, que le navigateur ne propose ni ne génère (la forme ne
+  // dit pas si c'est l'actuel ou un neuf : `off`, comme la boîte du mot de passe) ; le journal des gestes de la page ne
+  // dit que qu'il a été tapé (`js/tuyau.js`). Il part tel qu'il est tapé, blancs compris.
+  mot_de_passe: { html: () => `<input type="password" autocomplete="off" data-case>`, lire: (x) => (x.value === "" ? null : x.value) },
 };
 
 /** L'ADRESSE OÙ LA FENÊTRE SERT UN DOCUMENT QUE LA ROUTE NOMME (`adresse`, `routes::ouverture::DocumentMontre`), refaite à
