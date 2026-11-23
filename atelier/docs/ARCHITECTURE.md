@@ -1189,7 +1189,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | complémentaire santé d'un salarié au mois telle que sa fiche la fait dire (hors fiche, ce qui manque pour la payer, ou les niveaux où l'on choisit) | `routes::fiches::SanteDuSalarie` | `routes/src/fiches/rendue.rs` |
 | texte tapé d'une case que son type refuse (les quinze chiffres d'un NIR collé) | `routes::fiches::CaseTapee` | `routes/src/fiches/rendue.rs` |
 | niveau de garantie de la complémentaire santé que le barème du jour offre (son code et son libellé) | `routes::ouverture::NiveauDeSante` | `routes/src/ouverture.rs` |
-| exemple d'un choix, qu'on ouvre à côté de lui (le document que la route nomme par son adresse, et le lien qui l'ouvre : le bulletin d'exemple de chaque modèle du bulletin) | `routes::ouverture::ExempleDuChoix` | `routes/src/ouverture.rs` |
+| exemple d'un choix, qu'on ouvre à côté de lui (le document qui le montre, nommé par la route qui le rend et sa charge, par l'adresse où la fenêtre le sert à la page, et par le lien qui l'ouvre : le bulletin d'exemple de chaque modèle du bulletin) | `routes::ouverture::ExempleDuChoix` | `routes/src/ouverture.rs` |
 | partie d'une case de fiche faite de cases, ou de chaque rangée d'une liste (son chemin, son libellé, sa forme, son aide, ses choix, si elle est ouverte) | `routes::fiches::PartieDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | largeur d'une case de fiche à l'écran (toute la ligne, ou la moitié) | `declarations::champs::Largeur` | `declarations/src/champs.rs` |
 | case qui ne s'ouvre que si une autre est trop longue (le complément d'adresse, au-delà de ce que la DSN admet) | `declarations::champs::PlusLong` | `declarations/src/champs.rs` |
@@ -2119,7 +2119,7 @@ choix, son aide, si elle est ouverte ; une clé que la route ne décrit pas se g
 ses rangées ; ce que le moteur sait d'une case vient avec elle (`dit`, `prerempli`, ses choix) : la convention et
 l'Urssaf se choisissent dans les listes du moteur, le taux AT/MP dit sous lui ce que dit `taux-atmp`, la taxe sur les
 salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle, le modèle du bulletin se coche
-entre ses deux modèles (`boutons`), chacun avec son bulletin d'exemple, que la route nomme par son adresse
+entre ses deux modèles (`boutons`), chacun avec son bulletin d'exemple, que la route nomme par la route qui le rend, sa charge et son adresse
 (`routes::ouverture::ExempleDuChoix`), et sans choix écrit montre coché le simplifié, qu'il n'écrit pas tant qu'on
 n'en coche pas un autre. Sur la fiche d'un salarié, les deux
 pays se choisissent dans leurs listes (la table « Pays » de la DSN, le COG de l'INSEE) ; avec un pays de nationalité de

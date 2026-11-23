@@ -201,7 +201,7 @@ const CASES = {
       const nom = `boutons-${++NUMERO_DES_BOUTONS}`;
       const coche = v != null ? String(v) : o.prerempli != null ? String(o.prerempli) : null;
       const exemple = (c) => (c.exemple ? ` <a class="lien" href="${echapper(`${c.exemple.adresse}${c.exemple.adresse.includes("?") ? "&" : "?"}jeton=${
-        encodeURIComponent(JETON)}`)}" target="_blank" rel="noopener">${echapper(c.exemple.libelle)}</a>` : "");
+        encodeURIComponent(JETON)}&t=${Date.now()}`)}" target="_blank" rel="noopener">${echapper(c.exemple.libelle)}</a>` : "");
       return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}${
         v == null && o.prerempli != null ? ` data-prerempli="${echapper(String(o.prerempli))}"` : ""}>${(o.choix || []).filter((c) => c.code !== "")
         .map((c) => `<label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${coche === c.code ? " checked" : ""}> ${

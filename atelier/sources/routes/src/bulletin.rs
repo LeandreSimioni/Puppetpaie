@@ -58,7 +58,7 @@ impl Dite for ApercuModele {
 
 /// La charge de `bulletin-modele-apercu` : le modele, par sa cle (un modele connu, rien d'autre : un autre se refuse a la
 /// lecture de la charge).
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChargeModele {
     pub modele: ModeleBulletin,

@@ -863,7 +863,7 @@ fn completer_l_entreprise(ctx: &Contexte, e: &ChampsEntreprise, case: &mut CaseD
         case.choix = Some(
             droit::fiche::ModeleBulletin::TOUS
                 .iter()
-                .map(|m| Choix::de(m, m.nom()).montre_par(ExempleDuChoix::de("voir l'exemple", crate::bulletin::adresse_apercu(*m))))
+                .map(|m| Choix::de(m, m.nom()).montre_par(ExempleDuChoix::du_modele("voir l'exemple", *m)))
                 .collect(),
         );
         if e.modele_bulletin.dite().is_none() {

@@ -1228,19 +1228,27 @@ pub(crate) struct Choix {
     exemple: Option<ExempleDuChoix>,
 }
 
-/// L'EXEMPLE D'UN CHOIX : le document qui le montre, que la route nomme par son adresse (servie par la fenetre), et le
-/// lien qui l'ouvre. Le modele du bulletin de la fiche Entreprise : le bulletin d'exemple de chaque modele
-/// (`bulletin::adresse_apercu`, que fait la route `bulletin-modele-apercu`).
+/// L'EXEMPLE D'UN CHOIX : le document qui le montre. La route le nomme par la route qui le rend et sa charge (qui lit la
+/// reponse en ligne de commande l'obtient par elles), par l'adresse ou la fenetre sert ce meme document a la page, et
+/// par le lien qui l'ouvre. Le modele du bulletin de la fiche Entreprise : le bulletin d'exemple de chaque modele
+/// (`bulletin-modele-apercu`, `bulletin::adresse_apercu`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct ExempleDuChoix {
     libelle: &'static str,
+    route: Route,
+    charge: crate::bulletin::ChargeModele,
     adresse: String,
 }
 
 impl ExempleDuChoix {
-    /// Le document a l'adresse `adresse`, ouvert par le lien `libelle`.
-    pub(crate) fn de(libelle: &'static str, adresse: String) -> ExempleDuChoix {
-        ExempleDuChoix { libelle, adresse }
+    /// Le bulletin d'exemple du modele `modele`, ouvert par le lien `libelle`.
+    pub(crate) fn du_modele(libelle: &'static str, modele: droit::fiche::ModeleBulletin) -> ExempleDuChoix {
+        ExempleDuChoix {
+            libelle,
+            route: Route::BulletinModeleApercu,
+            charge: crate::bulletin::ChargeModele { modele },
+            adresse: crate::bulletin::adresse_apercu(modele),
+        }
     }
 }
 
