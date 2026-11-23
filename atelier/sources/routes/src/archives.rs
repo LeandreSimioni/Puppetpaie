@@ -36,7 +36,7 @@ use crate::catalogue::{Ecran, Place};
 const ANNEE: Legende = dit("Année", "l'année, AAAA");
 const TOUTES_LES_ANNEES: Legende = dit("Toutes les années", "vrai : toutes les années, à la place du mois ou de l'année").avancee();
 /// La periode d'un dossier, que `dossier-formes` offre (`catalogue::Forme::Periode`).
-pub(crate) const PERIODE: Legende = dit("Période", "un mois, une année, ou toutes les années : une de celles que dossier-formes offre");
+pub(crate) const PERIODE: Legende = dit("Quand", "un mois, une année, ou toutes les années : une de celles que dossier-formes offre");
 const LOGICIEL: Legende = dit("Logiciel", "le logiciel du comptable ; absent : aucun");
 const ANALYTIQUE: Legende = dit("Par spectacle", "vrai : par spectacle").avancee();
 

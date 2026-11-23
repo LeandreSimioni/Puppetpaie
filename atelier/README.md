@@ -1502,11 +1502,12 @@ toute la période, en une fois. Dans l'onglet **Exports**, « Le dossier d'un
 salarié » : on coche ce qu'on sort.
 
 ```
-route dossier-salarie Celi --toutes-les-annees        # un ZIP
-route dossier-salarie --annee 2025 --seulement bulletins  # un PDF par salarié
-route dossier-salarie --mois 2026-08 --ensemble         # tous dans un fichier
-route dossier-salarie Celi --annee 2026 --envoyer     # et l'envoyer (mot de passe)
-route dossier-salarie --toutes-les-annees --apercu      # compter les pages
+route dossier-formes                                                     # les gestes, les salariés et les périodes offertes
+route dossier-salarie {"salaries":["CELI"],"periode":"toutes"}           # un ZIP
+route dossier-salarie {"periode":"2025","categories":["bulletins"]}      # un PDF par salarié
+route dossier-salarie {"periode":"2026-08","ensemble":true}              # tous dans un fichier
+route dossier-envoyer {"salaries":["CELI"],"periode":"2026"}             # et l'envoyer (mot de passe)
+route dossier-salarie {"periode":"toutes","apercu":true}                 # compter les pages
 ```
 
 | catégorie | d'où |
