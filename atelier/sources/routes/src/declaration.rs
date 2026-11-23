@@ -124,6 +124,7 @@ formes! {
         droit::arrets::MotifDeReprise,
         droit::permanents::MotifDeSuspension,
         droit::natures::NatureDeContrat,
+        droit::fiche::StatutConventionnel,
     ],
     Forme::Objet => [engagement::carte::Changements, compagnie::problemes::CaptureDeLaPage, socle::forme::Liste],
 }

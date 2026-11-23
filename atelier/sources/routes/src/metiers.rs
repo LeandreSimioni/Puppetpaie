@@ -7,9 +7,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
 use crate::catalogue::Route;
-use crate::declaration::{charge, dit, ChampDuType, Legende};
+use crate::declaration::{charge, cle, dit, Legende};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::fiches::{creer_dossier, ecrire, refus};
 use crate::imprevus::GesteDeRoute;
@@ -64,28 +64,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::MetierModifie,
         geste: "Modifier un métier créé ; une case absente ne change pas.",
-        charge: &[
-            Champ { nom: "code", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier créé (CIE-1…)", avance: false },
-            ChampDuType::du_type::<_, socle::forme::TexteDit>("libelle", LIBELLE).champ,
-            CADRE,
-            Champ { nom: "feminin", libelle: Affiche::new("Au féminin"), forme: Forme::Texte, sens: "son nom au féminin", avance: true },
-            Champ { nom: "emploi", libelle: Affiche::new("Emploi déclaré"), forme: Forme::Texte, sens: "le libellé de l'emploi que la DSN déclare (S21.G00.40.006)", avance: true },
-            Champ { nom: "pcs_ese", libelle: Affiche::new("PCS-ESE"), forme: Forme::Texte, sens: "le code PCS-ESE, quatre caractères (S21.G00.40.004)", avance: true },
-            Champ {
-                nom: "code_declare",
-                libelle: Affiche::new("Code France Travail"),
-                forme: Forme::Texte,
-                sens: "le code de la nomenclature des emplois du spectacle qu'il déclare (S21.G00.40.005) ; l'annexe et le statut le suivent",
-                avance: true,
-            },
-            Champ {
-                nom: "statut_conventionnel",
-                libelle: Affiche::new("Classement conventionnel"),
-                forme: Forme::ChoixRendu,
-                sens: "le classement que la DSN déclare quand il n'est pas cadre (S21.G00.40.002) : 05, 06 ou 07",
-                avance: true,
-            },
-        ],
+        charge: &MetierAModifier::CHARGE,
         exemple: r#"{"code":"CIE-1","feminin":"Marionnettiste principale"}"#,
         rend: "emplois et emplois_autres",
         refus: &[OPERATION, MANQUE, FORME],
@@ -98,8 +77,6 @@ pub const ROUTES: &[Fiche] = &[
 
 /// Le nom d'un metier cree.
 const LIBELLE: Legende = dit("Nom", "son nom, tel que la liste et le contrat le disent");
-/// Cadre ou non, pour un metier deja cree.
-const CADRE: Champ = Champ { nom: "cadre", libelle: Affiche::new("Cadre"), forme: Forme::OuiNon, sens: "vrai : cadre ; faux : non cadre ; absent : inchangé", avance: false };
 
 /// LES CLASSEMENTS QU'UN METIER CREE OFFRE (S21.G00.40.002) : ceux d'un metier non cadre, les seuls que la DSN lit d'un
 /// metier (`StatutConventionnel::NON_CADRES`, `emplois::Metier::statut_non_cadre` ; un metier cadre se declare 04),
@@ -413,7 +390,8 @@ fn geste_qui_modifie(m: &emplois::MetierCree, classements: &[crate::ouverture::C
         // Un classement de cadre (la copie d'un metier cadre) n'est pas de ceux qui s'offrent : la case se montre vide.
         statut_conventionnel: Some(f.statut_conventionnel).filter(|s| !s.cadre()),
     };
-    let cases = vec!["libelle", "cadre", "feminin", "emploi", "pcs_ese", "code_declare", "statut_conventionnel"];
+    // Ses cases : tous les champs de sa charge, sauf le metier qu'elle designe.
+    let cases = MetierAModifier::CHARGE.champs.iter().map(|c| c.champ.nom).filter(|n| *n != cle!(MetierAModifier, code)).collect();
     let choix = ChoixDuMetier { copie_de: None, statut_conventionnel: Some(classements.to_vec()) };
     GesteDeRoute::avec_cases(Route::MetierModifie, MetierDesigne { code: m.code.clone() }, MODIFIER, cases, valeurs, choix)
 }
@@ -516,20 +494,21 @@ fn metier_cree(ctx: &Contexte, c: MetierACreer) -> R<MetierCreeRendu> {
     Ok(MetierCreeRendu { code, emplois: EmploisRendus::de(ctx, phrase, emplois)? })
 }
 
-/// La charge de `metier-modifie` : le metier cree, et ce qui change ; une case absente ne change pas. Chaque valeur se lit
-/// dans sa forme, comme celle du catalogue : la PCS-ESE (`CodePcsEse`), le code de la nomenclature (`CodeEmploi`,
-/// `MetierCree::declarer`), le classement (`StatutConventionnel`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MetierAModifier {
-    code: emplois::CodeEmploi,
-    libelle: Option<socle::forme::TexteDit>,
-    cadre: Option<bool>,
-    feminin: Option<socle::forme::TexteDit>,
-    emploi: Option<socle::forme::TexteDit>,
-    pcs_ese: Option<droit::fiche::CodePcsEse>,
-    code_declare: Option<emplois::CodeEmploi>,
-    statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
+charge! {
+    /// La charge de `metier-modifie` : le metier cree, et ce qui change ; une case absente ne change pas. Chaque valeur se
+    /// lit dans sa forme, comme celle du catalogue : la PCS-ESE (`CodePcsEse`), le code de la nomenclature (`CodeEmploi`,
+    /// `MetierCree::declarer`), le classement (`StatutConventionnel`).
+    #[derive(Debug)]
+    struct MetierAModifier {
+        code: emplois::CodeEmploi = dit("Métier", "le code du métier créé (CIE-1…)"),
+        libelle: Option<socle::forme::TexteDit> = LIBELLE,
+        cadre: Option<bool> = dit("Cadre", "vrai : cadre ; faux : non cadre ; absent : inchangé"),
+        feminin: Option<socle::forme::TexteDit> = dit("Au féminin", "son nom au féminin").avancee(),
+        emploi: Option<socle::forme::TexteDit> = dit("Emploi déclaré", "le libellé de l'emploi que la DSN déclare (S21.G00.40.006)").avancee(),
+        pcs_ese: Option<droit::fiche::CodePcsEse> = dit("PCS-ESE", "le code PCS-ESE, quatre caractères (S21.G00.40.004)").avancee(),
+        code_declare: Option<emplois::CodeEmploi> = dit("Code France Travail", "le code de la nomenclature des emplois du spectacle qu'il déclare (S21.G00.40.005) ; l'annexe et le statut le suivent").avancee(),
+        statut_conventionnel: Option<droit::fiche::StatutConventionnel> = dit("Classement conventionnel", "le classement que la DSN déclare quand il n'est pas cadre (S21.G00.40.002) : 05, 06 ou 07").avancee(),
+    }
 }
 
 /// UN NOM QUE LA LISTE D'UNE CARTE NE MONTRE QU'UNE FOIS : le nom `libelle` d'un metier cree (`sauf` : celui qu'on
