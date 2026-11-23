@@ -863,7 +863,7 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
 /// abandonnees.
 fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
     let adresse = strip(&c.adresse).to_lowercase();
-    let codes: Vec<CodeDeDemande> = fiches_attendues(ctx)?.into_iter().filter(|a| *a.adresse == *adresse).map(|a| a.code).collect();
+    let codes: Vec<CodeDeDemande> = fiches_attendues(&ctx.racine)?.into_iter().filter(|a| *a.adresse == *adresse).map(|a| a.code).collect();
     if codes.is_empty() {
         return Err(refus(format!("Aucune demande de fiche en attente pour {}.", adresse)));
     }
@@ -1279,8 +1279,8 @@ fn demande_de(l: &journal::Ligne, code: &CodeDeDemande) -> bool {
 
 /// `fiches_attendues` : les demandes parties et pas encore revenues, les plus anciennes d'abord. Une demande a
 /// laquelle on renonce se retire (`fiche-oublier-demande`, `fiches`).
-pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
-    let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
+pub(crate) fn fiches_attendues(racine: &Path) -> R<Vec<Attendue>> {
+    let lignes = envois::journal::lu(racine).map(|j| j.lignes)?;
     let mut sortie = Vec::new();
     for e in lignes.iter().filter_map(journal::Ligne::fiche) {
         if !e.accepte || !e.retours.is_empty() {
@@ -1335,7 +1335,7 @@ impl ReleveFiches {
 /// `client` : la boite, ouverte ici quand l'appelant n'en donne pas -- la personne fictive de la compagnie fictive, ou la
 /// vraie boite ; sans boite, un incident et rien d'autre. `qui` : `interface`, ou `veille`.
 pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &str) -> R<ReleveFiches> {
-    let attendues = fiches_attendues(ctx)?;
+    let attendues = fiches_attendues(&ctx.racine)?;
     let mut r = ReleveFiches { attendues: attendues.len(), recues: Vec::new(), incidents: Vec::new() };
     if attendues.is_empty() {
         return Ok(r);

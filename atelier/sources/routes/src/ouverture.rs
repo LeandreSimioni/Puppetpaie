@@ -709,7 +709,7 @@ struct FicheAttendue {
 
 /// Les demandes de fiche parties et pas encore revenues, les plus anciennes d'abord, comme la page les lit.
 fn fiches_attendues(ctx: &Contexte) -> R<Vec<FicheAttendue>> {
-    Ok(crate::fiches::fiches_attendues(ctx)?
+    Ok(crate::fiches::fiches_attendues(&ctx.racine)?
         .into_iter()
         .map(|a| {
             let demande_dit = format!("demandée le {}", a.quand.jour().jj_mm_aaaa());
