@@ -269,7 +269,7 @@ pub fn autoriser(
     let fil_fini = Arc::clone(&fini);
     let fil_etat = etat.clone();
     // Le fil rend ce qu'il a lu, ou sa panne ; `rx` vit jusqu'a ce qu'on l'ait rejoint, donc l'envoi trouve preneur.
-    let fil = std::thread::spawn(move || -> Result<(), Echec> {
+    let fil = std::thread::Builder::new().spawn(move || -> Result<(), Echec> {
         let attente = || -> Result<Option<Retour>, Echec> {
             for flux in ecouteur.incoming() {
                 if fil_fini.load(Ordering::SeqCst) {
@@ -290,6 +290,7 @@ pub fn autoriser(
         };
         envoi.map_err(|e| refus_detaille("La réponse de Google ne s'est pas transmise au logiciel : aucune autorisation enregistrée. Recommencer.", e))
     });
+    let fil = fil.map_err(|e| refus_detaille("L'attente de la réponse de Google ne démarre pas : aucune autorisation enregistrée.", e))?;
     let rejoindre = |fil: std::thread::JoinHandle<Result<(), Echec>>| -> Result<(), Echec> {
         match fil.join() {
             Ok(r) => r,

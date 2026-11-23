@@ -3,8 +3,8 @@
 //! Google autorise ne sert qu'au Drive.
 //!
 //! CE QUE CE MODULE OFFRE : le trait `Courriel` (`compte`, `envoyer(mime) -> identifiant`, `rechercher`,
-//! `message_brut`, `fermer`), avec DEUX realisations : `Client`, le vrai (IMAP ecrit ici sur un flux rustls, SMTP par
-//! `lettre`), et `BoiteSimulee`, la boite de la compagnie fictive, qui GARDE les messages et ne les envoie pas. Un
+//! `message_brut`, `fermer`), avec DEUX realisations : `Client`, le vrai (IMAP et SMTP ecrits ici sur un flux
+//! rustls), et `BoiteSimulee`, la boite de la compagnie fictive, qui GARDE les messages et ne les envoie pas. Un
 //! identifiant de message ENVOYE est son en-tete `Message-ID` ; celui d'un message RECU est son UID IMAP. La
 //! recherche est celle du serveur (`UID SEARCH TEXT`), dans la boite de reception seule.
 //!
@@ -24,6 +24,10 @@
 //! `LOGOUT`. Ce dialogue est ecrit ici sur un flux quelconque (`Read + Write` : un faux serveur en memoire dans les
 //! tests), et les reponses sont lues par `imap-proto` ; seuls les litteraux `{n}` se lisent a la main, par leur
 //! longueur.
+//!
+//! LE SMTP : `EHLO`, `STARTTLS` sur le port 587, `AUTH PLAIN` (ou `LOGIN` si le serveur n'offre que lui), `MAIL FROM`,
+//! `RCPT TO`, `DATA`, `QUIT`, ecrits ici sur le meme flux rustls que l'IMAP (`Smtp`) ; la reponse se lit par son code
+//! (RFC 5321, § 4.2), et un refus se dit par lui (`envoi_refuse`).
 //!
 //! Un mot de passe d'un caractere de controle est refuse ; le message envoye part avec des fins de ligne CRLF sur le
 //! fil -- le message archive reste celui d'`envoi::en_mime_nomme`, en LF. Une ligne vide precede le point final quand le
@@ -207,30 +211,36 @@ fn mot_de_passe_refuse(detail: impl std::fmt::Display) -> RefusDeLaBoite {
     }
 }
 
-/// UN MESSAGE QUE LE SERVEUR D'ENVOI (SMTP) N'A PAS PRIS, dit a l'administrateur ; le texte du serveur ou de la
-/// bibliotheque va a part (`dite`). Les codes sont ceux de la RFC 5321, § 4.2.2-4.2.3
-/// (`atelier/reference/sources/ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 2870-2930) : 550
-/// « mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », 551 « User not
-/// local », 553 « mailbox name not allowed (e.g., mailbox syntax incorrect) » ; un 4xx est passager. Lequel des
-/// envois les rend, le § 4.3.2 (l. 3100-3115) le dit : 551 ne repond qu'a `RCPT` (le destinataire) ; 553 repond a `MAIL`
-/// (l'expediteur, la boite d'envoi) comme a `RCPT` ; 550 a `MAIL`, a `RCPT` et a `DATA` (« rejections for policy
-/// reasons »). La bibliotheque ne dit pas a quel envoi le serveur a repondu : la phrase de 550 et 553 dit les
-/// possibilites sans trancher. 535 est le mot de passe refuse (RFC 4954, § 6,
+/// UN MESSAGE QUE LE SERVEUR D'ENVOI (SMTP) N'A PAS PRIS, dit a l'administrateur ; le texte du serveur ou du systeme
+/// va a part (`dite`). Le client se regle sur le code seul, jamais sur le texte : « An SMTP client MUST determine its
+/// actions only by the reply code, not by the text » (RFC 5321, § 4.2,
+/// `atelier/reference/sources/ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 2610-2611) ; un code
+/// que la liste ne connait pas se lit par son premier chiffre (l. 2623-2625), 4yz passager, 5yz definitif (§ 4.2.1,
+/// l. 2667-2690). Les codes nommes sont ceux du § 4.2.2-4.2.3 (l. 2870-2930) : 550 « mailbox unavailable (e.g., mailbox
+/// not found, no access, or command rejected for policy reasons) », 551 « User not local », 553 « mailbox name not
+/// allowed (e.g., mailbox syntax incorrect) ». Lequel des envois les rend, le § 4.3.2 (l. 3100-3115) le dit : 551 ne
+/// repond qu'a `RCPT` (le destinataire) ; 553 repond a `MAIL` (l'expediteur, la boite d'envoi) comme a `RCPT` ; 550 a
+/// `MAIL`, a `RCPT` et a `DATA` (« rejections for policy reasons ») : la phrase de 550 et 553 dit les possibilites sans
+/// trancher. 535 est le mot de passe refuse (RFC 4954, § 6,
 /// `ietf-rfc4954-smtp-service-extension-for-authentication-20070701.txt`, l. 600-605 : « Authentication credentials
 /// invalid […] the client SHOULD ask the user to supply new credentials »).
 #[track_caller]
-fn envoi_refuse(e: &lettre::transport::smtp::Error) -> Echec {
-    let detail = e.to_string();
-    match e.status().map(|c| c.to_string()).as_deref() {
-        Some("535") => mot_de_passe_refuse(detail).echec,
-        Some("551") => dite("Le serveur d'envoi refuse l'adresse du destinataire (une boîte qu'il ne sert pas) : vérifier l'adresse courriel du salarié. Le message n'est pas parti.", detail),
-        Some("553") => dite("Le serveur d'envoi refuse une adresse mal écrite, sans dire laquelle : celle du salarié destinataire, ou celle de la boîte d'envoi. Vérifier l'adresse courriel du salarié, puis celle de la boîte (Configuration › Mots de passe). Le message n'est pas parti.", detail),
-        Some("550") => dite("Le serveur d'envoi refuse le message sans dire pourquoi : l'adresse du salarié destinataire (boîte introuvable), celle de la boîte d'envoi, ou une règle du serveur. Vérifier d'abord l'adresse courriel du salarié. Le message n'est pas parti.", detail),
-        _ if e.is_permanent() => dite("Le serveur d'envoi a refusé le message : il n'est pas parti. Nouvel essai plus tard.", detail),
-        _ if e.is_transient() => dite("Le serveur d'envoi refuse le message pour l'instant : nouvel essai plus tard.", detail),
-        _ if e.is_timeout() => dite("Le serveur d'envoi n'a pas répondu à temps : nouvel essai plus tard.", detail),
-        _ if e.is_tls() => tls(detail),
-        _ => dite("L'échange avec le serveur d'envoi s'est interrompu : vérifier la connexion internet ; nouvel essai plus tard.", detail),
+fn envoi_refuse(arret: &ArretDeLEnvoi) -> Echec {
+    match arret {
+        ArretDeLEnvoi::Refus { code, texte } => {
+            let detail = format!("réponse {} : {}", code, texte);
+            match code {
+                535 => mot_de_passe_refuse(detail).echec,
+                551 => dite("Le serveur d'envoi refuse l'adresse du destinataire (une boîte qu'il ne sert pas) : vérifier l'adresse courriel du salarié. Le message n'est pas parti.", detail),
+                553 => dite("Le serveur d'envoi refuse une adresse mal écrite, sans dire laquelle : celle du salarié destinataire, ou celle de la boîte d'envoi. Vérifier l'adresse courriel du salarié, puis celle de la boîte (Configuration › Mots de passe). Le message n'est pas parti.", detail),
+                550 => dite("Le serveur d'envoi refuse le message sans dire pourquoi : l'adresse du salarié destinataire (boîte introuvable), celle de la boîte d'envoi, ou une règle du serveur. Vérifier d'abord l'adresse courriel du salarié. Le message n'est pas parti.", detail),
+                500..=599 => dite("Le serveur d'envoi a refusé le message : il n'est pas parti. Nouvel essai plus tard.", detail),
+                _ => dite("Le serveur d'envoi refuse le message pour l'instant : nouvel essai plus tard.", detail),
+            }
+        }
+        ArretDeLEnvoi::Delai(detail) => dite("Le serveur d'envoi n'a pas répondu à temps : nouvel essai plus tard.", detail),
+        ArretDeLEnvoi::Tls(detail) => tls(detail),
+        ArretDeLEnvoi::Interrompu(detail) | ArretDeLEnvoi::Inattendu(detail) => dite("L'échange avec le serveur d'envoi s'est interrompu : vérifier la connexion internet ; nouvel essai plus tard.", detail),
     }
 }
 
@@ -267,46 +277,46 @@ fn tls(e: impl std::fmt::Display) -> Echec {
 pub trait Flux: Read + Write {}
 impl<T: Read + Write + ?Sized> Flux for T {}
 
-fn connecter(hote: &str, port: u16) -> Result<TcpStream, RefusDeLaBoite> {
-    // En essai, le garde-fou reseau : aucune boite reelle.
-    socle::garde_reseau::directe(hote).map_err(|e| RefusDeLaBoite { echec: e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel), sorte: SorteDeRefusDeLaBoite::Injoignable })?;
-    let delai = DELAI;
-    let adresses: Vec<_> = (hote, port).to_socket_addrs().map_err(injoignable)?.collect();
-    let mut derniere = None;
-    for a in adresses {
-        match TcpStream::connect_timeout(&a, delai) {
+/// LA CONNEXION A `hote:port`, celle de la releve comme celle de l'envoi : la premiere adresse du nom qui repond, avec
+/// le delai (`DELAI`) a la connexion, en lecture et en ecriture. Le garde-fou reseau est a l'appelant.
+fn connecter(hote: &str, port: u16) -> std::io::Result<TcpStream> {
+    let mut derniere = std::io::Error::other("Le nom du serveur ne donne aucune adresse.");
+    for a in (hote, port).to_socket_addrs()? {
+        match TcpStream::connect_timeout(&a, DELAI) {
             Ok(s) => {
-                s.set_read_timeout(Some(delai)).map_err(injoignable)?;
-                s.set_write_timeout(Some(delai)).map_err(injoignable)?;
+                s.set_read_timeout(Some(DELAI))?;
+                s.set_write_timeout(Some(DELAI))?;
                 return Ok(s);
             }
-            Err(e) => derniere = Some(e),
+            Err(e) => derniere = e,
         }
     }
-    Err(match derniere {
-        Some(e) => injoignable(e),
-        None => injoignable("aucune adresse"),
-    })
+    Err(derniere)
 }
 
-/// La configuration TLS des connexions IMAP : racines du systeme (`rustls-platform-verifier`).
-fn configuration_tls() -> R<Arc<rustls::ClientConfig>> {
+/// La configuration TLS des connexions IMAP et SMTP : racines du systeme (`rustls-platform-verifier`).
+fn configuration_tls() -> Result<Arc<rustls::ClientConfig>, rustls::Error> {
     use rustls_platform_verifier::BuilderVerifierExt;
     let fournisseur = Arc::new(rustls::crypto::ring::default_provider());
-    let config = rustls::ClientConfig::builder_with_provider(fournisseur)
-        .with_safe_default_protocol_versions()
-        .map_err(tls)?
-        .with_platform_verifier()
-        .map_err(tls)?
-        .with_no_client_auth();
+    let config = rustls::ClientConfig::builder_with_provider(fournisseur).with_safe_default_protocol_versions()?.with_platform_verifier()?.with_no_client_auth();
     Ok(Arc::new(config))
 }
 
-fn ouvrir_tls(hote: &str, port: u16) -> Result<Box<dyn Flux>, RefusDeLaBoite> {
-    let tcp = connecter(hote, port)?;
-    let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| erreur(format!("nom de serveur illisible : {}", e)))?;
-    let connexion = rustls::ClientConnection::new(configuration_tls()?, nom).map_err(tls)?;
+/// TLS SUR LA CONNEXION `tcp` a `hote`, pour la releve comme pour l'envoi : le certificat se verifie contre ce nom ; la
+/// poignee de main se fait au premier echange. Ce qui l'empeche (la configuration, le nom qui ne se lit pas) se rend
+/// en detail, que l'appelant dit.
+fn sur_tls(hote: &str, tcp: TcpStream) -> Result<Box<dyn Flux>, String> {
+    let config = configuration_tls().map_err(|e| e.to_string())?;
+    let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| format!("nom de serveur illisible : {}", e))?;
+    let connexion = rustls::ClientConnection::new(config, nom).map_err(|e| e.to_string())?;
     Ok(Box::new(rustls::StreamOwned::new(connexion, tcp)))
+}
+
+fn ouvrir_tls(hote: &str, port: u16) -> Result<Box<dyn Flux>, RefusDeLaBoite> {
+    // En essai, le garde-fou reseau : aucune boite reelle.
+    socle::garde_reseau::directe(hote).map_err(|e| RefusDeLaBoite { echec: e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel), sorte: SorteDeRefusDeLaBoite::Injoignable })?;
+    let tcp = connecter(hote, port).map_err(injoignable)?;
+    Ok(sur_tls(hote, tcp).map_err(tls)?)
 }
 
 // ------------------------------------------------------------------------------------------------------- l'IMAP
@@ -515,6 +525,345 @@ impl<F: Read + Write> Imap<F> {
     }
 }
 
+// ------------------------------------------------------------------------------------------------------- le SMTP
+
+/// CE QUI ARRETE UN ENVOI SMTP, avant d'etre dit a l'administrateur (`envoi_refuse`). Le detail est le texte du serveur
+/// ou du systeme, jamais le mot de passe.
+#[derive(Debug)]
+enum ArretDeLEnvoi {
+    /// Le serveur a repondu par un code negatif, 4yz ou 5yz (RFC 5321, § 4.2.1) : son code et son texte.
+    Refus { code: u16, texte: String },
+    /// Le serveur n'a pas repondu dans le delai (`DELAI`).
+    Delai(String),
+    /// La configuration de la connexion securisee ne se fabrique pas.
+    Tls(String),
+    /// Le serveur parle encore, mais ne repond ou n'offre pas ce que l'envoi attend : l'echange se clot par `QUIT`.
+    Inattendu(String),
+    /// Le reste : le reseau, une reponse que ce dialogue ne lit pas ; le canal n'est plus sur.
+    Interrompu(String),
+}
+
+fn interrompu(detail: impl Into<String>) -> ArretDeLEnvoi {
+    ArretDeLEnvoi::Interrompu(detail.into())
+}
+
+fn inattendu(detail: impl Into<String>) -> ArretDeLEnvoi {
+    ArretDeLEnvoi::Inattendu(detail.into())
+}
+
+fn arret_es(e: std::io::Error) -> ArretDeLEnvoi {
+    use std::io::ErrorKind::*;
+    match e.kind() {
+        TimedOut | WouldBlock => ArretDeLEnvoi::Delai(format!("délai dépassé ({})", e)),
+        _ => interrompu(e.to_string()),
+    }
+}
+
+/// Ce que la connexion securisee refuse : la configuration qui ne se fabrique pas, ou le nom du serveur qui ne se lit
+/// pas (le detail, pour qui le dit).
+fn arret_tls(detail: String) -> ArretDeLEnvoi {
+    ArretDeLEnvoi::Tls(detail)
+}
+
+/// Une reponse plus longue n'est pas une reponse que ce dialogue lit : une ligne de reponse fait 512 octets au plus
+/// (RFC 5321, § 4.5.3.1.5, l. 3506-3507), et la reponse a `EHLO`, la plus longue, en compte quelques dizaines.
+const REPONSE_SMTP_MAXIMUM: usize = 64 * 1024;
+
+/// Une reponse du serveur : son code, et le texte de chacune de ses lignes.
+struct ReponseSmtp {
+    code: u16,
+    lignes: Vec<String>,
+}
+
+/// Ce que le serveur offre, lu dans sa reponse a `EHLO` : apres la premiere ligne, qui le nomme, une ligne par
+/// extension, `ehlo-keyword *( SP ehlo-param )`, le mot-cle reconnu sans egard a la casse (RFC 5321, § 4.1.1.1,
+/// l. 1832-1872).
+#[derive(Default)]
+struct Extensions {
+    starttls: bool,
+    plain: bool,
+    login: bool,
+    huit_bits: bool,
+    smtputf8: bool,
+}
+
+impl Extensions {
+    fn de(reponse: &ReponseSmtp) -> Extensions {
+        let mut e = Extensions::default();
+        for ligne in reponse.lignes.iter().skip(1) {
+            let mut mots = ligne.split_ascii_whitespace();
+            let Some(cle) = mots.next() else { continue };
+            match cle.to_ascii_uppercase().as_str() {
+                "STARTTLS" => e.starttls = true,
+                "8BITMIME" => e.huit_bits = true,
+                "SMTPUTF8" => e.smtputf8 = true,
+                "AUTH" => {
+                    for mecanisme in mots {
+                        match mecanisme.to_ascii_uppercase().as_str() {
+                            "PLAIN" => e.plain = true,
+                            "LOGIN" => e.login = true,
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        e
+    }
+}
+
+/// Une ligne sans sa fin, CRLF ou LF.
+fn sans_fin_de_ligne(ligne: &[u8]) -> &[u8] {
+    match ligne.strip_suffix(b"\r\n") {
+        Some(l) => l,
+        None => match ligne.strip_suffix(b"\n") {
+            Some(l) => l,
+            None => ligne,
+        },
+    }
+}
+
+/// La transparence (RFC 5321, § 4.5.2, l. 3431-3433) : « Before sending a line of mail text, the SMTP client checks
+/// the first character of the line. If it is a period, one additional period is inserted at the beginning of the
+/// line. » `donnees` est en CRLF (`donnees_du_fil`).
+fn transparent(donnees: &[u8]) -> Vec<u8> {
+    let mut sortie = Vec::with_capacity(donnees.len() + 16);
+    let mut debut_de_ligne = true;
+    for &octet in donnees {
+        if debut_de_ligne && octet == b'.' {
+            sortie.push(b'.');
+        }
+        sortie.push(octet);
+        debut_de_ligne = octet == b'\n';
+    }
+    sortie
+}
+
+/// Le dialogue SMTP sur un flux ; l'appelant donne le flux.
+struct Smtp<F: Read + Write> {
+    flux: F,
+    tampon: Vec<u8>,
+}
+
+impl<F: Read + Write> Smtp<F> {
+    fn sur(flux: F) -> Smtp<F> {
+        Smtp { flux, tampon: Vec::new() }
+    }
+
+    /// Une ligne ; `lus` : ce que la reponse a deja de lignes, pour la borner.
+    fn lire_ligne(&mut self, lus: usize) -> Result<Vec<u8>, ArretDeLEnvoi> {
+        loop {
+            if let Some(i) = self.tampon.iter().position(|b| *b == b'\n') {
+                return Ok(self.tampon.drain(..=i).collect());
+            }
+            if lus + self.tampon.len() > REPONSE_SMTP_MAXIMUM {
+                return Err(interrompu("Réponse du serveur trop longue."));
+            }
+            let mut bloc = [0u8; 4096];
+            let n = match self.flux.read(&mut bloc) {
+                Ok(n) => n,
+                // Un signal a coupe la lecture : elle se reprend.
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(arret_es(e)),
+            };
+            if n == 0 {
+                return Err(interrompu("Connexion fermée par le serveur."));
+            }
+            self.tampon.extend_from_slice(&bloc[..n]);
+        }
+    }
+
+    /// Une reponse entiere (RFC 5321, § 4.2, l. 2597-2598) : `Reply-code "-" [ textstring ]` pour chaque ligne qui en
+    /// annonce une autre, `Reply-code [ SP textstring ]` pour la derniere, le meme code a chaque ligne ; le code seul est
+    /// une reponse (l. 2570-2573). Un premier chiffre hors de 2 a 5 est une faute du serveur (l. 2639-2640).
+    fn lire_reponse(&mut self) -> Result<ReponseSmtp, ArretDeLEnvoi> {
+        let mut lignes = Vec::new();
+        let mut code_lu: Option<u16> = None;
+        let mut lus = 0;
+        loop {
+            let brute = self.lire_ligne(lus)?;
+            lus += brute.len();
+            let ligne = sans_fin_de_ligne(&brute);
+            let illisible = || interrompu(format!("Réponse du serveur illisible : {}", String::from_utf8_lossy(ligne).trim()));
+            let chiffres = match ligne.get(..3) {
+                Some(c) if c.iter().all(u8::is_ascii_digit) => c,
+                _ => return Err(illisible()),
+            };
+            let code = u16::from(chiffres[0] - b'0') * 100 + u16::from(chiffres[1] - b'0') * 10 + u16::from(chiffres[2] - b'0');
+            if !(2..=5).contains(&(code / 100)) || code_lu.is_some_and(|c| c != code) {
+                return Err(illisible());
+            }
+            code_lu = Some(code);
+            let (encore, texte): (bool, &[u8]) = match ligne.get(3) {
+                Some(b'-') => (true, &ligne[4..]),
+                Some(b' ') => (false, &ligne[4..]),
+                None => (false, &[]),
+                Some(_) => return Err(illisible()),
+            };
+            lignes.push(String::from_utf8_lossy(texte).into_owned());
+            if !encore {
+                return Ok(ReponseSmtp { code, lignes });
+            }
+        }
+    }
+
+    fn ecrire(&mut self, octets: &[u8]) -> Result<(), ArretDeLEnvoi> {
+        self.flux.write_all(octets).map_err(arret_es)?;
+        self.flux.flush().map_err(arret_es)
+    }
+
+    /// La reponse a ce qui vient d'etre ecrit : negative (4yz, 5yz), elle arrete l'envoi avec son code ; positive, elle
+    /// doit etre de la sorte attendue (`chiffre` : 2, l'action faite ; 3, le serveur attend la suite ; RFC 5321,
+    /// § 4.2.1, l. 2656-2666).
+    fn attendre(&mut self, chiffre: u16) -> Result<ReponseSmtp, ArretDeLEnvoi> {
+        let r = self.lire_reponse()?;
+        match r.code / 100 {
+            4 | 5 => Err(ArretDeLEnvoi::Refus { code: r.code, texte: r.lignes.join(" / ") }),
+            c if c == chiffre => Ok(r),
+            _ => Err(inattendu(format!("Réponse {} inattendue : {}", r.code, r.lignes.join(" / ")))),
+        }
+    }
+
+    /// `QUIT`, quand le serveur parle encore : apres un succes, un refus ou une reponse inattendue (RFC 5321,
+    /// § 4.1.1.10, l. 2209-2211 : « The sender MUST NOT intentionally close the transmission channel until it sends a
+    /// QUIT command »). Sa reponse ne change rien a ce qui est fait (l. 2215-2218) ; un delai ou un canal coupe ne
+    /// se clot pas. Rend `issue` telle quelle.
+    fn clore<T>(&mut self, issue: Result<T, ArretDeLEnvoi>) -> Result<T, ArretDeLEnvoi> {
+        if issue.is_ok() {
+            let _ = self.commande("QUIT", 2);
+        }
+        self.clore_si_arret(issue)
+    }
+
+    /// `QUIT` si `issue` est un arret que le serveur peut encore entendre ; un succes continue l'echange.
+    fn clore_si_arret<T>(&mut self, issue: Result<T, ArretDeLEnvoi>) -> Result<T, ArretDeLEnvoi> {
+        if matches!(issue, Err(ArretDeLEnvoi::Refus { .. } | ArretDeLEnvoi::Inattendu(_))) {
+            let _ = self.commande("QUIT", 2);
+        }
+        issue
+    }
+
+    fn commande(&mut self, ligne: &str, chiffre: u16) -> Result<ReponseSmtp, ArretDeLEnvoi> {
+        self.ecrire(format!("{}\r\n", ligne).as_bytes())?;
+        self.attendre(chiffre)
+    }
+
+    /// L'accueil du serveur (`220`, RFC 5321, § 3.1 et § 4.2, l. 2588-2593), puis `EHLO`.
+    fn saluer(&mut self) -> Result<Extensions, ArretDeLEnvoi> {
+        self.attendre(2)?;
+        self.ehlo()
+    }
+
+    /// `EHLO` : le client n'a pas de nom de domaine qui ait un sens, il envoie un litteral d'adresse (RFC 5321,
+    /// § 4.1.1.1, l. 1785-1801 ; § 4.1.3, l. 2386-2392), celui de la machine elle-meme.
+    fn ehlo(&mut self) -> Result<Extensions, ArretDeLEnvoi> {
+        let r = self.commande("EHLO [127.0.0.1]", 2)?;
+        Ok(Extensions::de(&r))
+    }
+
+    /// Le flux, pour y poser TLS apres `STARTTLS` : le serveur n'a rien dit d'autre avant la negociation.
+    fn flux(self) -> Result<F, ArretDeLEnvoi> {
+        if !self.tampon.is_empty() {
+            return Err(interrompu("Le serveur a écrit avant la négociation TLS."));
+        }
+        Ok(self.flux)
+    }
+
+    /// L'identification. `AUTH PLAIN` et sa reponse initiale (RFC 4954, § 4, l. 139-150), le message de la RFC 4616
+    /// (§ 2, l. 122-126 : `[authzid] UTF8NUL authcid UTF8NUL passwd`) ; si le serveur n'offre que lui, `AUTH LOGIN`
+    /// (draft-murchison-sasl-login-00, § 2.1 : l'identifiant, puis le mot de passe, chacun apres un defi dont le contenu
+    /// « SHOULD be ignored »). Chaque reponse du client est en base64 (RFC 4954, § 4, l. 192-194). Un serveur qui
+    /// n'offre ni l'un ni l'autre arrete l'envoi.
+    fn identifier(&mut self, ext: &Extensions, compte: &str, mot_de_passe: &socle::secret::Secret) -> Result<(), ArretDeLEnvoi> {
+        if ext.plain {
+            let message = format!("\0{}\0{}", compte, mot_de_passe.devoiler());
+            self.commande(&format!("AUTH PLAIN {}", socle::base64::ecrire(message.as_bytes())), 2)?;
+            return Ok(());
+        }
+        if ext.login {
+            self.commande("AUTH LOGIN", 3)?;
+            self.commande(&socle::base64::ecrire(compte.as_bytes()), 3)?;
+            self.commande(&socle::base64::ecrire(mot_de_passe.devoiler().as_bytes()), 2)?;
+            return Ok(());
+        }
+        Err(inattendu("Le serveur d'envoi n'offre ni AUTH PLAIN ni AUTH LOGIN."))
+    }
+
+    /// La transaction (RFC 5321, § 3.3, l. 1017-1027) : `MAIL FROM:<...>`, un `RCPT TO:<...>` par destinataire, `DATA`
+    /// (que suit `354`), les donnees rendues transparentes (`transparent`) et leur fin, `<CRLF>.<CRLF>` (§ 4.1.1.4,
+    /// l. 2003-2006). Une adresse qui n'est pas en ASCII part avec `SMTPUTF8` (RFC 6531, § 3.4) ; un message qui n'est
+    /// pas en ASCII, avec `BODY=8BITMIME` (RFC 6152, § 3) : si le serveur ne l'offre pas, l'envoi s'arrete.
+    fn transmettre(&mut self, ext: &Extensions, expediteur: &str, destinataires: &[String], donnees: &[u8]) -> Result<(), ArretDeLEnvoi> {
+        let mut options = String::new();
+        if !expediteur.is_ascii() || destinataires.iter().any(|d| !d.is_ascii()) {
+            if !ext.smtputf8 {
+                return Err(inattendu("Une adresse n'est pas en ASCII, et le serveur d'envoi n'offre pas SMTPUTF8."));
+            }
+            options.push_str(" SMTPUTF8");
+        }
+        if !donnees.is_ascii() {
+            if !ext.huit_bits {
+                return Err(inattendu("Le message n'est pas en ASCII, et le serveur d'envoi n'offre pas 8BITMIME."));
+            }
+            options.push_str(" BODY=8BITMIME");
+        }
+        self.commande(&format!("MAIL FROM:<{}>{}", expediteur, options), 2)?;
+        for d in destinataires {
+            self.commande(&format!("RCPT TO:<{}>", d), 2)?;
+        }
+        self.commande("DATA", 3)?;
+        let mut corps = transparent(donnees);
+        corps.extend_from_slice(b"\r\n.\r\n");
+        self.ecrire(&corps)?;
+        self.attendre(2)?;
+        Ok(())
+    }
+}
+
+/// L'ENVOI D'UN MESSAGE au serveur `hote:port`. TLS des la connexion, sauf sur le port 587 : la connexion commence en
+/// clair et passe en TLS par `STARTTLS` (RFC 3207, § 4, l. 96-110), puis reprend a `EHLO`, le client oubliant ce que le
+/// serveur a dit avant (§ 4.2, l. 208-220). `QUIT` clot l'echange quand le serveur parle encore, la transaction finie
+/// ou refusee (RFC 5321, § 4.1.1.10, l. 2207-2214) ; sa reponse ne change rien a ce qui est fait : le serveur « MUST
+/// cancel any pending transaction, but not undo any previously completed transaction » (l. 2215-2218).
+fn session_smtp(hote: &str, port: u16, compte: &str, mot_de_passe: &socle::secret::Secret, destinataires: &[String], donnees: &[u8]) -> Result<(), ArretDeLEnvoi> {
+    let tcp = connecter(hote, port).map_err(arret_es)?;
+    let (mut smtp, ext) = if port == 587 {
+        let mut clair = Smtp::sur(tcp);
+        let offre = match clair.saluer() {
+            Ok(ext) if !ext.starttls => Err(inattendu("Le serveur d'envoi n'offre pas STARTTLS.")),
+            Ok(_) => clair.commande("STARTTLS", 2).map(|_| ()),
+            Err(arret) => Err(arret),
+        };
+        clair.clore_si_arret(offre)?;
+        let mut chiffre = Smtp::sur(sur_tls(hote, clair.flux()?).map_err(arret_tls)?);
+        let ext = chiffre.ehlo();
+        let ext = chiffre.clore_si_arret(ext)?;
+        (chiffre, ext)
+    } else {
+        let mut chiffre = Smtp::sur(sur_tls(hote, tcp).map_err(arret_tls)?);
+        let ext = chiffre.saluer();
+        let ext = chiffre.clore_si_arret(ext)?;
+        (chiffre, ext)
+    };
+    let issue = match smtp.identifier(&ext, compte, mot_de_passe) {
+        Ok(()) => smtp.transmettre(&ext, compte, destinataires, donnees),
+        Err(arret) => Err(arret),
+    };
+    smtp.clore(issue)
+}
+
+/// UNE ADRESSE QUI SE MET DANS L'ENVELOPPE : `Local-part "@" Domain` (RFC 5321, § 4.1.2, l. 2314), entre chevrons
+/// (`Path`, l. 2264), sans espace, caractere de controle ni chevron, qui casseraient la commande. Le reste de sa
+/// syntaxe, le serveur le juge (553).
+fn adresse_d_enveloppe(adresse: &str) -> Result<(), &'static str> {
+    let interdit = |c: char| c.is_whitespace() || c.is_control() || c == '<' || c == '>';
+    match adresse.rsplit_once('@') {
+        Some((locale, domaine)) if !locale.is_empty() && !domaine.is_empty() && !adresse.chars().any(interdit) => Ok(()),
+        _ => Err("Une adresse sans partie avant ou après l'arobase, ou avec un espace, un caractère de contrôle ou un chevron."),
+    }
+}
+
 // --------------------------------------------------------------------------------------------------- le client
 
 /// IMAP pour lire, SMTP pour envoyer. Le mot de passe ne vit qu'en memoire, le temps d'une connexion ; rien n'est
@@ -572,10 +921,10 @@ fn crlf(o: &[u8]) -> Vec<u8> {
     s
 }
 
-/// Ce que `lettre::send_raw` recoit : le message en CRLF. `lettre` ajoute lui-meme la fin de ligne avant le point final.
-/// Le protocole en veut une quand le message ne finit pas par CRLF (et les octets d'`en_mime_nomme` finissent par un
-/// LF seul : une ligne vide precede donc le point). On ne retire la fin de ligne que si le message en avait deja une,
-/// CRLF.
+/// Les donnees que `DATA` transmet : le message en CRLF, sans sa derniere fin de ligne, que la fin des donnees
+/// (`<CRLF>.<CRLF>`, `Smtp::transmettre`) porte. Le protocole en veut une quand le message ne finit pas par CRLF (et
+/// les octets d'`en_mime_nomme` finissent par un LF seul : une ligne vide precede donc le point). On ne retire la fin
+/// de ligne que si le message en avait deja une, CRLF.
 pub fn donnees_du_fil(brut: &[u8]) -> Vec<u8> {
     let mut sur_le_fil = crlf(brut);
     if brut.ends_with(b"\r\n") && sur_le_fil.ends_with(b"\r\n") {
@@ -628,11 +977,6 @@ impl Courriel for Client {
     /// Envoie un message deja assemble. Rend son `Message-ID` (ajoute s'il manque : c'est par lui que la releve
     /// reconnait nos propres envois).
     fn envoyer(&mut self, message_mime: &[u8]) -> R<crate::envoi::IdDeCourriel> {
-        use lettre::address::{Address, Envelope};
-        use lettre::transport::smtp::authentication::Credentials;
-        use lettre::transport::smtp::client::{Tls, TlsParameters};
-        use lettre::{SmtpTransport, Transport};
-
         let (entetes, _) = mailparse::parse_headers(message_mime).map_err(|e| dite("Le message que le logiciel a assemblé ne se lit pas : il n'est pas parti.", e))?;
         let mut brut = message_mime.to_vec();
         let ident = match premier_entete(&entetes, "Message-ID").map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
@@ -651,23 +995,17 @@ impl Courriel for Client {
             }
         };
         let destinataires = destinataires(&entetes)?;
-        let adresses: Result<Vec<Address>, _> = destinataires.iter().map(|a| a.parse::<Address>()).collect();
-        let adresses = adresses.map_err(destinataire_illisible)?;
-        let expediteur: Address = self.compte.parse().map_err(|e| dite("L'adresse de la boîte courriel ne se lit pas : la reposer dans Configuration › Mots de passe. Le message n'est pas parti.", e))?;
-        let enveloppe = Envelope::new(Some(expediteur), adresses).map_err(|e| dite("Le message n'a aucun destinataire : vérifier l'adresse courriel du salarié. Il n'est pas parti.", e))?;
-        let mdp = self.mot_de_passe.devoiler().to_string();
+        for a in &destinataires {
+            adresse_d_enveloppe(a).map_err(destinataire_illisible)?;
+        }
+        adresse_d_enveloppe(&self.compte).map_err(|e| dite("L'adresse de la boîte courriel ne se lit pas : la reposer dans Configuration › Mots de passe. Le message n'est pas parti.", e))?;
+        if destinataires.is_empty() {
+            return Err(dite("Le message n'a aucun destinataire : vérifier l'adresse courriel du salarié. Il n'est pas parti.", "Aucune adresse dans To, Cc ni Bcc."));
+        }
         let (hote, port) = (self.serveurs.smtp.clone(), self.serveurs.port_smtp);
         // En essai, le garde-fou reseau : aucun serveur d'envoi reel.
         socle::garde_reseau::directe(&hote).map_err(|e| e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel))?;
-        let tls = TlsParameters::builder(hote.clone()).build_rustls().map_err(tls)?;
-        let transport = SmtpTransport::builder_dangerous(hote.as_str())
-            .port(port)
-            .tls(if port == 587 { Tls::Required(tls) } else { Tls::Wrapper(tls) })
-            .credentials(Credentials::new(self.compte.clone(), mdp))
-            .timeout(Some(DELAI))
-            .build();
-        let sur_le_fil = donnees_du_fil(&brut);
-        transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| envoi_refuse(&e))?;
+        session_smtp(&hote, port, &self.compte, &self.mot_de_passe, &destinataires, &donnees_du_fil(&brut)).map_err(|a| envoi_refuse(&a))?;
         Ok(ident)
     }
 

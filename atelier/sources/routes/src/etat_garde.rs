@@ -34,6 +34,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
 use socle::memoire::{repris, tenu};
@@ -230,7 +231,7 @@ impl std::fmt::Display for Cle {
 /// Le dossier, absolu et comparable (sous Windows, sans le `\\?\` de `canonicalize`) ; un dossier qui ne se resout pas
 /// se marque par son erreur (l'etat se refera quand il se resoudra).
 fn absolu(p: &Path) -> String {
-    let t = match std::fs::canonicalize(p) {
+    let t = match socle::fichiers::resolu(p) {
         Ok(abs) => abs.to_string_lossy().into_owned(),
         Err(e) => format!("{} ({:?})", p.to_string_lossy(), e.kind()),
     };
@@ -834,9 +835,16 @@ struct EtatDeLaFile {
 /// lecture demande -- c'est ce qui permet de le faire tourner AVANT le mot de passe, des le lancement.
 ///
 /// LE JOUR CHANGE (la fenetre ouverte passe minuit) : tout se reverifie (l'empreinte d'un etat porte la date du jour).
+///
+/// SANS FIL : dans le navigateur (WASI), le processus n'a pas d'autre fil, et celui-ci ne demarre pas (`fil_de_routes`
+/// le dit). Celui qui attend un etat fait alors le travail de la file lui-meme, sur place, jusqu'au sien (`pomper`) ;
+/// rien ne se fait en fond.
 pub struct Fil {
     etat: Mutex<EtatDuFil>,
     reveil: Condvar,
+    /// Le fil a demarre (`fil_de_routes`) ; sinon, qui attend fait le travail (`pomper`). Hors du verrou du fil : une file
+    /// le lit sous le sien, et le fil prend le sien avant celui d'une file (`choisir`).
+    demarre: AtomicBool,
 }
 
 struct EtatDuFil {
@@ -854,13 +862,37 @@ impl Fil {
     pub fn nouveau() -> Arc<Fil> {
         // Aucune file encore, la premiere servie en tete, aucun jour suivi.
         let etat = EtatDuFil { files: Vec::new(), devant: None, tour: 0, jour: None, arrete: false };
-        let f = Arc::new(Fil { etat: Mutex::new(etat), reveil: Condvar::new() });
+        let f = Arc::new(Fil { etat: Mutex::new(etat), reveil: Condvar::new(), demarre: AtomicBool::new(false) });
         let fil = f.clone();
-        crate::fil_de_routes(move || {
+        let demarre = crate::fil_de_routes(move || {
             socle::fil_de_fond::marquer();
             fil.tourner();
         });
+        f.demarre.store(demarre, Ordering::SeqCst);
         f
+    }
+
+    /// Le fil n'a pas demarre : qui attend un etat le fait lui-meme (`pomper`).
+    fn sans_fil(&self) -> bool {
+        !self.demarre.load(Ordering::SeqCst)
+    }
+
+    /// SANS FIL, LE TRAVAIL SUIVANT, FAIT ICI par qui attend `cle` : le meme choix que le fil (`choisir`), le meme
+    /// passage (`faire`, `rendre`), avec les refus du fil (`fil_de_fond` : ni sortie, ni coffre). Rien a faire alors que
+    /// `cle` est attendue est un defaut du logiciel : l'attente ne finirait pas.
+    fn pomper(&self, cle: Cle) -> R<()> {
+        let pris = Self::choisir(&mut self.verrou());
+        match pris {
+            Some((file, prise, numero)) => {
+                let rendu = {
+                    let _fond = socle::fil_de_fond::le_temps_d_un_travail();
+                    file.faire(prise)
+                };
+                file.rendre(prise, numero, rendu);
+                Ok(())
+            }
+            None => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} est attendu, et la file n'a plus rien à calculer.", cle))),
+        }
     }
 
     fn verrou(&self) -> std::sync::MutexGuard<'_, EtatDuFil> {
@@ -1170,20 +1202,29 @@ impl FileDesEtats {
         self.fil.reveiller();
     }
 
-    /// L'etat frais de `cle` : un passage commence apres cet appel, et l'on attend sa fin.
+    /// L'etat frais de `cle` : un passage commence apres cet appel, et l'on attend sa fin. Sans fil, on fait le travail de
+    /// la file jusqu'a lui (`Fil::pomper`).
     fn attendre(&self, cle: Cle) -> R<Garde> {
         let n = self.demander(cle, true);
-        let mut e = self.verrou();
         loop {
-            if let Some((fait, rendu)) = e.fait.get(&cle) {
-                if *fait >= n {
-                    return rendu.clone();
+            {
+                let mut e = self.verrou();
+                loop {
+                    if let Some((fait, rendu)) = e.fait.get(&cle) {
+                        if *fait >= n {
+                            return rendu.clone();
+                        }
+                    }
+                    if e.arretee {
+                        return Err(erreur(Classe::Refuse, "La compagnie a été fermée."));
+                    }
+                    if self.fil.sans_fil() {
+                        break;
+                    }
+                    e = repris(self.signal.wait(e));
                 }
             }
-            if e.arretee {
-                return Err(erreur(Classe::Refuse, "La compagnie a été fermée."));
-            }
-            e = repris(self.signal.wait(e));
+            self.fil.pomper(cle)?;
         }
     }
 
@@ -1231,21 +1272,30 @@ impl FileDesEtats {
             Some(n) => n,
             None => self.demander(cle, true),
         };
-        let mut e = self.verrou();
         loop {
-            if let Some((fait, rendu)) = e.fait.get(&cle) {
-                if *fait >= n {
-                    return rendu.clone().map(|g| Some((g, true)));
+            {
+                let mut e = self.verrou();
+                loop {
+                    if let Some((fait, rendu)) = e.fait.get(&cle) {
+                        if *fait >= n {
+                            return rendu.clone().map(|g| Some((g, true)));
+                        }
+                    }
+                    if e.arretee {
+                        return Err(erreur(Classe::Refuse, "La compagnie a été fermée."));
+                    }
+                    let reste = limite.saturating_duration_since(Instant::now());
+                    if reste.is_zero() {
+                        return Ok(None);
+                    }
+                    // Sans fil, un travail de la file se fait ici, puis l'on regarde de nouveau.
+                    if self.fil.sans_fil() {
+                        break;
+                    }
+                    e = repris(self.signal.wait_timeout(e, reste)).0;
                 }
             }
-            if e.arretee {
-                return Err(erreur(Classe::Refuse, "La compagnie a été fermée."));
-            }
-            let reste = limite.saturating_duration_since(Instant::now());
-            if reste.is_zero() {
-                return Ok(None);
-            }
-            e = repris(self.signal.wait_timeout(e, reste)).0;
+            self.fil.pomper(cle)?;
         }
     }
 

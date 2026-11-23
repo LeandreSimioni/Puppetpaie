@@ -368,7 +368,11 @@ lot, il ne lance que les tests des crates que le lot touche (`-p <crate>` ; dans
 des tests, ~3 Go). **Avant chaque PR aussi, la cible Windows se vérifie**, celle que les compagnies reçoivent :
 `cargo check --locked --target x86_64-pc-windows-gnu --manifest-path moteur/Cargo.toml`, puis celui de
 `fenetre/Cargo.toml` (dans un conteneur neuf : `rustup target add x86_64-pc-windows-gnu` et le paquet
-`gcc-mingw-w64-x86-64`) ; le flux « Tests » le fait aussi, lancé à la main (son passage `windows`). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
+`gcc-mingw-w64-x86-64`) ; le flux « Tests » le fait aussi, lancé à la main (son passage `windows`). **Et la cible du
+navigateur**, celle de la démo : `cargo check --locked --target wasm32-wasip1 --manifest-path moteur/Cargo.toml`, puis
+celui d'`onglet/Cargo.toml` (dans
+un conteneur neuf : `rustup target add wasm32-wasip1` ; le C de `ring` passe par le `clang` du système) ; le flux
+« Tests » le fait aussi (son passage `navigateur`). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
 (Léandre : « en tant qu'orchestrateur, il faut que tu sois disponible ») : il attend leur fin en parlant avec Léandre.
 
 - **On compile peu** (Léandre : « on code et après on compile », pas « tout le temps parce qu'on peut ») : l'exécutant,

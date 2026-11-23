@@ -67,7 +67,7 @@ pub fn fixer_le_code() -> R<()> {
             socle::echec::Lieu { cle: Some("PUPPETPAIE_CODE".to_string()), ..socle::echec::Lieu::default() },
         ));
     };
-    let abs = c.canonicalize().map_err(|e| socle::echec::du_disque(&c, &e))?;
+    let abs = socle::fichiers::resolu(&c).map_err(|e| socle::echec::du_disque(&c, &e))?;
     // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
     let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
         Some(sans) => PathBuf::from(sans),
@@ -508,7 +508,7 @@ impl IdDeCompagnie {
 /// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
 /// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
 fn absolu(p: &Path) -> R<PathBuf> {
-    let c = match std::fs::canonicalize(p) {
+    let c = match socle::fichiers::resolu(p) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
         Err(e) => return Err(socle::echec::du_disque(p, &e)),

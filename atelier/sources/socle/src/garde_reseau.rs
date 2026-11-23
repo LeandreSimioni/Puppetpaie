@@ -14,6 +14,12 @@
 //!
 //! Hors essais (l'executable livre, lance hors de Cargo), la variable n'existe pas : rien ne change.
 //!
+//! DANS LE NAVIGATEUR (la cible WASI, la demo), le module n'a aucune prise reseau : toute sortie s'y refuse ici, avant
+//! toute connexion (`SANS_PRISE`), et l'appelant fait de ce refus ce qu'il fait d'un serveur injoignable. Une seule
+//! porte y mene dehors, vers le seul filet (`FILET`) : `par_l_hote`, le POST que l'hote JavaScript fait pour le module
+//! (`systeme::poster_par_l_hote`), que seul le canal de l'editeur prend (`compagnie::editeur::poster` : les incidents
+//! de la demo vont au filet, comme ceux de toute installation).
+//!
 //! Chaque sortie du moteur passe par ici : `transport::envoyer` (HTTP : editeur, net-entreprises, Urssaf, Google),
 //! `sources::telecharger`, `entrepot_dila`, `maj` (le depot des versions), `courriel` (IMAP, SMTP),
 //! `interface::poste::ouvrir_adresse` (le navigateur). L'essai `garde_reseau` (`tests/fichiers/`) le verifie dans les
@@ -162,8 +168,14 @@ fn refus(hote: &str) -> Echec {
     ))
 }
 
+/// Le systeme n'a aucune prise reseau : dans le navigateur (WASI), le module ne se connecte a rien.
+const SANS_PRISE: bool = cfg!(target_os = "wasi");
+
 /// La decision pour une sortie vers `hote`.
 pub fn sortie_vers(hote: &str) -> R<Sortie> {
+    if SANS_PRISE {
+        return Err(crate::echec::refus(format!("Dans le navigateur, le logiciel ne se connecte à aucun serveur : rien ne part vers {}.", hote)));
+    }
     // LE FIL DE FOND de la fenetre (`fil_de_fond`) : il tourne avant tout mot de passe, et ne sort jamais.
     if crate::fil_de_fond::ici() {
         return Err(crate::echec::refus(crate::fil_de_fond::refus(&format!("une sortie vers {}", hote))));
@@ -177,6 +189,79 @@ pub fn sortie_vers(hote: &str) -> R<Sortie> {
         return Ok(Sortie::ParLaPorte(porte));
     }
     Err(refus(hote))
+}
+
+/// LE FILET, le serveur de l'editeur : les incidents, « Un probleme, une idee ? » et leurs reponses. Il repond sur
+/// `filet.puppetpaie.fr` (le serveur vit dans le depot du site de l'editeur, `infra/filet/`). C'est le serveur du canal de
+/// l'editeur quand la configuration ne dit rien (`compagnie::editeur::SERVEUR_PAR_DEFAUT`), et la seule adresse que le
+/// navigateur joint (`par_l_hote`).
+pub const FILET: Url = Url::du_moteur("https://filet.puppetpaie.fr");
+
+/// UN POST DU MODULE, tel que l'hote du navigateur le recoit (en JSON) : l'adresse, les en-tetes, le corps en base64,
+/// l'attente au plus.
+#[cfg(target_os = "wasi")]
+#[derive(serde::Serialize)]
+struct DemandeALHote<'a> {
+    adresse: &'a str,
+    entetes: &'a [(&'a str, &'a str)],
+    corps: String,
+    delai_ms: u64,
+}
+
+/// CE QUE L'HOTE DU NAVIGATEUR REND d'un POST (en JSON) : la reponse du serveur, quel que soit son code
+/// (`{"reponse": {"code", "corps"}}`, le corps en base64), ou la panne qui l'a empeche (`{"panne": "…"}` : pas de reseau,
+/// le serveur ne repond pas, le navigateur refuse).
+#[cfg(target_os = "wasi")]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "lowercase")]
+enum ReponseDeLHote {
+    Reponse(RenduDeLHoteLu),
+    Panne(String),
+}
+
+/// La reponse du serveur, telle que l'hote l'ecrit.
+#[cfg(target_os = "wasi")]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RenduDeLHoteLu {
+    code: u16,
+    corps: String,
+}
+
+/// LA REPONSE DU SERVEUR, par l'hote du navigateur : son code HTTP, son corps.
+#[cfg(target_os = "wasi")]
+pub struct RenduDeLHote {
+    pub code: u16,
+    pub corps: Vec<u8>,
+}
+
+/// LA SEULE PORTE DU NAVIGATEUR VERS DEHORS : un POST vers le filet (`FILET`), que l'hote JavaScript fait pour le module
+/// (`systeme::poster_par_l_hote`). Toute autre adresse, et le fil de fond (`fil_de_fond`), se refusent ici, avant que
+/// rien ne parte ; la panne de l'hote (pas de reseau, une reponse qui ne se lit pas) est un refus de classe `Reseau`,
+/// que l'appelant fait sienne comme celle d'un serveur injoignable.
+#[cfg(target_os = "wasi")]
+pub fn par_l_hote(url: &Url, entetes: &[(&str, &str)], corps: &[u8], delai: std::time::Duration) -> R<RenduDeLHote> {
+    let hote = hote_de(url.texte());
+    if crate::fil_de_fond::ici() {
+        return Err(crate::echec::refus(crate::fil_de_fond::refus(&format!("une sortie vers {}", hote))));
+    }
+    // L'adresse entiere commence par celle du filet, suivie d'un chemin : le schema, l'hote et le port sont ceux du
+    // filet, et rien de ce qui suit (`@`, `\`) ne les change pour le navigateur.
+    if !url.texte().strip_prefix(FILET.texte()).is_some_and(|reste| reste.starts_with('/')) {
+        return Err(crate::echec::refus(format!("Dans le navigateur, le logiciel ne joint que le serveur de l'éditeur : rien ne part vers {}.", hote)));
+    }
+    let delai_ms = u64::try_from(delai.as_millis()).map_err(|e| crate::refus!("L'attente d'un envoi au filet ne se dit pas en millisecondes ({}).", e))?;
+    let demande = DemandeALHote { adresse: url.texte(), entetes, corps: crate::base64::ecrire(corps), delai_ms };
+    let brut = crate::systeme::poster_par_l_hote(crate::ecriture::json_en_ligne(&demande).as_bytes());
+    let panne = |raison: String| crate::echec::erreur(crate::echec::Classe::Reseau, raison);
+    let texte = std::str::from_utf8(&brut).map_err(|e| panne(format!("la réponse du navigateur n'est pas du texte ({})", e)))?;
+    match crate::forme::lire_texte::<ReponseDeLHote>(texte, "La réponse du navigateur à un envoi ne se lit pas.").map_err(|e| panne(e.phrase))? {
+        ReponseDeLHote::Reponse(r) => {
+            let corps = crate::base64::lire(&r.corps).map_err(|e| panne(e.phrase))?;
+            Ok(RenduDeLHote { code: r.code, corps })
+        }
+        ReponseDeLHote::Panne(raison) => Err(panne(raison)),
+    }
 }
 
 /// La decision pour une adresse (`https://...`).

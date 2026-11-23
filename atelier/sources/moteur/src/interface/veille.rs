@@ -1,5 +1,5 @@
 //! La veille de la fenetre : relever les retours, les signatures et les fiches, puis
-//! sauvegarder, a l'ouverture puis toutes les `periode`. En arriere-plan, jamais dans une requete ; un tour a la fois.
+//! sauvegarder, a l'ouverture puis toutes les `periode`. En arriere-plan, jamais dans une requete (sauf sans fil, dans le navigateur : `suivie`) ; un tour a la fois.
 //! Elle ne depose rien : elle appelle la route `ouverture`, qui ne connait que la releve et la sauvegarde. Ce qu'elle
 //! dit a la page (son etat, le bandeau) : `routes::veille`.
 
@@ -28,6 +28,8 @@ pub struct Veille {
     sauvegarde_en_cours: AtomicBool,
     tour_unique: Mutex<()>,
     arretee: AtomicBool,
+    /// Sans fil (`routes::SANS_FIL`), le premier tour reste a faire : qui suit la veille le fait (`suivie`).
+    du: AtomicBool,
     /// Quand partira le prochain tour de la boucle (« prochain relevé dans … minutes »).
     prochain: Mutex<Option<Instant>>,
     /// Les etats des mois, a verifier apres chaque tour : un retour releve, une signature notee changent un mois.
@@ -53,6 +55,7 @@ impl Veille {
             sauvegarde_en_cours: AtomicBool::new(false),
             tour_unique: Mutex::new(()),
             arretee: AtomicBool::new(false),
+            du: AtomicBool::new(false),
             prochain: Mutex::new(None),
             etats,
         })
@@ -101,13 +104,24 @@ impl Veille {
         let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape } = self.etape();
         EtatDeLaVeille {
             dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, self.prochain_dans(), fictive),
-            en_cours,
+            // Sans fil, le tour qui reste du est un passage en cours pour la page : elle le suit, et sa demande le fait
+            // (`suivie`).
+            en_cours: en_cours || self.du.load(Ordering::SeqCst),
             sauvegarde_en_cours,
             etape,
             minutes: self.periode,
             dernier,
             erreur,
         }
+    }
+
+    /// L'ETAT DE LA VEILLE POUR LA PAGE QUI LA SUIT. Sans fil, le tour qui reste du (`demarrer`) se fait ici, sur place :
+    /// la page recoit l'etat d'apres ce tour.
+    pub fn suivie(&self) -> EtatDeLaVeille {
+        if self.du.swap(false, Ordering::SeqCst) {
+            return self.tour(false, true);
+        }
+        self.etat()
     }
 
     /// Dans combien de temps part le prochain tour, une minute au moins ; aucun sans boucle.
@@ -160,7 +174,13 @@ impl Veille {
     }
 
     /// Le premier tour, complet, puis un tour toutes les `periode` tant que la veille n'est pas arretee.
+    /// SANS FIL (le navigateur), aucune boucle : le premier tour est du, et la page qui suit la veille le fait
+    /// (`suivie`) ; ensuite, un tour se demande (« relever maintenant »).
     pub fn demarrer(self: &Arc<Self>) {
+        if routes::SANS_FIL {
+            self.du.store(true, Ordering::SeqCst);
+            return;
+        }
         let v = self.clone();
         routes::fil_de_routes(move || {
             // La mise a jour ne se cherche pas ici, a l'ouverture d'une compagnie : c'est le logiciel qui la cherche pour

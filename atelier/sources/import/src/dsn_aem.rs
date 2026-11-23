@@ -570,7 +570,7 @@ mod tests_parametrage {
     /// (S21.G00.40.040, .043, `bloc-S21.G00.40.txt` l. 1224-1315) ; les adhesions prevoyance (S21.G00.15.001, .002, .005).
     #[test]
     fn la_dsn_dit_son_contact_son_code_risque_et_ses_adhesions() {
-        let d = std::env::temp_dir().join(format!("puppetpaie-dsn-parametrage-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("puppetpaie-dsn-parametrage-{}", socle::processus::numero()));
         std::fs::create_dir_all(&d).unwrap();
         let f = d.join("essai.dsn");
         let lignes = [

@@ -14,6 +14,7 @@
 pub mod api;
 pub mod http;
 pub mod navigateur;
+pub mod onglet;
 pub mod veille;
 
 use std::collections::HashMap;
@@ -207,7 +208,7 @@ pub struct Fenetre {
 /// La cle d'une compagnie dans la fenetre : son dossier resolu ; un dossier qui ne se resout plus (efface, deplace) se
 /// nomme par son chemin, qui le designe encore.
 fn cle_du_dossier(p: &Path) -> PathBuf {
-    match std::fs::canonicalize(p) {
+    match socle::fichiers::resolu(p) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => p.to_path_buf(),
         Err(e) => {
@@ -347,7 +348,7 @@ fn fichier_de_la_page(chemin: &str) -> R<Option<(Vec<u8>, &'static str)>> {
         Some("html") => "text/html; charset=utf-8",
         _ => return Ok(None),
     };
-    let present = |p: &Path| match std::fs::canonicalize(p) {
+    let present = |p: &Path| match socle::fichiers::resolu(p) {
         Ok(v) => Ok(Some(v)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(socle::echec::du_disque(&p, &e)),
@@ -868,7 +869,7 @@ impl Fenetre {
             }
             // LA VEILLE DE LA FENETRE : son etat, l'etape du passage en cours, un passage tout de suite (un passage appelle
             // la route `ouverture`, qui releve et sauvegarde).
-            ("veille", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.etat()) }),
+            ("veille", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.suivie()) }),
             ("veille_etape", Phase::Ouverte { veille, .. }) => Ok(Geste::Etape { ok: true, etat: veille.etape() }),
             ("veille_maintenant", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.tour(false, false)) }),
             // Ou en est la recherche de la mise a jour : l'accueil et la page d'une compagnie l'affichent.
@@ -1151,7 +1152,12 @@ impl Fenetre {
 
     /// L'adresse que la fenetre charge (avec le jeton, qui passe aussitot en cookie).
     pub fn adresse(&self, hote: &str, port: u16) -> String {
-        format!("http://{}:{}/?jeton={}", hote, port, self.jeton.devoiler())
+        format!("http://{}:{}{}", hote, port, self.premiere_page())
+    }
+
+    /// La premiere page que la fenetre sert, avec son jeton : `/?jeton=…`.
+    pub fn premiere_page(&self) -> String {
+        format!("/?jeton={}", self.jeton.devoiler())
     }
 }
 
@@ -1234,7 +1240,7 @@ fn servir_sur(veille: std::time::Duration, ecouteur: TcpListener, port: u16) -> 
     compagnie::diagnostic::installer();
     let f = Fenetre::nouvelle(veille, navigateur::dossier_local(&installation::base(), port), port).map_err(|e| std::io::Error::other(e.en_lignes()))?;
     let servie = f.clone();
-    std::thread::spawn(move || http::servir(ecouteur, Arc::new(move |r| servie.traiter(r))));
+    std::thread::Builder::new().spawn(move || http::servir(ecouteur, Arc::new(move |r| servie.traiter(r))))?;
     f.ecrire(&format!("PuppetPaie {} : la fenetre ecoute sur 127.0.0.1:{}.\n", version(), port));
     Ok((f, port))
 }
@@ -1411,11 +1417,14 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     let pour_fermer = signal.clone();
     *tenu(&f.fermer) = Some(Box::new(move || {
         let pour_fermer = pour_fermer.clone();
-        std::thread::spawn(move || {
+        let attendre_la_reponse = std::thread::Builder::new().spawn(move || {
             std::thread::sleep(Duration::from_millis(200));
             // Le fil principal deja sorti n'attend plus rien.
             let _ = pour_fermer.send(Signal::Fermer);
         });
+        if let Err(e) = attendre_la_reponse {
+            eprintln!("Un fil du moteur ne demarre pas : {} ; la fenetre ne se ferme pas.", e);
+        }
     }));
     let url = f.adresse("puppetpaie.localhost", port);
     *tenu(&devant) = Some((url.clone(), f.dossier_local().join("navigateur")));
@@ -1425,12 +1434,16 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     // (la page interroge la veille chaque minute) ; sans navigateur, seul « fermer ».
     let mut guetter_le_silence = !options.sans_navigateur;
     if let Some(mut p) = navigateur {
-        guetter_le_silence = false;
-        std::thread::spawn(move || {
+        let guet = std::thread::Builder::new().spawn(move || {
             let debut = Instant::now();
             let fin = p.wait().map(|_ferme| debut.elapsed());
             let _ = signal.send(Signal::NavigateurFini(fin));
         });
+        match guet {
+            Ok(_) => guetter_le_silence = false,
+            // Le navigateur ne se laisse pas attendre : le guet du silence arretera la fenetre.
+            Err(e) => f.ecrire(&format!("Le fil qui attend le navigateur ne demarre pas ({}) : la fenetre s'arretera apres cinq minutes sans page.\n", e)),
+        }
     }
     loop {
         match signaux.recv_timeout(Duration::from_secs(5)) {

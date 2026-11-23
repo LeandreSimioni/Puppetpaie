@@ -111,14 +111,34 @@ pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie, cle: &droit::cont
 
 /// La pile d'un fil qui sert des routes dans la fenetre : 8 Mo, celle du fil principal d'un `moteur route` sous Linux (un
 /// fil neuf n'en a que 2). Un calcul qui remonte les mois d'avant s'y empile ; un debordement de pile ne se rattrape pas
-/// (`catch_unwind` n'y peut rien), il fermerait la fenetre.
+/// (`catch_unwind` n'y peut rien), il fermerait la fenetre. Dans le navigateur, le module n'a qu'un fil : sa pile a la
+/// meme taille, posee a l'edition des liens (`atelier/sources/.cargo/config.toml`, `[target.wasm32-wasip1]`).
 pub(crate) const PILE_D_UNE_ROUTE: usize = 8 * 1024 * 1024;
 
 /// Un fil qui sert des routes dans la fenetre (une connexion, la file des etats, la veille, un passage en fond), avec
-/// la pile qu'il leur faut (`PILE_D_UNE_ROUTE`).
-pub fn fil_de_routes<F: FnOnce() + Send + 'static>(f: F) {
-    if let Err(e) = std::thread::Builder::new().stack_size(PILE_D_UNE_ROUTE).spawn(f) {
-        eprintln!("Un fil du moteur ne demarre pas : {}.", e);
+/// la pile qu'il leur faut (`PILE_D_UNE_ROUTE`). Vrai s'il a demarre ; un fil qui ne demarre pas se dit ici, et `f` ne
+/// se fait pas. Dans le navigateur (WASI), aucun fil ne demarre : la file des etats fait alors son travail sur le fil
+/// qui l'attend (`etat_garde::Fil`).
+pub fn fil_de_routes<F: FnOnce() + Send + 'static>(f: F) -> bool {
+    match std::thread::Builder::new().stack_size(PILE_D_UNE_ROUTE).spawn(f) {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!("Un fil du moteur ne demarre pas : {}.", e);
+            false
+        }
+    }
+}
+
+/// Le systeme n'a qu'un fil : dans le navigateur (WASI), aucun autre ne demarre.
+pub const SANS_FIL: bool = cfg!(target_os = "wasi");
+
+/// UN TRAVAIL COURT QUE LA FENETRE FAIT EN FOND d'une route (un message a l'editeur qui part) : sur un fil de routes,
+/// sans que la page attende ; sans fil (`SANS_FIL`), sur place, avant de rendre la main.
+pub fn en_fond<F: FnOnce() + Send + 'static>(f: F) {
+    if SANS_FIL {
+        f();
+    } else {
+        fil_de_routes(f);
     }
 }
 

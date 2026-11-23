@@ -63,7 +63,7 @@ pub fn prochain_certificat(ctx: &Contexte) -> R<NumeroDeCertificat> {
 pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
     let chemin = socle::verrou::chemin_compteurs(&ctx.racine);
     let maintenant = socle::paris::ecrit::seconde::texte(socle::temps::secondes()).replace('T', " ");
-    let marque = socle::verrou::marque(qui, std::process::id(), &maintenant);
+    let marque = socle::verrou::marque(qui, socle::processus::numero(), &maintenant);
     match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| m.reclasser(Classe::Disque))? {
         Ok(v) => Ok(v),
         Err(v) => Err(erreur(Classe::CompteursVerrouilles, v.message())),

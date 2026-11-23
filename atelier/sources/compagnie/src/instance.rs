@@ -102,7 +102,7 @@ struct Retenu {
 
 /// Le dossier d'une installation, tel que le verrou le compare : canonique, sans le prefixe `\\?\` de Windows.
 pub fn dossier_de(inst: &Path) -> R<String> {
-    let c = std::fs::canonicalize(inst).map_err(|e| socle::echec::du_disque(inst, &e))?;
+    let c = socle::fichiers::resolu(inst).map_err(|e| socle::echec::du_disque(inst, &e))?;
     let t = c.to_string_lossy();
     Ok(match t.strip_prefix(r"\\?\") {
         Some(sans) => sans.to_string(),
@@ -194,7 +194,7 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
     let ferme = Arc::new(AtomicBool::new(false));
     let vu = ferme.clone();
     ecoute.set_nonblocking(true).map_err(|e| socle::refus!("Le verrou de la fenetre n'attend pas sans bloquer : {}", e))?;
-    std::thread::spawn(move || {
+    std::thread::Builder::new().spawn(move || {
         while !vu.load(Ordering::SeqCst) {
             let c = match ecoute.accept() {
                 Ok((c, _)) => c,
@@ -239,7 +239,8 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
                 devant();
             }
         }
-    });
+    })
+    .map_err(|e| socle::refus!("Le verrou de la fenetre ne demarre pas son fil : {}", e))?;
     Ok(Verrou { ferme })
 }
 

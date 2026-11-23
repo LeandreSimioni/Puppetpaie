@@ -92,7 +92,7 @@ pub struct Temporaire(pub PathBuf);
 impl Temporaire {
     pub fn nouveau_dans(parent: &Path, prefixe: &str) -> R<Temporaire> {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let p = parent.join(format!("{}-{}-{}", prefixe, std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+        let p = parent.join(format!("{}-{}-{}", prefixe, socle::processus::numero(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
         std::fs::create_dir_all(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         Ok(Temporaire(p))
     }

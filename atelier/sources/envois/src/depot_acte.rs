@@ -263,7 +263,7 @@ mod tests_archives {
     fn la_reponse_d_un_depot_n_en_ecrase_jamais_une_autre() {
         // Un depot de test puis le reel, dans la meme seconde, portaient le meme nom `<horodatage>_depot-dsn_<mois>.txt`
         // et la reponse du test disparaissait.
-        let r = std::env::temp_dir().join(format!("envois-depot-acte-{}", std::process::id()));
+        let r = std::env::temp_dir().join(format!("envois-depot-acte-{}", socle::processus::numero()));
         let _ = std::fs::remove_dir_all(&r);
         let mut chemins = Vec::new();
         for i in 0..6 {

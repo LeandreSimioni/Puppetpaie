@@ -113,7 +113,7 @@ pub fn ouvrir(url: &str, profil: &std::path::Path, journal: &dyn Fn(&str)) -> Op
                 let mut a = vec![format!("--app={}", url), "--no-first-run".into(), "--no-default-browser-check".into(), "--window-size=940,640".into()];
                 // Un Chromium en snap n'ecrit pas hors de son bac : il garde son profil.
                 // Le programme lui-meme, au bout de ses liens ; un lien qui ne se resout pas se juge sur son propre chemin.
-                let reel = match std::fs::canonicalize(&exe) {
+                let reel = match socle::fichiers::resolu(&exe) {
                     Ok(r) => r,
                     Err(e) => {
                         journal(&format!("{} ne se resout pas ({}).\n", exe.display(), e));

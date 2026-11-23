@@ -952,7 +952,14 @@ fn systeme() -> String {
     }
 }
 
-#[cfg(not(unix))]
+/// Dans le navigateur (la cible WASI), le systeme est l'onglet : le moteur ne voit ni le systeme du poste ni le
+/// navigateur qui le porte.
+#[cfg(target_os = "wasi")]
+fn systeme() -> String {
+    "Navigateur".to_string()
+}
+
+#[cfg(windows)]
 fn systeme() -> String {
     use std::os::windows::process::CommandExt;
     // Sans console (CREATE_NO_WINDOW) : la route tourne sans console (`api::route`), et `cmd` en ouvrirait une, le temps
@@ -969,7 +976,7 @@ fn systeme() -> String {
 /// donc le nombre pointe entre les crochets, sans lire le mot. Windows 11 garde le « 10.0 » de Windows 10 : c'est le build
 /// (le troisieme nombre) qui les distingue, 22000 et plus pour Windows 11. Sans numero lisible, « Windows » seul : le
 /// moteur ne devine pas lequel (regle 1).
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn windows_de_ver(sortie: &str) -> String {
     let Some((entre, _)) = sortie.split_once('[').and_then(|(_, r)| r.split_once(']')) else { return "Windows".to_string() };
     let numero = |m: &&str| m.contains('.') && m.chars().all(|c| c.is_ascii_digit() || c == '.');
@@ -1332,7 +1339,7 @@ pub fn envoyer(racine: &Path) -> BilanIncidents {
         }
     }
     // Un autre passage est en cours : celui-ci n'a rien a faire.
-    let marque = socle::verrou::marque("incidents", std::process::id(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
+    let marque = socle::verrou::marque("incidents", socle::processus::numero(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
     let _verrou = match Verrou::prendre(&p.with_file_name(".envoi.verrou"), &marque, socle::verrou::DELAI_VERROU) {
         Ok(Ok(v)) => v,
         Ok(Err(socle::verrou::Verrouille { .. })) => {

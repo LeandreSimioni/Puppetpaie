@@ -646,6 +646,35 @@ pub fn lire_texte(chemin: &Path) -> std::io::Result<String> {
     }
 }
 
+/// LE CHEMIN RESOLU d'un fichier ou d'un dossier qui existe : absolu, au bout de ses liens (`std::fs::canonicalize`) ;
+/// l'erreur du systeme s'il n'existe pas. Le seul chemin du logiciel vers `canonicalize`.
+#[cfg(not(target_os = "wasi"))]
+pub fn resolu(chemin: &Path) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(chemin)
+}
+
+/// Dans le navigateur (WASI), le systeme ne resout aucun chemin (`canonicalize` n'y existe pas) : le chemin tel quel,
+/// s'il existe ; l'erreur du systeme, sinon.
+#[cfg(target_os = "wasi")]
+pub fn resolu(chemin: &Path) -> std::io::Result<PathBuf> {
+    std::fs::metadata(chemin)?;
+    Ok(chemin.to_path_buf())
+}
+
+/// LE DOSSIER TEMPORAIRE DU SYSTEME (`std::env::temp_dir`) : le seul chemin du logiciel vers lui.
+#[cfg(not(target_os = "wasi"))]
+pub fn dossier_temporaire() -> PathBuf {
+    std::env::temp_dir()
+}
+
+/// Dans le navigateur (WASI), la bibliotheque standard n'en connait pas (`temp_dir` y panique, et la panique abandonne le
+/// module) : c'est `/tmp`, que l'hote preouvre (une ecriture dans un dossier qu'il n'ouvre pas se refuse, comme
+/// ailleurs un disque qui refuse).
+#[cfg(target_os = "wasi")]
+pub fn dossier_temporaire() -> PathBuf {
+    PathBuf::from("/tmp")
+}
+
 /// `Path::exists`, note.
 pub fn existe(chemin: &Path) -> bool {
     let v = chemin.exists();

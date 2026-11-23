@@ -379,7 +379,7 @@ fn absolu(p: &Path) -> R<PathBuf> {
     let mut reste = Vec::new();
     let mut a = p.as_path();
     loop {
-        match a.canonicalize() {
+        match socle::fichiers::resolu(&a) {
             Ok(mut c) => {
                 for r in reste.iter().rev() {
                     c.push(r);
@@ -566,7 +566,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> ExitCode {
     // Sans dossier dit : dans le dossier temporaire du systeme.
     let dossier = match dossier {
         Some(d) => d,
-        None => std::env::temp_dir().join(DOSSIER_PAR_DEFAUT),
+        None => socle::fichiers::dossier_temporaire().join(DOSSIER_PAR_DEFAUT),
     };
     let texte = match std::env::var(VARIABLE) {
         Ok(t) => Some(t),

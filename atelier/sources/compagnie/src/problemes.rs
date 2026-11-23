@@ -409,7 +409,7 @@ fn verrouiller(racine: &Path) -> R<Option<Verrou>> {
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
-    let marque = socle::verrou::marque("signalements", std::process::id(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
+    let marque = socle::verrou::marque("signalements", socle::processus::numero(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
     let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|e| e.reclasser(Classe::Disque))? {
@@ -609,7 +609,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
-    let marque = socle::verrou::marque("signalements-envoi", std::process::id(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
+    let marque = socle::verrou::marque("signalements-envoi", socle::processus::numero(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
     let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|e| e.reclasser(Classe::Disque))? {
         Ok(v) => v,
         Err(socle::verrou::Verrouille { .. }) => return Ok(bilan(0, en_ordre(racine)?.iter().filter(|l| en_attente(l)).count(), None, true)),

@@ -1975,7 +1975,12 @@ pub fn chercher_en_fond() {
     let inst = installation();
     dire_l_installation(&inst, &RECHERCHE);
     RECHERCHE.poser(Etape::Recherche, None, |_| {});
-    std::thread::spawn(move || chercher_tant_qu_il_tourne(&inst, &cles_de_l_editeur(), &RECHERCHE, &ATTENTES_HORS_LIGNE, RYTHME_A_JOUR));
+    // Le fil qui ne demarre pas (dans le navigateur, aucun ne demarre) : aucune recherche dans ce processus, et l'indicateur
+    // n'en montre aucune.
+    if let Err(e) = std::thread::Builder::new().spawn(move || chercher_tant_qu_il_tourne(&inst, &cles_de_l_editeur(), &RECHERCHE, &ATTENTES_HORS_LIGNE, RYTHME_A_JOUR)) {
+        eprintln!("Un fil du moteur ne demarre pas : {} ; aucune mise a jour ne se cherche.", e);
+        RECHERCHE.poser(Etape::Aucune, None, |_| {});
+    }
 }
 
 /// LA RECHERCHE CONTINUE TANT QUE LE LOGICIEL TOURNE. `verifier_suivi`, puis, selon ce qu'elle laisse dans `suivi` :
@@ -2057,7 +2062,7 @@ pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
         std::fs::set_permissions(&relais, std::fs::Permissions::from_mode(0o755)).map_err(|e| socle::echec::du_disque(&relais, &e))?;
     }
     let mut c = std::process::Command::new(&relais);
-    c.arg("maj-relais").arg("--installation").arg(inst).arg("--code").arg(logiciel_de(inst)).arg("--attendre").arg(std::process::id().to_string());
+    c.arg("maj-relais").arg("--installation").arg(inst).arg("--code").arg(logiciel_de(inst)).arg("--attendre").arg(socle::processus::numero().to_string());
     c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     #[cfg(windows)]
     {
@@ -2184,7 +2189,7 @@ mod tests {
     #[test]
     fn la_bascule_laisse_l_edition_de_l_installation_comme_elle_etait() {
         for avant in [Some("{\"edition\": \"bride\"}"), None] {
-            let base = std::env::temp_dir().join(format!("puppetpaie-maj-edition-{}", std::process::id()));
+            let base = std::env::temp_dir().join(format!("puppetpaie-maj-edition-{}", socle::processus::numero()));
             let _ = std::fs::remove_dir_all(&base);
             let (code, racine) = (base.join("logiciel"), base.clone());
             arbre(&code, "2026.10.09");
@@ -2207,7 +2212,7 @@ mod tests {
     /// place, la neuve entiere dans `prive/maj/<version>/` (rien de melange), et l'`EDITION.json` de l'installation est la.
     #[test]
     fn une_bascule_qui_casse_en_route_remet_l_ancienne_entiere() {
-        let base = std::env::temp_dir().join(format!("puppetpaie-maj-bascule-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("puppetpaie-maj-bascule-{}", socle::processus::numero()));
         let _ = std::fs::remove_dir_all(&base);
         let (code, racine) = (base.join("logiciel"), base.clone());
         arbre(&code, "2026.10.09");

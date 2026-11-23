@@ -5,3 +5,9 @@
 # L'executable livre, lance hors de Cargo, ne la voit jamais ; `cargo run` d'ici la voit (rien ne sort non plus).
 [env]
 PUPPETPAIE_ESSAIS_HORS_RESEAU = { value = "1", force = true }
+
+# LA PILE DU NAVIGATEUR (`wasm32-wasip1`, la demo) : le module n'a qu'un fil, qui sert chaque route ; sa pile est celle
+# d'un fil de route (`routes::PILE_D_UNE_ROUTE`, 8 Mio), au lieu du Mio que l'editeur de liens donne par defaut. Un
+# debordement de pile ne se rattrape pas : il abandonnerait le module.
+[target.wasm32-wasip1]
+rustflags = ["-C", "link-arg=-zstack-size=8388608"]
