@@ -1524,9 +1524,7 @@ details.pourquoi > summary { cursor: pointer; display: inline; list-style: none;
 details.pourquoi > summary::-webkit-details-marker { display: none; }
 details.pourquoi[open] { padding: 4px 0 2px; }
 details.pourquoi p, details.pourquoi ul { margin: 4px 0; }
-/* Les boîtes des imprévus : deux champs côte à côte, oui ou non. */
-.champs-deux { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
-.champs-deux[hidden] { display: none; }
+/* Les boîtes des imprévus : oui ou non. */
 .oui-non { display: flex; gap: 18px; margin-top: 4px; }
 .liste-jours { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 /* Le dossier du salarié. */
