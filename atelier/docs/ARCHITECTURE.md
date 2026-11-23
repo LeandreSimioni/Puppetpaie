@@ -2807,8 +2807,9 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier d'import, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
 - **Active ou archivée** (`import::derniere_piece` ; Léandre, 21/11/2026 : « tous les salariés qui viennent des années
-  précédentes […] ils doivent être mis comme archivés ») : une fiche de salarié ou de spectacle que l'import crée est
-  active si une pièce reprise la porte dans les douze derniers mois (`recente`, le seul seuil), archivée sinon. Pour un
+  précédentes […] ils doivent être mis comme archivés » ; 23/11/2026 : « 24 mois ») : une fiche de salarié ou de
+  spectacle que l'import crée est active si une pièce reprise la porte dans les vingt-quatre derniers mois (`recente`,
+  `RECENTE`, le seul seuil), archivée sinon. Pour un
   salarié, toutes ses pièces comptent, une fois lues (`DernierePiece`, `importation::bulletins::ranger_les_salaries`) :
   un bulletin, la période de sa paie ; une DSN, son mois, et la fin de chaque contrat quand elle la dit
   (S21.G00.62.001, à défaut .40.010 ; une fin à venir date encore) ; une AEM, son mois, et la fin du contrat quand elle

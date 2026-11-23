@@ -1,10 +1,10 @@
 //! ACTIVE OU ARCHIVEE : la fiche que l'import cree (un salarie, un spectacle) est active si une piece reprise la porte
-//! dans les douze derniers mois, archivee sinon (Léandre, 21/11/2026 : « tous les salariés qui viennent des années
-//! précédentes [...] ils doivent être mis comme archivés [...] Si jamais on doit les embaucher à nouveau, là on
-//! demandera »). Une fiche archivee garde tout son historique ; seule « Pour démarrer » ne lui demande rien. Une fiche qui
+//! dans les vingt-quatre derniers mois (`RECENTE`), archivee sinon (Léandre, 21/11/2026 : « tous les salariés qui
+//! viennent des années précédentes [...] ils doivent être mis comme archivés [...] Si jamais on doit les embaucher à
+//! nouveau, là on demandera » ; 23/11/2026, la duree : « 24 mois », pour les spectacles et pour les salaries). Une fiche archivee garde tout son historique ; seule « Pour démarrer » ne lui demande rien. Une fiche qui
 //! existe deja n'est jamais rangee par l'import (`routes::importation::completer`).
 
-use socle::date::{Duree, Jour};
+use socle::date::{Duree, EnMois, Jour};
 use socle::echec::R;
 use socle::mois::Mois;
 
@@ -52,8 +52,12 @@ impl DernierePiece {
     }
 }
 
-/// LE SEUIL, le seul : un mois porte par une piece est recent s'il est au plus douze mois avant le mois de
+/// LE TEMPS APRES LEQUEL UNE FICHE QUE RIEN NE PORTE SE RANGE PARMI LES ARCHIVEES : une decision de l'editeur, pas un
+/// texte (Léandre, 23/11/2026 : « 24 mois », pour les spectacles, puis « 24 mois salariés aussi »).
+pub const RECENTE: Duree<EnMois> = Duree::mois(24);
+
+/// LE SEUIL, le seul : un mois porte par une piece est recent s'il est au plus `RECENTE` avant le mois de
 /// `aujourdhui` (ou apres lui : la fin a venir d'un contrat).
 pub fn recente(m: Mois, aujourdhui: Jour) -> R<bool> {
-    Ok(m >= aujourdhui.mois_civil().avant(Duree::mois(12))?)
+    Ok(m >= aujourdhui.mois_civil().avant(RECENTE)?)
 }
