@@ -102,6 +102,23 @@ soient droits.
 
 ## Un seul logiciel, qui que soit la main
 
+**Pourquoi, d'abord : le logiciel a deux écrans** (Léandre, 23/11/2026 : « on fait un logiciel pour deux écrans
+différents »). Une personne clique dans la page ; un LLM lit la réponse des routes en ligne de commande. Ce sont deux
+façons de voir le même logiciel, et aucune des deux n'est la vraie. Ce que la page décide toute seule (cacher un
+bouton, proposer une liste, dire comment remplir une case), le LLM ne le sait pas : il tente ce que l'écran interdit,
+ou rate ce que l'écran propose, et il y a deux logiciels à tenir. Donc **tout ce qui se décide se dit dans la route**,
+et chaque écran ne fait que le montrer. Trois questions jugent un écran, et rien d'autre :
+
+1. Qui lit la réponse de la route voit-il **les mêmes cases, les mêmes choix, les mêmes phrases** que la personne ?
+2. Y voit-il **les gestes qu'il a le droit de faire ici** (le bouton, son libellé, sa route, sa charge), ou est-ce la
+   page qui les écrit et les cache ?
+3. La page **décide-t-elle** encore quelque chose (une condition, une valeur, un texte) ?
+
+Passer un écran, c'est rendre les trois réponses bonnes : c'est un travail sur la route, pas sur le dessin. Les types
+ont raison, la page les suit (« La consigne, c'est que la page respecte les chemins des types »). Ce qui n'est que le
+confort de la main (le curseur, un calendrier où l'on coche) reste dans la page : il ne décide rien. On ne demande
+jamais à Léandre s'il faut passer un écran ; on ne lui remonte que ce que la personne y perdrait.
+
 **Le logiciel, c'est le moteur et ses routes.** Cliquer dans la page ou appeler `moteur route` en ligne de commande,
 c'est le même geste : la même route, la même réponse, les mêmes phrases, les mêmes refus. **Il n'y a ni « côté écran »,
 ni « côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket, une consigne, un plan ou un commit : une
