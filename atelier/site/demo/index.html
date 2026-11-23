@@ -35,6 +35,16 @@ button,.lien{font:inherit;padding:.55rem 1.1rem;border:1px solid var(--logo);bor
   color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
 .lien.discret{background:none;color:var(--logo)}
 #cadre{position:fixed;inset:0;width:100%;height:100%;border:0;display:block}
+#montre{position:fixed;inset:0;z-index:2;background:var(--papier);display:flex;flex-direction:column}
+.montre-tete{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem 1rem;padding:.6rem 16px;border-bottom:1px solid var(--filet)}
+.montre-tete strong{font-weight:500;margin-right:auto;overflow-wrap:anywhere}
+.montre-tete a{color:var(--logo);margin-right:1rem}
+#montre-corps{flex:1;min-height:0;overflow:auto}
+#montre-corps iframe{width:100%;height:100%;border:0;display:block}
+#montre-corps ul{list-style:none;margin:0;padding:1rem 16px}
+#montre-corps li{padding:.2rem 0;border:0}
+#montre-corps li button{background:none;border:0;padding:.3rem 0;color:var(--logo);text-align:left}
+#montre-corps p{padding:1rem 16px;margin:0;color:var(--gris)}
 [hidden]{display:none!important}
 #arret{position:fixed;inset:0;background:rgba(255,255,255,.96);display:flex;flex-direction:column;align-items:center;
   justify-content:center;padding:2rem 16px;text-align:center}
@@ -51,16 +61,25 @@ button,.lien{font:inherit;padding:.55rem 1.1rem;border:1px solid var(--logo);bor
   </ol>
   <div id="impossible" hidden>
     <p class="message" id="impossible-phrase"></p>
-    <p><a class="lien" href="/#t-demo">Télécharger le logiciel</a></p>
+    <p><a class="lien" href="/#t-demo">Télécharger la démo</a></p>
   </div>
-  <p class="rien">Ce que vous tapez dans la démo reste sur cet appareil et n'est enregistré nulle part : tout s'efface
-    quand vous fermez l'onglet.</p>
+  <p class="rien">Ce que vous faites dans la démo reste dans cet onglet et s'efface quand vous le fermez. Seuls les
+    rapports d'erreur du logiciel partent à son éditeur.</p>
 </main>
 
 <div id="arret" hidden role="alertdialog" aria-labelledby="arret-phrase">
   <p class="message" id="arret-phrase"></p>
   <p><button type="button" id="relancer">Relancer la démo</button></p>
   <p class="rien">Elle repart de zéro : ce que vous y avez fait est effacé.</p>
+</div>
+
+<div id="montre" hidden role="dialog" aria-labelledby="montre-nom">
+  <div class="montre-tete">
+    <strong id="montre-nom"></strong>
+    <span id="montre-liens"></span>
+    <button type="button" id="montre-fermer">Fermer</button>
+  </div>
+  <div id="montre-corps"></div>
 </div>
 
 <script src="demo.js"></script>

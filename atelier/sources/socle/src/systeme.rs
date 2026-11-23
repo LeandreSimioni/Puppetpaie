@@ -122,3 +122,17 @@ pub(crate) fn poster_par_l_hote(demande: &[u8]) -> Vec<u8> {
     unsafe { reponse(r.as_mut_ptr()) };
     r
 }
+
+/// MONTRER PAR L'HOTE DU NAVIGATEUR : le module n'a aucun programme a lancer ; ce qu'il veut montrer (un fichier ou un
+/// dossier de son disque : `demande`, en JSON, `compagnie::poste::AMontrer`) part a la fonction que l'hote
+/// JavaScript fournit (l'import `puppetpaie.montrer`), qui l'affiche dans l'onglet. Vrai si l'hote l'a pris.
+#[cfg(target_os = "wasi")]
+pub fn montrer_par_l_hote(demande: &[u8]) -> bool {
+    #[link(wasm_import_module = "puppetpaie")]
+    extern "C" {
+        /// L'hote lit `longueur` octets a `demande` ; rend 1 s'il le montre, 0 s'il ne le trouve pas.
+        fn montrer(demande: *const u8, longueur: usize) -> u32;
+    }
+    // SAFETY : la demande est vivante le temps de l'appel ; l'hote n'y fait que lire.
+    unsafe { montrer(demande.as_ptr(), demande.len()) == 1 }
+}

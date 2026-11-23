@@ -150,6 +150,35 @@ jobs:
           [ "$(ls fictives/*/.livree.json | wc -l)" -ge 2 ] || { echo "::error::Les fictives ne sont pas marquees."; exit 1; }
           echo '{"route":"maj-etat","charge":{}}' | "$CARGO_TARGET_DIR/release/moteur" route --racine fictives/fictive-fil-de-fer | grep '"ok":true'
 
+      # LA DEMO DU NAVIGATEUR (atelier/site/demo/, « Essayer dans le navigateur » sur puppetpaie.fr) : le meme moteur,
+      # compile pour l'onglet (`onglet.wasm.gz`, la crate `onglet`, compresse ici ; depuis `atelier/sources`, dont le `.cargo/config.toml`
+      # donne sa pile au module), et l'installation qu'il ouvre (`demo.tar.gz`) : le code commun de `logiciel/` (donnees,
+      # interface, VERSION ; ni programme, ni l'application Google : la demo ne lie aucun Drive), le paquet soude
+      # (`EDITION.json` : bride, ses envois sont joues), une installation portable (la cle du poste vit dans le dossier),
+      # et la fictive du Fil de Fer telle qu'elle vient d'etre livree. Les deux partent dans la Release sous ces noms,
+      # ou le serveur du site les prend. Si la demo ne se fabrique pas, la version se publie sans elle (le site garde la
+      # demo qu'il a) : l'avertissement le dit.
+      - name: La demo du navigateur
+        id: demo
+        continue-on-error: true
+        run: |
+          rustup target add wasm32-wasip1
+          (cd atelier/sources && cargo build --locked --profile navigateur --target wasm32-wasip1 -p onglet)
+          mkdir -p demo arbre/logiciel arbre/fictives
+          gzip -9 -c "$CARGO_TARGET_DIR/wasm32-wasip1/navigateur/onglet.wasm" > demo/onglet.wasm.gz
+          cp -r logiciel/donnees logiciel/interface logiciel/VERSION arbre/logiciel/
+          rm -f arbre/logiciel/donnees/google-application.json
+          printf '{"edition": "bride"}\n' > arbre/logiciel/EDITION.json
+          printf '{"_quoi": "La demo du navigateur est une installation portable : sa cle vit dans ce dossier, en memoire."}\n' > arbre/PORTABLE.json
+          cp -r fictives/fictive-fil-de-fer arbre/fictives/
+          tar -czf demo/demo.tar.gz -C arbre .
+          ls -l demo
+      - name: La demo ne s'est pas fabriquee
+        if: steps.demo.outcome == 'failure'
+        run: |
+          rm -rf demo
+          echo "::warning::La demo du navigateur ne s'est pas fabriquee : la version se publie sans elle, et le site garde la demo qu'il a."
+
       - name: La fenetre et le moteur Windows, l'installeur
         run: bash atelier/installeur/construire.sh
 
@@ -180,6 +209,7 @@ jobs:
           mkdir -p publication
           cp "atelier/depot/installeur/PuppetPaie-$L-installeur.exe" publication/
           cp "$CARGO_TARGET_DIR/release/moteur" publication/moteur
+          if [ -d demo ]; then cp demo/onglet.wasm.gz demo/demo.tar.gz publication/; fi
           tar -cf publication.tar logiciel fictives publication
           ls -l publication logiciel/puppetpaie.exe
 
@@ -361,6 +391,8 @@ jobs:
             cp "sortie/puppetpaie-$V-$S-installation.zip" "stables/PuppetPaie-$S.zip"
           done
           cp "sortie/puppetpaie-$V-tout-systeme-installation.zip" stables/PuppetPaie-portable.zip
+          # La demo du navigateur, sous ses deux noms fixes, si elle s'est fabriquee (`fabriquer`, « La demo du navigateur »).
+          if [ -f publication/onglet.wasm.gz ] && [ -f publication/demo.tar.gz ]; then cp publication/onglet.wasm.gz publication/demo.tar.gz stables/; fi
           ls -l "${ARCHIVES[@]}" stables/*
           gh release create "v$V" -R "$DEPOT" --target "${{ github.sha }}" --latest \
             --title "PuppetPaie ${L/-/ (}$([ "${#V}" -gt 10 ] && echo ")")" --notes "${NOTES:-PuppetPaie $L}" \

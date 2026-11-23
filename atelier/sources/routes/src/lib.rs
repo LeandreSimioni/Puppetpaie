@@ -129,6 +129,19 @@ pub fn fil_de_routes<F: FnOnce() + Send + 'static>(f: F) -> bool {
     }
 }
 
+/// Le systeme n'a qu'un fil : dans le navigateur (WASI), aucun autre ne demarre.
+pub const SANS_FIL: bool = cfg!(target_os = "wasi");
+
+/// UN TRAVAIL COURT QUE LA FENETRE FAIT EN FOND d'une route (un message a l'editeur qui part) : sur un fil de routes,
+/// sans que la page attende ; sans fil (`SANS_FIL`), sur place, avant de rendre la main.
+pub fn en_fond<F: FnOnce() + Send + 'static>(f: F) {
+    if SANS_FIL {
+        f();
+    } else {
+        fil_de_routes(f);
+    }
+}
+
 /// Le fil remis propre apres une route servie dans la fenetre (`dans_la_fenetre`, `etat_garde::FileDesEtats`) : plus
 /// de mot de passe tape, aucun registre de lectures ouvert.
 pub(crate) fn remettre_le_fil() {

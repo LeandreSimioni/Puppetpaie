@@ -1,4 +1,4 @@
-// LE MOTEUR DE LA DÉMO : un worker que la page garde vivant (demo.js). Il télécharge le moteur (onglet.wasm) et
+// LE MOTEUR DE LA DÉMO : un worker que la page garde vivant (demo.js). Il télécharge le moteur (onglet.wasm.gz) et
 // l'installation de démo (demo.tar.gz), déballe l'installation sur un disque en mémoire, démarre le moteur, puis sert
 // chaque demande que le relais (relais.js) lui passe par un MessagePort : la demande entre telle quelle dans
 // `onglet_traiter`, la réponse du moteur en sort telle quelle. Rien ne s'écrit ailleurs qu'en mémoire : fermer
@@ -96,7 +96,8 @@ function avancer(nom, n, total, fini) {
 }
 async function telecharger(nom) {
   const r = await fetch(new URL(nom, import.meta.url));
-  if (!r.ok) throw new Error(`Le fichier ${nom} ne s'est pas téléchargé (le serveur a répondu ${r.status}).`);
+  if (r.status === 404) throw new Error("la démo n'est pas en ligne pour le moment (il manque " + nom + " sur le serveur).");
+  if (!r.ok) throw new Error(`le fichier ${nom} ne s'est pas téléchargé (le serveur a répondu ${r.status}).`);
   const longueur = r.headers.get("Content-Length");
   const total = r.headers.get("Content-Encoding") === null && longueur !== null ? Number(longueur) : null;
   let n = 0;
@@ -142,6 +143,8 @@ function deballer(o, racine) {
     f.date = date;
     fichiers++;
   }
+  // Une archive entière finit par un bloc vide : sinon elle est coupée.
+  if (p + 512 > o.length) throw new Error("l'installation de démo est incomplète (son archive est coupée).");
   return fichiers;
 }
 
@@ -204,25 +207,56 @@ const puppetpaie = {
     return gardee.length;
   },
   reponse(ptr) { memoire().set(gardee, ptr >>> 0); },
+  // « Ouvrir » un fichier ou un dossier : le moteur n'a aucun programme à lancer (compagnie::poste, `AMontrer`) ; la
+  // page de la démo le montre. Rend 1 s'il est sur le disque, 0 sinon.
+  montrer(ptr, len) {
+    const d = JSON.parse(td.decode(memoire().slice(ptr >>> 0, (ptr >>> 0) + (len >>> 0))));
+    return montrer(d.chemin) ? 1 : 0;
+  },
 };
+
+// LE DISQUE EN MÉMOIRE, par ses deux racines (`/demo`, `/tmp`), pour montrer à la page ce que le moteur y a écrit.
+const disque = new Map();
+function montrer(chemin) {
+  const parties = chemin.split("/").filter((x) => x !== "" && x !== ".");
+  let ici = disque.get(parties[0]);
+  for (const p of parties.slice(1)) {
+    ici = ici instanceof Directory ? ici.contents.get(p) : undefined;
+  }
+  if (ici instanceof Directory) {
+    const noms = [...ici.contents].map(([nom, x]) => ({ nom, dossier: x instanceof Directory })).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+    dire({ quoi: "montrer", chemin: "/" + parties.join("/"), noms });
+    return true;
+  }
+  if (ici instanceof File) {
+    const octets = ici.data.slice().buffer;
+    self.postMessage({ quoi: "montrer", chemin: "/" + parties.join("/"), octets }, [octets]);
+    return true;
+  }
+  return false;
+}
 
 async function demarrer() {
   const t0 = performance.now();
   const [module, archive] = await Promise.all([
-    telecharger("onglet.wasm").then((flux) =>
-      WebAssembly.compileStreaming(new Response(flux, { headers: { "Content-Type": "application/wasm" } }))),
+    telecharger("onglet.wasm.gz").then((flux) =>
+      WebAssembly.compileStreaming(new Response(flux.pipeThrough(new DecompressionStream("gzip")), { headers: { "Content-Type": "application/wasm" } }))),
     telecharger("demo.tar.gz").then((flux) => lireTout(flux.pipeThrough(new DecompressionStream("gzip")))),
   ]);
   const t1 = performance.now();
   dire({ quoi: "etape", etape: "preparer" });
   const installation = new Directory(new Map());
   const fichiers = deballer(archive, installation);
+  const demo = new PreopenDirectory("/demo", installation.contents);
+  const tmp = new PreopenDirectory("/tmp", new Map());
+  disque.set("demo", demo.dir);
+  disque.set("tmp", tmp.dir);
   const wasi = new WASI([], ["PUPPETPAIE_CODE=/demo/logiciel/donnees"], [
     new OpenFile(new File([])),
     ConsoleStdout.lineBuffered((l) => console.log("[moteur]", l)),
     ConsoleStdout.lineBuffered((l) => console.warn("[moteur]", l)),
-    new PreopenDirectory("/demo", installation.contents),
-    new PreopenDirectory("/tmp", new Map()),
+    demo,
+    tmp,
   ], { debug: false }); // sans `debug: false`, le shim journalise chaque appel au système dans la console
 
   // Le temps passé dans les appels au système (le disque en mémoire, l'horloge…) se compte, pour les mesures.
@@ -243,6 +277,7 @@ async function demarrer() {
     return;
   }
   jeton = new URLSearchParams(d.page.split("?")[1]).get("jeton");
+  if (!jeton) throw new Error("le logiciel n'a pas donné le jeton de sa fenêtre.");
   self.mesuresDuDemarrage = { telecharger: t1 - t0, preparer: t2 - t1, demarrer: t3 - t2, fichiers };
   dire({ quoi: "pret", mesures: self.mesuresDuDemarrage });
 }
@@ -256,7 +291,7 @@ function repondre(d) {
   }
   const entetes = Object.assign({}, d.entetes, { "x-jeton": jeton });
   const o = te.encode(JSON.stringify({ methode: d.methode, adresse: d.adresse, entetes, corps: d.corps ? enB64(new Uint8Array(d.corps)) : "" }));
-  let r, dedans;
+  let r, dedans, corps;
   try {
     const p = ex.onglet_entree(o.length) >>> 0;
     memoire().set(o, p);
@@ -266,13 +301,13 @@ function repondre(d) {
     const n = ex.onglet_traiter();
     dedans = performance.now() - a;
     r = JSON.parse(td.decode(sortie(n)));
+    corps = deB64(r.corps).buffer;
   } catch (e) {
     tombe = String((e && e.stack) || e);
     console.error("[moteur] tombé sur", d.methode, d.adresse, tombe);
     dire({ quoi: "tombe", demande: d.methode + " " + d.adresse, detail: tombe });
     return { id: d.id, code: 503, type: "text/plain; charset=utf-8", entetes: [], corps: te.encode("Le logiciel de la démo s'est arrêté : relancez la démo.").buffer };
   }
-  const corps = deB64(r.corps).buffer;
   self.mesures.push({ id: d.id, methode: d.methode, adresse: d.adresse.split("?")[0], code: r.code, octets: corps.byteLength, traiter: dedans, systeme: tempsSysteme, appels: appelsSysteme, worker: performance.now() - t0, relais: null });
   if (self.mesures.length > 100) self.mesures.shift();
   return { id: d.id, code: r.code, type: r.type, entetes: r.entetes, corps };
@@ -298,5 +333,8 @@ self.onmessage = (e) => {
     demarrer().catch((err) => dire({ quoi: "echec", phrase: String((err && err.message) || err) }));
   } else if (e.data.quoi === "port") {
     servir(e.ports[0]);
+  } else if (e.data.quoi === "montrer") {
+    // Un fichier d'un dossier montré, que la page demande.
+    montrer(e.data.chemin);
   }
 };

@@ -81,7 +81,7 @@ fn route_seule(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
 /// qui ne part pas attend sa ligne, et la veille suivante reessaie.
 fn signalements_en_fond(racine: &Path) {
     let r = racine.to_path_buf();
-    routes::fil_de_routes(move || {
+    routes::en_fond(move || {
         if let Some(x) = route(&r, Route::SignalementsPartir, &Charge::vide()).refus() {
             compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
         }
@@ -219,7 +219,7 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
     let rendu = routes::dans_la_fenetre(&o, nom, charge);
     // Le message ecrit a l'accueil part en fond, comme celui d'une compagnie (`signalements_en_fond`).
     if nom == Route::SignalementEnvoyer && rendu.est_rendue() {
-        routes::fil_de_routes(move || {
+        routes::en_fond(move || {
             if let Some(x) = routes::dans_la_fenetre(&routes::enveloppe::Options::sans_compagnie(),Route::SignalementsPartir, &Charge::vide()).refus() {
                 compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
             }

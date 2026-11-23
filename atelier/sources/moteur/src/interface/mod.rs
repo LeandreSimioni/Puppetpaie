@@ -869,7 +869,7 @@ impl Fenetre {
             }
             // LA VEILLE DE LA FENETRE : son etat, l'etape du passage en cours, un passage tout de suite (un passage appelle
             // la route `ouverture`, qui releve et sauvegarde).
-            ("veille", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.etat()) }),
+            ("veille", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.suivie()) }),
             ("veille_etape", Phase::Ouverte { veille, .. }) => Ok(Geste::Etape { ok: true, etat: veille.etape() }),
             ("veille_maintenant", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.tour(false, false)) }),
             // Ou en est la recherche de la mise a jour : l'accueil et la page d'une compagnie l'affichent.

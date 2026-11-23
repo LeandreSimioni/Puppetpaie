@@ -8,8 +8,10 @@
 // navigation ne passe que par celui dont la portée couvre l'adresse visée : avec une portée `/demo/…`, ouvrir une
 // compagnie ferait sortir le cadre vers l'accueil de puppetpaie.fr. Le relais a donc la portée `/` (le serveur l'admet
 // par `Service-Worker-Allowed: /` sur ce fichier), et il ne relaie que ce qui vient du cadre du logiciel : une
-// navigation de cadre, ou une demande d'une page tenue dans un cadre. Les pages du site (toutes au premier niveau :
-// sa politique interdit les cadres) et les fichiers de la démo elle-même passent au réseau sans qu'il y touche.
+// navigation de cadre, une demande d'une page tenue dans un cadre, ou un lien du logiciel ouvert dans un autre onglet
+// (il porte le jeton de la fenêtre). Les pages du site (toutes au premier niveau : sa politique interdit les cadres)
+// et les fichiers de la démo elle-même passent au réseau. Et il ne reste pas : sans page de démo ouverte, il se
+// désinscrit (`partirSansDemo`).
 
 // LA POLITIQUE DES PAGES QUE LE RELAIS FABRIQUE : une réponse fabriquée ici ne porte pas les en-têtes du serveur. Comme
 // le serveur du logiciel sur le poste (moteur/src/interface/http.rs), le relais pose une politique quand le moteur n'en
@@ -23,7 +25,6 @@ const POLITIQUE = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-
 const DEMO = new URL("./", self.location).pathname;
 
 let port = null;
-let proprietaire = null;
 let attentes = [];
 let demandePosee = false;
 let prochain = 1;
@@ -37,11 +38,12 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("message", (e) => {
   if (!e.data || e.data.quoi !== "port") return;
   const neuf = e.ports[0];
-  const avant = proprietaire;
-  proprietaire = e.source.id;
-  if (avant !== null && avant !== proprietaire) {
-    self.clients.get(avant).then((c) => { if (c) c.postMessage({ quoi: "remplacee" }); });
-  }
+  // Toute autre page de démo s'arrête (le relais a pu redémarrer entre-temps et ne plus savoir laquelle tournait) :
+  // sinon son cadre parlerait au moteur de celle-ci.
+  const source = e.source.id;
+  lesDemos().then((demos) => {
+    for (const c of demos) if (c.id !== source) c.postMessage({ quoi: "remplacee" });
+  });
   for (const [id, x] of enCours) {
     if (x.port !== neuf) {
       enCours.delete(id);
@@ -62,6 +64,18 @@ self.addEventListener("message", (e) => {
   e.source.postMessage({ quoi: "port pose" });
 });
 
+// LES PAGES DE LA DÉMO ouvertes dans ce navigateur.
+function lesDemos() {
+  return self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    .then((tous) => tous.filter((c) => c.frameType === "top-level" && new URL(c.url).pathname.startsWith(DEMO)));
+}
+
+// SANS PAGE DE DÉMO, LE RELAIS S'EN VA : il se désinscrit, pour ne pas rester posé sur tout le site après une visite
+// (la démo ne garde rien). La prochaine visite de la démo l'inscrit de nouveau.
+function partirSansDemo() {
+  lesDemos().then((demos) => { if (!demos.length) self.registration.unregister(); });
+}
+
 // LE PORT, ou sa demande à la page : Chrome arrête un service worker inactif après une trentaine de secondes, et le
 // port meurt avec lui ; quand il revient, il redemande un port à la page de la démo. Les demandes attendent la réponse
 // dans `attentes` : aucune ne se perd. Si aucune page de la démo n'est ouverte, il n'y a plus de moteur : `null`.
@@ -71,9 +85,9 @@ function lePort() {
     attentes.push(resoudre);
     if (demandePosee) return;
     demandePosee = true;
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((tous) => {
-      const demos = tous.filter((c) => c.frameType === "top-level" && new URL(c.url).pathname.startsWith(DEMO));
+    lesDemos().then((demos) => {
       if (!demos.length) {
+        self.registration.unregister();
         demandePosee = false;
         const a = attentes;
         attentes = [];
@@ -134,9 +148,17 @@ self.addEventListener("fetch", (e) => {
     if (q.destination === "iframe") {
       if (e.resultingClientId) cadres.set(e.resultingClientId, true);
       e.respondWith(relayer(q, t0));
-    } else if (e.resultingClientId) {
-      cadres.set(e.resultingClientId, false);
+      return;
     }
+    if (e.resultingClientId) cadres.set(e.resultingClientId, false);
+    // Un lien du logiciel ouvert dans un autre onglet (« ouvrir le PDF ») : il porte le jeton de la fenêtre, qu'aucune
+    // page du site ne porte. Il va au moteur, pas au serveur du site.
+    if (new URL(q.url).searchParams.has("jeton")) {
+      e.respondWith(relayer(q, t0));
+      return;
+    }
+    // Une page du site : elle passe au réseau ; et sans démo ouverte, le relais n'a plus rien à faire ici.
+    if (!new URL(q.url).pathname.startsWith(DEMO)) partirSansDemo();
     return;
   }
   if (!e.clientId) return;
