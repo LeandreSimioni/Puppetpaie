@@ -92,7 +92,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire l'état de chaque engagement du mois : ses carrés DPAE, Contrat, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire), non_actifs",
+        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -629,7 +629,7 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: Empreinte
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let etats = crate::etapes::les_deux_etats(ctx, mois)?;
-    let par_engagement = Rendu::de(&etats.par_engagement())?;
+    let par_engagement = Rendu::de(&etats.par_engagement()?)?;
     Ok(EtatDuMois { mois, empreinte, par_engagement, bilan: etats.bilan, lectures })
 }
 
@@ -744,7 +744,7 @@ pub fn route(o: &Options, porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::EtatParEngagement => {
             let ChargeMois { mois } = charge.lire()?;
             let etats = crate::etapes::les_deux_etats(porte.ctx, mois)?;
-            let par: crate::etapes::EtatParEngagement = etats.par_engagement();
+            let par: crate::etapes::EtatParEngagement = etats.par_engagement()?;
             en_json(par)
         }
         Route::EtatDuMois => {

@@ -308,7 +308,10 @@ struct MoisAOuvrir {
 }
 
 /// `etat-par-engagement` : la phrase du mois, celle de chaque engagement (ses carres et sa frise), les lignes que la page
-/// lit, et les engagements non actifs du mois.
+/// lit, et les engagements non actifs du mois. LA BOITE DES DPAE : son titre, ses deux notes (`dpae_notes` : ce qui est
+/// coche d'avance ; l'heure, et le test avant le reel), le geste qui envoie les embauches cochees (`dpae_envoyer` :
+/// l'apercu du depot, dont le test part tout de suite ; sa case `engagements` prend la `part` de chaque engagement coche),
+/// aucun quand rien ne se coche, et ce que son bouton dit quand rien n'est coche (`dpae_rien`).
 #[derive(Debug, Serialize)]
 pub(crate) struct EtatParEngagement<'a> {
     phrase: Phrase,
@@ -316,6 +319,11 @@ pub(crate) struct EtatParEngagement<'a> {
     mois: Mois,
     engagements: Vec<LigneDePage<'a>>,
     non_actifs: &'a [NonActif],
+    dpae_titre: &'static str,
+    dpae_notes: [&'static str; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dpae_envoyer: Option<Action>,
+    dpae_rien: &'static str,
 }
 
 impl Dite for EtatParEngagement<'_> {
@@ -1367,7 +1375,8 @@ struct GesteDePiece {
     principal: bool,
 }
 
-/// CE QUE LA BOITE DES DPAE DIT D'UN ENGAGEMENT (`choix_dpae`).
+/// CE QUE LA BOITE DES DPAE DIT D'UN ENGAGEMENT (`choix_dpae`) ; `part` : l'embauche qu'il ajoute, coche, a la case
+/// `engagements` du geste de la boite (`EtatParEngagement::dpae_envoyer`), quand il se coche.
 #[derive(Debug, Clone, Serialize)]
 struct Choix {
     cochable: bool,
@@ -1375,6 +1384,8 @@ struct Choix {
     etat: EtatCase,
     couleur: &'static str,
     phrase: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part: Option<EmbaucheDesignee>,
 }
 
 /// UNE DPAE A FAIRE (`embauches_a_declarer`) : le mois, le contrat, qui, pour quoi, ses bornes, l'empreinte de ce qu'elle
@@ -2754,7 +2765,15 @@ fn majuscule_initiale(t: &str) -> String {
 /// (`fait`, `a_faire`, `en_attente`, `refuse`) avec sa phrase.
 fn choix_dpae(p: &Vue) -> R<Choix> {
     let d = &p.etats.dpae;
-    let choix = |cochable: bool, cochee: bool, etat: EtatCase, phrase: String| -> R<Choix> { Ok(Choix { cochable, cochee, etat, couleur: etat.couleur(), phrase }) };
+    // Ce qui se coche est valide : sa fiche et son contrat sont dits.
+    let choix = |cochable: bool, cochee: bool, etat: EtatCase, phrase: String| -> R<Choix> {
+        let part = match (cochable, p.salarie.clone(), p.numero.clone()) {
+            (false, _, _) => None,
+            (true, Some(salarie), Some(numero)) => Some(EmbaucheDesignee { salarie, numero }),
+            (true, _, _) => return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une embauche à cocher n'a pas sa fiche ou son contrat.")),
+        };
+        Ok(Choix { cochable, cochee, etat, couleur: etat.couleur(), phrase, part })
+    };
     // Il lui manque un fait : sa DPAE attend qu'il soit complet.
     if let Some(manque) = &p.a_completer {
         return choix(false, false, EtatCase::AFaire, format!("à compléter avant de valider : {}", manque));
@@ -2980,14 +2999,30 @@ pub(crate) struct LesDeuxEtats {
 
 impl LesDeuxEtats {
     /// `etat-par-engagement` : la phrase du mois, et ce que la page lit de chaque engagement.
-    pub(crate) fn par_engagement(&self) -> EtatParEngagement<'_> {
+    pub(crate) fn par_engagement(&self) -> R<EtatParEngagement<'_>> {
         let engagements: Vec<LigneDePage> = self.lignes.iter().map(LigneDePage::de).collect();
         let phrase = match engagements.len() {
             0 => socle::phrase!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
             n => socle::phrase!("Engagements du mois : {}.", n),
         };
         let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
-        EtatParEngagement { phrase, phrases, mois: self.mois, engagements, non_actifs: &self.non_actifs }
+        // Les embauches cochees partent par l'apercu du depot, qui ecrit leur DPAE ; son test part tout de suite.
+        let dpae_envoyer = self.lignes.iter().any(|l| l.dpae_choix.cochable).then(|| {
+            let mut charge = Designation::du_mois(Quoi::Dpae, self.mois);
+            charge.engagements = Some(Vec::new());
+            Action { tester: true, ..action(Route::DepotApercu, charge, Some(Route::Deposer), "Envoyer le test".into()) }
+        });
+        Ok(EtatParEngagement {
+            phrase,
+            phrases,
+            mois: self.mois,
+            engagements,
+            non_actifs: &self.non_actifs,
+            dpae_titre: "Envoyer les DPAE",
+            dpae_notes: [crate::ouverture::aide("dpae_cochees")?, crate::ouverture::aide("dpae_heure")?],
+            dpae_envoyer,
+            dpae_rien: "Rien de coché",
+        })
     }
 }
 

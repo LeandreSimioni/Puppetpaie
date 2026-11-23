@@ -244,12 +244,14 @@ async function boiteDpae(mois) {
   const lignes = r.engagements;
   if (!lignes.length) { dire(r.phrase); return; }
   // Le moteur dit, par engagement (`dpae_choix`), s'il se coche, s'il est coché
-  // d'avance, son état en mots et sa couleur.
+  // d'avance, son état en mots, sa couleur et ce qu'il ajoute coché (`part`) ; et
+  // le geste qui envoie (`dpae_envoyer`), aucun quand rien ne se coche.
+  const g = r.dpae_envoyer;
 
   ouvrirBoite(`
-    <h3>Envoyer les DPAE</h3>
+    <h3>${echapper(r.dpae_titre)}</h3>
     ${moisEnGros(mois)}
-    <p class="note">${aideDe("dpae_cochees")}</p>
+    <p class="note">${echapper(r.dpae_notes[0])}</p>
     <div class="liste-choix">
       ${lignes.map((l, i) => {
         const e = l.etats.dpae;
@@ -264,28 +266,28 @@ async function boiteDpae(mois) {
             ${e.date_changee ? `<br><span class="note">${echapper(e.date_changee.phrase)}</span>` : ""}</span></label>`;
       }).join("")}
     </div>
-    <p class="note">${aideDe("dpae_heure")}</p>
+    <p class="note">${echapper(r.dpae_notes[1])}</p>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      <button class="primaire" id="d-ecrire" data-plein="Envoyer le test" data-vide="Rien de coché">Envoyer le test</button>
+      ${g ? `<button class="primaire" id="d-ecrire">${echapper(g.libelle)}</button>` : ""}
     </div>`);
+  if (!g) return;
 
+  // Le bouton dit le geste tant qu'une embauche est cochée, la phrase du moteur sinon.
   const bouton = document.getElementById("d-ecrire");
+  const parts = () => [...document.querySelectorAll(".d-qui:checked")].map((c) => lignes[+c.dataset.i].dpae_choix.part);
   const majBouton = () => {
-    const n = document.querySelectorAll(".d-qui:checked").length;
+    const n = parts().length;
     bouton.disabled = !n;
-    bouton.textContent = n ? bouton.dataset.plein : bouton.dataset.vide;
+    bouton.textContent = n ? g.libelle : r.dpae_rien;
   };
   document.querySelectorAll(".d-qui").forEach((c) => { c.onchange = majBouton; });
   majBouton();
   bouton.onclick = async () => {
-    const choisies = [...document.querySelectorAll(".d-qui:checked")]
-      .map((c) => lignes[+c.dataset.i]);
+    const choisies = parts();
     if (!choisies.length) return;
-    const rendre = occupe(bouton, "Fabrication…");
-    await boiteDepot({ quoi: "dpae", mois,
-                       engagements: choisies.map((l) => ({ salarie: l.salarie, numero: l.numero })) },
-                     { testerDabord: true });
+    const rendre = occupe(bouton);
+    await ouvrirGeste({ ...g, charge: { ...g.charge, engagements: choisies } }, mois);
     rendre();
   };
 }
