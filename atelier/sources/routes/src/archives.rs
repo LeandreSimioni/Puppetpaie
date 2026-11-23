@@ -336,11 +336,13 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
 // ------------------------------------------------- le logiciel du comptable
 
 /// Un logiciel du comptable que la page propose : tel que les tables des exports le livrent
-/// (`documents::plan_comptable::tables`), et ce que l'ecran en dit une fois choisi.
+/// (`documents::plan_comptable::tables`), son libelle dans la liste (son nom et son format), et ce que l'ecran en dit une
+/// fois choisi.
 #[derive(Debug, Serialize)]
 struct LogicielPropose {
     #[serde(flatten)]
     livre: documents::plan_comptable::Logiciel,
+    libelle: String,
     dit: String,
 }
 
@@ -364,7 +366,7 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
     // Ce que l'ecran dit de chaque logiciel, une fois choisi.
     let logiciels = livres
         .iter()
-        .map(|l| LogicielPropose { dit: format!("Fichier {} : {}. Retenu pour les prochaines fois.", l.format_lisible, l.pourquoi), livre: l.clone() })
+        .map(|l| LogicielPropose { libelle: format!("{} — {}", l.nom, l.format_lisible), dit: format!("Fichier {} : {}. Retenu pour les prochaines fois.", l.format_lisible, l.pourquoi), livre: l.clone() })
         .collect();
     Ok(LogicielDuComptable { logiciels, logiciel: choix.logiciel, analytique: choix.analytique, controle })
 }
@@ -475,6 +477,7 @@ struct EcranDesExports {
     coordonnees_libelle: &'static str,
     apercu: &'static str,
     dossier_dit: &'static str,
+    raccourcir: &'static str,
     analytique: &'static str,
     format_libre: &'static str,
     coordonnees: &'static str,
@@ -563,6 +566,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
         coordonnees_libelle: "Coordonnées des salariés",
         apercu: "Aperçu",
         dossier_dit: "Ouvrir le dossier",
+        raccourcir: "Les raccourcir",
         analytique: "Les salaires bruts ventilés par spectacle. Le code de chaque spectacle se règle sur sa fiche : Configuration › Spectacles, case « Code analytique ». Vide, il est tiré du titre.",
         format_libre: "Le format se choisit ci-dessous.",
         coordonnees: "Le NIR, la naissance, l'adresse. Sans la case, rien de tout cela ne sort ; un fichier qui les porte ne s'envoie qu'à qui en a besoin.",

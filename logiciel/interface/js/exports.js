@@ -168,9 +168,7 @@ function dessinerQuestions(opt) {
       ${q.has("logiciel") ? `<div class="champ pleine">
         <label for="x-logiciel">${echapper(e.logiciel_libelle)}</label>
         <select id="x-logiciel">
-          ${p.compta.logiciels.map((l) => opt(l.logiciel,
-            `${l.nom} — ${l.format_lisible}`,
-            l.logiciel === p.compta.logiciel)).join("")}
+          ${p.compta.logiciels.map((l) => opt(l.logiciel, l.libelle, l.logiciel === p.compta.logiciel)).join("")}
           ${opt("", e.aucun_logiciel, !p.compta.logiciel)}
         </select>
         <div class="aide" id="x-logiciel-aide"></div>
@@ -256,28 +254,28 @@ async function montrerCourts(format) {
   try { r = await api("libelles-courts", { format }); }
   catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
   cible.innerHTML = r.libelles.length ? `<div class="encart alerte">${echapper(r.phrase)}
-    <button class="lien" id="x-courts-ouvrir">Les raccourcir</button></div>` : "";
+    <button class="lien" id="x-courts-ouvrir">${echapper(r.ecran.raccourcir)}</button></div>` : "";
   if (r.libelles.length) document.getElementById("x-courts-ouvrir").onclick = () => ouvrirCourts(r.format);
 }
 
 /** LA BOÎTE DES LIBELLÉS COURTS : chaque libellé trop long, la place qu'il a,
- *  et la valeur courte — celle validée, sinon la proposition du moteur. On la
- *  garde ou on la change ; « Enregistrer » les valide toutes. Le moteur
- *  vérifie chacune et refuse sans rien écrire. */
+ *  et ce que sa case montre (`valeur`, dit par le moteur). On la garde ou on la
+ *  change ; « Enregistrer » les valide toutes. Le moteur vérifie chacune et
+ *  refuse sans rien écrire. Les mots de la boîte : `ecran`. */
 async function ouvrirCourts(format, phrase) {
   let r;
   try { r = await api("libelles-courts", { format }); }
   catch (e) { dire(e.message, "erreur"); return; }
   const lignes = r.libelles.map((l, i) => `<tr>
       <td>${echapper(l.zone)}</td><td>${echapper(l.long)}</td>
-      <td><input type="text" class="x-court" data-i="${i}" size="${l.largeur + 2}" value="${echapper(l.court ?? l.propose)}"></td>
+      <td><input type="text" class="x-court" data-i="${i}" size="${l.largeur + 2}" value="${echapper(l.valeur)}"></td>
     </tr>`).join("");
-  ouvrirBoite(`<h3>Libellés courts${r.nom ? ` — ${echapper(r.nom)}` : ""}</h3>
+  ouvrirBoite(`<h3>${echapper(r.ecran.titre)}</h3>
     <div class="encart" id="x-courts-dit">${echapper(phrase || r.phrase)}</div>
-    <table class="tableau"><tr><th>Zone</th><th>Libellé</th><th>Valeur courte</th></tr>${lignes}</table>
+    <table class="tableau"><tr>${r.ecran.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>${lignes}</table>
     <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      <button class="primaire" id="x-courts-enregistrer">Enregistrer</button>
+      <button class="secondaire" onclick="fermerBoite()">${echapper(r.ecran.fermer)}</button>
+      <button class="primaire" id="x-courts-enregistrer">${echapper(r.ecran.enregistrer)}</button>
     </div>`);
   document.getElementById("x-courts-enregistrer").onclick = async () => {
     const libelles = [...document.querySelectorAll(".x-court")].map((c) => {
@@ -370,7 +368,7 @@ async function lancerExport(apercu) {
     // Des libellés trop longs pour le format : le refus y renvoie.
     const courts = e.detail && e.detail.a_part && e.detail.a_part.libelles_courts;
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}${courts
-      ? ` <button class="lien" id="x-courts-refus">Les raccourcir</button>` : ""}</div>`;
+      ? ` <button class="lien" id="x-courts-refus">${echapper(EXPORTS.ecran.raccourcir)}</button>` : ""}</div>`;
     if (courts) document.getElementById("x-courts-refus").onclick = () => ouvrirCourts(courts);
     return;
   }
