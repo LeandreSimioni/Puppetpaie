@@ -194,6 +194,8 @@ h2 {
   border-bottom: 1px solid var(--bord);
 }
 h2:first-child { margin-top: 0; }
+/* Le titre des corrections, que la route rend, ouvre son bloc mais suit la section de l'année. */
+#regularisation > h2:first-child { margin-top: 22px; }
 h2 .discret { text-transform: none; letter-spacing: 0; font-weight: normal; }
 .discret { color: var(--discret); font-weight: normal; }
 
@@ -618,7 +620,6 @@ details.historique-fiche[open] > summary { margin-bottom: 8px; }
 .rang-image .rang-apercu:empty { visibility: hidden; }
 .rang-image .rang-infos { display: flex; flex-direction: column; gap: 4px; }
 .acte-dernier.faute { color: var(--erreur); }
-#titre-corrections[hidden] { display: none; }
 @media (max-width: 780px) {
   .rang.mois { grid-template-columns: 1fr auto; }
   .rang.mois .rang-infos { grid-column: 1 / -1; }

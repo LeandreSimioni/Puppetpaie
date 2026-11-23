@@ -27,11 +27,9 @@ async function dessinerReprise() {
   }
   if (!r.ajoutes.length) { cible.innerHTML = ""; return; }
 
-  const reels = r.ajoutes.filter((v) => v.mode === "reel" && v.accepte);
-  // Replié en une ligne, sauf s'il y a un dépôt RÉEL accepté à reprendre :
-  // des essais retrouvés sont un historique à ranger, pas une urgence.
+  // Replié en une ligne, sauf quand la route le dit déplié (un dépôt réel accepté s'y trouve).
   cible.innerHTML = `
-    <details class="reprise" ${reels.length ? "open" : ""}>
+    <details class="reprise" ${r.ecran.deplie ? "open" : ""}>
     <summary>${echapper(r.ecran.resume)}</summary>
     <div class="encart">
       <b>${echapper(r.ecran.titre)}</b>
@@ -46,22 +44,15 @@ async function dessinerReprise() {
           <br><span class="discret">${echapper(v.origine_dit)}</span>
         </span></div>`).join("")}
     </div>
-    <button class="secondaire" id="reprendre">${echapper(r.ecran.bouton)}</button>
+    <p data-gestes>${boutonsDesGestes(r.gestes)}</p>
     <p class="note">${echapper(r.ecran.logiciel)}</p>
     </details>`;
 
-  document.getElementById("reprendre").onclick = async () => {
-    document.getElementById("reprendre").disabled = true;
-    try {
-      const f = await api("journal-reprise", { ecrire: true });
-      dire(f.phrase);
-      // La reprise remet des envois au journal : l'Historique, où elle se montre, se redessine avec eux.
-      await rafraichirActions();
-      dessinerHistorique();
-    } catch (e) {
-      document.getElementById("reprendre").disabled = false;
-      dire(e.message, "erreur");
-    }
-  };
+  // Le geste que la route rend (la même route, qui écrit). La reprise remet des envois au journal : l'Historique, où
+  // elle se montre, se redessine avec eux.
+  brancherLesGestes(cible.querySelector("[data-gestes]"), r.gestes, {}, async () => {
+    await rafraichirActions();
+    dessinerHistorique();
+  });
 }
 

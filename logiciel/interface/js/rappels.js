@@ -515,36 +515,25 @@ async function dessinerExercices() {
   let r;
   try { r = await api("exercices"); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-  if (!r.exercices.length) { cible.innerHTML = `<p class="discret">Aucune année</p>`; return; }
-  cible.innerHTML = r.exercices.map((x) => {
-    const clos = x.clos;
-    return `
-    <div class="rang exercice">
+  if (!r.exercices.length) { cible.innerHTML = `<p class="discret">${echapper(r.exercices_dit)}</p>`; return; }
+  // Chaque année, ses actions (la boîte de leur route, `ouvrirGeste`) puis ses gestes (la route appelée telle quelle),
+  // tels que la route les rend.
+  cible.innerHTML = r.exercices.map((x, i) => `
+    <div class="rang exercice" data-exercice="${i}">
       <span class="rang-nom">${echapper(x.annee)}</span>
       ${pastilleDeLEtat(x.pastille)}
       <span class="rang-infos">
         ${echapper(x.infos_dit)}
       </span>
-      <button class="secondaire" data-export="${echapper(x.annee)}">Export compta</button>
-      ${clos
-        ? `<button class="secondaire" data-rouvrir="${echapper(x.annee)}">Rouvrir</button>`
-        : `<button class="secondaire" data-cloturer="${echapper(x.annee)}">Clôturer…</button>`}
-    </div>`;
-  }).join("") + `<p class="note"><button class="lien" id="ouvrir-exercices">Dossier des archives</button></p>`;
-  cible.querySelectorAll("[data-export]").forEach((b) => {
-    b.onclick = () => lancerExportCompta(Number(b.dataset.export));
-  });
-  cible.querySelectorAll("[data-cloturer]").forEach((b) => {
-    b.onclick = () => boiteCloture(Number(b.dataset.cloturer));
-  });
-  cible.querySelectorAll("[data-rouvrir]").forEach((b) => {
-    b.onclick = async () => {
-      try {
-        const x = await api("cloture", { annee: Number(b.dataset.rouvrir), rouvrir: true });
-        dire(x.phrase);
-        await dessinerExercices();
-      } catch (e) { dire(e.message, "erreur"); }
-    };
+      ${x.actions.map((a, k) => `<button class="secondaire" data-action="${k}">${echapper(a.libelle)}</button>`).join("")}
+      ${boutonsRanges(x.gestes)}
+    </div>`).join("") + `<p class="note"><button class="lien" id="ouvrir-exercices">${echapper(r.dossier_dit)}</button></p>`;
+  cible.querySelectorAll("[data-exercice]").forEach((rang) => {
+    const x = r.exercices[+rang.dataset.exercice];
+    rang.querySelectorAll("[data-action]").forEach((b) => {
+      b.onclick = () => ouvrirGeste(x.actions[+b.dataset.action]);
+    });
+    brancherLesGestes(rang, x.gestes, { titre: String(x.annee) }, dessinerExercices);
   });
   const o = document.getElementById("ouvrir-exercices");
   if (o) o.onclick = async () => {
