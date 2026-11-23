@@ -9,9 +9,25 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::PageLoadEvent;
+use tauri::{Listener, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 static APPLICATION: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+/// Ce que la page annonce quand elle tient la fermeture : elle pose la question d'une saisie non enregistree
+/// (`fenetrePuppetPaie.tenirLaFermeture`, `cadre.js`), et l'annonce de nouveau quand on a choisi de rester.
+const FERMETURE_TENUE: &str = "puppetpaie-fermeture-tenue";
+
+/// Une fermeture demandee par le systeme (Alt+F4, la barre des taches), au regard de la page.
+#[derive(Clone, Copy)]
+enum Fermeture {
+    /// La page n'a rien annonce (accueil, erreur, page qui se charge) : la fenetre se ferme.
+    Libre,
+    /// La page tient la fermeture : la demande lui est remise, et la fenetre reste.
+    Tenue,
+    /// La demande a ete remise, et la page n'a pas encore dit qu'on restait : la demande suivante ferme.
+    Remise,
+}
 
 /// La barre de titre que la page n'a pas : pose dans chaque page de la fenetre, avant ses scripts.
 /// Ce qu'il peut demander a la fenetre est borne par `capabilities/fenetre.json`.
@@ -141,7 +157,14 @@ fn main() -> std::process::ExitCode {
                 }
             };
             let (largeur, hauteur) = taille_d_ouverture(ecran);
-            WebviewWindowBuilder::new(app, "principale", WebviewUrl::External(url))
+            // FERMER PAR LE SYSTEME POSE LA MEME QUESTION QUE LE BOUTON. Une page qui tient la fermeture l'annonce
+            // (`FERMETURE_TENUE`) ; chaque page qui se charge repart sans rien tenir. Une demande du systeme est remise
+            // a la page qui la tient (`fenetrePuppetPaie.fermer()`, le chemin du bouton), et la fenetre reste : c'est
+            // la page qui la ferme, ou qui annonce de nouveau qu'elle la tient si l'on reste. Une page qui ne l'a pas
+            // annoncee, ou qui n'a pas repondu a la demande d'avant, ne retient pas la fenetre.
+            let fermeture = Arc::new(Mutex::new(Fermeture::Libre));
+            let au_chargement = fermeture.clone();
+            let w = WebviewWindowBuilder::new(app, "principale", WebviewUrl::External(url))
                 .title("PuppetPaie")
                 .decorations(false)
                 .inner_size(largeur.into(), hauteur.into())
@@ -149,7 +172,29 @@ fn main() -> std::process::ExitCode {
                 .center()
                 .initialization_script(CADRE)
                 .data_directory(profil)
+                .on_page_load(move |_, chargement| {
+                    if let PageLoadEvent::Started = chargement.event() {
+                        *au_chargement.lock().unwrap() = Fermeture::Libre;
+                    }
+                })
                 .build()?;
+            let tenue = fermeture.clone();
+            w.listen(FERMETURE_TENUE, move |_| *tenue.lock().unwrap() = Fermeture::Tenue);
+            let page = w.clone();
+            w.on_window_event(move |evenement| {
+                let WindowEvent::CloseRequested { api, .. } = evenement else { return };
+                let mut etat = fermeture.lock().unwrap();
+                match *etat {
+                    Fermeture::Libre | Fermeture::Remise => {}
+                    Fermeture::Tenue => match page.eval("window.fenetrePuppetPaie && window.fenetrePuppetPaie.fermer()") {
+                        Ok(()) => {
+                            api.prevent_close();
+                            *etat = Fermeture::Remise;
+                        }
+                        Err(e) => eprintln!("La demande de fermeture ne parvient pas a la page ({}) : la fenetre se ferme.", e),
+                    },
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!());

@@ -119,7 +119,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Signaler),
+        ecran: Ecran::Auto(Place::Signaler, Affiche::new("Voir ce qui est parti")),
     },
     Fiche {
         route: Route::DiagnosticEnvoyer,
@@ -131,7 +131,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Signaler),
+        ecran: Ecran::Auto(Place::Signaler, Affiche::new("Envoyer maintenant ce qui attend")),
     },
     Fiche {
         route: Route::DiagnosticRegler,
@@ -143,7 +143,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Signaler),
+        ecran: Ecran::Auto(Place::Signaler, Affiche::new("Régler l'envoi des incidents")),
     },
     Fiche {
         route: Route::IncidentsLire,

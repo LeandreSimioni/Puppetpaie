@@ -428,6 +428,9 @@ pub enum Forme {
     /// UN FICHIER QUE LA PERSONNE CHOISIT SUR SON POSTE, d'un des types de media que la fiche admet (`image/png`…) : la
     /// charge porte ses octets en base64 (une adresse data: aussi), ce que la ligne de commande donne pour le meme geste.
     Fichier(&'static [&'static str]),
+    /// UN MOT DE PASSE QU'UN HUMAIN TAPE : la case le masque, et ni la page ni le journal de ses gestes ne le gardent ; il
+    /// part dans la charge, ce que la ligne de commande ne donne jamais (le moteur le demande lui-meme a un humain).
+    MotDePasse,
 }
 
 /// UNE PARTIE D'UNE VALEUR FAITE DE PARTIES (`Forme::Parties`) : sa cle dans la valeur, son libelle, sa forme, et si elle
@@ -536,6 +539,7 @@ impl Forme {
             Forme::Rangees => "rangees",
             Forme::Html => "html",
             Forme::Fichier(_) => "fichier",
+            Forme::MotDePasse => "mot_de_passe",
         }
     }
 
@@ -543,7 +547,7 @@ impl Forme {
     fn choix(self) -> R<Option<Vec<ChoixEcrit>>> {
         match self {
             Forme::Choix(c) => Ok(Some(c.ecrites()?)),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) => Ok(None),
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
         }
     }
 
@@ -551,7 +555,7 @@ impl Forme {
     fn admis(self) -> Option<&'static [&'static str]> {
         match self {
             Forme::Fichier(a) => Some(a),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
         }
     }
 
