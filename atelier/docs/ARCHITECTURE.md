@@ -2985,7 +2985,9 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   l'effectif d'une année d'avant (Léandre, 23/11/2026, « B ») : tant que la compagnie ne l'a pas dit, la comparaison
   prend celui que « Pour démarrer » propose d'après les paies reprises (`EffectifRepris`), en mémoire et sans rien
   écrire (`Contexte::avec_les_effectifs_proposes` ; ce que la compagnie a écrit l'emporte), et le dit
-  (`Comparaison::effectif_propose`) ; une année qui ne se propose pas reste non comparée. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
+  (`Comparaison::effectif_propose`) ; une paie ainsi comparée n'entre pas au registre pour de bon : elle se compare de
+  nouveau tant que la compagnie n'a pas écrit l'effectif, et ses rapports déjà notés ne se notent pas deux fois (le
+  registre des rapports notés) ; une année qui ne se propose pas reste non comparée. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
   (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), son motif de recours (celui que sa DSN
   déclare, S21.G00.40.021 : `Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa
   carte, d'un mois que le contrat et la paie couvrent entier (`ecarts::contrat_au_mois`, `salaire_et_heures`). Le

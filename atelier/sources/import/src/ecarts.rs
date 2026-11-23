@@ -276,8 +276,13 @@ pub fn rapports(ctx: &Contexte) -> R<Revue> {
     let importes = engagement::importe::tous(&ctx.racine)?;
     let deja = comparees(&ctx.racine)?;
     let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
-    let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
-    let connus = comparaisons.iter().filter(|c| !c.a_refaire).flat_map(|c| c.connus.iter().cloned()).collect();
+    // UNE PAIE COMPAREE AVEC CE QUI N'EST QUE PROPOSE (l'effectif d'une annee que la compagnie n'a pas dit :
+    // `Comparaison::effectif_propose`) n'entre pas au registre pour de bon : elle se compare de nouveau tant que la
+    // compagnie n'a pas ecrit sa valeur, et ses rapports deja notes ne se notent pas deux fois (leur registre). Ses ecarts
+    // connus se gardent avec sa comparaison definitive.
+    let pour_de_bon = |c: &&Comparaison| !c.a_refaire && c.effectif_propose.is_empty();
+    let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(pour_de_bon).map(|c| c.empreinte.clone()).collect();
+    let connus = comparaisons.iter().filter(pour_de_bon).flat_map(|c| c.connus.iter().cloned()).collect();
     Ok(Revue { rapports: rapports_de(ctx, &comparaisons)?, faites, connus })
 }
 
