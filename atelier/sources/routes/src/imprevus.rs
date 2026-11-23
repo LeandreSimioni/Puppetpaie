@@ -85,7 +85,7 @@ const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 pub const ROUTES: &[Fiche] = &[
     fiche(Route::Imprevus, "Lire les imprévus d'un mois ou d'un salarié, et ce qu'on peut en saisir.",
         &ChargeImprevus::CHARGE,
-        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures, porte (ce qui s'ouvre pour un salarié : chaque choix, la route qui l'enregistre en code, son libellé et ce qu'il couvre) ; pour un mois, dus et dus_titre : ce qui est dû de ses arrêts, le plus pressé d'abord (rang), chaque obligation avec qui et ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
+        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures, porte (ce qui s'ouvre pour un salarié : chaque choix, la route qui l'enregistre en code, son libellé et ce qu'il couvre) et porte_dit ; pour un salarié, le plus récent d'abord, sous titre ; pour un mois, chaque imprévu ne dit que les jours payés de ce mois (cachets) ; pour un mois, dus et dus_titre : ce qui est dû de ses arrêts, le plus pressé d'abord (rang), chaque obligation avec qui et ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
     fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &SansCharge::CHARGE, "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
     fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &ChargeMois::CHARGE,
         r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où) ; dus et dus_titre : celles qui sont dues, dans leur rang (rang), une fin due avec ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
@@ -95,7 +95,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche { phrase: 400, ..fiche(Route::ArretEnregistrer, "Enregistrer un arrêt de travail.",
         &ChargeArretEnregistrer::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","debut":"2026-11-30","fin":"2026-11-30","motif":"01"}"#,
-        "arret (l'arrêt résumé), phrase", Acte::Ecrit, ECRAN) },
+        "arret (l'arrêt résumé), phrase ; appelle_encore et plus_tard, quand il appelle encore quelque chose (le geste de ses indemnités, a_dire ; les jours payés pendant lui, cachets)", Acte::Ecrit, ECRAN) },
     Fiche { phrase: 700, ..fiche(Route::ArretProlonger, "Prolonger un arrêt : sa nouvelle fin.",
         &ChargeArretProlonger::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","fin":"2026-12-04"}"#,
@@ -113,7 +113,7 @@ pub const ROUTES: &[Fiche] = &[
         UN_ARRET, "arret (l'arrêt retiré, résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionEnregistrer, "Enregistrer une absence qui suspend un contrat.",
         &ChargeSuspensionEnregistrer::CHARGE,
-        r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27","motif":"501"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, AVANCE) },
+        r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27","motif":"501"}"#, "suspension (l'absence résumée), phrase ; appelle_encore et plus_tard, quand des jours sont payés pendant elle (cachets)", Acte::Ecrit, AVANCE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionModifier, "Changer la fin ou le motif d'une absence.",
         &ChargeSuspensionModifier::CHARGE,
         r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, GESTE_AVANCE) },
@@ -375,8 +375,17 @@ struct ReponseImprevus {
     motifs_reprise: Vec<CodeDuBloc60<MotifDeReprise>>,
     motifs_suspension: Vec<MotifSuspension>,
     porte: Vec<crate::ouverture::Choix>,
+    /// Le mot du bouton qui ouvre la porte, dans le dossier d'un salarie.
+    porte_dit: &'static str,
+    /// Le titre des imprevus d'un salarie (son dossier), quand il en a.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    titre: Option<&'static str>,
     phrases: Vec<String>,
 }
+
+/// Le mot de la porte, et le titre des imprevus d'un salarie.
+const PORTE_DIT: &str = "Imprévu…";
+const SES_IMPREVUS: &str = "Ses imprévus";
 
 /// LA PORTE D'UN IMPREVU, sur la carte d'un engagement et dans le dossier d'un salarie : ce qui s'y ouvre, chaque choix
 /// par la route qui l'enregistre (son code), son libelle et ce qu'il couvre (`dit`).
@@ -488,18 +497,50 @@ struct ReponseContrats {
     contrats: Vec<ContratAuJour>,
 }
 
-/// Ce que rend un geste sur un arret : l'arret resume, et ce qui se lit du geste.
+/// Ce que rend un geste sur un arret : l'arret resume, et ce qui se lit du geste ; un arret qu'on vient d'enregistrer, ce
+/// qu'il appelle encore (`EncoreAppele`).
 #[derive(Debug, Serialize)]
 struct ReponseArret {
     arret: Resume,
     phrase: Phrase,
+    #[serde(flatten)]
+    encore: EncoreAppele,
 }
 
-/// Ce que rend un geste sur une absence.
+/// Ce que rend un geste sur une absence ; une absence qu'on vient d'enregistrer, ce qu'elle appelle encore.
 #[derive(Debug, Serialize)]
 struct ReponseSuspension {
     suspension: Resume,
     phrase: Phrase,
+    #[serde(flatten)]
+    encore: EncoreAppele,
+}
+
+/// CE QU'UN IMPREVU QU'ON VIENT D'ENREGISTRER APPELLE ENCORE, quand il appelle quelque chose (le geste de ses indemnites
+/// journalieres, `a_dire` ; les jours que la saisie paie pendant lui, `cachets`) : le titre de la page qui le dit
+/// (`appelle_encore`) et le mot qui la laisse pour plus tard (`plus_tard`) ; rien n'est obligatoire. Rien d'appele :
+/// aucun des deux, et rien ne suit.
+#[derive(Debug, Default, Serialize)]
+struct EncoreAppele {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    appelle_encore: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plus_tard: Option<&'static str>,
+}
+
+impl EncoreAppele {
+    /// Ce que l'imprevu `r`, qu'on vient d'enregistrer, appelle encore.
+    fn de(r: &Resume) -> EncoreAppele {
+        let appelle = match r {
+            Resume::Arret(a) => a.a_dire.is_some() || !a.cachets.is_empty(),
+            Resume::Suspension(s) => !s.cachets.is_empty(),
+        };
+        if appelle {
+            EncoreAppele { appelle_encore: Some("Ce qu'il appelle encore"), plus_tard: Some("Plus tard") }
+        } else {
+            EncoreAppele::default()
+        }
+    }
 }
 
 /// `arret-signaler` : le fichier ecrit, et son depot (`suite`).
@@ -578,6 +619,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let c: ChargeArretEnregistrer = charge.lire()?;
             let mut r = arret_enregistrer(ctx, &c)?;
             regulariser(ctx, &c.salarie, &mut r.phrase)?;
+            r.encore = EncoreAppele::de(&r.arret);
             en_json(r)
         }
         Route::ArretReprise => {
@@ -609,6 +651,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let c: ChargeSuspensionEnregistrer = charge.lire()?;
             let mut r = suspension_enregistrer(ctx, &c)?;
             regulariser(ctx, &c.salarie, &mut r.phrase)?;
+            r.encore = EncoreAppele::de(&r.suspension);
             en_json(r)
         }
         Route::SuspensionModifier => {
@@ -1375,6 +1418,23 @@ impl Resume {
         Ok(())
     }
 
+    /// Les jours payes pendant l'imprevu qui sont de `mois`, eux seuls : ceux que la carte de ce mois retire.
+    fn garder_les_cachets_de(&mut self, mois: Mois) {
+        let cachets = match self {
+            Resume::Arret(a) => &mut a.cachets,
+            Resume::Suspension(s) => &mut s.cachets,
+        };
+        cachets.retain(|c| c.lu.mois == mois);
+    }
+
+    /// Son premier jour.
+    fn premier_jour(&self) -> Jour {
+        match self {
+            Resume::Arret(a) => a.premier_jour,
+            Resume::Suspension(s) => s.premier_jour,
+        }
+    }
+
     /// L'imprevu en lignes, tel que `imprevus` le dit : qui, quel contrat, quoi, quand, ou en est son signalement, puis
     /// chacune de ses obligations.
     fn en_lignes(&self) -> Vec<String> {
@@ -1535,8 +1595,20 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
             r.poser_obligations(crate::obligations::de_l_arret(ctx, a, &suivi, ctx.aujourdhui)?);
         }
         r.dire_ce_qui_est_parti()?;
+        // Les imprevus d'un mois disent les jours payes de ce mois (la carte les retire un par un).
+        if let Some(mois) = c.mois {
+            r.garder_les_cachets_de(mois);
+        }
         out.push(r);
     }
+    // LES IMPREVUS D'UN SALARIE, son dossier : le plus recent d'abord, sous leur titre.
+    let titre = match &c.salarie {
+        Some(_) => {
+            out.sort_by(|x, y| y.premier_jour().cmp(&x.premier_jour()));
+            (!out.is_empty()).then_some(SES_IMPREVUS)
+        }
+        None => None,
+    };
     // CE QUI EST DU DES ARRETS DU MOIS, le plus presse d'abord (`Obligation::rang`), chaque obligation avec ses gestes.
     let mut dus = Vec::new();
     if c.mois.is_some() {
@@ -1560,6 +1632,8 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
         motifs_reprise: n.motifs_reprise.saisissables(),
         motifs_suspension: motifs_de_suspension()?,
         porte: porte(),
+        porte_dit: PORTE_DIT,
+        titre,
     })
 }
 
@@ -1890,12 +1964,12 @@ pub(crate) fn dernier_jour_saisi(ctx: &Contexte, salarie: &IdSalarie, declare: J
 /// `{"arret": resume, "phrase"}` : l'arret tel que la page le lit (`resume`, avec les cachets qui tombent dedans), et ce
 /// qui se lit du geste.
 fn reponse_arret(ctx: &Contexte, arret: &ArretSaisi, phrase: Phrase) -> R<ReponseArret> {
-    Ok(ReponseArret { arret: resume(ctx, &nomenclatures()?, &Imprevu::Arret(arret.clone()))?, phrase })
+    Ok(ReponseArret { arret: resume(ctx, &nomenclatures()?, &Imprevu::Arret(arret.clone()))?, phrase, encore: EncoreAppele::default() })
 }
 
 /// `{"suspension": resume, "phrase"}`.
 fn reponse_suspension(ctx: &Contexte, s: &SuspensionSaisie, phrase: Phrase) -> R<ReponseSuspension> {
-    Ok(ReponseSuspension { suspension: resume(ctx, &nomenclatures()?, &Imprevu::Suspension(s.clone()))?, phrase })
+    Ok(ReponseSuspension { suspension: resume(ctx, &nomenclatures()?, &Imprevu::Suspension(s.clone()))?, phrase, encore: EncoreAppele::default() })
 }
 
 /// `arret-enregistrer`. Les controles de la norme sont ceux du signalement (`signalement::verifier`, nature 04), avant

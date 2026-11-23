@@ -308,7 +308,8 @@ function peindreImprevusDeLaCarte(div, liste) {
   if (!liste.length) { cible.innerHTML = ""; return; }
   const validee = div.classList.contains("validee");
   cible.innerHTML = liste.map((i, k) => {
-    const jours = i.cachets.filter((c) => c.mois === MOIS_AFFICHE);
+    // Les jours payés de ce mois : la route ne rend qu'eux (`imprevus`, un mois).
+    const jours = i.cachets;
     return `<div class="imprevu" data-imprevu="${k}">
         <span class="imprevu-quoi"><b>${echapper(i.quoi)}</b>
           <span class="discret">${echapper(i.periode)}</span></span>
@@ -522,7 +523,7 @@ async function boiteArret(ou) {
     let r;
     try { r = await api("arret-enregistrer", charge); }
     catch (e) { dire(e.message, "erreur"); return; }
-    await etapeSuite(r.arret, p, r.phrase);
+    await etapeSuite(r, r.arret, p);
   };
 }
 
@@ -571,7 +572,7 @@ async function boiteAbsence(ou) {
     let r;
     try { r = await api("suspension-enregistrer", charge); }
     catch (e) { dire(e.message, "erreur"); return; }
-    await etapeSuite(r.suspension, p, r.phrase);
+    await etapeSuite(r, r.suspension, p);
   };
 }
 
@@ -579,24 +580,25 @@ async function boiteAbsence(ou) {
    Le moteur le dit sur l'imprévu qu'il vient d'écrire : ce qu'un arrêt
    appelle encore (`a_dire` : le geste de ses indemnités journalières, quand
    il ouvre le maintien de salaire), et les jours que la saisie paie pendant
-   l'imprévu (`cachets`). Rien de tout ça : la boîte se ferme. Sinon, une
-   seconde page, où rien n'est obligatoire — les indemnités se connaissent au
-   relevé de la caisse, et se reprennent sous la carte. */
+   l'imprévu (`cachets`) ; la réponse dit s'il appelle encore quelque chose
+   (`appelle_encore`). Rien : la boîte se ferme. Sinon, une seconde page, où
+   rien n'est obligatoire — les indemnités se connaissent au relevé de la
+   caisse, et se reprennent sous la carte. */
 
-async function etapeSuite(i, p, phrase) {
+async function etapeSuite(r, i, p) {
   const jours = i.cachets;
   const g = i.a_dire;
-  if (!g && !jours.length) {
+  if (!r.appelle_encore) {
     fermerBoite();
-    dire(phrase);
+    dire(r.phrase);
     await p.apres();
     return;
   }
   const div = p.carte ? p.carte.div : null;
   const ici = (c) => div && c.mois === MOIS_AFFICHE && !div.classList.contains("validee");
   ouvrirBoite(`
-    <p>${echapper(phrase)}</p>
-    <h3>Ce qu'il appelle encore</h3>
+    <p>${echapper(r.phrase)}</p>
+    <h3>${echapper(r.appelle_encore)}</h3>
     ${g ? `<div id="su-geste">${casesDuGeste(g)}</div>` : ""}
     ${jours.length ? `<div class="champ-boite">${aideDe("jours_payes")}
       <div class="liste-jours">${jours.map((c, k) => c.jours.map((j) => ici(c)
@@ -606,7 +608,7 @@ async function etapeSuite(i, p, phrase) {
       </div>
       ${jours.some((c) => !ici(c) && c.mois === MOIS_AFFICHE) ? `<p class="discret">${aideDe("imprevu_valide")}</p>` : ""}</div>` : ""}
     <div class="actions">
-      <button class="secondaire" id="su-plus-tard">Plus tard</button>
+      <button class="secondaire" id="su-plus-tard">${echapper(r.plus_tard)}</button>
       <button class="primaire" id="su-ok">Enregistrer</button>
     </div>`);
   const finir = async () => { fermerBoite(); await p.apres(); };
@@ -638,12 +640,13 @@ async function dessinerImprevusDuSalarie(cle) {
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
   NOMENCLATURES_IMPREVUS = NOMENCLATURES_IMPREVUS || r;
   if (CLE_ACTIVE !== cle) return;      // une autre fiche s'est ouverte entre-temps
-  const liste = r.imprevus.slice().sort((x, y) => y.premier_jour.localeCompare(x.premier_jour));
+  // Le plus récent d'abord, sous leur titre : la route les rend ainsi (`imprevus`, un salarié).
+  const liste = r.imprevus;
   const apres = async () => { await dessinerImprevusDuSalarie(cle); if (MOIS_AFFICHE) await dessinerImprevus(MOIS_AFFICHE); };
   cible.innerHTML = `
     <div class="fiche-imprevus-tete">
-      ${liste.length ? `<h3>Ses imprévus</h3>` : ""}
-      <button type="button" class="lien" id="fiche-imprevu-porte">Imprévu…</button>
+      ${r.titre ? `<h3>${echapper(r.titre)}</h3>` : ""}
+      <button type="button" class="lien" id="fiche-imprevu-porte">${echapper(r.porte_dit)}</button>
     </div>
     ${liste.map((i, k) => `<div class="imprevu" data-imprevu="${k}">
         <span class="imprevu-quoi"><b>${echapper(i.quoi)}</b>
