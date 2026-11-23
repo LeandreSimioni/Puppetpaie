@@ -704,6 +704,22 @@ pub struct Repetition {
     pub phrase: socle::texte::Phrase,
 }
 
+impl Repetition {
+    /// LE TEST QUI OUVRE LE REEL : la ligne du test revenu conforme de ce contenu, ou rien. Le depot reel l'exige, et
+    /// l'apercu du depot n'offre le reel que sur elle : une seule regle.
+    pub fn test_conforme(&self) -> Option<&Ligne> {
+        match (self.etat, &self.conforme) {
+            (EtatDuTest::Testee, Some(l)) => Some(l),
+            _ => None,
+        }
+    }
+
+    /// Le reel peut-il partir sur ce test ?
+    pub fn ouvre_le_reel(&self) -> bool {
+        self.test_conforme().is_some()
+    }
+}
+
 /// OU EN EST LE TEST, dit une fois : teste et conforme (le reel peut partir), en test (son compte rendu est attendu),
 /// refuse (ses anomalies : `motif`), ou a faire (jamais essaye, ou un test d'un contenu d'avant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

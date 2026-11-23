@@ -714,7 +714,12 @@ async function faireLeGeste(g, entete, apres, bouton) {
     // Un acte en cours se voit : le bouton dit son geste suivi de « … » le temps de la réponse.
     const rallumer = occupe(boite ? document.getElementById("geste-ok") : bouton, `${g.libelle.replace(/…$/, "")}…`);
     let r;
-    try { r = await api(g.route, motdepasse ? { ...charge, motdepasse } : charge); } catch (e) { rallumer(); dire(e.message, "erreur"); return; }
+    try { r = await api(g.route, motdepasse ? { ...charge, motdepasse } : charge); } catch (e) {
+      rallumer();
+      // Un refus que l'écran sait reprendre (`entete.refus` rend vrai) ne se dit pas deux fois.
+      if (!(entete.refus && entete.refus(e, g))) dire(e.message, "erreur");
+      return;
+    }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
     await apres(r);

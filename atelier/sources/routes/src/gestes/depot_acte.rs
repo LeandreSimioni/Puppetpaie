@@ -95,7 +95,7 @@ fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement:
     // general dans les dix minutes » (la reponse du point de depot). Pour une DPAE, le bilan 11 ou le certificat 41 :
     // celui d'un test revient bel et bien (constate sur des DPAE de test : le certificat 41 les dit enregistrees,
     // code 99).
-    if let (etats::EtatDuTest::Testee, Some(l)) = (etat.etat, &etat.conforme) {
+    if let Some(l) = etat.test_conforme() {
         return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu, contournement: None });
     }
     let raison = contournement.trim();

@@ -58,7 +58,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Écrire ou reprendre la DSN ou la DPAE du mois ; dire ce qu'elle déclare.",
         charge: &Designation::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
-        rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel) ; les dépôts ouverts maintenant, chacun un geste de deposer (route, charge, libellé, cases, phrases, demande du mot de passe) : principal (le test, ou le réel une fois le test conforme, ou son renvoi quand la DSN du mois est déjà partie), autres, sans_test (le réel sans test, avec son motif), et reel_ferme (pourquoi le réel n'est pas ouvert)",
+        rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel) ; les dépôts ouverts maintenant, chacun un geste de deposer (route, charge, libellé, cases, phrases, demande du mot de passe) : principal (le test, ou le réel une fois le test conforme), autres, sans_test (le réel sans test, avec son motif), et reel_ferme (pourquoi le réel n'est pas ouvert)",
         refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -246,21 +246,17 @@ pub(crate) type GesteDuDepot = crate::imprevus::GesteDeRoute<ChargeDeposer>;
 // Les libelles des depots, en constantes : un texte fautif ne compile pas (`Affiche::new`).
 const ENVOYER_LE_TEST: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer le test");
 const ENVOYER_LE_REEL: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer le réel");
-const RENVOYER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Renvoyer quand même");
 const SANS_TEST: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer sans test");
 
 /// LES DEPOTS OUVERTS MAINTENANT pour la declaration `d`, dans l'ordre de la boite : le principal, les autres, le reel
 /// sans test, et pourquoi le reel n'est pas ouvert quand il ne l'est pas. Le test s'ouvre toujours ; le reel, pour un
 /// fichier code reel (`mode`), quand le test de ce contenu est revenu conforme (`testee`) -- c'est ce que `deposer`
 /// exige avant tout depot reel (`depot_acte::exiger_repetition`) -- et il devient le principal ; avant, le reel part sans
-/// test avec un motif ecrit. `deja_partie` : ce que dit la DSN mensuelle reelle deja partie pour ce mois, que ce fichier
-/// ne remplace pas : le reel est alors son renvoi (`forcer`, que `deposer` demande devant `DsnDejaDeposee`). `demande` :
-/// le mot de passe du logiciel que le reel exige.
+/// test avec un motif ecrit. `demande` : le mot de passe du logiciel que le reel exige.
 fn depots_ouverts(
     d: &Designation,
     mode: Option<Mode>,
     testee: bool,
-    deja_partie: Option<String>,
     demande: &compagnie::demande::DemandeDuMotDePasse,
 ) -> (GesteDuDepot, Vec<GesteDuDepot>, Option<GesteDuDepot>, Option<Phrase>) {
     let test = GesteDuDepot::sans_cases(Route::Deposer, ChargeDeposer::du_mode(d.clone(), Mode::Test), ENVOYER_LE_TEST);
@@ -284,13 +280,9 @@ fn depots_ouverts(
         .exigeant(Some(demande.clone()));
         return (test, Vec::new(), Some(sans_test), Some(Phrase::fixe("Le réel s'ouvre quand le test de ce contenu revient conforme.")));
     }
-    let principal = match deja_partie {
-        Some(dit) => GesteDuDepot::sans_cases(Route::Deposer, ChargeDeposer { forcer: Some(true), ..reel }, RENVOYER).disant(vec![
-            dit,
-            "La plate-forme n'accepte pas une seconde DSN normale pour le même mois (cahier technique DSN §1.4.3.2). Pour corriger, refaites la DSN du mois : elle sortira en annule-et-remplace.".to_string(),
-        ]),
-        None => GesteDuDepot::sans_cases(Route::Deposer, reel, ENVOYER_LE_REEL),
-    };
+    // Une DSN reelle deja partie pour ce mois : c'est `deposer` qui le refuse (`DsnDejaDeposee`), a lui seul ; le renvoi
+    // ne s'offre jamais d'avance.
+    let principal = GesteDuDepot::sans_cases(Route::Deposer, reel, ENVOYER_LE_REEL);
     (principal.exigeant(Some(demande.clone())), vec![test], None, None)
 }
 
@@ -1249,23 +1241,8 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
                 None => socle::phrase!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
             };
             let demande = crate::coffre::demande(&ctx.racine, &geste_dsn(a.nature_declaration, a.mois, a.evenement))?;
-            // La DSN mensuelle reelle deja partie pour ce mois, que ce fichier ne remplace pas : `deposer` ne la renvoie
-            // que forcee (`DsnDejaDeposee`) ; un signalement n'est pas concerne.
-            let remplace = a.type_declaration.is_some_and(droit::type_declaration::TypeDeLaDeclaration::remplace);
-            let deja_partie = if a.signalement || remplace {
-                None
-            } else {
-                let e = compagnie::etat_dsn::du_mois(ctx, a.mois, d.nic())?;
-                e.partie().then(|| {
-                    format!(
-                        "Une DSN réelle est déjà partie pour {}{}.",
-                        a.mois.libelle(Graphie::Accentuee),
-                        e.phrase.iter().map(|p| format!(" : {}", p)).collect::<String>()
-                    )
-                })
-            };
-            let testee = a.repetition.etat == etats::EtatDuTest::Testee;
-            let (principal, autres, sans_test, reel_ferme) = depots_ouverts(&d, a.mode, testee, deja_partie, &demande);
+            let testee = a.repetition.ouvre_le_reel();
+            let (principal, autres, sans_test, reel_ferme) = depots_ouverts(&d, a.mode, testee, &demande);
             DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, principal, autres, sans_test, reel_ferme, apercu: a })
         }
         Quoi::Dpae => {
@@ -1278,8 +1255,8 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
                 (None, None) => socle::phrase!("DPAE : {}.", embauches),
             };
             let demande = crate::coffre::demande(&ctx.racine, &geste_dpae(a.mois))?;
-            let testee = a.repetition.etat == etats::EtatDuTest::Testee;
-            let (principal, autres, sans_test, reel_ferme) = depots_ouverts(&d, a.mode, testee, None, &demande);
+            let testee = a.repetition.ouvre_le_reel();
+            let (principal, autres, sans_test, reel_ferme) = depots_ouverts(&d, a.mode, testee, &demande);
             DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, principal, autres, sans_test, reel_ferme, apercu: a })
         }
     };

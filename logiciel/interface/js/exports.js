@@ -521,7 +521,8 @@ async function boiteCloture(action) {
   try { r = await api("exercices"); } catch (e) { dire(e.message, "erreur"); return; }
   const x = r.exercices.find((e) => String(e.annee) === String(action.charge.annee));
   const g = x && x.gestes.find((y) => y.route === action.route);
-  if (!g) return;
+  // L'année n'est plus à clore (close entre-temps) : ce que l'Historique en dit se dit ici.
+  if (!g) { dire(x ? `${x.annee} : ${x.infos_dit}` : r.phrase); return; }
   await faireLeGeste(g, { titre: String(x.annee) }, async () => {
     if (document.getElementById("exercices")) await dessinerExercices();
   });

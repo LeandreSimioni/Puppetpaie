@@ -293,7 +293,17 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
       </div>
       ${x.reel_ferme ? `<p class="discret">${echapper(x.reel_ferme)}</p>` : ""}
       ${x.sans_test ? `<p class="discret">${boutons((g) => g === x.sans_test, "lien")}</p>` : ""}`;
-    brancherLesGestes(el, gestes, { pardessus: true }, apresLeDepot);
+    brancherLesGestes(el, gestes, enteteDuDepot, apresLeDepot);
+  };
+  // Le refus d'un réel déjà parti pour ce mois ouvre son avertissement ; le renvoi, voulu, repart avec `forcer` (le
+  // mot de passe se redemande).
+  const enteteDuDepot = {
+    pardessus: true,
+    refus: (e, g) => {
+      if (!e.detail || e.detail.classe !== "DsnDejaDeposee") return false;
+      boiteRenvoiDsn(e.message, () => faireLeGeste({ ...g, charge: { ...g.charge, forcer: true } }, enteteDuDepot, apresLeDepot));
+      return true;
+    },
   };
   const apresLeDepot = async (r) => {
     if (r.mode === "test") {
@@ -354,10 +364,23 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
   // LE MOIS QU'ON VIENT DE FERMER PART EN TEST TOUT SEUL (l'action le dit, `tester`) :
   // « on produit la DSN de test complète et on attend le retour du test,
   // ensuite on propose d'envoyer la DSN réelle ». Un test n'engage rien.
-  else if (testerDabord && !(rep && rep.etat === "testee")) {
-    const principal = document.querySelector("#d-depots .actions .primaire[data-geste]");
-    if (principal) principal.click();
+  // Seul un test part ainsi : le principal que la route rend, quand c'en est un (jamais le réel).
+  else if (testerDabord && a.principal.charge.mode === "test") {
+    await faireLeGeste(a.principal, enteteDuDepot, apresLeDepot);
   }
+}
+
+/** UNE DSN RÉELLE DÉJÀ PARTIE POUR CE MOIS (le refus `DsnDejaDeposee` de `deposer`, sa phrase) : « on attend le retour,
+ *  et si vraiment on y tient, après un avertissement, on peut renvoyer ». Ne pas renvoyer est le choix par défaut. */
+function boiteRenvoiDsn(phrase, renvoyer) {
+  ouvrirBoite(`
+    <h3>DSN déjà partie</h3>
+    ${encart({ couleur: "orange", phrase })}
+    <div class="actions">
+      <button class="primaire" onclick="fermerBoite()">Ne pas renvoyer</button>
+      <button class="secondaire envoi" id="d-renvoyer">Renvoyer quand même</button>
+    </div>`);
+  document.getElementById("d-renvoyer").onclick = () => { fermerBoite(); renvoyer(); };
 }
 
 /** APRÈS LE DÉPÔT RÉEL, L'AVIS QUE LE MOTEUR REND (`avis` de `deposer`) : il le rend quand il y a quelque chose à dire
