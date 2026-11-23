@@ -15,7 +15,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use droit::contexte::{Contexte, IdSpectacle};
+use droit::contexte::Contexte;
 use droit::fiche::NumeroObjetSpectacle;
 use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
@@ -148,13 +148,11 @@ fn nom_du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> Option<St
     ctx.salaries.get(cle).and_then(|s| s.nomme())
 }
 
-/// La fiche du spectacle de ce numero d'objet : `(cle, titre)` ; le titre est vide quand la fiche ne le dit pas, ou
-/// qu'il est « A COMPLETER ».
-fn spectacle_de(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<(IdSpectacle, Option<String>)> {
-    ctx.spectacles.iter().find(|(_, s)| s.numero_objet.dite().is_some_and(|n| n.meme(numero))).map(|(k, s)| {
-        let t = s.titre.portee().map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string);
-        (k.clone(), t)
-    })
+/// Le titre de la fiche du spectacle de ce numero d'objet (`engagement::importe::spectacle_du_numero`) ; vide quand la
+/// fiche ne le dit pas, ou qu'il est « A COMPLETER ».
+fn titre_du_spectacle(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<String> {
+    let cle = engagement::importe::spectacle_du_numero(ctx, numero)?;
+    ctx.spectacles.get(&cle)?.titre.portee().map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string)
 }
 
 /// LA PERIODE D'UN CONTRAT IMPORTE DANS `mois`, en clair, quand le bulletin ne dit pas ses jours : « 20–27 » pour un
@@ -362,13 +360,9 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let atteste = contrat.and_then(|x| x.periode);
     let debut = p.and_then(|p| p.periode).map(|o| o.debut()).or_else(|| atteste.map(|o| o.debut()));
     let fin = p.and_then(|p| p.periode).and_then(|o| o.fin()).or_else(|| atteste.and_then(|o| o.fin()));
-    let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone()));
-    let spectacle = numero.as_ref().and_then(|n| spectacle_de(ctx, n));
+    let numero = engagement::importe::numero_objet_de(p, c).cloned();
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
-    let titre = match &spectacle {
-        Some((_, Some(t))) => Some(t.clone()),
-        _ => titre_bulletin,
-    };
+    let titre = numero.as_ref().and_then(|n| titre_du_spectacle(ctx, n)).or(titre_bulletin);
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
     let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).into_iter().flatten().collect();
     // L'activite du mois que les pieces disent (`engagement::importe::activite_du_mois`) ; quand elles n'en disent rien

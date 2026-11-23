@@ -651,17 +651,14 @@ impl Importe {
         &self.pieces().paies
     }
 
-    /// LE NUMERO D'OBJET DE LA PAIE `p` : celui que sa piece imprime, ou celui que son contrat atteste. C'est lui qui
-    /// designe le spectacle (regle 6) ; le titre n'en est que le nom.
+    /// Le numero d'objet de la paie `p` (`numero_objet_de`).
     pub fn numero_objet_de<'a>(&'a self, p: &'a PaieVersee) -> Option<&'a NumeroObjetSpectacle> {
-        p.numero_objet.as_ref().or_else(|| self.contrat().and_then(|c| c.numero_objet.as_ref()))
+        numero_objet_de(Some(p), self.contrat())
     }
 
-    /// LE SPECTACLE DE LA PAIE `p` : celui dont la fiche porte son numero d'objet (`numero_objet_de`). L'import cree la
-    /// fiche depuis ce numero, et le titre qu'il a lu n'y est que propose : c'est le numero qui la retrouve.
+    /// Le spectacle de la paie `p` (`spectacle_du_numero`, sur `numero_objet_de`).
     pub fn spectacle_de(&self, ctx: &Contexte, p: &PaieVersee) -> Option<droit::contexte::IdSpectacle> {
-        let objet = self.numero_objet_de(p)?;
-        ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|n| n.meme(objet))).map(|(k, _)| k.clone())
+        spectacle_du_numero(ctx, self.numero_objet_de(p)?)
     }
 
     /// LE CONTRAT D'UN PERMANENT S'ATTESTE MOIS PAR MOIS (`permanent`), comme ses bulletins l'ont atteste, et celui que
@@ -1169,6 +1166,18 @@ pub fn tous(racine: &Path) -> R<Vec<Importe>> {
 /// Les engagements importes qui touchent `mois`.
 pub fn du_mois(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
     Ok(tous(racine)?.into_iter().filter(|i| i.mois().contains(&mois)).collect())
+}
+
+/// LE NUMERO D'OBJET D'UNE PAIE IMPORTEE `p` : celui que sa piece imprime, ou celui que son contrat atteste (`contrat`) ;
+/// d'un contrat atteste seul, le sien. C'est lui qui designe le spectacle (regle 6) ; le titre n'en est que le nom.
+pub fn numero_objet_de<'a>(p: Option<&'a PaieVersee>, contrat: Option<&'a ContratAtteste>) -> Option<&'a NumeroObjetSpectacle> {
+    p.and_then(|p| p.numero_objet.as_ref()).or_else(|| contrat.and_then(|c| c.numero_objet.as_ref()))
+}
+
+/// LE SPECTACLE DE CE NUMERO D'OBJET : celui dont la fiche le porte (`NumeroObjetSpectacle::meme`). L'import cree la
+/// fiche depuis ce numero, et le titre qu'il a lu n'y est que propose : c'est le numero qui la retrouve.
+pub fn spectacle_du_numero(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<droit::contexte::IdSpectacle> {
+    ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|n| n.meme(numero))).map(|(k, _)| k.clone())
 }
 
 /// Les contrats attestes de tous les engagements importes (`Importe::contrat_lu`).
