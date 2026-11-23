@@ -21,7 +21,7 @@ use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, Lig
 use envois::etats;
 use socle::date::{Jour, Periode};
 use socle::echec::R;
-use socle::ecran::EtatDEcran;
+use socle::ecran::{ColonneRendue, EtatDEcran, RangeeRendue, SorteDeRangee};
 use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::Cachets;
@@ -325,15 +325,8 @@ struct CaseLue {
 /// ce que le bulletin n'imprime pas).
 #[derive(Debug, Clone, Serialize)]
 struct LignesDeLaCarte {
-    colonnes: [ColonneDesLignes; 4],
-    rangees: Vec<[String; 4]>,
-}
-
-/// Une colonne des lignes du bulletin.
-#[derive(Debug, Clone, Serialize)]
-struct ColonneDesLignes {
-    libelle: &'static str,
-    nombre: bool,
+    colonnes: Vec<ColonneRendue>,
+    rangees: Vec<RangeeRendue>,
 }
 
 /// Ce que dit une carte dont la periode est lue sans ses jours, au survol de « quand ».
@@ -621,21 +614,21 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     }
 
     // LES LIGNES DU BULLETIN : ce que chacune paie, telle qu'une phrase le dit, et son montant.
-    let lignes: Vec<[String; 4]> = p
+    let lignes: Vec<RangeeRendue> = p
         .iter()
         .flat_map(|p| p.lignes.iter())
-        .map(|l: &LigneImprimee| {
-            [
+        .map(|l: &LigneImprimee| RangeeRendue {
+            sorte: SorteDeRangee::Ligne,
+            cellules: vec![
                 l.libelle.clone(),
                 ou_vide(l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite)),
                 ou_vide(l.paiement.map(|x| x.taux().dit())),
                 ou_vide(l.montant.map(socle::texte::euros)),
-            ]
+            ],
         })
         .collect();
-    let colonne = |libelle, nombre| ColonneDesLignes { libelle, nombre };
     let lignes = (!lignes.is_empty()).then(|| LignesDeLaCarte {
-        colonnes: [colonne("Ligne du bulletin", false), colonne("Quantité", true), colonne("Taux", true), colonne("Montant", true)],
+        colonnes: vec![ColonneRendue::de_texte("Ligne du bulletin"), ColonneRendue::de_nombres("Quantité"), ColonneRendue::de_nombres("Taux"), ColonneRendue::de_nombres("Montant")],
         rangees: lignes,
     });
     Ok(CarteImportee { salarie, resume, non_lu, cases, lignes, debut, nom, bulletin, etats })

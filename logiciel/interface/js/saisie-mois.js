@@ -180,10 +180,10 @@ function carteImportee(p, i) {
       c.source != null ? `<span class="ci-source">${echapper(c.source)}</span>` : ""}${
       c.pourquoi != null ? `<span class="ci-pourquoi">${echapper(c.pourquoi)}</span>` : ""}</div>`;
   const l = p.lignes;
-  const nombre = (c) => (c.nombre ? ' class="nombre"' : "");
+  const nombre = (c) => (c.a_droite ? ' class="nombre"' : "");
   const lignes = l ? `
     <table class="ci-lignes"><tr>${l.colonnes.map((c) => `<th${nombre(c)}>${echapper(c.libelle)}</th>`).join("")}</tr>
-      ${l.rangees.map((x) => `<tr>${x.map((t, k) => `<td${nombre(l.colonnes[k])}>${echapper(t)}</td>`).join("")}</tr>`).join("")}
+      ${l.rangees.map((x) => `<tr>${x.cellules.map((t, k) => `<td${nombre(l.colonnes[k])}>${echapper(t)}</td>`).join("")}</tr>`).join("")}
     </table>` : "";
   return `
     <div class="carte-importee${p.non_lu ? " incomplete" : ""}" data-rang="${i}">

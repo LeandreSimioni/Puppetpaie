@@ -30,6 +30,7 @@ use envois::journal;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
+use socle::ecran::{ColonneRendue, RangeeRendue, SorteDeRangee};
 use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
@@ -737,33 +738,8 @@ struct EcranDUnEtat {
 /// colonne.
 #[derive(Debug, Serialize)]
 struct EcranDuLivre {
-    colonnes: Vec<ColonneDuLivre>,
-    rangees: Vec<RangeeDuLivre>,
-}
-
-/// Une colonne du livre : son libelle, a droite pour un montant, en retrait pour ce qui precise la ligne (le spectacle,
-/// ou le nombre de bulletins d'un total).
-#[derive(Debug, Serialize)]
-struct ColonneDuLivre {
-    libelle: &'static str,
-    a_droite: bool,
-    discrete: bool,
-}
-
-/// Une rangee du livre : une ligne, le sous-total d'un groupe, ou le total general ; ses cellules, une par colonne.
-#[derive(Debug, Serialize)]
-struct RangeeDuLivre {
-    sorte: SorteDeRangee,
-    cellules: Vec<String>,
-}
-
-/// Ce qu'est une rangee du livre.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum SorteDeRangee {
-    Ligne,
-    SousTotal,
-    TotalGeneral,
+    colonnes: Vec<ColonneRendue>,
+    rangees: Vec<RangeeRendue>,
 }
 
 /// Ce qu'une cellule du livre dit d'un montant que la ligne ne dit pas (les pieces d'une paie importee l'ont tu).
@@ -771,13 +747,12 @@ const MONTANT_TU: &str = "—";
 
 /// Le livre `l`, tel qu'il se lit : chaque cellule dite.
 fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
-    let colonne = |libelle, a_droite, discrete| ColonneDuLivre { libelle, a_droite, discrete };
-    let mut colonnes = vec![colonne("Mois", false, false), colonne("Salarié", false, false), colonne("Spectacle", false, true)];
-    colonnes.extend(["Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"].map(|c| colonne(c, true, false)));
+    let mut colonnes = vec![ColonneRendue::de_texte("Mois"), ColonneRendue::de_texte("Salarié"), ColonneRendue::discrete("Spectacle")];
+    colonnes.extend(["Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"].map(ColonneRendue::de_nombres));
     let total = |sorte, titre: &str, t: &documents::etats_paie::Totaux| {
         let mut cellules = vec![String::new(), titre.to_string(), t.bulletins_dit()];
         cellules.extend(t.sommes_dites());
-        RangeeDuLivre { sorte, cellules }
+        RangeeRendue { sorte, cellules }
     };
     let mut rangees = Vec::new();
     for g in &l.groupes {
@@ -789,7 +764,7 @@ fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
                 Some(m) => socle::grandeurs::ecrit::texte::dit(m),
                 None => MONTANT_TU.to_string(),
             }));
-            rangees.push(RangeeDuLivre { sorte: SorteDeRangee::Ligne, cellules });
+            rangees.push(RangeeRendue { sorte: SorteDeRangee::Ligne, cellules });
         }
         rangees.push(total(SorteDeRangee::SousTotal, &g.total_dit, &g.totaux));
     }

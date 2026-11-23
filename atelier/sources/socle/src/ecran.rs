@@ -42,3 +42,46 @@ impl Pastille {
 pub fn compte(n: usize, un: &str, pluriel: &str) -> String {
     format!("{} {}", crate::texte::compte(n), if n > 1 { pluriel } else { un })
 }
+
+/// UNE COLONNE D'UN TABLEAU RENDU, telle que la page la dessine : son en-tete, a droite (un nombre, un montant), discrete
+/// (ce qui precise la ligne : le spectacle d'une ligne du livre, le nombre de bulletins d'un total).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ColonneRendue {
+    pub libelle: &'static str,
+    pub a_droite: bool,
+    pub discrete: bool,
+}
+
+impl ColonneRendue {
+    /// Une colonne de texte.
+    pub fn de_texte(libelle: &'static str) -> ColonneRendue {
+        ColonneRendue { libelle, a_droite: false, discrete: false }
+    }
+
+    /// Une colonne de nombres, a droite.
+    pub fn de_nombres(libelle: &'static str) -> ColonneRendue {
+        ColonneRendue { libelle, a_droite: true, discrete: false }
+    }
+
+    /// Une colonne qui precise la ligne, en retrait.
+    pub fn discrete(libelle: &'static str) -> ColonneRendue {
+        ColonneRendue { libelle, a_droite: false, discrete: true }
+    }
+}
+
+/// UNE RANGEE D'UN TABLEAU RENDU : ce qu'elle est (`SorteDeRangee`) et ses cellules deja dites, une par colonne.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RangeeRendue {
+    pub sorte: SorteDeRangee,
+    pub cellules: Vec<String>,
+}
+
+/// Ce qu'est une rangee d'un tableau rendu : une ligne, le sous-total d'un groupe, ou le total general (la page les dit en
+/// gras).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SorteDeRangee {
+    Ligne,
+    SousTotal,
+    TotalGeneral,
+}
