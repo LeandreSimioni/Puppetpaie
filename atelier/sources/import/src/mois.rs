@@ -16,7 +16,6 @@ use std::path::Path;
 use serde::Serialize;
 
 use droit::contexte::Contexte;
-use droit::fiche::NumeroObjetSpectacle;
 use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
 use socle::date::{Jour, Periode};
@@ -148,11 +147,18 @@ fn nom_du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> Option<St
     ctx.salaries.get(cle).and_then(|s| s.nomme())
 }
 
-/// Le titre de la fiche du spectacle de ce numero d'objet (`engagement::importe::spectacle_du_numero`) ; vide quand la
-/// fiche ne le dit pas, ou qu'il est « A COMPLETER ».
-fn titre_du_spectacle(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<String> {
-    let cle = engagement::importe::spectacle_du_numero(ctx, numero)?;
-    ctx.spectacles.get(&cle)?.titre.portee().map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string)
+/// LE TITRE DE LA FICHE DU SPECTACLE d'une paie importee `p` ou d'un contrat atteste `c`, par la seule regle
+/// (`engagement::importe::spectacle_de_la_paie`) ; vide quand la fiche ne le dit pas, qu'il est « A COMPLETER », ou
+/// qu'aucune fiche ne porte encore ce spectacle : cela manque a la carte, et ne ferme pas la lecture du mois. Une panne
+/// (une fiche illisible) remonte.
+fn titre_du_spectacle(ctx: &Contexte, p: Option<&PaieVersee>, c: Option<&engagement::importe::ContratAtteste>) -> R<Option<String>> {
+    let cle = match engagement::importe::spectacle_de_la_paie(ctx, p, c) {
+        Ok(Some(cle)) => cle,
+        Ok(None) => return Ok(None),
+        Err(e) if e.dit_un_manque() => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    Ok(ctx.spectacles.get(&cle).and_then(|s| s.titre.portee()).map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string))
 }
 
 /// LA PERIODE D'UN CONTRAT IMPORTE DANS `mois`, en clair, quand le bulletin ne dit pas ses jours : « 20–27 » pour un
@@ -362,7 +368,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let fin = p.and_then(|p| p.periode).and_then(|o| o.fin()).or_else(|| atteste.and_then(|o| o.fin()));
     let numero = engagement::importe::numero_objet_de(p, c).cloned();
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
-    let titre = numero.as_ref().and_then(|n| titre_du_spectacle(ctx, n)).or(titre_bulletin);
+    let titre = titre_du_spectacle(ctx, p, c)?.or(titre_bulletin);
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
     let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).into_iter().flatten().collect();
     // L'activite du mois que les pieces disent (`engagement::importe::activite_du_mois`) ; quand elles n'en disent rien

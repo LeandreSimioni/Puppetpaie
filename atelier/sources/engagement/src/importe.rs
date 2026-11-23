@@ -663,14 +663,9 @@ impl Importe {
         &self.pieces().paies
     }
 
-    /// Le numero d'objet de la paie `p` (`numero_objet_de`).
-    pub fn numero_objet_de<'a>(&'a self, p: &'a PaieVersee) -> Option<&'a NumeroObjetSpectacle> {
-        numero_objet_de(Some(p), self.contrat())
-    }
-
-    /// Le spectacle de la paie `p` (`spectacle_du_numero`, sur `numero_objet_de`).
-    pub fn spectacle_de(&self, ctx: &Contexte, p: &PaieVersee) -> Option<droit::contexte::IdSpectacle> {
-        spectacle_du_numero(ctx, self.numero_objet_de(p)?)
+    /// Le spectacle de la paie `p` (`spectacle_de_la_paie`, avec le contrat que l'engagement atteste).
+    pub fn spectacle_de(&self, ctx: &Contexte, p: &PaieVersee) -> R<Option<droit::contexte::IdSpectacle>> {
+        spectacle_de_la_paie(ctx, Some(p), self.contrat())
     }
 
     /// LE CONTRAT D'UN PERMANENT S'ATTESTE MOIS PAR MOIS (`permanent`), comme ses bulletins l'ont atteste, et celui que
@@ -888,7 +883,13 @@ impl Importe {
         let ctx = ctx.du_mois(mois)?;
         let cle = self.carte().salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
         let sal = crate::calcul::convention_de_l_employeur(&ctx, crate::fiche_du_salarie(&ctx, cle)?);
-        let spectacle = self.spectacle_de(&ctx, p);
+        // REGARDER N'EST JAMAIS REFUSE : un spectacle qu'aucune fiche ne porte encore manque a la paie (son spectacle reste
+        // vide), il ne ferme pas la lecture du mois ; une panne (une fiche illisible) remonte.
+        let spectacle = match self.spectacle_de(&ctx, p) {
+            Ok(s) => s,
+            Err(e) if e.dit_un_manque() => None,
+            Err(e) => return Err(e),
+        };
         let spec = match &spectacle {
             Some(k) => Some(crate::fiche_du_spectacle(&ctx, k)?),
             None => None,
@@ -1186,10 +1187,26 @@ pub fn numero_objet_de<'a>(p: Option<&'a PaieVersee>, contrat: Option<&'a Contra
     p.and_then(|p| p.numero_objet.as_ref()).or_else(|| contrat.and_then(|c| c.numero_objet.as_ref()))
 }
 
-/// LE SPECTACLE DE CE NUMERO D'OBJET : celui dont la fiche le porte (`NumeroObjetSpectacle::meme`). L'import cree la
-/// fiche depuis ce numero, et le titre qu'il a lu n'y est que propose : c'est le numero qui la retrouve.
-pub fn spectacle_du_numero(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<droit::contexte::IdSpectacle> {
-    ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|n| n.meme(numero))).map(|(k, _)| k.clone())
+/// LE SPECTACLE D'UNE PAIE IMPORTEE `p` (ou d'un contrat atteste seul, `contrat`), la seule regle : la fiche qui porte son
+/// numero d'objet (`numero_objet_de`, compare par `NumeroObjetSpectacle::meme`), que l'import a creee depuis lui avec un
+/// titre seulement propose ; a defaut, celle que le titre imprime designe (une fiche creee a la main, sans numero).
+/// `Ok(None)` : ni numero ni titre, rien ne designe de spectacle (un permanent n'en a pas). Un numero ou un titre qui ne
+/// retrouvent aucune fiche se refusent en disant ce qui manque ; le refus du titre garde sa raison (un titre ambigu, une
+/// fiche illisible).
+pub fn spectacle_de_la_paie(ctx: &Contexte, p: Option<&PaieVersee>, contrat: Option<&ContratAtteste>) -> R<Option<droit::contexte::IdSpectacle>> {
+    let numero = numero_objet_de(p, contrat);
+    if let Some(cle) = numero.and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|x| x.meme(n))).map(|(k, _)| k.clone())) {
+        return Ok(Some(cle));
+    }
+    match (numero, p.and_then(|p| p.spectacle.as_deref()).filter(|t| !t.is_empty())) {
+        (None, Some(titre)) => Ok(Some(ctx.spectacle(titre)?.cle)),
+        (Some(numero), Some(titre)) => match ctx.spectacle(titre) {
+            Ok(s) => Ok(Some(s.cle)),
+            Err(e) => Err(e.reformuler(|raison| format!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, et son titre ne se retrouve pas : {}", numero, raison))),
+        },
+        (Some(numero), None) => Err(socle::refus!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, qui n'imprime pas de titre", numero)),
+        (None, None) => Ok(None),
+    }
 }
 
 /// Les contrats attestes de tous les engagements importes (`Importe::contrat_lu`).

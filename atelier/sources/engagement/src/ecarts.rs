@@ -545,20 +545,11 @@ fn refaire<'a>(
         };
         saisies.push(donnee.ranger(&lue)?);
     }
-    // LE SPECTACLE DE LA PAIE : celui dont la fiche porte son numero d'objet (`Importe::spectacle_de`), que l'import a cree
-    // depuis ce numero avec un titre seulement propose ; a defaut, celui que le titre imprime designe (une fiche creee a
-    // la main, sans numero). Un numero qu'aucune fiche ne porte, sans titre qui en designe une, se dit par ce que la piece
-    // en imprime ; la paie se compare de nouveau quand la fiche existe (`a_refaire`).
-    let spectacle = match (mensuelle, imp.numero_objet_de(p), imp.spectacle_de(&ctx, p), dit(&p.spectacle)) {
-        (true, ..) => None,
-        (false, _, Some(cle), _) => Some(cle),
-        (false, None, None, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
-        (false, Some(numero), None, Some(titre)) => match ctx.spectacle(&titre) {
-            Ok(s) => Some(s.cle),
-            Err(e) => return Err(a_refaire(c, e.reformuler(|p| format!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, et son titre ne se retrouve pas : {}", numero, p)))),
-        },
-        (false, Some(numero), None, None) => return Err(a_refaire(c, socle::refus!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, qui n'imprime pas de titre", numero))),
-        (false, None, None, None) => None,
+    // LE SPECTACLE DE LA PAIE, par la seule regle (`importe::spectacle_de_la_paie`) ; quand aucune fiche ne le porte
+    // encore, la paie se compare de nouveau quand elle existe (`a_refaire`).
+    let spectacle = match mensuelle {
+        true => None,
+        false => imp.spectacle_de(&ctx, p).map_err(|m| a_refaire(c, m))?,
     };
     // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
     // (`Importe::contrat_de_la_paie` : sa fin, dite ou declaree, n'est jamais celle du mois que paie un bulletin), son
