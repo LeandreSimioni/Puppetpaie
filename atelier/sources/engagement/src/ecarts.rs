@@ -554,7 +554,7 @@ fn refaire<'a>(
         (false, None, None, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
         (false, Some(numero), None, Some(titre)) => match ctx.spectacle(&titre) {
             Ok(s) => Some(s.cle),
-            Err(_) => return Err(a_refaire(c, socle::refus!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, ni son titre « {} »", numero, titre))),
+            Err(e) => return Err(a_refaire(c, e.reformuler(|p| format!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, et son titre ne se retrouve pas : {}", numero, p)))),
         },
         (false, Some(numero), None, None) => return Err(a_refaire(c, socle::refus!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, qui n'imprime pas de titre", numero))),
         (false, None, None, None) => None,
