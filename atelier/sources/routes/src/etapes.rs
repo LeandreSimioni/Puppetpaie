@@ -161,6 +161,7 @@ pub(crate) struct Action {
 #[serde(untagged)]
 pub(crate) enum ChargeDuGeste {
     Mois(ChargeMois),
+    Signature(crate::contrats::ChargeApercuSignature),
     Depot(Designation),
     Recu(crate::contrats::ChargeRecu),
     Avenant(crate::contrats::ChargeAvenant),
@@ -201,6 +202,7 @@ macro_rules! charge_du_geste {
 
 charge_du_geste! {
     ChargeMois => Mois,
+    crate::contrats::ChargeApercuSignature => Signature,
     Designation => Depot,
     crate::contrats::ChargeRecu => Recu,
     crate::contrats::ChargeAvenant => Avenant,
@@ -377,14 +379,15 @@ fn echeance_dsn(limite: Moment, source: &str) -> Echeance {
     Echeance { quand: InstantOuJour::Instant(limite), mots: droit::echeances::Tournure::AvantLe, source: source.into() }
 }
 
-/// Faire signer les contrats du mois : l'apercu, puis la demande.
-fn faire_signer(mois: Mois) -> Action {
-    action(Route::SignatureApercu, ChargeMois { mois }, Some(Route::DemanderSignature), "Demander la signature…".into())
+/// Faire signer les contrats du mois : l'apercu, puis la demande. `salaries` : ceux dont les contrats se cochent d'abord
+/// (le detail d'un engagement) ; aucun, tous ceux a envoyer.
+fn faire_signer(mois: Mois, salaries: Option<Vec<IdSalarie>>) -> Action {
+    action(Route::SignatureApercu, crate::contrats::ChargeApercuSignature { mois, salaries }, Some(Route::DemanderSignature), "Demander la signature…".into())
 }
 
 /// Les contrats partis du mois, recus ou a relancer : l'apercu, puis noter chacun recu.
 fn contrats_en_attente(mois: Mois) -> Action {
-    action(Route::SignatureApercu, ChargeMois { mois }, Some(Route::ContratRecu), "Reçus ou à relancer…".into())
+    action(Route::SignatureApercu, crate::contrats::ChargeApercuSignature { mois, salaries: None }, Some(Route::ContratRecu), "Reçus ou à relancer…".into())
 }
 
 /// Les documents du mois : l'apercu, puis l'envoi.
@@ -2248,8 +2251,8 @@ impl<'a> Moteur<'a> {
                 }
                 // L'AVENANT n'a pas d'echeance : L. 1242-13 date la remise du contrat a l'embauche, aucun texte depose ne
                 // date celle d'un avenant (regle 1 : rien ne se devine).
-                PointContrat::ARefaire => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois))),
-                PointContrat::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois))),
+                PointContrat::ARefaire => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois, None))),
+                PointContrat::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois, None))),
                 PointContrat::ACompleter => a_completer(n),
                 PointContrat::AValider => a_valider(n),
                 PointContrat::RienASigner => rien_ici("rien à signer"),
@@ -2638,9 +2641,9 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     };
     let par_dit = etats::mot_de_la_remise(s.par, etats::PlaceDeLaRemise::Phrase);
     let (etat, phrase, geste) = match (pt.contrat, debut_du_contrat) {
-        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
-        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
-        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois))),
+        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois, None))),
+        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois, None))),
+        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois, None))),
         // Un avenant parti, imprime ou par courriel, se note signe d'un clic, comme le contrat ; la relance est dans la
         // boite des contrats en attente. `par` est celui du dernier depart, l'avenant attendu.
         (PointContrat::EnAttente, _) if s.avenant_attendu => (
@@ -2741,7 +2744,9 @@ fn pieces_du_contrat(p: &Vue, mois: Mois, s: &Signature, dossier: Option<&Contra
         gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat parti : l'ancien texte et le nouveau, article par article"), action: avenant(p, mois).and_then(&route), principal: caduc });
     }
     if !fait {
-        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois)), principal: true });
+        // Depuis le detail de l'engagement, seul son contrat se coche d'abord.
+        let siens = p.salarie.clone().map(|s| vec![s]);
+        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois, siens)), principal: true });
     }
     Pieces { vide, encart, gestes }
 }

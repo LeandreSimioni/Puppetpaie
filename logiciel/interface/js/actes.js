@@ -20,9 +20,9 @@
 */
 
 /** Le geste d'un groupe ou d'un carré : la boîte de la route que le moteur nomme (`route`, avec sa `charge` ; `puis` :
- *  l'acte qui suit). Un dossier à ouvrir porte son `chemin`. `seulement` : les salariés cochés d'avance. `sur` : le rappel dont
- *  vient le geste (la fin de contrat à compléter : son `objet`). */
-function ouvrirGeste(action, mois, seulement, sur) {
+ *  l'acte qui suit). Un dossier à ouvrir porte son `chemin`. `sur` : le rappel dont vient le geste (la fin de contrat à
+ *  compléter : son `objet`). */
+function ouvrirGeste(action, mois, sur) {
   if (!action) return;
   if (action.chemin) return ouvrirEtDire(action.chemin, action.phrase, true);
   const c = action.charge;
@@ -31,7 +31,7 @@ function ouvrirGeste(action, mois, seulement, sur) {
     case "depot-apercu":
       return c.quoi === "dpae" && !c.engagements ? boiteDpae(m) : boiteDepot(c, { testerDabord: !!action.tester });
     case "signature-apercu":
-      return action.puis === "contrat-recu" ? boiteContratsEnAttente(m) : boiteSignature(m, seulement);
+      return action.puis === "contrat-recu" ? boiteContratsEnAttente(m) : boiteSignature({ ...c, mois: m });
     case "envoi-apercu": return boiteEnvoi(m);
     case "historique-mois": return ouvrirMoisHistorique(m);
     // Une pièce partie dont le fichier manque : la route la refait et rend son chemin, qui s'ouvre.
@@ -519,25 +519,32 @@ async function boiteEnvoi(mois) {
 
 /* --------------------------------------------- les contrats à faire signer */
 
-/** LES CONTRATS À FAIRE PARTIR : ceux que le moteur dit à envoyer
- *  (`a_envoyer` : jamais partis, ou changés depuis), tous cochés ; on décoche
- *  ce qu'on ne fait pas partir. `seulement` : les salariés choisis ailleurs
- *  (la pastille d'un engagement) ; les autres restent dans la liste, décochés.
+/** LES CONTRATS À FAIRE PARTIR : ceux que le moteur rend à cocher
+ *  (`a_envoyer` : jamais partis, ou changés depuis), cochés comme le disent
+ *  les cases de leurs départs (`valeurs` : tous, ou ceux des salariés que la
+ *  charge choisit, `salaries`) ; on décoche ce qu'on ne fait pas partir.
  *  Un contrat signé qui a changé part en avenant. Deux gestes : Imprimer (un
  *  seul PDF de tout ce qui est coché), et Envoyer à la signature quand une
- *  boîte courriel est posée. */
+ *  boîte courriel est posée. `charge` : celle de `signature-apercu`. */
 
-async function boiteSignature(mois, seulement) {
+async function boiteSignature(charge) {
+  const mois = charge.mois;
   let a;
   try {
-    a = await api("signature-apercu", { mois });
+    a = await api("signature-apercu", charge);
   } catch (e) { dire(e.message, "erreur"); return; }
 
-  const contrats = a.contrats.filter((c) => c.a_envoyer);
-  const coche = (c) => !seulement || seulement.includes(c.salarie);
+  const contrats = a.a_envoyer;
   // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont les cases (`contrats`, `avenants`) se
   // remplissent de la part de chaque contrat coché (`part`) ; celui qui exige le mot de passe (`demande`) le fait taper.
+  // Un contrat est coché d'abord quand sa part est dans ce que ces cases montrent d'abord (`valeurs`, les mêmes pour
+  // chaque départ) ; un contrat à cocher a toujours un départ ouvert.
   const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
+  const coche = (c) => {
+    const g = a.principal;
+    const montrees = g.cases.flatMap((k) => g.valeurs[k].map((x) => JSON.stringify(x)));
+    return g.cases.some((k) => (c.part[k] || []).some((x) => montrees.includes(JSON.stringify(x))));
+  };
   const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
     + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
   ouvrirBoite(`
@@ -608,7 +615,7 @@ async function boiteSignature(mois, seulement) {
       const gardes = [...document.querySelectorAll(".s-qui:checked")].map((c) => c.value);
       fermerBoite();
       dire(pose.phrase, "envoye");
-      boiteSignature(mois, gardes);
+      boiteSignature({ mois, salaries: gardes });
     };
   });
   document.querySelectorAll(".s-courriel-saisi").forEach((c) => {
@@ -636,7 +643,7 @@ async function boiteContratsEnAttente(mois, fait) {
   try {
     a = await api("signature-apercu", { mois });
   } catch (e) { dire(e.message, "erreur"); return; }
-  const contrats = a.contrats.filter((c) => c.en_attente);
+  const contrats = a.en_attente;
   ouvrirBoite(`
     <h3>${echapper(a.titre_en_attente)}</h3>
     ${moisEnGros(mois)}
