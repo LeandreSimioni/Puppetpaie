@@ -86,7 +86,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
+        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information) et poses_titre ; les mots de la liste : trouver_dit (ce qui ouvre où trouver une valeur), enregistrer (le bouton qui enregistre, quand une ligne a une case ou un geste), configuration_dit",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -358,7 +358,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let d = declarations::demarrage::route(ctx, proposes, simule, repris)?;
             // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
             let n = d.poses.len();
-            let poses = d
+            let poses: Vec<PoseVue> = d
                 .poses
                 .into_iter()
                 .enumerate()
@@ -372,8 +372,22 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                 .collect();
             // Les listes de la fiche d'un salarie se lisent une fois pour toutes les lignes.
             let listes = std::cell::OnceCell::new();
-            let manques = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
-            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques, dsn: d.dsn, poses })
+            let manques: Vec<ManqueVu> = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
+            let poses_titre = (!poses.is_empty()).then_some("Posé pour vous");
+            let enregistrer = manques.iter().any(|m| m.case_rendue.is_some() || !m.a_enregistrer.is_empty()).then_some("Enregistrer");
+            en_json(PourDemarrerVu {
+                phrase: socle::phrase!("{}", d.phrase),
+                phrases: d.phrases,
+                titre: d.titre,
+                note: d.note,
+                manques,
+                dsn: d.dsn,
+                poses,
+                poses_titre,
+                trouver_dit: "Où le trouver",
+                enregistrer,
+                configuration_dit: "Ouvrir la configuration",
+            })
         }
         autre => Err(route_inconnue(autre.nom())),
     }
@@ -1860,6 +1874,15 @@ struct PourDemarrerVu {
     #[serde(skip_serializing_if = "Option::is_none")]
     dsn: Option<declarations::demarrage::ParUneDsn>,
     poses: Vec<PoseVue>,
+    /// LES MOTS DE LA LISTE : le titre de ce que le moteur a pose (quand il a pose quelque chose), ce qui ouvre ou
+    /// trouver une valeur (`trouver` d'une ligne), le bouton qui enregistre la liste (quand une ligne a une case ou un
+    /// geste a jouer) et celui qui mene a la configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    poses_titre: Option<&'static str>,
+    trouver_dit: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enregistrer: Option<&'static str>,
+    configuration_dit: &'static str,
 }
 
 const OU_DES_ACCES: &str = "Configuration › Mots de passe";

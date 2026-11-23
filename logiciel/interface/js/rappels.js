@@ -63,9 +63,9 @@ let POSES_DEMARRAGE = [];
 /** La case où mène un lien de manque, quand la ligne en nomme une. */
 const attributChamp = (champ) => (champ ? ` data-manque-champ="${echapper(champ)}"` : "");
 function htmlPoses() {
-  if (!POSES_DEMARRAGE.length) return "";
+  if (!DEMARRAGE.poses_titre) return "";
   return `<div class="rappel demarrage-poses">
-    <h3>Posé pour vous</h3>
+    <h3>${echapper(DEMARRAGE.poses_titre)}</h3>
     <ul class="rappel-liste">${POSES_DEMARRAGE.map((p) => `
       <li>${pastilleDeLEtat(p.pastille)}
         <button type="button" class="lien"${attributChamp(p.champ)}
@@ -83,7 +83,7 @@ function htmlPoses() {
  * écriture par fiche) et joue les gestes que le moteur lui donne
  * (`a_enregistrer`), et la liste se relit. La page ne fait que la mise en
  * page. */
-const DEMARRAGE_VIDE = { titre: "", note: "", manques: [], dsn: null };
+const DEMARRAGE_VIDE = { titre: "", note: "", manques: [], dsn: null, poses_titre: null, trouver_dit: "", enregistrer: null, configuration_dit: "" };
 let DEMARRAGE = DEMARRAGE_VIDE;
 
 /* La case qu'une ligne propose, telle que sa fiche la décrit : `{nom, fiche,
@@ -130,7 +130,7 @@ function htmlDemarrage(manques) {
         <b>${echapper(m.libelle)}</b> ${lien(m)}
         ${pour(m)}
         ${aEnregistrer(m, i)}
-        ${m.trouver ? `<details><summary>Où le trouver</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
+        ${m.trouver ? `<details><summary>${echapper(DEMARRAGE.trouver_dit)}</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
       </li>`;
     }
     return `<li class="demarrage-ligne" data-demarrage="${i}">
@@ -142,7 +142,6 @@ function htmlDemarrage(manques) {
   };
   const entreprise = manques.filter((m) => !m.qui);
   const lesQui = [...new Set(manques.filter((m) => m.qui).map((m) => m.qui))];
-  const aRemplir = manques.some((m) => caseDuManque(m) || (m.a_enregistrer || []).length);
   // CE QU'UNE DSN DONNERAIT (`dsn`, du moteur) : sa phrase, et chaque ligne, qui mène à sa place.
   const dsn = DEMARRAGE.dsn ? `<div class="encart attention"><p>${echapper(DEMARRAGE.dsn.phrase)}</p>
       <ul class="rappel-liste">${DEMARRAGE.dsn.manques.map((m) => `<li class="demarrage-ligne">
@@ -158,8 +157,8 @@ function htmlDemarrage(manques) {
         <ul class="rappel-liste">${manques.filter((m) => m.qui === q).map(ligne).join("")}</ul>`).join("")}
       <div class="anomalie" data-demarrage-dit hidden></div>
       <div class="actions">
-        ${aRemplir ? `<button class="primaire" data-demarrage-enregistrer>Enregistrer</button>` : ""}
-        <button class="petit" data-aller-configuration>Ouvrir la configuration</button>
+        ${DEMARRAGE.enregistrer ? `<button class="primaire" data-demarrage-enregistrer>${echapper(DEMARRAGE.enregistrer)}</button>` : ""}
+        <button class="petit" data-aller-configuration>${echapper(DEMARRAGE.configuration_dit)}</button>
       </div>
     </div>${htmlPoses()}`;
 }
@@ -300,7 +299,8 @@ document.addEventListener("click", async (e) => {
  * à l'écran reste celle dont on lit les changements. */
 async function lireDemarrage(lu) {
   const pd = await lu("pour-demarrer");
-  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn || null };
+  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn || null, poses_titre: pd.poses_titre || null,
+    trouver_dit: pd.trouver_dit, enregistrer: pd.enregistrer || null, configuration_dit: pd.configuration_dit };
   POSES_DEMARRAGE = pd.poses;
   return DEMARRAGE.manques;
 }
