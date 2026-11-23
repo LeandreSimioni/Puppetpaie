@@ -434,18 +434,8 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
             Some(a) => format!("Sur la DSN {}.", a),
             None => "Sur sa dernière DSN.".to_string(),
         };
-        let (case_de_la_nature, cases) = cases_de_la_ligne(&natures, numero_ou)?;
         out.push(ADire {
-            nature: case_de_la_nature,
-            cases,
-            enregistrer: GesteDeLaNature::avec_cases(
-                crate::catalogue::Route::ImportationNature,
-                NatureDuSalarie { salarie: salarie.clone() },
-                ENREGISTRER,
-                Vec::new(),
-                crate::SansCharge {},
-                crate::SansCharge {},
-            ),
+            enregistrer: geste_de_la_nature(&salarie, &natures, numero_ou)?,
             salarie,
             nom,
             contrats: c.nombre,
@@ -476,14 +466,7 @@ pub(crate) struct ADire {
     pub(crate) en_cours: bool,
     pub(crate) suite: Option<String>,
     pub(crate) natures: Vec<NatureProposee>,
-    /// LES CASES DE SA LIGNE, celles de la charge d'`importation-nature` (le salarie mis a part), telles que la page les
-    /// dessine (`caseDeRoute`) : la nature, a choisir parmi celles qui sont proposees (choisie quand il n'y en a qu'une),
-    /// puis ce qu'une nature peut demander, chacune ne se montrant qu'avec la nature choisie qui la demande
-    /// (`NatureProposee::demande`).
-    pub(crate) nature: CaseDeLaLigne,
-    pub(crate) cases: Vec<CaseDeLaLigne>,
-    /// Le geste qui enregistre sa ligne : `importation-nature`, sa charge (le salarie) completee de ce que ses cases
-    /// disent.
+    /// Le geste qui dit sa nature (`geste_de_la_nature`).
     pub(crate) enregistrer: GesteDeLaNature,
     pub(crate) dit: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -499,45 +482,59 @@ pub(crate) struct NatureDuSalarie {
     salarie: IdSalarie,
 }
 
-/// LE GESTE QUI ENREGISTRE LA NATURE D'UN SALARIE (`importation-nature`) : ses cases sont celles de sa ligne
-/// (`ADire::cases`), pas celles d'une boite.
-pub(crate) type GesteDeLaNature = crate::imprevus::GesteDeRoute<NatureDuSalarie, crate::SansCharge, crate::SansCharge>;
+/// Ce que la case de la nature montre d'abord : la seule nature proposee ; plusieurs, aucune.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub(crate) struct ValeursDeLaNature {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nature: Option<droit::natures::NatureDeContrat>,
+}
+
+/// Ce que la case de la nature offre : les natures proposees, chacune son code et son libelle.
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ChoixDeLaNature {
+    nature: Vec<crate::ouverture::Choix>,
+}
+
+/// LE GESTE QUI DIT LA NATURE D'UN SALARIE (`importation-nature`), comme tout geste : sa charge, ce qui designe le
+/// salarie ; sa boite, ses cases.
+pub(crate) type GesteDeLaNature = crate::imprevus::GesteDeRoute<NatureDuSalarie, ValeursDeLaNature, ChoixDeLaNature>;
 
 const ENREGISTRER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Enregistrer");
 
-/// Une case de la ligne d'un salarie (`ADire`).
-type CaseDeLaLigne = crate::fiches::CaseDeLaFiche<&'static str>;
-
-/// LES CASES DE LA LIGNE D'UN SALARIE, tirees de la charge d'`importation-nature` : la nature, offrant `natures` (choisie
-/// d'avance quand il n'y en a qu'une) ; puis, dans l'ordre de la charge, ce qu'une nature peut demander (`Demande`) : le
-/// debut, la fin, le numero (`numero_ou` : ou il se lit, dit sous lui), le salaire et la duree du travail (ceux du
-/// contrat signe), chacune son aide quand elle en a une.
-fn cases_de_la_ligne(natures: &[NatureProposee], numero_ou: String) -> R<(CaseDeLaLigne, Vec<CaseDeLaLigne>)> {
+/// LE GESTE QUI DIT LA NATURE DU SALARIE `salarie`. Sa boite fait saisir la nature, a choisir parmi `natures` (choisie
+/// d'avance quand il n'y en a qu'une), puis, dans l'ordre de la charge, ce que l'une d'elles demande (`Demande`) : avec
+/// plusieurs natures, la boite montre ce que chacune demande, et la route ne prend que ce que demande celle qui est
+/// dite. Au-dessus des cases, ou se lisent le numero (`numero_ou`) et la duree du travail.
+fn geste_de_la_nature(salarie: &IdSalarie, natures: &[NatureProposee], numero_ou: String) -> R<GesteDeLaNature> {
     use crate::declaration::cle;
-    use crate::fiches::CaseDeLaFiche;
-    let seule = match natures {
-        [n] => Some(n.cle),
-        _ => None,
-    };
-    let offertes = || natures.iter().map(|x| crate::ouverture::Choix::de(x.cle, &x.libelle)).collect();
-    let mut nature = None;
-    let mut cases = Vec::new();
-    for c in ChargeNature::CHARGE.champs.iter().map(|c| &c.champ) {
-        let case = match c.nom {
-            n if n == cle!(ChargeNature, salarie) => continue,
-            n if n == cle!(ChargeNature, nature) => {
-                nature = Some(CaseDeLaFiche::du_champ(c, "", socle::ecriture::ValeurDeCase::de(&seule)).offrant(offertes()));
-                continue;
-            }
-            n if n == cle!(ChargeNature, numero) => CaseDeLaFiche::du_champ(c, crate::ouverture::aide("import_numero")?, None).disant(vec![numero_ou.clone()]),
-            n if n == cle!(ChargeNature, salaire) => CaseDeLaFiche::du_champ(c, "", None).disant(vec!["Celui du contrat signé.".to_string()]),
-            n if n == cle!(ChargeNature, quotite) => CaseDeLaFiche::du_champ(c, crate::ouverture::aide("import_quotite")?, None).disant(vec!["Celle du contrat signé.".to_string()]),
-            _ => CaseDeLaFiche::du_champ(c, "", None),
-        };
+    let demandees = |champ: Demande| natures.iter().any(|n| n.demande.contains(&champ));
+    let mut cases = vec![cle!(ChargeNature, nature)];
+    let mut phrases = Vec::new();
+    for (champ, case) in [
+        (Demande::Debut, cle!(ChargeNature, debut)),
+        (Demande::Fin, cle!(ChargeNature, fin)),
+        (Demande::Numero, cle!(ChargeNature, numero)),
+        (Demande::Salaire, cle!(ChargeNature, salaire)),
+        (Demande::Quotite, cle!(ChargeNature, quotite)),
+    ] {
+        if !demandees(champ) {
+            continue;
+        }
         cases.push(case);
+        match champ {
+            Demande::Numero => phrases.push(format!("{} {}", crate::ouverture::aide("import_numero")?, numero_ou)),
+            Demande::Quotite => phrases.push(crate::ouverture::aide("import_quotite")?.to_string()),
+            Demande::Debut | Demande::Fin | Demande::Salaire => {}
+        }
     }
-    let nature = nature.ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la charge d'importation-nature n'a pas de nature."))?;
-    Ok((nature, cases))
+    let valeurs = ValeursDeLaNature {
+        nature: match natures {
+            [n] => Some(n.cle),
+            _ => None,
+        },
+    };
+    let choix = ChoixDeLaNature { nature: natures.iter().map(|x| crate::ouverture::Choix::de(x.cle, &x.libelle)).collect() };
+    Ok(GesteDeLaNature::avec_cases(crate::catalogue::Route::ImportationNature, NatureDuSalarie { salarie: salarie.clone() }, ENREGISTRER, cases, valeurs, choix).disant(phrases))
 }
 
 /// Une nature de permanent qui peut se dire, et ce qu'elle demande d'un contrat qui court encore.

@@ -476,65 +476,29 @@ function brancherIdentites(cible, e) {
    demande, une fois par salarié, sans rien choisir d'avance. */
 function vueNaturesADire(e) {
   if (!e.a_dire.length) return "";
-  // Chaque ligne : ce que la route en dit, la case de la nature (`nature`) et
-  // celles qu'une nature peut demander (`cases`), dessinées comme toute case
-  // de route ; seules se montrent celles que la nature choisie demande
-  // (`montrerLesCasesDeLaNature`).
-  const lignes = e.a_dire.map((x, i) => `<div class="rang" data-nature-rang="${i}">
+  // Chaque ligne : ce que la route en dit, et son geste (`enregistrer`), dont
+  // la boîte fait saisir ses cases.
+  const lignes = e.a_dire.map((x, i) => `<div class="rang">
       <div class="rang-infos"><b class="rang-nom">${echapper(x.nom)}</b>
         ${echapper(x.dit)}
         ${x.en_cours_dit ? `<div class="note">${echapper(x.en_cours_dit)}</div>` : ""}
-        ${x.dsn_non_relue ? `<div class="note">${echapper(x.dsn_non_relue)}</div>` : ""}
-        <div class="e-cases" data-nature-cases>${[x.nature, ...x.cases].map(caseDeRoute).join("")}</div></div>
-      <div class="rang-etat">${boutonsDesGestes([x.enregistrer])}</div>
+        ${x.dsn_non_relue ? `<div class="note">${echapper(x.dsn_non_relue)}</div>` : ""}</div>
+      <div class="rang-etat" data-nature="${i}">${boutonsDesGestes([x.enregistrer])}</div>
     </div>`).join("");
   return `<h3>${echapper(e.natures_titre)}</h3>
     <p class="note">${echapper(e.natures_note)}</p>${lignes}`;
 }
 
-/* LA LIGNE `rang` DE LA NATURE `x` MONTRE LES CASES QUE LA NATURE CHOISIE
-   DEMANDE (`natures[].demande`), et elles seules ; aucune nature choisie,
-   aucune. */
-function montrerLesCasesDeLaNature(rang, x) {
-  const choisie = lireLaCase(rang.querySelector(`.case[data-cle="${CSS.escape(x.nature.cle)}"] > [data-case]`));
-  const n = x.natures.find((m) => m.cle === choisie);
-  const demande = n ? n.demande : [];
-  x.cases.forEach((c) => {
-    rang.querySelector(`.case[data-cle="${CSS.escape(c.cle)}"]`).hidden = !demande.includes(c.cle);
-  });
-}
-
-/* LES LIGNES DES NATURES À DIRE de `e`, dans `cible` : chacune montre les
-   cases de sa nature choisie, et les montre de nouveau quand elle change ;
-   son geste (`enregistrer`) part avec sa charge et ce que disent la case de
-   la nature et celles qui se montrent ; après la réponse, l'état se relit.
-   Quitter une ligne qui porte une saisie non enregistrée se demande. */
+/* Les gestes des natures à dire de `e`, dessinés dans `cible`, chacun titré du nom de son salarié ; après la réponse,
+   l'état se relit (les natures au mois s'ouvrent alors dans la saisie : `nouvelle_carte` de la route saisie). */
 function brancherNatures(cible, e) {
-  cible.querySelectorAll("[data-nature-rang]").forEach((rang) => {
-    const x = e.a_dire[+rang.dataset.natureRang];
-    const cases = rang.querySelector("[data-nature-cases]");
-    brancherLesCases(cases);
-    montrerLesCasesDeLaNature(rang, x);
-    cases.addEventListener("change", () => montrerLesCasesDeLaNature(rang, x));
-    const g = x.enregistrer;
-    const bouton = rang.querySelector("[data-geste]");
-    const enregistrer = async () => {
-      const montrees = Object.fromEntries(lesCasesLues(cases).filter(([cle]) =>
-        !cases.querySelector(`.case[data-cle="${CSS.escape(cle)}"]`).hidden));
-      const rallumer = occupe(bouton, `${g.libelle}…`);
-      let r;
-      try { r = await api(g.route, { ...g.charge, ...montrees }); }
-      catch (err) { rallumer(); dire(err.message, "erreur"); return false; }
-      oublierLEcran(cases);
-      dire(r.phrase, r.couleur);
-      // Les natures au mois s'ouvrent alors dans la saisie (`nouvelle_carte` de la route saisie).
+  cible.querySelectorAll("[data-nature]").forEach((b) => {
+    const x = e.a_dire[+b.dataset.nature];
+    brancherLesGestes(b, [x.enregistrer], { titre: x.nom }, async () => {
       await relireEtat();
       rafraichirReferentiels();
       await rafraichirEtatImportation();
-      return true;
-    };
-    bouton.onclick = enregistrer;
-    retenirLEcran(cases, { enregistrer });
+    });
   });
 }
 
