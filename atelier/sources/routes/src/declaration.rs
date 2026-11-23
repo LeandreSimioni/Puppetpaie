@@ -58,13 +58,14 @@ impl<S, T: ValeurDeLaCharge<S>> ValeurDeLaCharge<EnListe<S>> for Vec<T> {
     const FORME: Forme = en_liste(T::FORME);
 }
 
-/// La forme d'une liste dont chaque valeur a la forme `f` : des textes, des jours, des objets. Une autre n'a pas encore de
-/// case qui la saisisse en liste : elle ne compile pas.
+/// La forme d'une liste dont chaque valeur a la forme `f` : des textes, des jours, des objets, plusieurs valeurs d'une
+/// liste fermee. Une autre n'a pas encore de case qui la saisisse en liste : elle ne compile pas.
 const fn en_liste(f: Forme) -> Forme {
     match f {
         Forme::Texte => Forme::Liste,
         Forme::Date => Forme::Jours,
         Forme::Objet => Forme::Objet,
+        Forme::Choix(l) => Forme::PlusieursChoix(l),
         _ => panic!("une liste de cette forme n'a pas de case : la dire au développeur"),
     }
 }
@@ -94,8 +95,8 @@ formes! {
         droit::fiche::Nir,
         droit::fiche::CodePcsEse,
         droit::fiche::Courriel,
+        // Le nom d'une case d'une fiche : ses libelles sont dans la table des fiches, et propres a chacune.
         droit::fiche::CaseDeFiche,
-        documents::CategorieDeDocument,
         droit::emplois::CodeEmploi,
         droit::natures::IdentifiantDeDeclaration,
         engagement::numeros::NumeroContrat,

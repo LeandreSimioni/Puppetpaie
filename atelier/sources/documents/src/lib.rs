@@ -191,6 +191,19 @@ impl CategorieDeDocument {
     }
 }
 
+/// LES SORTES DU DOSSIER SONT UNE LISTE QU'UNE CHARGE NOMME (`categories`), par leur mot, avec leur libelle.
+impl socle::liste::ListeFermee for CategorieDeDocument {
+    const TOUTES: &'static [CategorieDeDocument] = &CategorieDeDocument::TOUTES;
+
+    fn code(&self) -> socle::echec::R<String> {
+        Ok(self.texte().to_string())
+    }
+
+    fn libelle(&self) -> socle::echec::R<&'static str> {
+        Ok(CategorieDeDocument::libelle(*self))
+    }
+}
+
 /// LES SORTES D'UNE PIECE PRODUITE, DECLAREES AVEC LEUR PREFIXE ET LEUR RANGEMENT ENSEMBLE, une ligne chacune : chaque
 /// variante est dans `TOUTES`, une fois, et a son prefixe et son rangement, par construction. Une piece d'un mois a son
 /// type (`PieceDuMois`, son dossier dit sans condition), une piece gardee aussi (une sorte d'un mois rangee ailleurs).

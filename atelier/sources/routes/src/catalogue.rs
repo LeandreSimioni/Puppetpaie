@@ -410,6 +410,10 @@ pub enum Forme {
     /// UNE VALEUR D'UNE LISTE FERMEE : ses valeurs et leurs libelles, tires du type qui la lit (`ListeDeChoix::de`) ;
     /// l'ecran la fait choisir dans une liste deroulante, la ligne de commande la lit telle quelle.
     Choix(ListeDeChoix),
+    /// DES VALEURS D'UNE LISTE FERMEE, plusieurs a la fois (`Vec` d'une `ListeFermee`) : ses valeurs et leurs libelles,
+    /// comme d'un choix ; l'ecran les fait cocher, une case par valeur, et la charge porte les codes coches, dans l'ordre
+    /// de la liste.
+    PlusieursChoix(ListeDeChoix),
     /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees, sous la cle de la case : les salaries,
     /// les spectacles, les metiers et les etablissements d'une carte (`choix` de la route etat), le genre d'un avantage en
     /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
@@ -475,7 +479,7 @@ impl serde::Serialize for Forme {
     }
 }
 
-/// LES VALEURS D'UNE LISTE FERMEE (`Forme::Choix`), tirees du type qui lit le champ (`socle::liste::ListeFermee`) : elle
+/// LES VALEURS D'UNE LISTE FERMEE (`Forme::Choix`, `Forme::PlusieursChoix`), tirees du type qui lit le champ (`socle::liste::ListeFermee`) : elle
 /// ne se fabrique que par lui (`de`), jamais d'une liste ecrite a cote.
 #[derive(Clone, Copy)]
 pub struct ListeDeChoix(fn() -> R<Vec<ChoixEcrit>>);
@@ -535,6 +539,7 @@ impl Forme {
             Forme::Lignes => "lignes",
             Forme::Objet => "objet",
             Forme::Choix(_) => "choix",
+            Forme::PlusieursChoix(_) => "plusieurs_choix",
             Forme::ChoixRendu => "choix_rendu",
             Forme::Parties(_) => "parties",
             Forme::Rangees => "rangees",
@@ -547,7 +552,7 @@ impl Forme {
     /// Les valeurs d'une liste fermee, ecrites ; aucune pour une autre forme.
     fn choix(self) -> R<Option<Vec<ChoixEcrit>>> {
         match self {
-            Forme::Choix(c) => Ok(Some(c.ecrites()?)),
+            Forme::Choix(c) | Forme::PlusieursChoix(c) => Ok(Some(c.ecrites()?)),
             Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
         }
     }
@@ -556,7 +561,7 @@ impl Forme {
     fn admis(self) -> Option<&'static [&'static str]> {
         match self {
             Forme::Fichier(a) => Some(a),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
         }
     }
 

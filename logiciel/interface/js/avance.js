@@ -105,6 +105,12 @@ const attributsDesParties = (v, o) => ` data-valeur="${echapper(JSON.stringify(v
  *  après lui) ; il se tape avec une virgule ou un point, et le moteur le lit. */
 const montantEcrit = (v) => (v == null || v === "" ? null : enEuros(v));
 
+/** Des cases à cocher, une par choix (`choix` : code, libellé, aide), cochées pour les codes de `v`. */
+function casesACocher(v, choix) {
+  return `<span data-case data-liste="coches">${choix.map((c) => `<label class="coche"${c.aide ? ` title="${echapper(c.aide)}"` : ""}>
+          <input type="checkbox" value="${echapper(c.code)}"${(v || []).includes(c.code) ? " checked" : ""}> ${echapper(c.libelle)}</label>`).join("")}</span>`;
+}
+
 /** LA TABLE : à chaque forme, sa case (`html`, ce qu'elle montre de `v` ; `o.choix` : ce qu'un choix offre, `o.unite` :
  *  l'unité d'une quantité, `o.prerempli` : ce que le moteur prend pour elle vide, `o.parties` : les parties d'une valeur
  *  faite de parties) et sa lecture (`lire`, la valeur que la route lit ; `null` : une case vide). Chaque case porte
@@ -156,12 +162,17 @@ const CASES = {
   },
   liste: {
     html: (v, o) => (o.choix
-      ? `<span data-case data-liste="coches">${o.choix.map((c) => `<label class="coche"${c.aide ? ` title="${echapper(c.aide)}"` : ""}>
-          <input type="checkbox" value="${echapper(c.code)}"${(v || []).includes(c.code) ? " checked" : ""}> ${echapper(c.libelle)}</label>`).join("")}</span>`
+      ? casesACocher(v, o.choix)
       : `<span data-case data-liste="textes">${[...(v || []), ""].map((t) => `<input type="text"${valeurDeDepart(t)}>`).join("")}
           <button type="button" class="lien" data-plus>+</button></span>`),
     lire: (x) => [...x.querySelectorAll(x.dataset.liste === "coches" ? "input:checked" : "input")]
       .map((c) => c.value.trim()).filter(Boolean),
+  },
+  // Plusieurs valeurs d'une liste fermée : une case à cocher par choix, son libellé à côté ; les codes cochés, dans
+  // l'ordre de la liste.
+  plusieurs_choix: {
+    html: (v, o) => casesACocher(v, o.choix || []),
+    lire: (x) => [...x.querySelectorAll("input:checked")].map((c) => c.value),
   },
   // Un choix vide que le moteur pré-remplit (`o.prerempli` : le métier que la paie applique) montre ce qu'il prend dans
   // sa case vide ; choisir une valeur de la liste l'écrit, celle qui est montrée comprise ; le vide n'écrit aucune valeur : la carte n'en dit pas, et le pré-rempli se montre.
