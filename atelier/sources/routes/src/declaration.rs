@@ -127,7 +127,7 @@ formes! {
         droit::fiche::StatutConventionnel,
         declarations::obligations::LieuHorsDsn,
     ],
-    Forme::Objet => [engagement::carte::Changements, compagnie::problemes::CaptureDeLaPage, socle::forme::Liste],
+    Forme::Objet => [engagement::carte::Changements, compagnie::problemes::CaptureDeLaPage, socle::forme::Liste, droit::organismes::Saisies],
 }
 
 /// CE QUE LE TYPE D'UN CHAMP NE PEUT PAS SAVOIR : son libelle (ce que l'ecran montre), son sens (ce que le LLM lit), s'il

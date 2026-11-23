@@ -5,7 +5,7 @@
 
 use serde::Serialize;
 
-use crate::catalogue::{Affiche, Champ, Route};
+use crate::catalogue::{Affiche, Route};
 use crate::fiches::{CaseDeLaFiche, HistoireDUneCase};
 use crate::imprevus::GesteDeRoute;
 use crate::ouverture::DocumentMontre;
@@ -60,7 +60,7 @@ pub(crate) struct EnregistrerLEcran<C> {
 }
 
 impl<C> EnregistrerLEcran<C> {
-    pub(crate) fn de(route: Route, charge: C, dans: &Champ, libelle: Affiche) -> EnregistrerLEcran<C> {
-        EnregistrerLEcran { route, charge, dans: dans.nom, libelle: libelle.texte() }
+    pub(crate) fn de(route: Route, charge: C, dans: &'static str, libelle: Affiche) -> EnregistrerLEcran<C> {
+        EnregistrerLEcran { route, charge, dans, libelle: libelle.texte() }
     }
 }

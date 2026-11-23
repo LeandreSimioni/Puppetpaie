@@ -13,14 +13,26 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::ecran::{EcranRendu, EnregistrerLEcran};
 use crate::fiches::{CaseDeLaFiche, HistoireDUneCase, PartieDeLaFiche};
 use crate::temps::TempsDeLaCase;
-use crate::declaration::{charge, dit};
+use crate::declaration::{charge, dit, ChampDuType, ChargeDuType};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Fiche, Refus, ILLISIBLE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 
 /// Le champ de la charge d'`organismes-enregistrer` ou vont les cases de l'ecran, un contrat par cle.
-const CONTRATS: Champ = Champ { nom: "contrats", libelle: Affiche::new("Contrats"), forme: Forme::Objet, sens: "{clé du contrat: {libelle, organisme}}, ce qui est saisi ; un contrat nul ne dit rien", avance: false };
+const CONTRATS: &str = "contrats";
+
+// La charge de `organismes-enregistrer`, champ par champ : sa structure est celle de `compagnie::organismes`
+// (`ChargeEnregistrer`), d'une autre crate que `charge!`.
+const CHARGE_ENREGISTRER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, Option<droit::organismes::Saisies>>(
+            CONTRATS,
+            dit("Contrats", "{clé du contrat: {libelle, organisme}}, ce qui est saisi ; un contrat nul ne dit rien"),
+        ),
+        ChampDuType::du_type::<_, Option<Mois>>("mois", dit("À partir de", "le mois à partir duquel ils valent, AAAA-MM ; le mois en cours sinon")),
+    ],
+};
 
 /// Les parties d'un contrat que la compagnie saisit, et le bouton qui les enregistre.
 const ORGANISME: Affiche = Affiche::new("Organisme");
@@ -44,10 +56,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::OrganismesEnregistrer,
         geste: "Écrire, à partir d'un mois, les contrats de la DSN que la compagnie dit.",
-        charge: &[
-            CONTRATS,
-            Champ { nom: "mois", libelle: Affiche::new("À partir de"), forme: Forme::Mois, sens: "le mois à partir duquel ils valent, AAAA-MM ; le mois en cours sinon", avance: false },
-        ],
+        charge: &CHARGE_ENREGISTRER,
         exemple: r#"{"mois":"2026-11","contrats":{"prevoyance_permanents":{"libelle":"PREVOYANCE","organisme":"P0983"},"sante_permanents":{"libelle":"SANTE","organisme":"P0983"}}}"#,
         rend: "ce que organismes-contrats rend",
         refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "la référence du contrat que la phrase nomme ; rien n'est écrit" }, ILLISIBLE],
@@ -220,6 +229,6 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         cases.push(CaseDeLaFiche::de_parties(ligne.cle, ligne.quoi, valeur, parties, dit, siens));
     }
     // Un ecran dont les textes donnent tout n'a rien a enregistrer : il n'a pas de geste.
-    let enregistrer = se_saisit.then(|| EnregistrerLEcran::de(Route::OrganismesEnregistrer, ChargeOrganismes { mois: Some(mois) }, &CONTRATS, ENREGISTRER));
+    let enregistrer = se_saisit.then(|| EnregistrerLEcran::de(Route::OrganismesEnregistrer, ChargeOrganismes { mois: Some(mois) }, CONTRATS, ENREGISTRER));
     Ok(OrganismesDits { phrase, mois, ecran: EcranRendu { encarts, rangs: Vec::new(), cases, historique, enregistrer } })
 }
