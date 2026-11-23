@@ -54,6 +54,7 @@ const AAD_POSTE: &[u8] = b"puppetpaie/enveloppe/poste";
 const AAD_MOTDEPASSE: &[u8] = b"puppetpaie/enveloppe/motdepasse";
 const AAD_GARDEE: &[u8] = b"puppetpaie/ouverture-gardee";
 
+#[derive(Debug)]
 pub struct Service {
     pub nom: &'static str,
     pub libelle: &'static str,
@@ -96,6 +97,19 @@ impl socle::liste::ListeFermee for Service {
 
     fn libelle(&self) -> R<&'static str> {
         Ok(self.libelle)
+    }
+}
+
+impl Serialize for Service {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom)
+    }
+}
+
+impl<'de> Deserialize<'de> for &'static Service {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let nom = String::deserialize(d)?;
+        SERVICES.iter().find(|s| s.nom == nom).ok_or_else(|| serde::de::Error::custom(socle::liste::pas_de_la_liste("Service", &nom, &SERVICES.each_ref().map(|s| s.nom))))
     }
 }
 

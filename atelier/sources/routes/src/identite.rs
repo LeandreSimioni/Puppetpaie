@@ -140,7 +140,7 @@ charge! {
     /// (« 20,5 »).
     #[derive(Debug, Clone)]
     struct ChargePoser {
-        quoi: String = QUOI_IDENTITE,
+        quoi: SorteDImage = QUOI_IDENTITE,
         contenu: String = dit("Image", "l'image en base64 (une adresse data: aussi)").fichier(IMAGES_ADMISES),
         #[serde(deserialize_with = "Octets::ko")]
         poids: Octets = dit("Poids visé en Ko", "le poids visé de l'image dans chaque document, en Ko (le geste de la route identite en propose un)"),
@@ -152,7 +152,7 @@ charge! {
     /// fenetre la lit aussi, pour servir l'image a la page (`interface::Fenetre::identite`).
     #[derive(Debug, Clone, serde::Serialize)]
     pub struct ChargeQuoi {
-        pub quoi: String = QUOI_IDENTITE,
+        pub quoi: SorteDImage = QUOI_IDENTITE,
     }
 }
 
@@ -173,14 +173,6 @@ const OCTETS_MAX: Octets = Octets::en_ko(2048);
 /// Le poids visé d'une image dans chaque document, que le geste qui la pose propose.
 const POIDS_VISE: Octets = Octets::en_ko(20);
 
-/// L'image que la charge nomme (`quoi`), ou ce qui la refuse.
-#[track_caller]
-fn sorte_d_image(quoi: &str) -> R<SorteDImage> {
-    match SorteDImage::du_nom(quoi) {
-        Some(s) => Ok(s),
-        None => Err(refus(format!("Identite inconnue : {}. Connues : cachet, logo, signature.", socle::fichiers::repr(quoi)))),
-    }
-}
 
 fn dossier_identite(ctx: &Contexte) -> PathBuf {
     ctx.gabarits().join("identite")
@@ -199,7 +191,7 @@ fn adresse_de_l_image(quoi: SorteDImage) -> String {
 /// `identite-image` : l'image posee pour `quoi`, ou, pour le cachet sans image posee, celui que le logiciel dessine
 /// depuis la fiche Entreprise.
 fn image(ctx: &Contexte, c: ChargeQuoi) -> R<ImageDeLIdentite> {
-    let quoi = sorte_d_image(&c.quoi)?;
+    let quoi = c.quoi;
     let nom = nom_de(quoi);
     if let Some((f, format)) = chemin_identite(&dossier_identite(ctx), quoi) {
         let octets = std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(socle::echec::Classe::Disque))?;
@@ -221,7 +213,7 @@ fn avant(f: &Path) -> R<()> {
 }
 
 fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> {
-    let quoi = sorte_d_image(&charge.quoi)?;
+    let quoi = charge.quoi;
     // Une adresse data: porte son en-tete avant la virgule ; le base64 seul n'en a pas.
     let utile = match charge.contenu.rsplit_once(',') {
         Some((_, b)) => b,
@@ -298,7 +290,7 @@ fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif
 }
 
 fn retirer_identite(ctx: &Contexte, charge: ChargeQuoi) -> R<Identite> {
-    let quoi = sorte_d_image(&charge.quoi)?;
+    let quoi = charge.quoi;
     if let Some((f, _)) = chemin_identite(&dossier_identite(ctx), quoi) {
         avant(&f)?;
     }
@@ -368,7 +360,7 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
     // Le tampon que le logiciel dessine ne se montre que si la fiche Entreprise lui donne de quoi le dessiner.
     let dessine = documents::cachet::svg(&ctx.entreprise).is_some();
     let rangs = v.images().into_iter().zip(dits).map(|((quoi, e), (titre, dit))| {
-        let designe = || ChargeQuoi { quoi: quoi.nom().to_string() };
+        let designe = || ChargeQuoi { quoi };
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`) ; le tampon dessine, d'ou il vient.
         let etat = match (e.pose, &e.format, e.octets, &e.quand) {
             (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.nom().to_uppercase(), octets, quand.dit())),

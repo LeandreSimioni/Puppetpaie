@@ -1129,7 +1129,8 @@ impl Fenetre {
         let Phase::Ouverte { racine, .. } = self.phase() else { return Reponse::nouvelle(404, "text/plain", Vec::new()) };
         // La route, comme la page l'appellerait : sa charge et sa reponse lues par leur forme.
         let lire = || -> R<(String, Vec<u8>)> {
-            let charge = Charge::de_forme(&routes::identite::ChargeQuoi { quoi: quoi.to_string() })?;
+            let quoi = documents::SorteDImage::du_nom(quoi).ok_or_else(|| socle::echec::refus("Cette image n'existe pas."))?;
+            let charge = Charge::de_forme(&routes::identite::ChargeQuoi { quoi })?;
             let i: routes::identite::ImageDeLIdentite = api::route(&racine, Route::IdentiteImage, &charge).lire().map_err(|x| socle::echec::refus(x.phrase))?;
             let octets = socle::base64::lire(&i.image).map_err(|e| e.reformuler(|p| format!("L'image ne se lit pas : {}.", p)))?;
             Ok((i.media, octets))

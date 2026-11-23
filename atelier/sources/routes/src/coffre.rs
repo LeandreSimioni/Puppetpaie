@@ -44,7 +44,7 @@ const CONFIRMATION: Legende = dit("Confirmation", "le même, retapé dans la pag
 // Deux charges que `charge!` ne peut pas dire : leur structure sert aussi une route qui ne prend pas le mot de passe tape
 // (`coffre-verifier`, `administrateur-detacher`) ; leurs noms sont ecrits ici.
 const CHARGE_OUBLIER: ChargeDuType = ChargeDuType {
-    champs: &[ChampDuType::du_type::<_, String>("service", SERVICE), ChampDuType::du_type::<_, MotDePasseTape>(crate::enveloppe::MOT_DE_PASSE, MOT_DE_PASSE)],
+    champs: &[ChampDuType::du_type::<_, &'static compagnie::coffre::Service>("service", SERVICE), ChampDuType::du_type::<_, MotDePasseTape>(crate::enveloppe::MOT_DE_PASSE, MOT_DE_PASSE)],
 };
 const CHARGE_RATTACHER: ChargeDuType = ChargeDuType {
     champs: &[
@@ -52,6 +52,11 @@ const CHARGE_RATTACHER: ChargeDuType = ChargeDuType {
         ChampDuType::du_type::<_, MotDePasseTape>(crate::enveloppe::MOT_DE_PASSE, dit("Mot de passe actuel", "le mot de passe actuel de cette compagnie, s'il est posé ; par moteur route, le moteur le demande à un humain")),
     ],
 };
+/// Un service du coffre, nomme par une charge : la liste de ses services.
+impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for &'static compagnie::coffre::Service {
+    const FORME: crate::catalogue::Forme = crate::catalogue::Forme::Choix(crate::catalogue::ListeDeChoix::de::<compagnie::coffre::Service>());
+}
+
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est modifié" };
 const ETAT: &str = "l'état du coffre : ce qui est posé, depuis quand, jamais les valeurs";
 const ECRAN_REND: &str = "phrase, encarts, rangs : le mot de passe du logiciel, l'administrateur, chaque service du coffre et le compte Google, chacun son titre, ce qu'il dit, sa pastille et son état, et ses gestes (leurs cases, ce que leur boîte dit, la demande du mot de passe du logiciel quand il est posé) ; jamais une valeur";
@@ -219,7 +224,7 @@ charge! {
     /// La charge qui nomme un service du coffre.
     #[derive(Debug, Serialize)]
     struct ChargeService {
-        service: String = SERVICE,
+        service: &'static compagnie::coffre::Service = SERVICE,
     }
 }
 
@@ -229,7 +234,7 @@ charge! {
     /// pour l'Urssaf le nom et le prenom du compte qui depose les DPAE.
     #[derive(Debug)]
     struct ChargePoser {
-        service: String = SERVICE,
+        service: &'static compagnie::coffre::Service = SERVICE,
         valeur: Option<socle::secret::Secret> = dit("Mot de passe", "le mot de passe à poser, tapé dans la page ; par moteur route, le moteur le fait taper deux fois à un humain"),
         compte: Option<String> = dit("Identifiant du compte", "l'identifiant du compte (l'adresse, pour la boîte courriel)"),
         nom: Option<String> = dit("Nom", "Urssaf : le nom du compte qui dépose les DPAE ; s'il change, la route ne pose que le compte quand `valeur` manque"),
@@ -417,14 +422,15 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::CoffrePoser => en_json(coffre_poser(ctx, charge.lire()?, mdp)?),
         Route::CoffreVerifier => {
             let c: ChargeService = charge.lire()?;
-            let verdict = compagnie::coffre_verifier::route(ctx, &c.service)?;
+            let c = c.service.nom;
+            let verdict = compagnie::coffre_verifier::route(ctx, c)?;
             let mots = &verdict.pastille.mots;
             // Un compte incomplet se dit avec ce qui lui manque et ou le donner (`identifiant_du_compte`).
-            let manque = manque_du_compte(&identifiant_du_compte(&ctx.entreprise, &c.service)?);
+            let manque = manque_du_compte(&identifiant_du_compte(&ctx.entreprise, c)?);
             let conseil: String = verdict.conseil.iter().map(|c| format!(" {}", c)).collect();
             let phrase = match manque {
-                Some(m) if !verdict.ok => socle::phrase!("{} : {}, {}.", libelle_du_service(&c.service), mots, m),
-                _ => socle::phrase!("{}", format!("{} : {}. {}{}", libelle_du_service(&c.service), mots, verdict.message, conseil).trim()),
+                Some(m) if !verdict.ok => socle::phrase!("{} : {}, {}.", libelle_du_service(c), mots, m),
+                _ => socle::phrase!("{}", format!("{} : {}. {}{}", libelle_du_service(c), mots, verdict.message, conseil).trim()),
             };
             en_json(Verifie { phrase, verdict })
         }
@@ -644,7 +650,7 @@ fn manque_du_compte(identifiant: &Identifiant) -> Option<String> {
 /// seul geste, une seule preuve : tout se verifie avant d'ecrire. Rend l'etat du coffre, sans valeur. Rien a poser se
 /// refuse avant la porte du mot de passe du logiciel : il n'y a rien a autoriser.
 fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
-    let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
+    let service = c.service;
     let compte = if c.nom.is_some() || c.prenom.is_some() { compte_dpae_change(ctx, c.nom.as_deref(), c.prenom.as_deref())? } else { None };
     // Sans `valeur` (`moteur route`) : le compte seul s'il change, sinon le secret, tape par un humain apres la porte.
     let donne = c.valeur.as_ref().is_some_and(|v| !socle::texte::strip(v.devoiler()).is_empty());
@@ -685,7 +691,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secr
 
 /// `coffre-oublier` : retire un secret du coffre.
 fn coffre_oublier(ctx: &Contexte, c: ChargeService, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
-    let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
+    let service = c.service;
     exiger_mot_de_passe(&ctx.racine, mdp, &geste_oublier(service.libelle))?;
     coffre(ctx).oublier(service.nom).map_err(en_operation)?;
     coffre_etat(ctx)
