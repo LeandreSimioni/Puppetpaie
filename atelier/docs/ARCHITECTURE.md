@@ -3998,7 +3998,9 @@ Une compagnie fictive (livrée, ou ajoutée par le « + » puis rendue simulée 
 ouverture, et à chaque passage de la veille, son horloge (`routes/src/horloge.rs`, `rattraper`) joue ce qu'une compagnie
 bien tenue aurait fait **avant aujourd'hui**, à sa date, et seulement ce qui n'est pas fait. Hors d'une compagnie fictive
 elle ne touche à rien (`HorlogeFictive::verifier`, revérifiée avant chaque geste) ; ses dépôts passent par
-`depot_acte` contre le simulateur, ses courriels par une boîte muette.
+`depot_acte` contre le simulateur, ses courriels par une boîte muette. `courriels-simules/` montre au visiteur ce que
+SES gestes envoient : une fictive livrée (`scenario::livrer`) n'a pas ceux de son scénario, sauf ceux d'une demande
+encore attendue (signature, fiche), où la boîte qui répond retrouve le bouton ou le lien (`scenario::courriels_gardes`).
 
 **Ce qu'elle joue, et à quel instant** (heure de Paris) :
 

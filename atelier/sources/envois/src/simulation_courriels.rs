@@ -425,18 +425,28 @@ pub fn courriels_joues(racine: &Path, apres: Option<&str>) -> R<CourrielsJoues> 
 
 // ------------------------------------------------------------------ la boite qui repond
 
+/// Les courriels joues qui portent un `Message-ID`, du plus ancien au plus recent : (nom, identifiant, octets). Un
+/// courriel joue sans identifiant ne repond a aucune demande.
+fn identifies(racine: &Path) -> R<Vec<(String, String, Vec<u8>)>> {
+    let mut out = Vec::new();
+    for (nom, octets) in courriels(racine)? {
+        let (entetes, _) = mailparse::parse_headers(&octets).map_err(illisible)?;
+        if let Some(id) = crate::courriel_lecture::identifiant_des_entetes(&entetes) {
+            out.push((nom, id, octets));
+        }
+    }
+    Ok(out)
+}
+
 /// Les courriels joues, par leur `Message-ID` : le
 /// dernier d'un meme identifiant l'emporte.
 pub fn courriels_par_identifiant(racine: &Path) -> R<HashMap<String, Vec<u8>>> {
-    let mut envoyes = HashMap::new();
-    for (_, octets) in courriels(racine)? {
-        let (entetes, _) = mailparse::parse_headers(&octets).map_err(illisible)?;
-        // Un courriel joue sans identifiant ne repond a aucune demande.
-        if let Some(id) = crate::courriel_lecture::identifiant_des_entetes(&entetes) {
-            envoyes.insert(id, octets);
-        }
-    }
-    Ok(envoyes)
+    Ok(identifies(racine)?.into_iter().map(|(_, id, octets)| (id, octets)).collect())
+}
+
+/// Les noms des courriels joues dont le `Message-ID` est retenu par `retenu`.
+pub fn noms_des_courriels(racine: &Path, retenu: impl Fn(&str) -> bool) -> R<Vec<String>> {
+    Ok(identifies(racine)?.into_iter().filter(|(_, id, _)| retenu(id)).map(|(nom, _, _)| nom).collect())
 }
 
 /// `_bouton_mailto(demande)` pour la demande dont on connait les identifiants (`a["envoyes"]`) : (objet, corps) du lien
