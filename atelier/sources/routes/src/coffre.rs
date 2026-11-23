@@ -1247,7 +1247,7 @@ fn ecran_du_coffre(ctx: &Contexte, e: &EtatDuCoffre) -> R<EcranDuCoffre> {
     } else {
         None
     };
-    let mut encarts = vec![super::Encart::de(socle::ecran::EtatDEcran::Information, "", "Les mots de passe dont le logiciel a besoin pour déposer, relever et envoyer. La page ne voit jamais un mot de passe, seulement s'il est posé.")];
+    let mut encarts = vec![super::Encart::de(socle::ecran::EtatDEcran::Information, "", "Les mots de passe dont le logiciel a besoin pour déposer, relever et envoyer. Un mot de passe posé ne se relit plus : l'écran dit seulement s'il est posé.")];
     encarts.extend(encart);
     let mut rangs = Vec::new();
 

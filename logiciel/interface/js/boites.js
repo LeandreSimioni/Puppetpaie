@@ -111,6 +111,8 @@ document.addEventListener("keydown", (ev) => {
 
 function fermerBoite() {
   document.getElementById("voile").classList.add("cachee");
+  // Un mot de passe tapé ne reste pas dans une boîte fermée.
+  document.querySelectorAll("#boite input[type=password]").forEach((i) => { i.value = ""; });
   const f = FERMETURE_BOITE;
   FERMETURE_BOITE = null;
   if (f) f();
