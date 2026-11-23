@@ -422,10 +422,11 @@ pub fn est_une_ecriture(route: Route) -> bool {
     catalogue::FICHES.iter().any(|l| catalogue::dans(l, route).is_some_and(|f| f.acte != catalogue::Acte::Lit))
 }
 
-/// La charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge : `{}`.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SansCharge {}
+declaration::charge! {
+    /// La charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge : `{}`.
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub(crate) struct SansCharge {}
+}
 
 /// UN ENCART, tel que la page le dessine (`encart` de js/tuyau.js) : un titre en gras, sa phrase, la couleur de l'etat.
 /// La page n'ecrit aucune phrase : ce qu'une boite dit d'un cas, la route le rend ainsi.

@@ -864,7 +864,7 @@ pub fn dans(fiches: &[Fiche], route: Route) -> Option<Fiche> {
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::Routes,
     geste: "Dire les routes : leur fiche, le chemin simple d'abord.",
-    charge: &[Champ { nom: "avance", libelle: Affiche::new("Toutes les routes"), forme: Forme::OuiNon, sens: "vrai : toutes les routes, les avancées comprises", avance: true }],
+    charge: &ChargeDuCatalogue::CHARGE,
     exemple: r#"{"avance": true}"#,
     rend: "routes : la fiche de chaque route (nom, geste, charge, exemple, rend, refus, acte, avance, longueur_de_phrase)",
     refus: &[FORME],
@@ -874,11 +874,11 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     pendant_la_demande: PendantLaDemande::Servie,
 }];
 
-/// La charge de `routes` : toutes les routes (`avance`), ou le chemin simple.
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDuCatalogue {
-    avance: Option<bool>,
+crate::declaration::charge! {
+    /// La charge de `routes` : toutes les routes (`avance`), ou le chemin simple.
+    struct ChargeDuCatalogue {
+        avance: Option<bool> = crate::declaration::dit("Toutes les routes", "vrai : toutes les routes, les avancées comprises").avancee(),
+    }
 }
 
 /// Ce que rend `routes` : la phrase, une ligne par route (« nom : geste »), et la fiche de chacune.
