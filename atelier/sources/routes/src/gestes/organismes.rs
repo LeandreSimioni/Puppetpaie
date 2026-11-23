@@ -26,10 +26,7 @@ const CONTRATS: &str = "contrats";
 // (`ChargeEnregistrer`), d'une autre crate que `charge!`.
 const CHARGE_ENREGISTRER: ChargeDuType = ChargeDuType {
     champs: &[
-        ChampDuType::du_type::<_, Option<droit::organismes::Saisies>>(
-            CONTRATS,
-            dit("Contrats", "{clé du contrat: {libelle, organisme}}, ce qui est saisi ; un contrat nul ne dit rien"),
-        ),
+        ChampDuType::du_type::<_, Option<droit::organismes::Saisies>>(CONTRATS, dit("Contrats", "{clé du contrat: {libelle, organisme}}, ce qui est saisi ; un contrat nul ne dit rien")),
         ChampDuType::du_type::<_, Option<Mois>>("mois", dit("À partir de", "le mois à partir duquel ils valent, AAAA-MM ; le mois en cours sinon")),
     ],
 };

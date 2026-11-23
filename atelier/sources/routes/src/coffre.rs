@@ -49,10 +49,7 @@ const CHARGE_OUBLIER: ChargeDuType = ChargeDuType {
 const CHARGE_RATTACHER: ChargeDuType = ChargeDuType {
     champs: &[
         ChampDuType::du_type::<_, Option<socle::secret::Secret>>("administrateur", ADMINISTRATEUR),
-        ChampDuType::du_type::<_, MotDePasseTape>(
-            crate::enveloppe::MOT_DE_PASSE,
-            dit("Mot de passe actuel", "le mot de passe actuel de cette compagnie, s'il est posé ; par moteur route, le moteur le demande à un humain"),
-        ),
+        ChampDuType::du_type::<_, MotDePasseTape>(crate::enveloppe::MOT_DE_PASSE, dit("Mot de passe actuel", "le mot de passe actuel de cette compagnie, s'il est posé ; par moteur route, le moteur le demande à un humain")),
     ],
 };
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est modifié" };

@@ -132,10 +132,7 @@ const CHARGE_MODIFIER: ChargeDuType = ChargeDuType {
         ChampDuType::du_type::<_, Identite>("engagement", IDENTITE),
         ChampDuType::du_type::<_, Changements>("changements", CHANGEMENTS),
         ChampDuType::du_type::<_, bool>("confirme", dit("Avertissement lu", "vrai : l'avertissement rendu a été lu et accepté")),
-        ChampDuType::du_type::<_, Option<u32>>(
-            "jour",
-            dit("Jour d'effet", "le jour du mois (un nombre, de 1 à 31) où un terme changé prend effet, quand ce n'est pas le 1er").avancee(),
-        ),
+        ChampDuType::du_type::<_, Option<u32>>("jour", dit("Jour d'effet", "le jour du mois (un nombre, de 1 à 31) où un terme changé prend effet, quand ce n'est pas le 1er").avancee()),
     ],
 };
 

@@ -51,24 +51,15 @@ const CHARGE_FICHE: ChargeDuType = ChargeDuType {
     champs: &[
         ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
         ChampDuType::du_type::<_, Option<IdSalarie>>("cle", dit("Clé", "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise")),
-        ChampDuType::du_type::<_, Option<socle::forme::Liste>>(
-            "changements",
-            dit("Cases saisies", "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée"),
-        ),
-        ChampDuType::du_type::<_, Option<Vec<CaseDeFiche>>>(
-            "changees",
-            dit("Cases qui viennent de changer", "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune").avancee(),
-        ),
+        ChampDuType::du_type::<_, Option<socle::forme::Liste>>("changements", dit("Cases saisies", "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée")),
+        ChampDuType::du_type::<_, Option<Vec<CaseDeFiche>>>("changees", dit("Cases qui viennent de changer", "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune").avancee()),
     ],
 };
 const CHARGE_ENREGISTRER: ChargeDuType = ChargeDuType {
     champs: &[
         ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
         ChampDuType::du_type::<_, Option<IdSalarie>>("cle", CLE_FICHE),
-        ChampDuType::du_type::<_, socle::forme::Liste>(
-            "changements",
-            dit("Cases qui changent", "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur"),
-        ),
+        ChampDuType::du_type::<_, socle::forme::Liste>("changements", dit("Cases qui changent", "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur")),
         ChampDuType::du_type::<_, Option<bool>>("confirme", dit("Avertissement lu", "vrai : l'avertissement rendu (ce qui change) a été lu ; la fiche s'écrit")),
         ChampDuType::du_type::<_, Option<Jour>>("depuis", dit("Depuis le", "la date d'effet de ce qui change, AAAA-MM-JJ ; la date proposée sinon")),
         ChampDuType::du_type::<_, Option<String>>("note", dit("Pourquoi", "pourquoi cela change (correction, déménagement…)").avancee()),

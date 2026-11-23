@@ -246,12 +246,7 @@ pub(crate) use charge;
 /// LE NOM D'UN CHAMP D'UNE CHARGE DECLAREE, que le compilateur tient : `cle!(ChargeChanger, nouveau)` ne compile que si la
 /// structure a ce champ. Ce qu'un geste rendu nomme de ses cases.
 macro_rules! cle {
-    ($t:ty, $f:ident) => {{
-        let _ = |c: &$t| {
-            let _ = &c.$f;
-        };
-        stringify!($f)
-    }};
+    ($t:ty, $f:ident) => {{ let _ = |c: &$t| { let _ = &c.$f; }; stringify!($f) }};
 }
 
 pub(crate) use cle;
