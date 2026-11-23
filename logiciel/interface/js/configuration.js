@@ -538,12 +538,14 @@ function brancherNatures(cible, e) {
   });
 }
 
+/* LE GESTE QUI OUVRE UNE FICHE (`completer_la_fiche` d'une fiche du compte rendu) : sa route est `fiche`, que la page
+   montre dans Configuration ; sa charge dit laquelle (`nom`, `cle`). */
 document.addEventListener("click", (ev) => {
-  const ouvrir = ev.target.closest && ev.target.closest("[data-ouvrir-fiche]");
-  if (ouvrir) {
-    ev.preventDefault();
-    ouvrirFicheImportee(ouvrir.dataset.ouvrirFiche, ouvrir.dataset.ouvrirCle);
-  }
+  const b = ev.target.closest && ev.target.closest("[data-ouvrir-fiche] [data-geste]");
+  if (!b) return;
+  ev.preventDefault();
+  const charge = JSON.parse(b.closest("[data-ouvrir-fiche]").dataset.ouvrirFiche);
+  ouvrirFicheImportee(charge.nom, charge.cle);
 });
 
 /* Ouvrir, dans Configuration, la fiche que l'import vient de créer. */
@@ -577,8 +579,8 @@ function fichesImportees(fiches, titre) {
     // Ses valeurs fausses (`fautes`) et le geste qui ouvre la fiche pour la compléter (`completer_la_fiche`), tels que
     // la route les rend.
     const fautes = (f.fautes || []).map((x) => `<div class="acte-dernier faute">${echapper(x)}</div>`).join("");
-    const ouvrir = f.completer_la_fiche ? `<div class="acte-dernier"><button type="button" class="petit" data-ouvrir-fiche="${echapper(f.nom)}"
-            ${f.cle == null ? "" : `data-ouvrir-cle="${echapper(f.cle)}"`}>${echapper(f.completer_la_fiche)}</button></div>` : "";
+    const ouvrir = f.completer_la_fiche ? `<div class="acte-dernier" data-ouvrir-fiche="${echapper(JSON.stringify(f.completer_la_fiche.charge))}">${
+      boutonsDesGestes([f.completer_la_fiche])}</div>` : "";
     const reste = `${ouvrir}${fautes}`;
     return `<div class="rang import">
       <span class="rang-nom">${echapper(f.libelle)}</span>

@@ -56,7 +56,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare) ; gestes (« Reprendre », tant que rien n'est écrit) ; mots (les titres du compte rendu) ; cloture (ce qui le clôt : titre, notes, questions) ; de chaque fiche, fautes et completer_la_fiche",
+        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare) ; gestes (« Reprendre », tant que rien n'est écrit) ; mots (les titres du compte rendu) ; cloture (ce qui le clôt : titre, notes, questions) ; de chaque fiche, fautes et completer_la_fiche (le geste de la route fiche qui l'ouvre, sa charge la fiche : nom, cle)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -846,6 +846,10 @@ const REPRENDRE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Rep
 struct CompteRenduDeLImport {
     #[serde(flatten)]
     lu: Importation,
+    /// Les fiches que l'import cree, complete ou laisse, chacune avec son geste.
+    entreprise: Option<FicheDuCompteRendu>,
+    salaries: Vec<FicheDuCompteRendu>,
+    spectacles: Vec<FicheDuCompteRendu>,
     gestes: Vec<GesteDeLImport>,
     /// Les titres de ses parties et de ses colonnes (`MOTS_DU_COMPTE_RENDU`).
     mots: MotsDuCompteRenduDeLImport,
@@ -880,12 +884,58 @@ impl CompteRenduDeLImport {
                 questions: lu.identites.iter().map(|q| q.question.clone()).collect(),
             },
         };
-        for f in lu.entreprise.iter_mut().chain(lu.salaries.iter_mut()).chain(lu.spectacles.iter_mut()) {
-            f.dire_ce_qui_se_montre();
-        }
-        Ok(CompteRenduDeLImport { lu, gestes, mots: MOTS_DU_COMPTE_RENDU, cloture })
+        let entreprise = lu.entreprise.take().map(FicheDuCompteRendu::de);
+        let salaries = std::mem::take(&mut lu.salaries).into_iter().map(FicheDuCompteRendu::de).collect();
+        let spectacles = std::mem::take(&mut lu.spectacles).into_iter().map(FicheDuCompteRendu::de).collect();
+        Ok(CompteRenduDeLImport { lu, entreprise, salaries, spectacles, gestes, mots: MOTS_DU_COMPTE_RENDU, cloture })
     }
 }
+
+/// UNE FICHE DU COMPTE RENDU DE L'IMPORT : ce que l'import en dit (`FicheImportee`, ce qui s'en montre dit :
+/// `dire_ce_qui_se_montre`), et le geste qui l'ouvre pour la completer quand elle le doit (`a_completer`) : la route
+/// `fiche`, sa charge la fiche nommee.
+#[derive(Debug, Serialize)]
+struct FicheDuCompteRendu {
+    #[serde(flatten)]
+    fiche: FicheImportee,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    completer_la_fiche: Option<GesteDeLaFiche>,
+}
+
+impl FicheDuCompteRendu {
+    fn de(mut fiche: FicheImportee) -> FicheDuCompteRendu {
+        fiche.dire_ce_qui_se_montre();
+        let completer_la_fiche = match (fiche.a_completer, fiche.fiche.nommee()) {
+            (true, Some(n)) => Some(GesteDeLaFiche::avec_cases(Route::Fiche, FicheAOuvrir::de(n), COMPLETER_LA_FICHE, Vec::new(), crate::SansCharge {}, crate::SansCharge {})),
+            (true, None) | (false, _) => None,
+        };
+        FicheDuCompteRendu { fiche, completer_la_fiche }
+    }
+}
+
+/// LA FICHE QU'UN GESTE OUVRE, a la charge de la route `fiche` : son nom, et la cle d'un salarie ou d'un spectacle.
+#[derive(Debug, Serialize)]
+struct FicheAOuvrir {
+    nom: NomDeFiche,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cle: Option<String>,
+}
+
+impl FicheAOuvrir {
+    fn de(n: &FicheNommee) -> FicheAOuvrir {
+        let cle = match n {
+            FicheNommee::Entreprise => None,
+            FicheNommee::Salarie(k) => Some(k.to_string()),
+            FicheNommee::Spectacle(k) => Some(k.to_string()),
+        };
+        FicheAOuvrir { nom: n.nom(), cle }
+    }
+}
+
+/// LE GESTE QUI OUVRE UNE FICHE QUE L'IMPORT A CREEE, pour la completer (`fiche`) : il n'a pas de case.
+type GesteDeLaFiche = crate::imprevus::GesteDeRoute<FicheAOuvrir, crate::SansCharge, crate::SansCharge>;
+
+const COMPLETER_LA_FICHE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Compléter la fiche");
 
 /// LES TITRES DU COMPTE RENDU DE L'IMPORT, tels que la page les montre : chaque partie, chaque colonne de ses tableaux.
 #[derive(Debug, Serialize)]

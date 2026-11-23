@@ -406,9 +406,10 @@ pub struct FicheImportee {
     /// pas> » ; une case vide n'est pas une faute (ce qu'un acte exige, « Pour démarrer » le dit apres l'import).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fautes: Vec<String>,
-    /// Le libelle du geste qui ouvre la fiche pour la completer : une fiche creee, nommee, qui a une faute ; aucun sinon.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completer_la_fiche: Option<&'static str>,
+    /// ELLE S'OUVRE POUR SE COMPLETER : creee, nommee, avec une faute (`dire_ce_qui_se_montre`) ; le compte rendu de
+    /// l'import en rend le geste (`routes::import`).
+    #[serde(skip)]
+    pub a_completer: bool,
 }
 
 impl FicheImportee {
@@ -425,7 +426,7 @@ impl FicheImportee {
             lu_dans_dit: None,
             pastille: Pastille::de(EtatDEcran::AFaire, "à créer"),
             fautes: Vec::new(),
-            completer_la_fiche: None,
+            a_completer: false,
         };
         f.ajouter_ecarts(ecarts);
         f.poser(donnees, anomalies);
@@ -433,7 +434,7 @@ impl FicheImportee {
     }
 
     /// CE QUI SE MONTRE D'ELLE, une fois tout ce que l'import en dit pose : ses fautes (ses anomalies de gravite
-    /// `Erreur`, sous le libelle de leur case), et le geste qui l'ouvre pour la completer quand elle est creee et en a.
+    /// `Erreur`, sous le libelle de leur case), et si elle s'ouvre pour se completer, creee et nommee, quand elle en a.
     pub fn dire_ce_qui_se_montre(&mut self) {
         self.fautes = self
             .anomalies
@@ -445,8 +446,7 @@ impl FicheImportee {
                 None => format!("{} : {}", a.champ, a.message),
             })
             .collect();
-        let ouvrable = self.etat == EtatFiche::Creee && self.fiche.nommee().is_some() && !self.fautes.is_empty();
-        self.completer_la_fiche = ouvrable.then_some("Compléter la fiche");
+        self.a_completer = self.etat == EtatFiche::Creee && self.fiche.nommee().is_some() && !self.fautes.is_empty();
     }
 
     /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.
@@ -782,8 +782,12 @@ pub struct Importation {
     pub aem: usize,
     pub premier_mois: Option<Mois>,
     pub dernier_mois: Option<Mois>,
+    /// Les fiches, que le compte rendu de l'import rend chacune avec son geste (`routes::import`).
+    #[serde(skip)]
     pub entreprise: Option<FicheImportee>,
+    #[serde(skip)]
     pub salaries: Vec<FicheImportee>,
+    #[serde(skip)]
     pub spectacles: Vec<FicheImportee>,
     /// Les contrats attestes par les AEM deposees.
     pub contrats: usize,
