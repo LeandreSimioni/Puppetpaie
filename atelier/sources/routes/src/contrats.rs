@@ -65,7 +65,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &ChargeApercuSignature::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), coche (coché à l'ouverture), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
+        rend: "titre, titre_en_attente ; les départs ouverts, gestes, chacun un geste (route, charge, libellé, rang, lescases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe), le principal par son rang (envoyer à la signature quand la boîte est posée, imprimer sinon), aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), coche (coché à l'ouverture), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -106,7 +106,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer l'avenant d'un contrat : ce qui change, par article ou en clair.",
         charge: &ChargeAvenant::CHARGE,
         exemple: r#"{"salarie":"FULLER","debut":"2026-11-27","numero":"FU1.26.01"}"#,
-        rend: "le contrat (contrat, date_contrat, signe ; ailleurs : signé hors du logiciel, et contrat_signe : chemin du dossier de son PDF, deposes, phrase), numero de l'avenant, effet, modifications (numero et article, avant, apres ; phrase en clair sans numero), avenants (et la phrase de chacun), destinataire, titre (le contrat comme l'avenant le nomme), situation, encarts ; les envois ouverts, chacun un geste (route demander-signature, charge, libellé, cases, demande du mot de passe) : principal (envoyer l'avenant, sa case avenants : l'avenant et sa date d'effet, proposée d'abord) et autres (annule et remplace, le contrat pas commencé), aucun quand rien ne change ou sans boîte courriel ; cases (celle de l'envoi de l'avenant, des rangées : chacune sa date d'effet)",
+        rend: "le contrat (contrat, date_contrat, signe ; ailleurs : signé hors du logiciel, et contrat_signe : chemin du dossier de son PDF, deposes, phrase), numero de l'avenant, effet, modifications (numero et article, avant, apres ; phrase en clair sans numero), avenants (et la phrase de chacun), destinataire, titre (le contrat comme l'avenant le nomme), situation, encarts ; les envois ouverts, gestes, chacun un geste (route demander-signature, charge, libellé, rang, cases, demande du mot de passe) : annule et remplace (le contrat pas commencé), et le principal par son rang (envoyer l'avenant, sa case avenants : l'avenant et sa date d'effet, proposée d'abord), aucun quand rien ne change ou sans boîte courriel ; cases (celle de l'envoi de l'avenant, des rangées : chacune sa date d'effet)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, le début et le numéro d'un contrat parti à la signature ou signé hors du logiciel" }, MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -482,10 +482,8 @@ pub(crate) struct ApercuSignature {
     titre: &'static str,
     titre_en_attente: &'static str,
     /// Les departs ouverts : aucun tant qu'aucun contrat n'est a envoyer ; imprimer toujours, envoyer a la signature quand
-    /// la boite est posee, et c'est alors lui le principal.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    principal: Option<GesteDesContrats>,
-    autres: Vec<GesteDesContrats>,
+    /// la boite est posee, et c'est alors lui le principal (son rang).
+    gestes: Vec<GesteDesContrats>,
     mois: Mois,
     /// Tous les contrats du mois, que le moteur lit (l'horloge) ; la reponse ne les rend que dans leur liste.
     #[serde(skip)]
@@ -590,12 +588,10 @@ pub(crate) struct ApercuAvenant {
     avenants: Vec<AvenantDit>,
     remplacable: bool,
     boite_liee: bool,
-    /// Les envois ouverts, chacun un geste qui exige le mot de passe : envoyer l'avenant (le principal ; sa case
-    /// `avenants`, l'avenant et sa date d'effet), et le contrat refait qui annule et remplace, quand il n'a pas
-    /// commence ; aucun quand rien ne change ou que la boite courriel n'est pas posee.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    principal: Option<GesteDeLAvenant>,
-    autres: Vec<GesteDeLAvenant>,
+    /// Les envois ouverts, chacun un geste qui exige le mot de passe : le contrat refait qui annule et remplace, quand
+    /// il n'a pas commence, et envoyer l'avenant (le principal par son rang ; sa case `avenants`, l'avenant et sa date
+    /// d'effet) ; aucun quand rien ne change ou que la boite courriel n'est pas posee.
+    gestes: Vec<GesteDeLAvenant>,
     /// Les cases de l'envoi de l'avenant : l'avenant, sa date d'effet a saisir ; aucune sans envoi.
     cases: Vec<crate::fiches::CaseDeLaFiche<&'static str>>,
     destinataire: Option<droit::fiche::Courriel>,
@@ -1228,17 +1224,16 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
     // Sa charge porte deja ce qui est coche a l'ouverture : jouee telle quelle, elle fait partir exactement cela.
     let coche = ChargeSignature { avenants: Some(valeurs.avenants.clone()), ..ChargeSignature::des_contrats(mois, valeurs.contrats.clone()) };
     let depart = |route, libelle| GesteDesContrats::avec_cases(route, coche.clone(), libelle, coches.clone(), valeurs.clone(), crate::SansCharge {});
-    let (principal, autres) = match (contrats.iter().any(|c| c.a_envoyer), boite_liee) {
-        (false, _) => (None, Vec::new()),
-        (true, false) => (Some(depart(Route::ContratsImprimer, IMPRIMER)), Vec::new()),
-        (true, true) => (Some(depart(Route::DemanderSignature, ENVOYER_A_LA_SIGNATURE).exigeant(Some(demande.clone()))), vec![depart(Route::ContratsImprimer, IMPRIMER)]),
+    let gestes = match (contrats.iter().any(|c| c.a_envoyer), boite_liee) {
+        (false, _) => Vec::new(),
+        (true, false) => vec![depart(Route::ContratsImprimer, IMPRIMER).principal()],
+        (true, true) => vec![depart(Route::ContratsImprimer, IMPRIMER), depart(Route::DemanderSignature, ENVOYER_A_LA_SIGNATURE).principal().exigeant(Some(demande.clone()))],
     };
     Ok(ApercuSignature {
         phrase: socle::phrase!("Contrats à faire signer : {}.", contrats.len()),
         titre: "Faire signer les contrats",
         titre_en_attente: "Les contrats en attente",
-        principal,
-        autres,
+        gestes,
         mois,
         signature: boite_liee.then(|| {
             Encart::de(socle::ecran::EtatDEcran::Information, "Signature d'un clic", "Le contrat part par courriel avec un bouton « Je signe » ; la réponse du salarié est relevée toute seule, et il reçoit son contrat contresigné.")
@@ -1288,8 +1283,8 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
     // quand quelque chose change et que la boite courriel est posee (sans elle, il s'imprime avec les contrats) ; le
     // contrat refait, de plus, quand il n'a pas commence. L'avenant part avec la date d'effet que l'apercu propose, que
     // sa case laisse changer ; le mois de l'ecran dit QUEL contrat du jour (`avenant_neuf`).
-    let (principal, autres, cases) = if brut.modifications.is_empty() || !brut.boite_liee {
-        (None, Vec::new(), Vec::new())
+    let (gestes, cases) = if brut.modifications.is_empty() || !brut.boite_liee {
+        (Vec::new(), Vec::new())
     } else {
         let avenant = AvenantVoulu { salarie: c.salarie.clone(), debut: c.debut, numero: c.numero.clone(), mois: c.mois, effet: Some(brut.effet) };
         let parties = PARTIES_D_UN_AVENANT.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
@@ -1297,17 +1292,19 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
         let envoyer = ChargeSignature::des_avenants(brut.mois, vec![avenant]);
         let demande = envoyer.demande(ctx)?;
         let principal = GesteDeLAvenant::avec_cases(Route::DemanderSignature, envoyer, ENVOYER_L_AVENANT, vec![crate::declaration::cle!(ChargeSignature, avenants)], crate::SansCharge {}, crate::SansCharge {})
+            .principal()
             .exigeant(Some(demande));
-        let mut autres = Vec::new();
+        let mut gestes = Vec::new();
         if brut.remplacable {
             let refait = ContratVise { salarie: c.salarie.clone(), debut: c.debut, numero: brut.contrat.clone() };
             let remplacer = ChargeSignature { remplace: Some(true), ..ChargeSignature::des_contrats(brut.mois, vec![refait]) };
             let demande = remplacer.demande(ctx)?;
-            autres.push(GesteDeLAvenant::avec_cases(Route::DemanderSignature, remplacer, ANNULE_ET_REMPLACE, Vec::new(), crate::SansCharge {}, crate::SansCharge {}).exigeant(Some(demande)));
+            gestes.push(GesteDeLAvenant::avec_cases(Route::DemanderSignature, remplacer, ANNULE_ET_REMPLACE, Vec::new(), crate::SansCharge {}, crate::SansCharge {}).exigeant(Some(demande)));
         }
-        (Some(principal), autres, cases)
+        gestes.push(principal);
+        (gestes, cases)
     };
-    Ok(brut.dit(principal, autres, cases))
+    Ok(brut.dit(gestes, cases))
 }
 
 /// Ce que l'apercu d'un avenant sait avant de le dire (`AvenantLu::dit`).
@@ -1336,7 +1333,7 @@ struct AvenantLu {
 
 impl AvenantLu {
     /// L'apercu dit : la situation du contrat, les encarts, le titre, la phrase, et les envois ouverts et leurs cases.
-    fn dit(self, principal: Option<GesteDeLAvenant>, autres: Vec<GesteDeLAvenant>, cases: Vec<crate::fiches::CaseDeLaFiche<&'static str>>) -> ApercuAvenant {
+    fn dit(self, gestes: Vec<GesteDeLAvenant>, cases: Vec<crate::fiches::CaseDeLaFiche<&'static str>>) -> ApercuAvenant {
         let n = self.modifications.len();
         let ailleurs = self.contrat_signe.is_some();
         // « n° 12 », ou « sans numéro ».
@@ -1429,8 +1426,7 @@ impl AvenantLu {
             avenants,
             remplacable: self.remplacable,
             boite_liee: self.boite_liee,
-            principal,
-            autres,
+            gestes,
             cases,
             destinataire: self.destinataire,
             situation,

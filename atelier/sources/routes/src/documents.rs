@@ -50,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les documents du mois de chaque salarié, et à qui ils partiraient.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, colonnes, changements_titre, pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja (titre, quand_dit) ; les départs ouverts, chacun un geste (route, charge, libellé, la case salaries, plusieurs choix : choix.salaries, la clé et le nom de chaque message, et valeurs.salaries, ceux qui partent si l'on n'en décoche aucun, tous ; demande du mot de passe) : principal (envoyer par courriel quand la boîte est posée, imprimer sinon) et autres ; aucun tant que rien n'est prêt",
+        rend: "titre, colonnes, changements_titre, pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja (titre, quand_dit) ; les départs ouverts, gestes, chacun un geste (route, charge, libellé, rang, la case salaries, plusieurs choix : choix.salaries, la clé et le nom de chaque message, et valeurs.salaries, ceux qui partent si l'on n'en décoche aucun, tous ; demande du mot de passe), le principal par son rang (envoyer par courriel quand la boîte est posée, imprimer sinon) ; aucun tant que rien n'est prêt",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -244,10 +244,8 @@ struct ApercuEnvoi {
     /// Ce que dit un renvoi, au-dessus de ses changements.
     changements_titre: &'static str,
     /// Les departs ouverts : aucun tant que rien n'est pret ; imprimer toujours, envoyer par courriel quand la boite est
-    /// posee, et c'est alors lui le principal.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    principal: Option<GesteDesDocuments>,
-    autres: Vec<GesteDesDocuments>,
+    /// posee, et c'est alors lui le principal (son rang).
+    gestes: Vec<GesteDesDocuments>,
     phrase: Phrase,
     expediteur: String,
     expediteur_dit: String,
@@ -729,18 +727,17 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     // Sa charge porte deja les salaries coches a l'ouverture : jouee telle quelle, elle fait partir exactement cela.
     let charge = ChargeDocumentsImprimer { mois, salaries: Some(coches.salaries.clone()) };
     let depart = |route, libelle| GesteDesDocuments::avec_cases(route, charge.clone(), libelle, salaries.clone(), coches.clone(), offerts.clone());
-    let (principal, autres) = match (pret && !messages.is_empty(), prets.boite_liee) {
-        (false, _) => (None, Vec::new()),
-        (true, false) => (Some(depart(Route::DocumentsImprimer, IMPRIMER)), Vec::new()),
-        (true, true) => (Some(depart(Route::EnvoyerDocuments, ENVOYER_PAR_COURRIEL).exigeant(Some(demande.clone()))), vec![depart(Route::DocumentsImprimer, IMPRIMER)]),
+    let gestes = match (pret && !messages.is_empty(), prets.boite_liee) {
+        (false, _) => Vec::new(),
+        (true, false) => vec![depart(Route::DocumentsImprimer, IMPRIMER).principal()],
+        (true, true) => vec![depart(Route::DocumentsImprimer, IMPRIMER), depart(Route::EnvoyerDocuments, ENVOYER_PAR_COURRIEL).principal().exigeant(Some(demande.clone()))],
     };
     let colonnes = if prets.boite_liee { vec!["Salarié", "Adresse", "Pièces"] } else { vec!["Salarié", "Pièces"] };
     Ok(ApercuEnvoi {
         titre: "Les documents",
         colonnes,
         changements_titre: "Ce qui a changé",
-        principal,
-        autres,
+        gestes,
         phrase: socle::phrase!("Documents à envoyer par courriel, de {} : {}.", expediteur, socle::ecran::compte(messages.len(), "message", "messages")),
         expediteur_dit: format!("Courriels depuis {}", expediteur),
         expediteur,

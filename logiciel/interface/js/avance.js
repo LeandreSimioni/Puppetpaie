@@ -666,11 +666,18 @@ function dessinerLesAvances() {
 
 /* ------------------------------------------------ les gestes qu'une route rend */
 
-/** Les boutons des gestes, chacun son libellé ; `garde` : ceux-là seulement (chacun garde son rang dans `gestes`). Le
- *  geste principal de son écran (son `rang`, rendu par la route) est un bouton principal. */
-function boutonsDesGestes(gestes, garde = () => true, classe = "lien") {
+/** LA FORME DU BOUTON D'UN GESTE, depuis ce que la route en dit, et rien d'autre : le geste principal de son écran (son
+ *  `rang`) est un bouton principal, un geste second un lien ; celui qui exige le mot de passe (`demande`) est un envoi
+ *  (une fictive le dit simulé). */
+function classeDuGeste(g) {
+  return `${g.rang === "principal" ? "primaire" : "lien"}${g.demande ? " envoi" : ""}`;
+}
+
+/** Les boutons des gestes, chacun son libellé et sa forme (`classeDuGeste`) ; `garde` : ceux-là seulement (chacun garde
+ *  son rang dans `gestes`). */
+function boutonsDesGestes(gestes, garde = () => true) {
   return gestes.map((g, k) => (garde(g)
-    ? `<button class="${g.rang === "principal" ? "primaire" : classe}" data-geste="${k}">${echapper(g.libelle)}</button>` : "")).join("");
+    ? `<button class="${classeDuGeste(g)}" data-geste="${k}">${echapper(g.libelle)}</button>` : "")).join("");
 }
 
 /** Un geste dont la route est avancée (sa fiche : `avance`) se range sous « Avancé ». */

@@ -29,6 +29,7 @@ use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::echeances::Echeance;
 use droit::natures::NumeroDOrdre;
+use crate::imprevus::RangDuGeste;
 use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
@@ -1432,7 +1433,7 @@ struct GesteDePiece {
     #[serde(skip_serializing_if = "Option::is_none")]
     titre: Option<&'static str>,
     action: Option<Geste>,
-    principal: bool,
+    rang: RangDuGeste,
 }
 
 /// CE QUE LA BOITE DES DPAE DIT D'UN ENGAGEMENT (`choix_dpae`) ; `part` : l'embauche qu'il ajoute, coche, a la case
@@ -2785,23 +2786,23 @@ fn pieces_du_contrat(p: &Vue, mois: Mois, s: &Signature, dossier: Option<&Contra
     let route = |a: Action| Some(Geste::Route(a));
     let mut gestes = Vec::new();
     if ailleurs {
-        gestes.push(GesteDePiece { libelle: "Ranger le contrat signé…", titre: None, action: geste_du_dossier(dossier), principal: !caduc });
+        gestes.push(GesteDePiece { libelle: "Ranger le contrat signé…", titre: None, action: geste_du_dossier(dossier), rang: RangDuGeste::principal_si(!caduc) });
         if caduc || fait {
-            gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat signé hors de PuppetPaie : ce qui change, en clair"), action: avenant(p, mois).and_then(&route), principal: caduc });
+            gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat signé hors de PuppetPaie : ce qui change, en clair"), action: avenant(p, mois).and_then(&route), rang: RangDuGeste::principal_si(caduc) });
         }
         return Pieces { vide, encart, gestes };
     }
     if fait || recu {
         let libelle = if recu { "Retirer la mention « signé »" } else { "Noter le contrat signé reçu" };
-        gestes.push(GesteDePiece { libelle, titre: None, action: noter_recu(p, mois, libelle, None, !recu).and_then(&route), principal: false });
+        gestes.push(GesteDePiece { libelle, titre: None, action: noter_recu(p, mois, libelle, None, !recu).and_then(&route), rang: RangDuGeste::Second });
     }
     if fait {
-        gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat parti : l'ancien texte et le nouveau, article par article"), action: avenant(p, mois).and_then(&route), principal: caduc });
+        gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat parti : l'ancien texte et le nouveau, article par article"), action: avenant(p, mois).and_then(&route), rang: RangDuGeste::principal_si(caduc) });
     }
     if !fait {
         // Depuis le detail de l'engagement, seul son contrat se coche d'abord.
         let siens = p.salarie.clone().map(|s| vec![s]);
-        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois, siens)), principal: true });
+        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois, siens)), rang: RangDuGeste::Principal });
     }
     Pieces { vide, encart, gestes }
 }

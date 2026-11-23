@@ -98,7 +98,7 @@ async function boitePieces(ligne, acte) {
     ${liste}
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      ${montre.gestes.map((g, i) => `<button class="${g.principal ? "primaire" : "secondaire"} p-geste" data-i="${i}"
+      ${montre.gestes.map((g, i) => `<button class="${classeDuGeste(g)} p-geste" data-i="${i}"
         ${g.titre ? `title="${echapper(g.titre)}"` : ""}>${echapper(g.libelle)}</button>`).join("")}
     </div>`);
   document.querySelectorAll(".p-geste").forEach((b) => {

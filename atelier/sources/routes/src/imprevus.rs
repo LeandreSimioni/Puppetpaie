@@ -1361,6 +1361,13 @@ pub(crate) enum RangDuGeste {
     Second,
 }
 
+impl RangDuGeste {
+    /// Le geste principal si `principal`, un geste second sinon.
+    pub(crate) fn principal_si(principal: bool) -> RangDuGeste {
+        if principal { RangDuGeste::Principal } else { RangDuGeste::Second }
+    }
+}
+
 /// Ce que les cases d'un geste montrent d'abord : ce que l'imprevu dit deja, ou ce que le moteur propose.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct ValeursDeDepart {

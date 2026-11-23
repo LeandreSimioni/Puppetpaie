@@ -136,7 +136,7 @@ function pourquoiDu(o) {
 /** Une obligation due d'un arrêt : pour qui, et ses gestes. */
 function rangObligation(d, k) {
   const o = d.obligation;
-  return rangDu(k, pastilleDu(o), o.libelle, d.qui, o.butoir_dit, boutonsDesGestes(d.gestes, undefined, "secondaire petit"), "", pourquoiDu(o));
+  return rangDu(k, pastilleDu(o), o.libelle, d.qui, o.butoir_dit, boutonsDesGestes(d.gestes), "", pourquoiDu(o));
 }
 
 /** Une ligne de ce qui est dû : la pastille, ce qu'il faut faire et pour qui, la date butoir et les gestes ; dessous,
@@ -162,7 +162,7 @@ function rangDu(k, pastille, quoi, qui, butoir, gestes, manque, pourquoi) {
    est en retard paraît aussi (`mois`) : une échéance manquée ne se tait pas. */
 function rangFin(f, k) {
   return rangDu(k, pastilleDeLEtat(f.pastille), f.obligation.libelle,
-    f.qui_dit, f.obligation.butoir_dit, boutonsDesGestes(f.gestes, undefined, "secondaire petit"),
+    f.qui_dit, f.obligation.butoir_dit, boutonsDesGestes(f.gestes),
     f.avant_signaler ? `<div class="du-manque"><p>${echapper(f.avant_signaler)}</p>
       ${f.a_saisir.map((m, i) => `<p><b>${echapper(m.case)}</b> : ${echapper(m.dire)}
         <button class="lien" data-case="${i}">${echapper(f.la_dire)}</button></p>`).join("")}</div>` : "",
