@@ -78,6 +78,16 @@ impl CeQuiDiffere {
         }
     }
 
+    pub const TOUS: [CeQuiDiffere; 7] = [
+        CeQuiDiffere::Base,
+        CeQuiDiffere::TauxSalarie,
+        CeQuiDiffere::TauxEmployeur,
+        CeQuiDiffere::MontantSalarie,
+        CeQuiDiffere::MontantEmployeur,
+        CeQuiDiffere::AbsenteDuBulletin,
+        CeQuiDiffere::AbsenteDuCalcul,
+    ];
+
     /// En francais, pour un resume.
     pub fn dite(self) -> &'static str {
         match self {
@@ -89,6 +99,20 @@ impl CeQuiDiffere {
             CeQuiDiffere::AbsenteDuBulletin => "calculée ici, absente du bulletin importé",
             CeQuiDiffere::AbsenteDuCalcul => "sur le bulletin importé, que ce moteur ne calcule pas",
         }
+    }
+}
+
+/// Ce qui differe s'ecrit par son code (`code`), et se lit de meme (une ligne des ecarts connus, sa note).
+impl serde::Serialize for CeQuiDiffere {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.code())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for CeQuiDiffere {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as serde::Deserialize>::deserialize(d)?;
+        CeQuiDiffere::TOUS.into_iter().find(|c| c.code() == texte).ok_or_else(|| serde::de::Error::custom(format!("« {} » n'est pas une grandeur d'un écart", texte)))
     }
 }
 
@@ -440,7 +464,7 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             }
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
-            let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).and_then(|r| confronter(&r, p, mois, &mut suivi));
+            let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).and_then(|r| confronter(&r, p, mois, &empreinte, &mut suivi));
             let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, sorte, non_rattachees, connus, effectif_propose } = suivi;
             if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
                 return None;
@@ -851,8 +875,7 @@ fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, ligne: Option<&cra
 /// Les ecarts de la paie refaite `r` du mois `mois` a ce que le bulletin de la paie importee `p` imprime ; `c` note les
 /// lignes de cotisation que la table ne rattache a aucune cotisation, et les ecarts connus de l'ancien logiciel
 /// (`ecarts_connus`) qui n'en sont pas. Refus : la table des ecarts connus ne se lit pas.
-fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, c: &mut Suivi) -> R<Vec<Ecart>> {
-    use crate::ecarts_connus::PartDuTaux;
+fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCourte, c: &mut Suivi) -> R<Vec<Ecart>> {
     let (paie, garanties, atmp_lu, cotisations) = (&r.paie, &r.garanties, r.atmp_lu, r.cotisations);
     let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.as_ref());
     // Ce que les ecarts connus expliquent des montants, salarial et employeur (leur - notre).
@@ -967,13 +990,14 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, c: &mut Suivi) -> R<Vec<E
         // de la comparaison ; son taux, quand il se compare, est le leur au lieu du notre, exactement.
         for connu in crate::ecarts_connus::de(logiciel, mois, code)? {
             let Some(k) = connu.applique.rapport(connu.texte) else { continue };
-            let (leur, notre, montant, taux) = match connu.grandeur {
-                PartDuTaux::Employeur => (leur_pat, notre_pat, CeQuiDiffere::MontantEmployeur, CeQuiDiffere::TauxEmployeur),
-                PartDuTaux::Salarie => (leur_sal, notre_sal, CeQuiDiffere::MontantSalarie, CeQuiDiffere::TauxSalarie),
+            let salarie = connu.grandeur == CeQuiDiffere::TauxSalarie;
+            let (leur, notre, montant, taux) = match salarie {
+                false => (leur_pat, notre_pat, CeQuiDiffere::MontantEmployeur, CeQuiDiffere::TauxEmployeur),
+                true => (leur_sal, notre_sal, CeQuiDiffere::MontantSalarie, CeQuiDiffere::TauxSalarie),
             };
-            let part = |n: &LigneCotisation| match connu.grandeur {
-                PartDuTaux::Employeur => (n.taux_pat, n.montant_pat),
-                PartDuTaux::Salarie => (n.taux_sal, n.montant_sal),
+            let part = |n: &LigneCotisation| match salarie {
+                false => (n.taux_pat, n.montant_pat),
+                true => (n.taux_sal, n.montant_sal),
             };
             let au_texte = nous.iter().filter(|n| part(n).0 == Some(connu.texte)).count();
             let attendu = nous.iter().map(|n| part(n)).fold(Montant::ZERO, |a, (t, m)| a + if t == Some(connu.texte) { m.abs() * k } else { m.abs() });
@@ -986,11 +1010,11 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, c: &mut Suivi) -> R<Vec<E
                 continue;
             }
             ici.retain(|e| e.mesure.ce_qui_differe() != montant && e.mesure.ce_qui_differe() != taux);
-            match connu.grandeur {
-                PartDuTaux::Employeur => explique_pat = explique_pat + (leur - notre),
-                PartDuTaux::Salarie => explique_sal = explique_sal + (leur - notre),
+            match salarie {
+                false => explique_pat = explique_pat + (leur - notre),
+                true => explique_sal = explique_sal + (leur - notre),
             }
-            c.connus.push(crate::ecarts_connus::EcartConnuConstate { connu, notre, leur });
+            c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(empreinte, &connu, notre, leur));
         }
         ecarts.extend(ici);
     }

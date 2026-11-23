@@ -361,7 +361,7 @@ fn piece_dite(s: Source) -> String {
 /// LES ECARTS CONNUS D'UNE PAIE IMPORTEE, tels que la carte les dit : ceux que son registre garde pour elle, ou son
 /// registre illisible.
 enum ConnusDeLaPaie<'a> {
-    Lus(Vec<&'a crate::ecarts::EcartConnuNote>),
+    Lus(Vec<&'a engagement::ecarts_connus::EcartConnuConstate>),
     Illisibles,
 }
 
@@ -733,7 +733,7 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
         let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let dpae = dpae_de(&embauches, &certifiees, brut.salarie.as_ref(), brut.numero.as_ref(), brut.debut);
-        // Les ecarts connus que la comparaison de cette paie a constates (`crate::ecarts::EcartConnuNote`).
+        // Les ecarts connus que la comparaison de cette paie a constates (`engagement::ecarts_connus::EcartConnuConstate`).
         let empreinte = i.paies().get(&mois).map(|p| engagement::ecarts::empreinte(&i, mois, p));
         let siens = match &connus {
             Some(v) => ConnusDeLaPaie::Lus(v.iter().filter(|k| Some(&k.paie) == empreinte.as_ref()).collect()),
