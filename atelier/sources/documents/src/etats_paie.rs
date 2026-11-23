@@ -23,7 +23,7 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::date::Jour;
-use socle::mois::{Annee, Mois};
+use socle::mois::{Annee, Mois, PeriodeDemandee};
 use socle::grandeurs::{nulle, Grandeur, Montant};
 use engagement::ligne::PaiementDeLigne;
 use crate::prelevement::Prelevement;
@@ -76,59 +76,12 @@ pub fn dossier_exports(ctx: &Contexte, annee: Option<Annee>) -> PathBuf {
 
 // ------------------------------------------------------------------ la periode
 
-/// LA PERIODE DEMANDEE : un mois (`AAAA-MM`), une annee (`AAAA`), ou toutes les annees.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Quand {
-    Mois(Mois),
-    Annee(Annee),
-    Toutes,
-}
-
-impl Quand {
-    /// La periode d'une demande : une seule des trois, sinon le refus `phrase`.
-    pub fn lire(mois: Option<Mois>, annee: Option<Annee>, toutes: bool, phrase: &str) -> R<Quand> {
-        match (mois, annee, toutes) {
-            (Some(m), None, false) => Ok(Quand::Mois(m)),
-            (None, Some(a), false) => Ok(Quand::Annee(a)),
-            (None, None, true) => Ok(Quand::Toutes),
-            _ => Err(refus(phrase)),
-        }
-    }
-
-    /// Le mois, l'annee et « toutes les annees », tels qu'une demande les porte.
-    pub fn en_demande(&self) -> (Option<Mois>, Option<Annee>, bool) {
-        match self {
-            Quand::Mois(m) => (Some(*m), None, false),
-            Quand::Annee(a) => (None, Some(*a), false),
-            Quand::Toutes => (None, None, true),
-        }
-    }
-
-    /// Le mois `m` est-il de la periode ?
-    pub fn contient(&self, m: Mois) -> bool {
-        match self {
-            Quand::Toutes => true,
-            Quand::Mois(u) => m == *u,
-            Quand::Annee(a) => Annee::du_mois(m) == *a,
-        }
-    }
-
-    /// Ce qui entre dans le nom du fichier.
-    pub fn nom(&self) -> NomDeFichier {
-        match self {
-            Quand::Toutes => const { NomDeFichier::du_moteur("toutes-les-annees") },
-            Quand::Mois(m) => NomDeFichier::from(*m),
-            Quand::Annee(a) => NomDeFichier::from(*a),
-        }
-    }
-
-    /// `exports/` (toutes les annees) ou `exports/AAAA/`.
-    pub fn dossier(&self, ctx: &Contexte) -> PathBuf {
-        match self {
-            Quand::Toutes => dossier_exports(ctx, None),
-            Quand::Mois(m) => dossier_exports(ctx, Some(Annee::du_mois(*m))),
-            Quand::Annee(a) => dossier_exports(ctx, Some(*a)),
-        }
+/// Le dossier des exports de la periode `quand` : `exports/` (toutes les annees) ou `exports/AAAA/`.
+fn dossier_de(ctx: &Contexte, quand: &PeriodeDemandee) -> PathBuf {
+    match quand {
+        PeriodeDemandee::Toutes => dossier_exports(ctx, None),
+        PeriodeDemandee::Mois(m) => dossier_exports(ctx, Some(Annee::du_mois(*m))),
+        PeriodeDemandee::Annee(a) => dossier_exports(ctx, Some(*a)),
     }
 }
 
@@ -137,7 +90,7 @@ const UNE_PERIODE: &str = "Un état se demande pour UNE période : un mois (--mo
 /// Ce qu'on a demande, les mois qu'on a, et d'ou ils viennent.
 pub struct Periode {
     pub dispo: BTreeMap<Mois, OrigineDuMois>,
-    pub quand: Quand,
+    pub quand: PeriodeDemandee,
     pub mois: Vec<Mois>,
     pub libelle: String,
 }
@@ -159,11 +112,11 @@ pub fn mois_importes(ctx: &Contexte) -> R<BTreeSet<Mois>> {
 
 /// Le libelle de la periode d'un etat : un mois, une annee, ou toutes les annees (de la premiere a la derniere de
 /// `mois`, quand il y en a).
-fn libelle_periode(mois: &[Mois], quand: &Quand) -> String {
+fn libelle_periode(mois: &[Mois], quand: &PeriodeDemandee) -> String {
     match quand {
-        Quand::Mois(m) => libelle_mois(*m),
-        Quand::Annee(a) => a.to_string(),
-        Quand::Toutes => {
+        PeriodeDemandee::Mois(m) => libelle_mois(*m),
+        PeriodeDemandee::Annee(a) => a.to_string(),
+        PeriodeDemandee::Toutes => {
             let annees: BTreeSet<Annee> = mois.iter().map(|m| m.annee()).collect();
             match (annees.first(), annees.last()) {
                 (Some(p), Some(d)) if p != d => format!("toutes les années ({} à {})", p, d),
@@ -178,17 +131,17 @@ impl Periode {
     /// La periode d'un etat : un mois, une annee, ou toutes les annees. `obligatoire` : ses mois sont ceux que la compagnie
     /// a (`mois_pris`), sinon ceux que la demande nomme.
     pub fn nouvelle(ctx: &Contexte, mois: Option<Mois>, annee: Option<Annee>, toutes: bool, obligatoire: bool) -> R<Periode> {
-        Periode::pour(ctx, Quand::lire(mois, annee, toutes, UNE_PERIODE)?, obligatoire)
+        Periode::pour(ctx, PeriodeDemandee::des_trois(mois, annee, toutes, UNE_PERIODE)?, obligatoire)
     }
 
     /// La periode `quand`, et les mois qu'il y a matiere a exporter.
-    pub fn pour(ctx: &Contexte, quand: Quand, obligatoire: bool) -> R<Periode> {
+    pub fn pour(ctx: &Contexte, quand: PeriodeDemandee, obligatoire: bool) -> R<Periode> {
         let dispo = mois_disponibles(ctx)?;
         let pris: Vec<Mois> = if obligatoire {
             mois_pris(&dispo, &quand)?
         } else {
             match &quand {
-                Quand::Mois(m) => vec![*m],
+                PeriodeDemandee::Mois(m) => vec![*m],
                 autre => dispo.keys().copied().filter(|m| autre.contient(*m)).collect(),
             }
         };
@@ -221,26 +174,26 @@ impl Periode {
 
     /// `Periode.dossier` : `exports/` (toutes les annees) ou `exports/AAAA/`.
     pub fn dossier(&self, ctx: &Contexte) -> PathBuf {
-        self.quand.dossier(ctx)
+        dossier_de(ctx, &self.quand)
     }
 }
 
 /// Les mois demandes qu'on sait exporter -- et le refus qui dit lequel manque.
-fn mois_pris(dispo: &BTreeMap<Mois, OrigineDuMois>, quand: &Quand) -> R<Vec<Mois>> {
+fn mois_pris(dispo: &BTreeMap<Mois, OrigineDuMois>, quand: &PeriodeDemandee) -> R<Vec<Mois>> {
     match quand {
-        Quand::Toutes => {
+        PeriodeDemandee::Toutes => {
             if dispo.is_empty() {
                 return Err(refus("Aucun engagement : il n'y a pas de livre de paie à faire."));
             }
             Ok(dispo.keys().copied().collect())
         }
-        Quand::Mois(m) => {
+        PeriodeDemandee::Mois(m) => {
             if !dispo.contains_key(m) {
                 return Err(refus(format!("Aucune paie en {} : aucun engagement ne touche ce mois.", m)));
             }
             Ok(vec![*m])
         }
-        Quand::Annee(_) => {
+        PeriodeDemandee::Annee(_) => {
             let pris: Vec<Mois> = dispo.keys().copied().filter(|m| quand.contient(*m)).collect();
             if pris.is_empty() {
                 return Err(refus(format!("Aucune paie en {} : aucun engagement ne touche cette année.", quand.nom())));
@@ -698,7 +651,7 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
 /// Le livre de paie (`livre_de_paie`), et les paies reprises qu'il ne compte pas (`engagement::importe::NatureADire`,
 /// que ses avertissements disent chacune).
 fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::importe::NatureADire>)> {
-    let quand = Quand::lire(
+    let quand = PeriodeDemandee::des_trois(
         d.mois,
         d.annee,
         d.toutes,
@@ -765,7 +718,7 @@ fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::impo
     Ok((livre, a_dire))
 }
 
-/// LE NOM D'UN FICHIER D'EXPORT, ecrit en Rust : autour de la periode (`Periode::nom`, `Quand::nom`, une annee), ou fixe
+/// LE NOM D'UN FICHIER D'EXPORT, ecrit en Rust : autour de la periode (`Periode::nom`, `PeriodeDemandee::nom`, une annee), ou fixe
 /// (`COMPTES.TXT`, qu'EBP cherche sous ce nom-la, a cote des ecritures).
 pub enum NomDExport {
     Autour(NomDeFichier, NomDeFichier),
@@ -788,8 +741,8 @@ impl NomDExport {
 }
 
 /// Ecrit le livre dans `exports/AAAA/livre-de-paie-<periode>-<regroupement>[-coordonnees].<ext>`.
-fn ecrire_livre(ctx: &Contexte, livre: &LivreDePaie, quand: &Quand) -> R<PathBuf> {
-    let dossier = quand.dossier(ctx);
+fn ecrire_livre(ctx: &Contexte, livre: &LivreDePaie, quand: &PeriodeDemandee) -> R<PathBuf> {
+    let dossier = dossier_de(ctx, quand);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     let octets = match livre.format {
         FormatDExport::Csv => csv_livre(livre),
@@ -1024,7 +977,7 @@ pub fn lignes_livre(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, depart
 /// Le livre de paie de la periode `p` que lisent les etats de synthese (`lignes_livre`) et le cout de l'annee : regroupe
 /// par salarie, sans coordonnees, sans fichier ; et les paies reprises qu'il ne compte pas (ses avertissements les disent).
 pub fn livre_des_etats(ctx: &Contexte, p: &Periode, departs: &engagement::departs::Departs) -> R<(LivreDePaie, Vec<engagement::importe::NatureADire>)> {
-    let (mois, annee, toutes) = p.quand.en_demande();
+    let (mois, annee, toutes) = p.quand.en_trois();
     let d = Demande {
         mois,
         annee,

@@ -392,6 +392,10 @@ pub enum Forme {
     Montant,
     /// AAAA-MM.
     Mois,
+    /// UNE PERIODE : un mois (`AAAA-MM`), une annee (`AAAA`), ou toutes les annees (`toutes`), parmi celles que la route
+    /// rend a cote, sous la cle de la case (des choix : leur code est ce que la charge ecrit, leur groupe l'annee) ;
+    /// l'ecran la fait choisir dans son calendrier des periodes, d'un clic.
+    Periode,
     /// AAAA-MM-JJ : l'ecran la fait choisir dans son calendrier (`js/calendrier.js`), d'un jour.
     Date,
     /// Des jours, chacun AAAA-MM-JJ : l'ecran les fait cocher dans le meme calendrier, plusieurs a la fois (les jours
@@ -532,6 +536,7 @@ impl Forme {
             Forme::Nombre => "nombre",
             Forme::Montant => "montant",
             Forme::Mois => "mois",
+            Forme::Periode => "periode",
             Forme::Date => "date",
             Forme::Jours => "jours",
             Forme::Liste => "liste",
@@ -553,7 +558,7 @@ impl Forme {
     fn choix(self) -> R<Option<Vec<ChoixEcrit>>> {
         match self {
             Forme::Choix(c) | Forme::PlusieursChoix(c) => Ok(Some(c.ecrites()?)),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
         }
     }
 
@@ -561,7 +566,7 @@ impl Forme {
     fn admis(self) -> Option<&'static [&'static str]> {
         match self {
             Forme::Fichier(a) => Some(a),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
         }
     }
 

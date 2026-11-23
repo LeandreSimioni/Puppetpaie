@@ -1620,7 +1620,7 @@ dites!(EffectifDit, CoutsDits, DemandeOubliee);
 /// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     use socle::texte::euros;
-    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, socle::mois::PeriodeDemandee::Annee(c.annee), envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee()?;
     let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.

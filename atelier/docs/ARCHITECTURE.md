@@ -237,6 +237,7 @@ un libellé, chacun sa forme.
 | année | `Annee` | `socle/src/mois.rs` |
 | rang d'un numéro dans la suite de son année (le contrat `FA1.26.16`, le bulletin `12/2026`) | `RangDansLAnnee` | `socle/src/mois.rs` |
 | période | `Periode` | `socle/src/date.rs` |
+| période demandée (un mois, une année ou toutes les années : celle d'un état exporté, d'un dossier de salarié ; écrite `AAAA-MM`, `AAAA` ou `toutes`, lue à la porte ; une case de forme `periode`) | `PeriodeDemandee` | `socle/src/mois.rs` |
 | période ouverte | `PeriodeOuverte` | `socle/src/date.rs` |
 | durée de droit | `Duree<EnJours>`, `Duree<EnMois>` | `socle/src/date.rs` |
 | jour de la semaine | `JourDeLaSemaine` | `socle/src/date.rs` |

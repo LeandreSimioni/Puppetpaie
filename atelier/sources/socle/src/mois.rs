@@ -462,6 +462,95 @@ impl<'de> serde::Deserialize<'de> for Annee {
     }
 }
 
+/// LA PERIODE DEMANDEE : un mois, une annee, ou toutes les annees (ce qu'un etat exporte, ce que porte le dossier d'un
+/// salarie). Elle s'ecrit en un texte et se lit de lui, a sa porte : `AAAA-MM` (un mois), `AAAA` (une annee), `toutes` ;
+/// tout autre texte se refuse en le disant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeriodeDemandee {
+    Mois(Mois),
+    Annee(Annee),
+    Toutes,
+}
+
+/// Le texte de toutes les annees.
+const TOUTES: &str = "toutes";
+
+impl PeriodeDemandee {
+    /// La periode ecrite `AAAA-MM`, `AAAA` ou `toutes` ; toute autre forme se refuse.
+    pub(crate) fn lire(texte: &str) -> R<PeriodeDemandee> {
+        let b = texte.as_bytes();
+        if texte == TOUTES {
+            Ok(PeriodeDemandee::Toutes)
+        } else if b.len() == 4 && b.iter().all(u8::is_ascii_digit) {
+            Ok(PeriodeDemandee::Annee(Annee::nouvelle(texte.parse().map_err(|_| refus(crate::date::HORS_CALENDRIER))?)?))
+        } else if b.len() == 7 {
+            Ok(PeriodeDemandee::Mois(Mois::lire(texte)?))
+        } else {
+            Err(refus(format!("période illisible : {} (attendu : un mois AAAA-MM, une année AAAA, ou toutes)", repr_texte(texte))))
+        }
+    }
+
+    /// La periode que disent le mois, l'annee et « toutes les annees » d'une demande qui les porte a part : une seule des
+    /// trois, sinon le refus `phrase`.
+    pub fn des_trois(mois: Option<Mois>, annee: Option<Annee>, toutes: bool, phrase: &str) -> R<PeriodeDemandee> {
+        match (mois, annee, toutes) {
+            (Some(m), None, false) => Ok(PeriodeDemandee::Mois(m)),
+            (None, Some(a), false) => Ok(PeriodeDemandee::Annee(a)),
+            (None, None, true) => Ok(PeriodeDemandee::Toutes),
+            _ => Err(refus(phrase)),
+        }
+    }
+
+    /// Le mois, l'annee et « toutes les annees », tels qu'une demande qui les porte a part les prend.
+    pub fn en_trois(&self) -> (Option<Mois>, Option<Annee>, bool) {
+        match self {
+            PeriodeDemandee::Mois(m) => (Some(*m), None, false),
+            PeriodeDemandee::Annee(a) => (None, Some(*a), false),
+            PeriodeDemandee::Toutes => (None, None, true),
+        }
+    }
+
+    /// Le mois `m` est-il de la periode ?
+    pub fn contient(&self, m: Mois) -> bool {
+        match self {
+            PeriodeDemandee::Toutes => true,
+            PeriodeDemandee::Mois(u) => m == *u,
+            PeriodeDemandee::Annee(a) => Annee::du_mois(m) == *a,
+        }
+    }
+
+    /// Ce qui entre dans le nom d'un fichier d'export.
+    pub fn nom(&self) -> crate::fichiers::NomDeFichier {
+        match self {
+            PeriodeDemandee::Toutes => const { crate::fichiers::NomDeFichier::du_moteur("toutes-les-annees") },
+            PeriodeDemandee::Mois(m) => crate::fichiers::NomDeFichier::from(*m),
+            PeriodeDemandee::Annee(a) => crate::fichiers::NomDeFichier::from(*a),
+        }
+    }
+}
+
+impl std::fmt::Display for PeriodeDemandee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PeriodeDemandee::Mois(m) => write!(f, "{}", m),
+            PeriodeDemandee::Annee(a) => write!(f, "{}", a),
+            PeriodeDemandee::Toutes => f.write_str(TOUTES),
+        }
+    }
+}
+
+impl serde::Serialize for PeriodeDemandee {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PeriodeDemandee {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<PeriodeDemandee, D::Error> {
+        PeriodeDemandee::lire(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+    }
+}
+
 /// LE RANG D'UN NUMERO DANS LA SUITE DE SON ANNEE : celui d'un numero de contrat (`FA1.26.16` : 16) ou d'un numero de
 /// bulletin (`12/2026` : 12). La suite commence au premier (`PREMIER`) et chaque rang donne le suivant ; il se lit d'une
 /// zone ecrite en chiffres (`piece::format::Rang`) et s'ecrit par `Display` (qui suit la largeur demandee : `{:02}`).

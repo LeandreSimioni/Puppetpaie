@@ -119,6 +119,7 @@ formes! {
     Forme::OuiNon => [bool],
     Forme::Date => [socle::date::Jour],
     Forme::Mois => [socle::mois::Mois],
+    Forme::Periode => [socle::mois::PeriodeDemandee],
     Forme::MotDePasse => [socle::secret::Secret],
     // Une liste fermee de la norme, sans libelles dans son type : la route qui la fait choisir rend ses valeurs et
     // leurs libelles a cote (les nomenclatures de `imprevus`, la nature d'une carte, le classement d'un metier, le lieu
