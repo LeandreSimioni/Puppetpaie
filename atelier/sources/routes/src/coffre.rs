@@ -222,7 +222,7 @@ pub const ROUTES: &[Fiche] = &[
 
 charge! {
     /// La charge qui nomme un service du coffre.
-    #[derive(Debug, Serialize)]
+    #[derive(Debug)]
     struct ChargeService {
         service: &'static compagnie::coffre::Service = SERVICE,
     }

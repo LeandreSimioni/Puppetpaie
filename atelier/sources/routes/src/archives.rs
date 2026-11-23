@@ -856,6 +856,7 @@ impl ValeurDeLaCharge<ParSaForme> for std::collections::BTreeMap<Annee, Jour> {
 }
 
 charge! {
+    motdepasse = dit("Mot de passe du logiciel", "le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
     /// La charge de `casc-envoyer` : le jour de chaque virement fait, par annee (AAAA-MM-JJ) ; le mot de passe du
     /// logiciel tape pour l'envoi, l'enveloppe le prend (`Charge::mot_de_passe`).
     #[derive(Debug)]

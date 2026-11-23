@@ -1097,6 +1097,7 @@ pub fn exemple_dfs() -> R<Option<fq::ExempleDfs>> {
 }
 
 charge! {
+    motdepasse = dit("Mot de passe du logiciel", "le mot de passe du logiciel, s'il est posé ; sans lui, le moteur le demande à un humain");
     /// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire) ; le mot de passe du logiciel tape pour
     /// l'envoi, l'enveloppe le prend (`Charge::mot_de_passe`).
     #[derive(Debug)]

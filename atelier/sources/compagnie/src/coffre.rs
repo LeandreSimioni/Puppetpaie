@@ -100,12 +100,6 @@ impl socle::liste::ListeFermee for Service {
     }
 }
 
-impl Serialize for Service {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.nom)
-    }
-}
-
 impl<'de> Deserialize<'de> for &'static Service {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let nom = String::deserialize(d)?;
