@@ -44,6 +44,7 @@ use crate::calcul::LigneCotisation;
 use droit::forme_bareme::{
     IdDeCotisation, APEC_T1, APEC_T2, ATMP, AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, CCN, CET, CONGES_SPEC, FCAP, PARITARISME, PREVOYANCE, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
+use crate::ecarts_connus::Constat;
 use crate::importe::{CotisationImprimee, Importe, LogicielDUnBulletin, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
@@ -898,6 +899,9 @@ fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, ligne: Option<&cra
 fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCourte, c: &mut Suivi) -> R<Vec<Ecart>> {
     let (paie, garanties, atmp_lu, cotisations) = (&r.paie, &r.garanties, r.atmp_lu, r.cotisations);
     let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.as_ref());
+    // Ce que les cotisations imprimees a tort, deja relevees, font cotiser dans les totaux du bulletin, salarial et
+    // employeur.
+    let (mut explique_sal, mut explique_pat) = (Montant::ZERO, Montant::ZERO);
     // Les deux cotes, par cotisation.
     let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<&CotisationImprimee>> = BTreeMap::new();
     // Les cotisations que le bulletin imprime apres son total (les facultatives, les exonerations) : hors de ce total.
@@ -966,7 +970,22 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
             continue;
         }
         if chez_eux && !chez_nous {
-            ecarts.push(ecart(MesureDeLEcart::AbsenteDuCalcul));
+            // UNE COTISATION QUE LE BULLETIN IMPRIME A TORT, DEJA RELEVEE (`Constat::AbsenteDuCalcul`) : ce n'est pas un
+            // ecart. Ce qu'elle a fait cotiser de plus ou de moins, tel que le bulletin l'imprime (une reduction en
+            // negatif), est dans le total des cotisations de sa part, s'il l'y compte (`hors_total`).
+            match crate::ecarts_connus::de(logiciel, mois, c.statut, code)?.into_iter().find(|k| k.constate == Constat::AbsenteDuCalcul) {
+                Some(k) => {
+                    let signee = |m: &mut dyn Iterator<Item = Montant>| m.fold(Montant::ZERO, |a, x| a + x);
+                    let employeur = signee(&mut eux.iter().filter_map(|l| l.montant_employeur));
+                    let salarie = signee(&mut eux.iter().filter_map(|l| l.montant_salarie));
+                    if !hors_total.contains(code) {
+                        explique_pat = explique_pat + employeur;
+                        explique_sal = explique_sal + salarie;
+                    }
+                    c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(empreinte, &k, employeur, salarie));
+                }
+                None => ecarts.push(ecart(MesureDeLEcart::AbsenteDuCalcul)),
+            }
             continue;
         }
         if !chez_eux {
@@ -1006,9 +1025,10 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
         // LES ECARTS CONNUS DE L'ANCIEN LOGICIEL (`ecarts_connus`) : une part qui retombe exactement sur une ligne n'est
         // pas un ecart. Son montant est le notre, chaque ligne au taux du texte refaite au taux applique, a la tolerance
         // de la comparaison ; son taux, quand il se compare, est le leur au lieu du notre, exactement.
-        for connu in crate::ecarts_connus::de(logiciel, mois, code)? {
-            let Some(k) = connu.applique.rapport(connu.texte) else { continue };
-            let salarie = connu.grandeur == CeQuiDiffere::TauxSalarie;
+        for connu in crate::ecarts_connus::de(logiciel, mois, c.statut, code)? {
+            let Constat::Taux { grandeur, applique, texte } = connu.constate else { continue };
+            let Some(k) = applique.rapport(texte) else { continue };
+            let salarie = grandeur == CeQuiDiffere::TauxSalarie;
             let (leur, notre, montant, taux) = match salarie {
                 false => (leur_pat, notre_pat, CeQuiDiffere::MontantEmployeur, CeQuiDiffere::TauxEmployeur),
                 true => (leur_sal, notre_sal, CeQuiDiffere::MontantSalarie, CeQuiDiffere::TauxSalarie),
@@ -1017,10 +1037,10 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
                 false => (n.taux_pat, n.montant_pat),
                 true => (n.taux_sal, n.montant_sal),
             };
-            let au_texte = nous.iter().filter(|n| part(n).0 == Some(connu.texte)).count();
-            let attendu = nous.iter().map(|n| part(n)).fold(Montant::ZERO, |a, (t, m)| a + if t == Some(connu.texte) { m.abs() * k } else { m.abs() });
+            let au_texte = nous.iter().filter(|n| part(n).0 == Some(texte)).count();
+            let attendu = nous.iter().map(|n| part(n)).fold(Montant::ZERO, |a, (t, m)| a + if t == Some(texte) { m.abs() * k } else { m.abs() });
             let taux_au_texte = ici.iter().all(|e| match e.mesure {
-                MesureDeLEcart::TauxEmployeur { notre, leur } | MesureDeLEcart::TauxSalarie { notre, leur } if e.mesure.ce_qui_differe() == taux => notre == connu.texte && leur == connu.applique,
+                MesureDeLEcart::TauxEmployeur { notre, leur } | MesureDeLEcart::TauxSalarie { notre, leur } if e.mesure.ce_qui_differe() == taux => notre == texte && leur == applique,
                 _ => true,
             });
             let montant_ecarte = ici.iter().any(|e| e.mesure.ce_qui_differe() == montant);
@@ -1030,13 +1050,14 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
             ici.retain(|e| e.mesure.ce_qui_differe() != montant && e.mesure.ce_qui_differe() != taux);
             // Les lignes au taux du texte, que la paie refaite portera au taux applique (`comparer`).
             let part_du_bareme = if salarie { droit::forme_bareme::Part::TauxSal } else { droit::forme_bareme::Part::TauxPat };
-            for n in nous.iter().filter(|n| part(n).0 == Some(connu.texte)) {
-                let t = droit::contexte::TauxApplique { cotisation: n.id.clone(), part: part_du_bareme, texte: connu.texte, applique: connu.applique };
+            for n in nous.iter().filter(|n| part(n).0 == Some(texte)) {
+                let t = droit::contexte::TauxApplique { cotisation: n.id.clone(), part: part_du_bareme, texte, applique };
                 if !c.appliques.contains(&t) {
                     c.appliques.push(t);
                 }
             }
-            c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(empreinte, &connu, notre, leur));
+            let (employeur, salarie) = if salarie { (Montant::ZERO, leur - notre) } else { (leur - notre, Montant::ZERO) };
+            c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(empreinte, &connu, employeur, salarie));
         }
         ecarts.extend(ici);
     }
@@ -1052,7 +1073,14 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
         (TotalDuBulletin::NetImposable, paie.net_imposable, p.nets.net_imposable),
     ] {
         let Some(leur) = leur else { continue };
-        if (leur - notre).abs() > UN_CENTIME {
+        // Un total de cotisations est leur somme : ce qu'une cotisation imprimee a tort, deja relevee, y fait cotiser n'en
+        // est pas un ecart.
+        let explique = match cle {
+            TotalDuBulletin::CotisationsSalariales => explique_sal,
+            TotalDuBulletin::CotisationsPatronales => explique_pat,
+            TotalDuBulletin::NetSocial | TotalDuBulletin::NetImposable => Montant::ZERO,
+        };
+        if (leur - (notre + explique)).abs() > UN_CENTIME {
             let r = relatif(leur, notre);
             let mesure = if cle == TotalDuBulletin::CotisationsPatronales { MesureDeLEcart::MontantEmployeur(r) } else { MesureDeLEcart::MontantSalarie(r) };
             ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure });

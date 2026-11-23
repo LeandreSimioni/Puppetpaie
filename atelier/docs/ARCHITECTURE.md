@@ -1362,7 +1362,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | ce qui diffère dans un écart de la comparaison (la base, un taux, un montant, une cotisation d'un seul côté) | `CeQuiDiffere` | `engagement/src/ecarts.rs` |
-| écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json` ; la part dont il dit le taux est un `CeQuiDiffere`), et l'écart connu constaté sur une paie importée (la paie, les deux montants de la part ; il est aussi sa note dans `journal/ecarts-connus.json`) | `EcartConnu`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
+| écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json`), ce qu'il constate (le taux d'une part, un `CeQuiDiffere`, appliqué et du texte ; ou une cotisation que le bulletin imprime à tort et que le moteur ne calcule pas), et l'écart connu constaté sur une paie importée (la paie, ce que la compagnie et le salarié ont cotisé de plus ou de moins que le texte ; il est aussi sa note dans `journal/ecarts-connus.json`) | `EcartConnu`, `Constat`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
 | taux appliqué par un ancien logiciel (la cotisation, la part du barème, le taux du texte et celui appliqué, que la pile d'une paie porte en mémoire pour refaire une paie importée qui retombe sur ses écarts connus) | `TauxApplique` | `droit/src/contexte.rs` |
 | revue des paies importées pas encore comparées (les rapports à noter au journal des incidents, les paies qui ne sont plus à comparer, les écarts connus constatés : ce que `import::ecarts::noter` écrit) | `Revue` | `import/src/ecarts.rs` |
 | paie importée qui ne se compare pas (la sorte de sa raison, tirée de l'endroit et de la classe du refus, jamais de sa phrase, et le refus qui la dit ; la sorte fait le genre de son incident, sans aucune valeur du cas) | `NonComparee`, `SorteDeNonComparaison` | `engagement/src/ecarts.rs` |
@@ -2965,9 +2965,14 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   la paie se refait alors en mémoire, ces lignes-là au taux que l'ancien logiciel a appliqué, par le même chemin du
   barème (`droit::contexte::TauxApplique`, `Contexte::avec_les_taux_appliques`), et se compare tout de nouveau ; ce qui
   en retombe (la prévoyance patronale dans l'assiette de la CSG, les nets, les totaux) ne sonne pas, ce qui s'écarte
-  encore sonne, et rien ne s'écrit. Elle ne fait pas d'incident, se note dans
-  `journal/ecarts-connus.json`, et la carte de la paie importée dit l'explication et l'écart chiffré (« Écart connu »,
-  `import::mois`). Ce qui n'y retombe pas exactement sonne comme avant. Ce qui ne se compare pas le dit (une période sans barème, une convention
+  encore sonne, et rien ne s'écrit. Une ligne peut aussi constater une cotisation que le bulletin imprime à tort et que
+  le moteur ne calcule pas (`ecarts_connus::Constat::AbsenteDuCalcul` : la réduction générale appliquée à un artiste en
+  2026, arrêté du 24/01/1975, art. 1, BOSS « Allègements généraux » § 220, Urssaf « Les règles de cumul » ; elle ne vaut
+  que pour la paie du statut qu'elle nomme) : ce n'est pas un écart, et le total des cotisations de sa part la compte,
+  sauf quand le bulletin l'imprime hors de son total. Elle ne fait pas d'incident, se note dans
+  `journal/ecarts-connus.json`, et la carte de la paie importée dit, en une phrase chiffrée, ce que la compagnie (ou le
+  salarié) a cotisé de moins ou de plus que le texte, pour quoi, et pourquoi (« Écart connu »,
+  `EcartConnuConstate::phrase`, `import::mois`). Ce qui n'y retombe pas exactement sonne comme avant. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique). Ce que le logiciel ne livre pas pour calculer une paie (le barème de son année,
   la couche de sa convention : `droit::contexte::RienDeLivre`, que `Contexte::de_quoi_calculer` rend à part) ne l'inscrit pas au registre : la
   version qui le livrera la comparera à l'ouverture. Avant 2026 (`engagement::ecarts::COMPAREE_TOUJOURS_DES`, une

@@ -1,17 +1,20 @@
 //! LES ECARTS CONNUS DES ANCIENS LOGICIELS (`ecarts-connus-base.json`) : ce qu'un ancien logiciel a applique autrement
 //! que le texte, que ce moteur a raison de ne pas reproduire, et que l'editeur a deja releve (Léandre, 23/11/2026 :
 //! « quand quelqu'un arrive avec un défaut Coolpaie, on ne relève plus les défauts déjà relevés »). Chaque ligne dit le
-//! logiciel, la cotisation, la part dont le taux differe (`ecarts::CeQuiDiffere`, un taux), la periode, les deux taux
-//! exacts (ce qu'il a applique, ce que dit le texte, avec la `source` qui fonde ce dernier) et l'explication, en une
-//! phrase, pour la compagnie.
+//! logiciel, la cotisation, ce qu'elle constate (`Constat` : le taux d'une part, deux taux exacts, ce qu'il a applique et
+//! ce que dit le texte ; ou une cotisation que le bulletin imprime a tort et que ce moteur ne calcule pas), la periode,
+//! le statut de la paie quand elle n'en vise qu'un, la `source` qui fonde le texte, et ce que la carte de la paie
+//! importee dit a la compagnie (`pour`, `explication`).
 //!
-//! UNE COMPARAISON QUI RETOMBE EXACTEMENT SUR UNE LIGNE N'EST PAS UN ECART (`ecarts::confronter`) : le taux que le
+//! UNE COMPARAISON QUI RETOMBE EXACTEMENT SUR UNE LIGNE N'EST PAS UN ECART (`ecarts::confronter`). Un taux : celui que le
 //! bulletin imprime est celui que l'ancien logiciel a applique quand notre ligne porte celui du texte, et son montant est
-//! le notre, chaque ligne au taux du texte refaite au taux applique, a l'arrondi pres. La paie se refait alors en
+//! le notre, chaque ligne au taux du texte refaite au taux applique, a l'arrondi pres ; la paie se refait alors en
 //! memoire, ces lignes-la au taux applique (`droit::contexte::TauxApplique`), et se compare tout de nouveau : ce qui en
-//! retombe (l'assiette de la CSG, les nets, les totaux) ne sonne pas (`ecarts::comparer`). Elle ne fait pas d'incident,
-//! et la carte de la paie importee dit l'explication et l'ecart chiffre (`import::mois`). Une comparaison qui ne colle pas
-//! exactement reste un ecart : une ligne trop large cacherait un vrai defaut.
+//! retombe (l'assiette de la CSG, les nets, les totaux) ne sonne pas (`ecarts::comparer`). Une cotisation imprimee a
+//! tort : le bulletin l'imprime, ce moteur ne la calcule pas, et le total des cotisations de sa part la compte. Elle ne
+//! fait pas d'incident, et la carte de la paie importee dit ce que la compagnie a cotise de moins (ou de plus) que le
+//! texte, et pour quoi (`EcartConnuConstate::phrase`, `import::mois`). Une comparaison qui ne colle pas exactement reste
+//! un ecart : une ligne trop large cacherait un vrai defaut.
 
 use std::sync::{Arc, OnceLock};
 
@@ -24,44 +27,78 @@ use socle::mois::Mois;
 use crate::ecarts::{CeQuiDiffere, RegroupementDeComparaison};
 use crate::importe::LogicielDUnBulletin;
 
+/// CE QU'UNE LIGNE DES ECARTS CONNUS CONSTATE : le taux d'une part (`grandeur`, `CeQuiDiffere::TauxEmployeur` ou
+/// `TauxSalarie`), celui que l'ancien logiciel a applique et celui du texte ; ou une cotisation que le bulletin imprime a
+/// tort et que ce moteur ne calcule pas (`CeQuiDiffere::AbsenteDuCalcul`, sans taux). Il s'ecrit
+/// `{"grandeur", "applique", "texte"}`, les taux seulement pour un taux (`ConstatEcrit`, la porte).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ConstatEcrit", into = "ConstatEcrit")]
+pub enum Constat {
+    Taux { grandeur: CeQuiDiffere, applique: Taux, texte: Taux },
+    AbsenteDuCalcul,
+}
+
+/// La forme ecrite d'un `Constat`.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConstatEcrit {
+    grandeur: CeQuiDiffere,
+    /// Le taux qu'il a applique, en pourcent.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::grandeurs::ecrit::nombre::option")]
+    applique: Option<Taux>,
+    /// Le taux que dit le texte (`source`), en pourcent.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::grandeurs::ecrit::nombre::option")]
+    texte: Option<Taux>,
+}
+
+impl TryFrom<ConstatEcrit> for Constat {
+    type Error = String;
+    fn try_from(e: ConstatEcrit) -> Result<Constat, String> {
+        match (e.grandeur, e.applique, e.texte) {
+            (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, Some(applique), Some(texte)) => Ok(Constat::Taux { grandeur: e.grandeur, applique, texte }),
+            (CeQuiDiffere::AbsenteDuCalcul, None, None) => Ok(Constat::AbsenteDuCalcul),
+            (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, _, _) => Err(format!("un écart connu sur le {} dit le taux appliqué et celui du texte", e.grandeur.dite())),
+            (CeQuiDiffere::AbsenteDuCalcul, _, _) => Err("un écart connu sur une cotisation absente du calcul ne porte pas de taux".to_string()),
+            (g, _, _) => Err(format!("un écart connu constate un taux, ou une cotisation absente du calcul, pas « {} »", g.code())),
+        }
+    }
+}
+
+impl From<Constat> for ConstatEcrit {
+    fn from(c: Constat) -> ConstatEcrit {
+        match c {
+            Constat::Taux { grandeur, applique, texte } => ConstatEcrit { grandeur, applique: Some(applique), texte: Some(texte) },
+            Constat::AbsenteDuCalcul => ConstatEcrit { grandeur: CeQuiDiffere::AbsenteDuCalcul, applique: None, texte: None },
+        }
+    }
+}
+
 /// UN ECART CONNU D'UN ANCIEN LOGICIEL : une ligne de `ecarts-connus-base.json`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EcartConnu {
     pub logiciel: LogicielDUnBulletin,
     pub cotisation: RegroupementDeComparaison,
-    /// Le taux qui differe, et dont la ligne explique aussi le montant de la part : `taux_employeur` ou `taux_salarie`
-    /// (`taux_de_la_part`, la porte).
-    pub grandeur: CeQuiDiffere,
+    pub constate: Constat,
     /// Le premier et le dernier mois de paie ou il l'a applique.
     pub de: Mois,
     pub a: Mois,
-    /// Le taux qu'il a applique, en pourcent.
-    #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
-    pub applique: Taux,
-    /// Le taux que dit le texte (`source`), en pourcent.
-    #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
-    pub texte: Taux,
-    /// Ce que la carte de la paie importee dit a la compagnie, en une phrase.
+    /// Le statut de la paie que la ligne vise (la reduction generale, que la loi n'ouvre pas aux artistes) ; vide : toute
+    /// paie.
+    pub statut: Option<droit::fiche::Statut>,
+    /// Ce que la cotisation finance, tel que la carte le dit (« la prévoyance de ses salariés »).
+    pub pour: String,
+    /// Pourquoi l'ancien logiciel l'a fait, en une phrase courte, pour la carte de la paie importee.
     pub explication: String,
     pub note: Option<String>,
     pub source: droit::source::Fondement,
 }
 
 impl EcartConnu {
-    /// La ligne vaut-elle pour le bulletin du logiciel `logiciel`, de la paie du mois `mois`, sur la cotisation
-    /// `cotisation` ?
-    fn vaut(&self, logiciel: Option<&LogicielDUnBulletin>, mois: Mois, cotisation: &RegroupementDeComparaison) -> bool {
-        logiciel == Some(&self.logiciel) && self.de <= mois && mois <= self.a && self.cotisation == *cotisation
-    }
-}
-
-/// LA PORTE D'UNE LIGNE : sa grandeur est le taux d'une part (`CeQuiDiffere::TauxEmployeur`, `TauxSalarie`) ; une autre
-/// se refuse, la table entiere avec elle.
-fn taux_de_la_part(e: &EcartConnu) -> R<()> {
-    match e.grandeur {
-        CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie => Ok(()),
-        g => Err(socle::refus!("La table livrée des écarts connus nomme une grandeur qui n'est pas le taux d'une part ({}) : le signaler au développeur.", g.code())),
+    /// La ligne vaut-elle pour le bulletin du logiciel `logiciel`, de la paie du mois `mois` et du statut `statut`, sur la
+    /// cotisation `cotisation` ?
+    fn vaut(&self, logiciel: Option<&LogicielDUnBulletin>, mois: Mois, statut: Option<droit::fiche::Statut>, cotisation: &RegroupementDeComparaison) -> bool {
+        logiciel == Some(&self.logiciel) && self.de <= mois && mois <= self.a && self.statut.is_none_or(|s| statut == Some(s)) && self.cotisation == *cotisation
     }
 }
 
@@ -77,70 +114,67 @@ struct Fichier {
 /// LA LECTURE DE `ecarts-connus-base.json`, la seule, une fois tant que le fichier ne change pas.
 fn livres() -> R<Arc<Vec<EcartConnu>>> {
     static CACHE: OnceLock<FormeGardee<Vec<EcartConnu>>> = OnceLock::new();
-    forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("ecarts-connus-base.json") }, "La table livrée des écarts connus des anciens logiciels ne se lit pas : le signaler au développeur.", |f: Fichier| {
-        for e in &f.ecarts {
-            taux_de_la_part(e)?;
-        }
-        Ok(f.ecarts)
-    })
+    forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("ecarts-connus-base.json") }, "La table livrée des écarts connus des anciens logiciels ne se lit pas : le signaler au développeur.", |f: Fichier| Ok(f.ecarts))
 }
 
-/// Les ecarts connus du logiciel `logiciel` pour la paie du mois `mois` sur la cotisation `cotisation`.
-pub fn de(logiciel: Option<&LogicielDUnBulletin>, mois: Mois, cotisation: &RegroupementDeComparaison) -> R<Vec<EcartConnu>> {
-    Ok(livres()?.iter().filter(|e| e.vaut(logiciel, mois, cotisation)).cloned().collect())
+/// Les ecarts connus du logiciel `logiciel` pour la paie du mois `mois`, du statut `statut`, sur la cotisation
+/// `cotisation`.
+pub fn de(logiciel: Option<&LogicielDUnBulletin>, mois: Mois, statut: Option<droit::fiche::Statut>, cotisation: &RegroupementDeComparaison) -> R<Vec<EcartConnu>> {
+    Ok(livres()?.iter().filter(|e| e.vaut(logiciel, mois, statut, cotisation)).cloned().collect())
 }
 
 /// UN ECART CONNU CONSTATE sur une paie importee, et sa note dans `journal/ecarts-connus.json` (`import::ecarts`, la
-/// seule lecture) : la paie (son empreinte, `ecarts::empreinte`), ce que la ligne connue dit, et les deux montants de sa
-/// part, le notre (au taux du texte) et celui du bulletin (au taux applique). Ce que la compagnie lit de son historique ;
-/// rien n'en part chez l'editeur.
+/// seule lecture) : la paie (son empreinte, `ecarts::empreinte`), ce que la ligne connue dit, et ce que la compagnie et
+/// le salarie ont cotise de plus (positif) ou de moins (negatif) que le texte, en euros, sur ce bulletin. Ce que la
+/// compagnie lit de son historique ; rien n'en part chez l'editeur.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EcartConnuConstate {
     pub paie: EmpreinteCourte,
     pub logiciel: LogicielDUnBulletin,
     pub cotisation: RegroupementDeComparaison,
-    pub grandeur: CeQuiDiffere,
-    #[serde(with = "socle::grandeurs::ecrit::nombre")]
-    pub applique: Taux,
-    #[serde(with = "socle::grandeurs::ecrit::nombre")]
-    pub texte: Taux,
-    #[serde(with = "socle::grandeurs::ecrit::nombre")]
-    pub notre: Montant,
-    #[serde(with = "socle::grandeurs::ecrit::nombre")]
-    pub leur: Montant,
+    pub constate: Constat,
+    pub pour: String,
     pub explication: String,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub ecart_employeur: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub ecart_salarie: Montant,
 }
 
 impl EcartConnuConstate {
-    /// Celui que la ligne `connu` constate sur la paie `paie`, aux montants `notre` et `leur`.
-    pub fn de(paie: &EmpreinteCourte, connu: &EcartConnu, notre: Montant, leur: Montant) -> EcartConnuConstate {
+    /// Celui que la ligne `connu` constate sur la paie `paie` : ce que la compagnie (`employeur`) et le salarie
+    /// (`salarie`) ont cotise de plus ou de moins que le texte.
+    pub fn de(paie: &EmpreinteCourte, connu: &EcartConnu, employeur: Montant, salarie: Montant) -> EcartConnuConstate {
         EcartConnuConstate {
             paie: paie.clone(),
             logiciel: connu.logiciel.clone(),
             cotisation: connu.cotisation.clone(),
-            grandeur: connu.grandeur,
-            applique: connu.applique,
-            texte: connu.texte,
-            notre,
-            leur,
+            constate: connu.constate,
+            pour: connu.pour.clone(),
             explication: connu.explication.clone(),
+            ecart_employeur: employeur,
+            ecart_salarie: salarie,
         }
     }
 
-    /// Ce que la carte de la paie importee en dit : l'explication, et l'ecart chiffre de la part.
+    /// CE QUE LA CARTE DE LA PAIE IMPORTEE EN DIT, en une phrase, chiffres a l'appui (AGENTS, « Le logiciel est neutre ») :
+    /// qui a cotise combien de moins (ou de plus) que le texte, pour quoi, aux deux taux pour un taux, et pourquoi.
+    /// « La compagnie a cotisé 3,12 € de moins que le texte pour la prévoyance de ses salariés (1,04 % au lieu de
+    /// 1,11 %) : … »
     pub fn phrase(&self) -> String {
-        let part = match self.grandeur {
-            CeQuiDiffere::TauxSalarie => "part salariale",
-            _ => "part employeur",
+        let taux = match self.constate {
+            Constat::Taux { applique, texte, .. } => format!(" ({} % au lieu de {} %)", socle::texte::virgule(applique), socle::texte::virgule(texte)),
+            Constat::AbsenteDuCalcul => String::new(),
         };
-        format!(
-            "{} Sur ce bulletin ({}) : {} au lieu de {}, soit {} d'écart.",
-            self.explication,
-            part,
-            socle::texte::euros(self.leur),
-            socle::texte::euros(self.notre),
-            socle::texte::euros((self.leur - self.notre).abs())
-        )
+        let dit = |qui: &str, x: Montant| {
+            let sens = if x < Montant::ZERO { "moins" } else { "plus" };
+            format!("{} a cotisé {} de {} que le texte", qui, socle::texte::euros(x.abs()), sens)
+        };
+        let qui: Vec<String> = [("La compagnie", self.ecart_employeur), ("Le salarié", self.ecart_salarie)].into_iter().filter(|(_, x)| !x.est_nul()).map(|(q, x)| dit(q, x)).collect();
+        match qui.is_empty() {
+            true => self.explication.clone(),
+            false => format!("{} pour {}{} : {}", qui.join(", et "), self.pour, taux, self.explication),
+        }
     }
 }
