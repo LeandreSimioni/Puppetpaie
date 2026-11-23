@@ -318,6 +318,8 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .case-parties .partie input[type=text] { flex: 1; min-width: 0; }
 /* Une fiche rendue : deux cases par ligne, une case « pleine » sur toute la ligne, un titre à chaque bloc. */
 .e-cases.fiche-cases { grid-template-columns: 1fr 1fr; align-items: start; }
+/* Le dossier d'un salarié : des listes à cocher, hautes ; chaque case part du haut. */
+#d-cases > .e-cases { align-items: start; gap: 14px 28px; margin: 10px 0; }
 .fiche-cases > .pleine, .fiche-cases > .bloc-titre { grid-column: 1 / -1; }
 .fiche-cases > .bloc-titre { margin: 12px 0 0; font-size: 14px; color: var(--texte); }
 .case-rangees { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
