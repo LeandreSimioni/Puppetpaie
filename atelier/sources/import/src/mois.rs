@@ -270,7 +270,9 @@ pub struct CarteImportee {
 #[derive(Debug, Clone, Serialize)]
 struct ResumeDeLaCarte {
     quand: QuandDeLaCarte,
-    nom: String,
+    /// Le nom du salarie ; aucun : ni la piece ni la fiche ne le disent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nom: Option<String>,
     mot: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     origine_dit: Option<String>,
@@ -333,14 +335,6 @@ const BRUT_SEUL: &str = "Le brut : le net à payer n'est pas lu.";
 /// Ou lire pourquoi une case n'est pas lue.
 const POURQUOI_NON_LU: &str = "Un clic sur la carte montre ses cases, et sous chacune pourquoi.";
 
-
-/// Ce qu'une cellule de la carte montre d'une valeur : son texte ; rien (une cellule vide) quand la piece ne la dit pas.
-fn ou_vide(t: Option<String>) -> String {
-    match t {
-        Some(t) => t,
-        None => String::new(),
-    }
-}
 
 /// La piece qui atteste un contrat, ecrite comme la carte la montre.
 fn attestation_dite(a: Attestation) -> &'static str {
@@ -541,7 +535,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     };
     let resume = ResumeDeLaCarte {
         quand,
-        nom: ou_vide(nom.clone()),
+        nom: nom.clone(),
         mot: "importé",
         origine_dit,
         quoi_dit,
@@ -604,10 +598,10 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         .map(|l: &LigneImprimee| RangeeRendue {
             sorte: SorteDeRangee::Ligne,
             cellules: vec![
-                l.libelle.clone(),
-                ou_vide(l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite)),
-                ou_vide(l.paiement.map(|x| x.taux().dit())),
-                ou_vide(l.montant.map(socle::texte::euros)),
+                Some(l.libelle.clone()),
+                l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite),
+                l.paiement.map(|x| x.taux().dit()),
+                l.montant.map(socle::texte::euros),
             ],
         })
         .collect();

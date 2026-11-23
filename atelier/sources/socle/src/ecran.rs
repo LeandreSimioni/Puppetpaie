@@ -69,11 +69,12 @@ impl ColonneRendue {
     }
 }
 
-/// UNE RANGEE D'UN TABLEAU RENDU : ce qu'elle est (`SorteDeRangee`) et ses cellules deja dites, une par colonne.
+/// UNE RANGEE D'UN TABLEAU RENDU : ce qu'elle est (`SorteDeRangee`) et ses cellules deja dites, une par colonne ; une
+/// cellule qui ne dit rien est `None` (la page n'y pose rien).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RangeeRendue {
     pub sorte: SorteDeRangee,
-    pub cellules: Vec<String>,
+    pub cellules: Vec<Option<String>>,
 }
 
 /// Ce qu'est une rangee d'un tableau rendu : une ligne, le sous-total d'un groupe, ou le total general (la page les dit en

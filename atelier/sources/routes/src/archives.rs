@@ -750,8 +750,9 @@ fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
     let mut colonnes = vec![ColonneRendue::de_texte("Mois"), ColonneRendue::de_texte("Salarié"), ColonneRendue::discrete("Spectacle")];
     colonnes.extend(["Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"].map(ColonneRendue::de_nombres));
     let total = |sorte, titre: &str, t: &documents::etats_paie::Totaux| {
-        let mut cellules = vec![String::new(), titre.to_string(), t.bulletins_dit()];
-        cellules.extend(t.sommes_dites());
+        // Un total n'a pas de mois.
+        let mut cellules = vec![None, Some(titre.to_string()), Some(t.bulletins_dit())];
+        cellules.extend(t.sommes_dites().into_iter().map(Some));
         RangeeRendue { sorte, cellules }
     };
     let mut rangees = Vec::new();
@@ -759,10 +760,10 @@ fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
         for x in &g.lignes {
             // Le spectacle de la ligne ; sans spectacle, sa nature de contrat.
             let quoi = if x.spectacle.is_empty() { x.libelle_nature.clone() } else { x.spectacle.clone() };
-            let mut cellules = vec![x.mois.to_string(), x.salarie.clone(), quoi];
+            let mut cellules = vec![Some(x.mois.to_string()), Some(x.salarie.clone()), Some(quoi)];
             cellules.extend(x.montants().into_iter().map(|m| match m {
-                Some(m) => socle::grandeurs::ecrit::texte::dit(m),
-                None => MONTANT_TU.to_string(),
+                Some(m) => Some(socle::grandeurs::ecrit::texte::dit(m)),
+                None => Some(MONTANT_TU.to_string()),
             }));
             rangees.push(RangeeRendue { sorte: SorteDeRangee::Ligne, cellules });
         }
