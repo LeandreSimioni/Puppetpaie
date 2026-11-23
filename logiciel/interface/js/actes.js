@@ -49,7 +49,7 @@ function ouvrirGeste(action, mois, seulement, sur) {
     case "arret-signaler": return boiteSignalerArret(sur.objet, c.nature);
     case "accident-declare":
     case "attestation-declare": return boiteObligationFaite(sur.objet, sur.obligation);
-    case "cloture": return boiteCloture(c.annee);
+    case "cloture": return boiteCloture(action);
     case "export-compta": return lancerExportCompta(c.annee);
     case "revue-spectacles": return boiteRevueSpectacles(sur, c);
   }

@@ -564,8 +564,8 @@ pub(crate) enum Cloture {
 
 charge! {
     /// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la
-    /// ligne de commande ecrit `cli`, la page rien (`interface`). L'Historique la rend dans le geste qui rouvre une annee
-    /// close (`ChargeCloture::rouvrir`).
+    /// ligne de commande ecrit `cli`, la page rien (`interface`). L'Historique la rend dans le geste qui clot une annee
+    /// ouverte (`geste_de_cloture`) et dans celui qui rouvre une annee close (`ChargeCloture::rouvrir`).
     #[derive(Debug, Serialize)]
     pub(crate) struct ChargeCloture {
         annee: Annee = ANNEE,
@@ -583,6 +583,24 @@ impl ChargeCloture {
     pub(crate) fn rouvrir(annee: Annee) -> ChargeCloture {
         ChargeCloture { annee, forcer: None, rouvrir: Some(true), qui: None }
     }
+}
+
+/// Le bouton qui clot une annee ouverte.
+const CLOTURER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Clôturer l'exercice");
+
+/// LE GESTE QUI CLOT L'ANNEE `annee`, ouverte : sa boite dit ce que la cloture fait et quand elle se refuse, et fait
+/// cocher `forcer` (clore malgre un mois sans DSN acceptee). L'Historique le rend sur l'annee, et le rappel de la
+/// cloture y mene.
+pub(crate) fn geste_de_cloture(annee: Annee) -> R<crate::imprevus::GesteDeRoute<ChargeCloture, crate::SansCharge, crate::SansCharge>> {
+    use crate::ouverture::aide;
+    let charge = ChargeCloture { annee, forcer: None, rouvrir: None, qui: None };
+    let cases = vec![crate::declaration::cle!(ChargeCloture, forcer)];
+    let phrases = vec![
+        format!("L'année se fige. {}", aide("cloture")?),
+        aide("cloture_refus")?.to_string(),
+        aide("cloture_forcer")?.to_string(),
+    ];
+    Ok(crate::imprevus::GesteDeRoute::avec_cases(crate::catalogue::Route::Cloture, charge, CLOTURER, cases, crate::SansCharge {}, crate::SansCharge {}).disant(phrases))
 }
 
 /// Retire la cloture. L'archive reste sur le disque : elle dit ce

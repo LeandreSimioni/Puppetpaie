@@ -514,32 +514,18 @@ function dessinerLivre(r, apercu) {
   if (!apercu) dire(r.phrase);
 }
 
-function boiteCloture(annee) {
-  ouvrirBoite(`
-    <h3>Clôturer l'exercice — ${echapper(annee)}</h3>
-    <div class="encart">
-      <b>L'année se fige</b>
-      ${aideDe("cloture")}
-    </div>
-    <p class="note">${aideDe("cloture_refus")}</p>
-    <label class="coche" title="${aideDe("cloture_forcer")}"><input type="checkbox" id="c-forcer">
-      Clôturer quand même</label>
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="c-lancer">Clôturer</button>
-    </div>`);
-  document.getElementById("c-lancer").onclick = async () => {
-    document.getElementById("c-lancer").disabled = true;
-    try {
-      const r = await api("cloture", { annee, forcer: document.getElementById("c-forcer").checked });
-      fermerBoite();
-      dire(r.phrase);
-      if (document.getElementById("exercices")) await dessinerExercices();
-    } catch (e) {
-      document.getElementById("c-lancer").disabled = false;
-      dire(e.message, "erreur");
-    }
-  };
+/** LA CLÔTURE D'UNE ANNÉE, depuis son rappel (`action` : la route et l'année) : le geste que l'Historique rend sur
+ *  cette année (route `exercices`), dans sa boîte, comme depuis l'Historique. Une année que l'Historique ne dit plus à
+ *  clore n'ouvre rien. */
+async function boiteCloture(action) {
+  let r;
+  try { r = await api("exercices"); } catch (e) { dire(e.message, "erreur"); return; }
+  const x = r.exercices.find((e) => String(e.annee) === String(action.charge.annee));
+  const g = x && x.gestes.find((y) => y.route === action.route);
+  if (!g) return;
+  await faireLeGeste(g, { titre: String(x.annee) }, async () => {
+    if (document.getElementById("exercices")) await dessinerExercices();
+  });
 }
 
 async function lancerExportCompta(annee) {

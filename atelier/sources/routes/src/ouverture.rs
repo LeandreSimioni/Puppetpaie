@@ -89,7 +89,7 @@ const AIDES: &[(&str, &str)] = &[
     ("note_imprevu", "Une note pour vous : elle ne part nulle part."),
     ("cloture", "Les saisies et les sorties de l'année ne se modifieront plus (rouvrir reste possible, depuis l'Historique). Tout ce qu'il faut garder (saisies, bulletins, contrats signés, DPAE, DSN, certificats, retours des organismes, journal des dépôts, fiches, export compta) est réuni dans l'archive de l'exercice."),
     ("cloture_refus", "La clôture vient après la dernière DSN de l'année : elle est refusée si un mois avec des paies n'a pas de DSN acceptée au journal."),
-    ("cloture_forcer", "Si une DSN manque au journal (déposée ailleurs, par exemple)."),
+    ("cloture_forcer", "Clore malgré tout : si une DSN manque au journal (déposée ailleurs, par exemple)."),
     ("historique_titre", "Historique des valeurs"),
     ("historique_fiche", "Toutes les valeurs de chaque case, passées et à venir, avec leurs dates et d'où elles viennent ; en gras, celle d'aujourd'hui. Celles d'avant restent pour les déclarations déjà envoyées."),
     ("non_enregistres", "Vos changements ne sont pas encore enregistrés."),

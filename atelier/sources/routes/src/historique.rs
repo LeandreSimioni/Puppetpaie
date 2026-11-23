@@ -35,7 +35,7 @@ pub const ROUTES: &[Fiche] = &[
     lecture(
         Route::Exercices,
         "Lister les années : leurs DSN, leur clôture, leur export comptable.",
-        "exercices (chacune : DSN, clôture, export ; actions : l'export compta et, ouverte, la clôture, comme une action des étapes ; gestes : rouvrir une année close) et exercices_dit (aucune année), dossier des archives et dossier_dit (son bouton)",
+        "exercices (chacune : DSN, clôture, export ; actions : l'export compta, comme une action des étapes ; gestes : clôturer une année ouverte, rouvrir une année close) et exercices_dit (aucune année), dossier des archives et dossier_dit (son bouton)",
     ),
     lecture(Route::Regularisations, "Lister les corrections à porter et portées, par mois d'origine.", "titre (s'il y a des corrections), les corrections, mois par mois (chacun son titre)"),
     Fiche {
@@ -48,7 +48,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        // `exercices` la rend en geste sur chaque année : la clore, ouverte ; la rouvrir, close.
+        ecran: Ecran::Geste(Place::Historique),
     },
     Fiche {
         route: Route::ExportCompta,
@@ -347,8 +348,9 @@ struct ExercicesDits {
 }
 
 /// Une annee connue du dossier : ses mois, ses DSN acceptees, sa cloture, son export compta, sa pastille, sa ligne, et
-/// ce qu'on peut faire d'elle : la boite de l'export compta et, ouverte, celle de la cloture (`actions`, comme les
-/// actions des etapes et des rappels) ; close, la rouvrir (`gestes` : la route appelee telle quelle).
+/// ce qu'on peut faire d'elle : la boite de l'export compta (`actions`, comme les actions des etapes et des rappels) ;
+/// ouverte, la clore (`gestes` : sa boite, `exercice_ecrit::geste_de_cloture`) ; close, la rouvrir (la route appelee
+/// telle quelle).
 #[derive(Debug, serde::Serialize)]
 struct ExerciceDit {
     infos_dit: String,
@@ -424,12 +426,11 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
         };
         let infos_dit = format!("{} mois · {}{}{}", mois.len(), socle::ecran::compte(acceptees.len(), "DSN acceptée", "DSN acceptées"), clos_dit, export_dit);
         // Toute annee s'exporte ; une annee ouverte se clot (sa boite fait choisir de clore malgre tout), une close se rouvre.
-        let mut actions = vec![action(Route::ExportCompta, ChargeAnnee { annee: a }, None, "Export compta".into())];
-        let mut gestes = Vec::new();
-        match note {
-            Some(_) => gestes.push(GesteDeRoute::avec_cases(Route::Cloture, ChargeCloture::rouvrir(a), ROUVRIR, Vec::new(), SansCharge {}, SansCharge {})),
-            None => actions.push(action(Route::Cloture, ChargeAnnee { annee: a }, None, "Clôturer…".into())),
-        }
+        let actions = vec![action(Route::ExportCompta, ChargeAnnee { annee: a }, None, "Export compta".into())];
+        let gestes = vec![match note {
+            Some(_) => GesteDeRoute::avec_cases(Route::Cloture, ChargeCloture::rouvrir(a), ROUVRIR, Vec::new(), SansCharge {}, SansCharge {}),
+            None => crate::gestes::exercice_ecrit::geste_de_cloture(a)?,
+        }];
         out.push(ExerciceDit {
             infos_dit,
             annee: a,

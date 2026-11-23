@@ -516,8 +516,8 @@ async function dessinerExercices() {
   try { r = await api("exercices"); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
   if (!r.exercices.length) { cible.innerHTML = `<p class="discret">${echapper(r.exercices_dit)}</p>`; return; }
-  // Chaque année, ses actions (la boîte de leur route, `ouvrirGeste`) puis ses gestes (la route appelée telle quelle),
-  // tels que la route les rend.
+  // Chaque année, ses actions (la boîte de leur route, `ouvrirGeste`) puis ses gestes (clore, rouvrir : chacun sa boîte,
+  // `brancherLesGestes`), tels que la route les rend.
   cible.innerHTML = r.exercices.map((x, i) => `
     <div class="rang exercice" data-exercice="${i}">
       <span class="rang-nom">${echapper(x.annee)}</span>
