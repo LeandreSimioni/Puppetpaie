@@ -839,8 +839,8 @@ pub const QUOI_METIERS_CREES: &str = "Les metiers que cette compagnie a crees da
 socle::noms_fermes! {
     /// CADRE OU NON, tel que la creation d'un metier le dit (`metier-cree`) : la charge le dit, rien ne se suppose.
     Encadrement, "Cadre ou non" {
-        Cadre = "cadre",
-        NonCadre = "non_cadre",
+        Cadre = "cadre" : "Cadre",
+        NonCadre = "non_cadre" : "Non cadre",
     }
 }
 

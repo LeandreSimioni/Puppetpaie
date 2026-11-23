@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, Refus, OPERATION};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::Moteur;
@@ -73,23 +73,18 @@ const AIDES: &[(&str, &str)] = &[
     ("imprevu_valide", "L'engagement est validé : cliquer sur sa carte pour l'ouvrir, retirer ces jours, puis « Modifier l'engagement »."),
     ("jour_hors_ligne", "Ce jour n'est sur aucune ligne ouverte de cette carte : le décocher au calendrier."),
     ("a_dire_avant_signaler", "À dire dans sa carte, sous « Contrat », avant de signaler :"),
-    ("absence", "Saisie une fois : chaque mois qu'elle traverse la déclare et, si elle n'est pas payée, en retire le salaire."),
     ("jours_deja_indemnises", "Les jours d'arrêt déjà indemnisés dans les douze mois : ils réduisent la durée du maintien."),
     ("indemnites_journalieres", "Le montant d'un jour, tel que l'écrit le relevé de la CPAM ou son bordereau de paiement : brut, avant CSG et CRDS, puis net. Le maintien de salaire s'en déduit."),
-    ("jours_payes", "Des jours sont payés pendant l'imprévu : cocher ceux à retirer de l'engagement."),
     ("signalement_dsn", "Le logiciel écrit le fichier du signalement ; le dépôt, sur net-entreprises, est l'étape suivante. La DSN du mois le répétera : l'une ne remplace pas l'autre."),
     ("deja_signale", "Un nouveau signalement ne remplace rien : pour corriger ce qui est parti, un annule-et-remplace vise l'identifiant rendu par le point de dépôt (sur le certificat de conformité)."),
     ("signalement_fin", "Il va à France Travail, qui en tire l'attestation employeur : c'est elle qui ouvre les droits du salarié. La DSN du mois ne le remplace pas."),
     ("identifiant_remplace", "JJMMAAAA suivi du rang de l'envoi, lu sur son certificat de conformité ; vide pour un signalement normal."),
     ("reference_faite", "L'accusé de réception, le numéro du recommandé, s'il y en a un."),
     ("hors_dsn", "Elle ne part pas avec la DSN."),
-    ("date_accident", "La date de l'accident, ou de sa première constatation."),
-    ("debut_arret", "Le premier jour que l'avis prescrit ; prescrit un jour travaillé, ce jour-là, aussi le dernier jour travaillé."),
     ("prolongation", "La nouvelle fin prescrite, celle de l'avis de prolongation."),
-    ("note_imprevu", "Une note pour vous : elle ne part nulle part."),
     ("cloture", "Les saisies et les sorties de l'année ne se modifieront plus (rouvrir reste possible, depuis l'Historique). Tout ce qu'il faut garder (saisies, bulletins, contrats signés, DPAE, DSN, certificats, retours des organismes, journal des dépôts, fiches, export compta) est réuni dans l'archive de l'exercice."),
     ("cloture_refus", "La clôture vient après la dernière DSN de l'année : elle est refusée si un mois avec des paies n'a pas de DSN acceptée au journal."),
-    ("cloture_forcer", "Si une DSN manque au journal (déposée ailleurs, par exemple)."),
+    ("cloture_forcer", "Si une DSN manque au journal (déposée ailleurs, par exemple), cochez « Clore malgré tout »."),
     ("historique_titre", "Historique des valeurs"),
     ("historique_fiche", "Toutes les valeurs de chaque case, passées et à venir, avec leurs dates et d'où elles viennent ; en gras, celle d'aujourd'hui. Celles d'avant restent pour les déclarations déjà envoyées."),
     ("non_enregistres", "Vos changements ne sont pas encore enregistrés."),
@@ -104,6 +99,7 @@ const AIDES: &[(&str, &str)] = &[
     ("dater_depuis", "À partir du"),
     ("dater_note", "ajouter une note"),
     ("dater_motif", "motif"),
+    ("tout_cocher", "tout cocher / tout décocher"),
     ("valeur_vide", "vide"),
     ("valeur_effacee", "effacé"),
     ("refus_titre", "Enregistrement refusé"),
@@ -120,16 +116,12 @@ const AIDES: &[(&str, &str)] = &[
     ("net_attend", "Le net s'affiche dès que l'engagement est complet."),
     ("qui_d_abord", "Choisir d'abord qui est payé."),
     ("lieu_jours", "Le lieu et les jours se posent sur chaque ligne de paie."),
-    ("importe_manque", "Un clic sur la carte montre ses cases, et sous chacune pourquoi."),
-    ("importe_dates", "Début et fin du contrat : les jours exacts ne sont pas lus."),
-    ("importe_brut", "Le brut : le net à payer n'est pas lu."),
     ("a_completer", "Un engagement au moins reste à compléter avant de le valider : sa carte dit ce qui manque."),
     ("piece_absente", "N'est plus dans le dossier du mois."),
     ("qui_engage", "Choisir qui est engagé."),
     ("engagement_retire", "Engagement retiré."),
     ("dpae_cochees", "Cochées d'avance : les embauches sans DPAE, ou dont la DPAE a été refusée. Une DPAE déjà passée ne se redéclare pas : l'Urssaf recevrait deux déclarations pour un seul contrat."),
     ("dpae_heure", "Heure d'embauche déclarée : 08h00. Toutes les embauches cochées partent ensemble, dans un seul dépôt. D'abord le test, qui ne déclare rien ; puis, une fois le test revenu conforme, l'envoi réel."),
-    ("revue_spectacles", "Décochés, ils s'archivent : ils restent lisibles et se réactivent d'un clic (Configuration › Spectacles). Ceux qui continuent gardent leur numéro d'objet."),
     ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD ; la DSN déposée du même mois pourrait le dire. Sinon, dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
     ("import_numero", "Le numéro du contrat : la rubrique S21.G00.40.009 de sa dernière DSN."),
     ("import_quotite", "La durée du travail, en heures par mois : la rubrique S21.G00.40.013 de la DSN."),
@@ -144,9 +136,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Etat,
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
+        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois, chacun son titre, sa pastille, ses phrases et, s'il reste à faire, le geste qui le reprend : reprendre, comme une action des étapes), historique_dit (aucun mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
@@ -156,7 +148,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Configuration,
         geste: "Dire les fiches de la compagnie, vérifiées.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases, pour_payer (ce qui manque encore pour payer, ou null)",
         refus: &[OPERATION],
@@ -168,7 +160,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::MajEtat,
         geste: "Dire la version du logiciel.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "la version installée et ce que la mise à jour en sait, phrase",
         refus: &[OPERATION],
@@ -180,7 +172,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CourrielsFictifs,
         geste: "Dire les courriels joués d'une compagnie fictive.",
-        charge: &[Champ { nom: "apres", libelle: Affiche::new("Depuis"), forme: Forme::Texte, sens: "seulement ceux d'après cet instant", avance: true }],
+        charge: &crate::simulation_courriels::ChargeCourrielsFictifs::CHARGE,
         exemple: r#"{}"#,
         rend: "les courriels joués (à qui, quoi, quand)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "rien : seulement dans une compagnie fictive" }],
@@ -589,7 +581,7 @@ pub(crate) fn registre_identite(dossier: &Path) -> R<RegistreIdentite> {
 
 /// UNE IMAGE DE L'IDENTITE (signature, cachet, logo) : posee ou non, dessinee par le logiciel (le cachet), son fichier et
 /// sa forme quand elle est posee, les documents qui la portent ; la signature dit pour qui elle est posee. La route
-/// `identite` y ajoute sa pastille et ce que son ecran en dit.
+/// `identite` en fait le rang de son ecran (`identite::rang_de_l_image`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct ImageIdentite {
     pub(crate) pose: bool,
@@ -611,10 +603,6 @@ pub(crate) struct ImageIdentite {
     pub(crate) posee_pour: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) autre_personne: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) pastille: Option<socle::ecran::Pastille>,
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub(crate) ecran: Option<EcranDeLImage>,
 }
 
 /// Le format d'une image posee, ecrit par son nom (`png`, `jpg`, `svg`), l'extension de son fichier.
@@ -623,19 +611,6 @@ fn format_ecrit<S: serde::Serializer>(f: &Option<fabrique_pdf::alleger::FormatDI
         Some(f) => s.serialize_str(f.nom()),
         None => s.serialize_none(),
     }
-}
-
-/// Ce que l'ecran de la signature et du tampon dit d'une image : son titre, ce qu'elle engage et ou elle va, ce que dit
-/// l'image posee, et les mots de ses gestes.
-#[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct EcranDeLImage {
-    pub(crate) titre: String,
-    pub(crate) dit: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) automatique_dit: Option<&'static str>,
-    pub(crate) pose_dit: Option<String>,
-    pub(crate) retirer_dit: &'static str,
-    pub(crate) importer_dit: &'static str,
 }
 
 /// `identite` : ce qui est pose (signature, cachet, logo), et depuis quand.
@@ -664,8 +639,6 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             signataire: None,
             posee_pour: None,
             autre_personne: None,
-            pastille: None,
-            ecran: None,
         };
         match pose {
             None => e.dossier = Some(dossier.clone()),
@@ -693,8 +666,8 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
 
 impl Identite {
     /// Les trois images, dans l'ordre ou l'ecran les montre.
-    pub(crate) fn images_mut(&mut self) -> [(documents::SorteDImage, &mut ImageIdentite); 3] {
-        [(documents::SorteDImage::Signature, &mut self.signature), (documents::SorteDImage::Cachet, &mut self.cachet), (documents::SorteDImage::Logo, &mut self.logo)]
+    pub(crate) fn images(&self) -> [(documents::SorteDImage, &ImageIdentite); 3] {
+        [(documents::SorteDImage::Signature, &self.signature), (documents::SorteDImage::Cachet, &self.cachet), (documents::SorteDImage::Logo, &self.logo)]
     }
 }
 
@@ -988,13 +961,15 @@ impl serde::Serialize for DsnDuBilan {
     }
 }
 
-/// UN MOIS DE L'HISTORIQUE : le mois, s'il a des documents (`produit`), ou en est sa DSN, sa pastille, le jour du depot,
-/// ses documents en mots, son echeance, s'il se corrige, s'il est tenu avant ce logiciel, ce qui reste a faire, ses
-/// sortes et ses fichiers, et si son exercice est clos. Un mois dont la DSN ne se lit pas (une fiche entreprise
-/// incomplete) ne dit que ses fichiers (`MoisDuBilan::nu`).
+/// UN MOIS DE L'HISTORIQUE : le mois et son titre, s'il a des documents (`produit`), ou en est sa DSN, sa pastille, le
+/// jour du depot, ses documents en mots, son echeance, s'il se corrige, s'il est tenu avant ce logiciel, le geste qui le
+/// reprend s'il reste a faire (`reprendre`, et ce qu'en dit `reste_dit`), ses sortes et ses fichiers, et si son exercice
+/// est clos (`clos_dit` le dit en mots). Un mois dont la DSN ne se lit pas (une fiche entreprise incomplete) ne dit que
+/// ses fichiers (`MoisDuBilan::nu`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MoisDuBilan {
     mois: Mois,
+    titre: String,
     produit: bool,
     dsn: Option<DsnDuBilan>,
     saisi_dit: &'static str,
@@ -1011,18 +986,52 @@ pub(crate) struct MoisDuBilan {
     corrigeable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     importe: Option<bool>,
-    a_faire: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reprendre: Option<crate::etapes::Action>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reste_dit: Option<&'static str>,
     sortes: Vec<&'static str>,
     fichiers: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     clos: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clos_dit: Option<&'static str>,
+}
+
+/// Ce que l'Historique dit d'un mois ou il reste a faire, a cote du geste qui le reprend.
+const RESTE_A_FAIRE: &str = "reste à faire";
+
+/// Ce que l'Historique dit d'un mois dont l'exercice est clos.
+const CLOS: &str = "clos";
+
+/// Ce que l'Historique dit quand aucun mois n'est connu.
+const AUCUN_MOIS: &str = "Aucun mois";
+
+/// LE GESTE QUI REPREND UN MOIS OU IL RESTE A FAIRE, depuis l'Historique : le mois dans la page Paie (`etat-du-mois`) ;
+/// une DSN en retard, sa boite de depot, dont le test part d'abord (`etapes::deposer_dsn`) : elle se fabrique et part,
+/// en retard.
+fn reprendre_le_mois(mois: Mois, dsn_en_retard: bool) -> crate::etapes::Action {
+    let libelle = "Reprendre ce mois".to_string();
+    if dsn_en_retard {
+        crate::etapes::deposer_dsn(mois, None, libelle)
+    } else {
+        crate::etapes::action(Route::EtatDuMois, crate::etapes::ChargeMois { mois }, None, libelle)
+    }
+}
+
+/// Le titre d'un mois de l'Historique : son nom en clair, la premiere lettre en capitale (« Novembre 2026 »).
+fn titre_du_mois(mois: Mois) -> String {
+    let t = mois.libelle(socle::mois::Graphie::Accentuee);
+    let mut c = t.chars();
+    c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect()
 }
 
 impl MoisDuBilan {
-    /// Un mois qui ne se lit pas : ses fichiers, rien a corriger, et pourquoi (sa pastille le dit).
+    /// Un mois qui ne se lit pas : ses fichiers, rien a corriger, et pourquoi (sa pastille le dit) ; il reste a faire.
     fn nu(mois: Mois, fichiers: &[NomDeFichier], pourquoi: String) -> MoisDuBilan {
         MoisDuBilan {
             mois,
+            titre: titre_du_mois(mois),
             produit: !fichiers.is_empty(),
             dsn: None,
             saisi_dit: "saisi",
@@ -1034,10 +1043,12 @@ impl MoisDuBilan {
             echeance_depot: None,
             corrigeable: false,
             importe: None,
-            a_faire: true,
+            reprendre: Some(reprendre_le_mois(mois, false)),
+            reste_dit: Some(RESTE_A_FAIRE),
             sortes: Vec::new(),
             fichiers: fichiers.to_vec(),
             clos: None,
+            clos_dit: None,
         }
     }
 }
@@ -1119,8 +1130,10 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
             Etat::ADeposer => ("orange", "DSN à déposer"),
         };
         let quand = if depose { lu.quand.clone() } else { None };
+        let clos = m.exercice_clos(le_mois.annee())?;
         Ok(MoisDuBilan {
             mois: le_mois,
+            titre: titre_du_mois(le_mois),
             produit: !noms.is_empty(),
             dsn: Some(if retard { DsnDuBilan::EnRetard } else { DsnDuBilan::Lue(lu.etat) }),
             saisi_dit: "saisi",
@@ -1137,10 +1150,12 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
             // la DSN du mois courant.
             corrigeable: lu.partie() && en_retard && !importe,
             importe: Some(importe),
-            a_faire,
+            reprendre: a_faire.then(|| reprendre_le_mois(le_mois, retard)),
+            reste_dit: a_faire.then_some(RESTE_A_FAIRE),
             sortes,
             fichiers: noms.to_vec(),
-            clos: Some(m.exercice_clos(le_mois.annee())?),
+            clos: Some(clos),
+            clos_dit: clos.then_some(CLOS),
         })
     }
 }
@@ -1223,12 +1238,48 @@ pub(crate) struct Choix {
     /// Les parties d'une valeur faite de parties que ce choix ouvre (`catalogue::Forme::Parties`).
     #[serde(skip_serializing_if = "Option::is_none")]
     ouvre: Option<Vec<&'static str>>,
+    /// Le document qui montre ce choix, qu'on ouvre a cote de lui (le bulletin d'exemple d'un modele du bulletin).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exemple: Option<DocumentMontre<crate::bulletin::ChargeModele>>,
+}
+
+/// UN DOCUMENT QU'UNE ROUTE NOMME POUR QU'ON LE REGARDE (un aperçu, un exemple, une image posee). La route le nomme par
+/// la route qui le rend et sa charge (`C` ; qui lit la reponse en ligne de commande l'obtient par elles), par l'adresse
+/// ou la fenetre sert ce meme document a la page, et par son libelle. Le bulletin d'exemple de chaque modele du bulletin
+/// sur la fiche Entreprise (`bulletin-modele-apercu`, `bulletin::adresse_apercu`) ; la signature, le tampon et le logo
+/// de l'ecran Signature & tampon (`identite-image`, `identite::adresse_de_l_image`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct DocumentMontre<C> {
+    libelle: &'static str,
+    route: Route,
+    charge: C,
+    adresse: String,
+}
+
+impl<C> DocumentMontre<C> {
+    /// Le document que la route `route` rend pour la charge `charge`, servi a la page a l'adresse `adresse`, et dit
+    /// `libelle`.
+    pub(crate) fn nomme(libelle: &'static str, route: Route, charge: C, adresse: String) -> DocumentMontre<C> {
+        DocumentMontre { libelle, route, charge, adresse }
+    }
+}
+
+impl DocumentMontre<crate::bulletin::ChargeModele> {
+    /// Le bulletin d'exemple du modele `modele`, ouvert par le lien `libelle`.
+    pub(crate) fn du_modele(libelle: &'static str, modele: droit::fiche::ModeleBulletin) -> Self {
+        DocumentMontre::nomme(libelle, Route::BulletinModeleApercu, crate::bulletin::ChargeModele { modele }, crate::bulletin::adresse_apercu(modele))
+    }
 }
 
 impl Choix {
     /// Un code et son libelle, sans defaut.
     pub(crate) fn de(code: impl std::fmt::Display, libelle: impl std::fmt::Display) -> Choix {
-        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None, ouvre: None }
+        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None, ouvre: None, exemple: None }
+    }
+
+    /// Le document qui le montre.
+    pub(crate) fn montre_par(self, exemple: DocumentMontre<crate::bulletin::ChargeModele>) -> Choix {
+        Choix { exemple: Some(exemple), ..self }
     }
 
     /// Le code que le choix porte.
@@ -1554,6 +1605,9 @@ pub(crate) struct EtatDeLaPage {
     demo: Option<crate::accueil::suppression::MentionDemo>,
     commencer_par_l_import: bool,
     historique: Vec<MoisDuBilan>,
+    /// Ce que l'Historique dit quand aucun mois n'est connu ; rien s'il y en a.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    historique_dit: Option<&'static str>,
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
     choix: ChoixDesCases,
@@ -1649,6 +1703,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // UNE COMPAGNIE VENUE D'UN LOGICIEL PRECEDENT, DONT RIEN N'EST ENCORE REPRIS : la page s'ouvre sur l'import et
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
         commencer_par_l_import: import::guide::commencer_par_l_import(&ctx.racine)?,
+        historique_dit: historique.is_empty().then_some(AUCUN_MOIS),
         historique,
         salaries,
         spectacles,

@@ -9,18 +9,13 @@
    Corriger, c'est modifier l'engagement et le revalider. */
 async function dessinerRegularisation() {
   const cible = document.getElementById("regularisation");
-  const titre = document.getElementById("titre-corrections");
   let r;
   try { r = await api("regularisations"); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-  // Les mois qui se corrigent et ceux en retard se disent sur leur ligne,
-  // dans « Les mois » : il ne reste ici que les corrections, et le titre se
-  // tait quand il n'y en a pas.
-  const mois = r.corrections;
-  if (titre) titre.hidden = !mois.length;
-  cible.innerHTML = mois.map((m) => `
+  // Le titre, et celui de chaque mois, sont ceux que la route rend (aucun titre quand il n'y a aucune correction).
+  cible.innerHTML = (r.titre ? `<h2>${echapper(r.titre)}</h2>` : "") + r.corrections.map((m) => `
       <div class="corrections-mois">
-        <b>${echapper(moisEnClair(m.mois))}</b>
+        <b>${echapper(m.titre)}</b>
         ${m.corrections.map((c) => `
           <div class="rang">
             <span class="rang-nom">${echapper(c.nom)}</span>

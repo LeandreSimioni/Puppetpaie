@@ -49,7 +49,7 @@ impl FormatDImage {
     }
 
     /// Son type MIME.
-    pub fn mime(self) -> &'static str {
+    pub const fn mime(self) -> &'static str {
         match self {
             FormatDImage::Png => "image/png",
             FormatDImage::Jpeg => "image/jpeg",

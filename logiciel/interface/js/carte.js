@@ -478,15 +478,13 @@ async function viserLeMontant(div, champs) {
  *  l'engagement ». */
 function dessinerLaLigne(div) {
   const ligne = div._ligne, p = div._paie;
-  const dates = p && p.dates_travail ? p.dates_travail.filter((d) => d.startsWith(MOIS_AFFICHE)) : [];
-  const jours = joursEnClair(dates);
-  const moisCourt = MOIS_COURTS[parseInt(MOIS_AFFICHE.slice(5, 7), 10) - 1];
+  const q = p ? p.quand : null;
   const pourquoi = [pourQuoi(ligne), p && p.paye_dit, ligne.repris_dit].filter(Boolean).join(" · ");
   const detail = [p && p.bulletin_dit, ligne.numero_dit, ligne.validee_dit].filter(Boolean).join(" · ");
   div.innerHTML = `
     <div class="e-resume">
-      <div class="carte-quand" title="${echapper(dates.map(jjmmaaaa).join(", "))}">
-        <b class="${jours.includes(" · ") ? "epars" : ""}">${echapper(jours)}</b><span>${echapper(moisCourt)}</span></div>
+      <div class="carte-quand"${q ? ` title="${echapper(q.titre)}"` : ""}>
+        ${q ? `<b class="${q.epars ? "epars" : ""}">${echapper(q.jours)}</b><span>${echapper(q.mois)}</span>` : ""}</div>
       <div class="carte-qui" title="${echapper(detail)}"><span class="carte-nom"><b>${echapper(ligne.nom)}</b></span>
         <span class="discret">${echapper(pourquoi)}</span></div>
       <div class="carte-actes">${bandeauEtats(ligne, false)}</div>

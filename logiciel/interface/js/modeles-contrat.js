@@ -9,17 +9,19 @@
    paragraphes, son contrat ou son avenant : la base se lit, un spécial s'écrit
    paragraphe par paragraphe.
 
-   La page ne décide rien (règle 2) et n'écrit aucune phrase : le moteur dit les
-   modèles (`modeles-contrat`), lit une partie d'un modèle avec ses champs, ce qui
-   a changé dans sa base et les engagements de l'aperçu (`modele-contrat`), fait
-   l'aperçu (`apercu-modele-contrat`) ; chaque geste est une route, qui vérifie le
-   modèle et dit son refus : `copier-modele-contrat`, `renommer-modele-contrat`,
-   `ecrire-paragraphe-contrat`, `ajouter-paragraphe-contrat`,
-   `deplacer-paragraphe-contrat`, `supprimer-paragraphe-contrat`,
-   `supprimer-modele-contrat`, `modele-contrat-par-defaut`.
+   La page ne décide rien (règle 2) et n'écrit aucune phrase : `modeles-contrat`
+   dit les modèles de chaque nature, le geste qui ouvre chacun (`ouvrir`) et ceux
+   qu'on peut y faire (`gestes`, comme ceux de la nature : copier sa base) ;
+   `modele-contrat` dit une partie d'un modèle, ses paragraphes et, pour chacun,
+   le geste qui l'enregistre (`ecrire`) et ceux qu'on peut y faire, les gestes
+   qui lisent ses parties, ceux du modèle et celui de l'aperçu. Chaque geste est
+   posé tel que la route le rend (`boutonsDesGestes`, `brancherLesGestes`,
+   `js/avance.js`) : sa route, sa charge, son libellé, sa boîte.
 
-   `ouvert` : la partie du modèle dont l'éditeur est ouvert ({nature, id,
-   partie}), redessinée après chaque geste. */
+   `ouvert` : la charge du geste qui a ouvert l'éditeur d'une partie d'un modèle
+   ({nature, id, partie}), redessinée après chaque geste. Chaque geste, et ouvrir
+   ou fermer un modèle, quitte d'abord les paragraphes retenus de l'éditeur
+   (`quitterLEcran`) : une saisie non enregistrée se demande. */
 async function dessinerModelesContrat(cible, ouvert = null) {
   cible.innerHTML = `<p class="note">…</p>`;
   let m;
@@ -29,10 +31,11 @@ async function dessinerModelesContrat(cible, ouvert = null) {
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
     return;
   }
-  // La base n'a pas d'id (`null` dans la réponse, absent de son bloc) : `==` les tient pour égaux.
-  const estOuvert = (nature, id) => ouvert && ouvert.nature === nature && ouvert.id == id;
-  const ligne = (n, x) => `
-    <div class="modele-contrat" data-nature="${echapper(n.nature)}"${x.id ? ` data-id="${echapper(x.id)}"` : ""}>
+  // La base n'a pas d'id (absent de la charge) : `==` tient deux absences pour égales.
+  const estOuvert = (x) => ouvert && ouvert.nature === x.ouvrir.charge.nature && ouvert.id == x.ouvrir.charge.id;
+  const redessiner = (o = ouvert) => dessinerModelesContrat(cible, o);
+  const ligne = (x) => `
+    <div class="modele-contrat">
       <div class="modele-entete">
         <b>${echapper(x.nom)}</b>
         ${pastilleDeLEtat(x.pastille)}
@@ -40,11 +43,8 @@ async function dessinerModelesContrat(cible, ouvert = null) {
       ${x.base_changee ? `<div class="encart">${echapper(x.base_changee)}</div>` : ""}
       ${x.manques.length ? `<div class="encart erreur">${x.manques.map(echapper).join("<br>")}</div>` : ""}
       <div class="modele-gestes">
-        ${estOuvert(n.nature, x.id)
-          ? `<button type="button" class="lien" data-ouvrir>Fermer</button>`
-          : `<button type="button" class="lien" data-ouvrir>Ouvrir</button>`}
-        ${x.defaut ? "" : `<button type="button" class="lien" data-defaut>Choisir par défaut</button>`}
-        ${x.base ? "" : `<button type="button" class="lien" data-supprimer>Supprimer</button>`}
+        <button type="button" class="lien" data-ouvrir>${estOuvert(x) ? "Fermer" : echapper(x.ouvrir.libelle)}</button>
+        <span data-gestes>${boutonsDesGestes(x.gestes)}</span>
       </div>
       <div class="modele-editeur"></div>
     </div>`;
@@ -53,45 +53,33 @@ async function dessinerModelesContrat(cible, ouvert = null) {
     <p class="discret">${echapper(m.ecran.en_francais)}</p>
     <ol class="discret">${m.ecran.comment.map((x) => `<li>${echapper(x)}</li>`).join("")}</ol>
     ${m.natures.map((n) => `
-      <h3>${echapper(n.nom.charAt(0).toUpperCase() + n.nom.slice(1))} <span class="discret">— ${echapper(n.libelle)}</span></h3>
-      ${n.modeles.map((x) => ligne(n, x)).join("")}
-      <div class="modele-copier" data-nature="${echapper(n.nature)}">
-        <input type="text" placeholder="Nom du modèle">
-        <button type="button" class="lien">Copier la base</button>
-      </div>`).join("")}`;
+      <h3>${echapper(n.titre)} <span class="discret">— ${echapper(n.libelle)}</span></h3>
+      ${n.modeles.map(ligne).join("")}
+      <div class="modele-gestes" data-nature-gestes>${boutonsDesGestes(n.gestes)}</div>`).join("")}`;
 
-  // Un geste : la route, puis la page redessinée (l'éditeur ouvert le reste) et sa phrase.
-  const geste = async (route, charge, garder = ouvert) => {
-    try {
-      const r = await api(route, charge);
-      await dessinerModelesContrat(cible, garder);
-      dire(r.phrase);
-    } catch (e) {
-      dire(e.message, "erreur");
-    }
-  };
-  cible.querySelectorAll(".modele-contrat").forEach((bloc) => {
-    const nature = bloc.dataset.nature;
-    const id = bloc.dataset.id;
-    const ici = estOuvert(nature, id);
-    bloc.querySelector("[data-ouvrir]").onclick = () => dessinerModelesContrat(cible, ici ? null : { nature, id, partie: "contrat" });
-    const defaut = bloc.querySelector("[data-defaut]");
-    if (defaut) defaut.onclick = () => geste("modele-contrat-par-defaut", { nature, id });
-    const supprimer = bloc.querySelector("[data-supprimer]");
-    if (supprimer) supprimer.onclick = () => geste("supprimer-modele-contrat", { id }, ici ? null : ouvert);
-    if (ici) dessinerEditeurDeModele(bloc.querySelector(".modele-editeur"), ouvert, geste, (o) => dessinerModelesContrat(cible, o));
+  const modeles = m.natures.flatMap((n) => n.modeles);
+  cible.querySelectorAll(".modele-contrat").forEach((bloc, k) => {
+    const x = modeles[k];
+    const ici = estOuvert(x);
+    bloc.querySelector("[data-ouvrir]").onclick = async () => { if (await quitterLEcran(cible)) redessiner(ici ? null : x.ouvrir.charge); };
+    brancherLesGestes(bloc.querySelector("[data-gestes]"), x.gestes, { titre: x.nom, quitter: cible }, redessiner);
+    if (ici) dessinerEditeurDeModele(bloc.querySelector(".modele-editeur"), ouvert, redessiner);
   });
-  cible.querySelectorAll(".modele-copier").forEach((bloc) => {
-    bloc.querySelector("button").onclick = () => geste("copier-modele-contrat", { nature: bloc.dataset.nature, nom: bloc.querySelector("input").value });
+  cible.querySelectorAll("[data-nature-gestes]").forEach((bloc, k) => {
+    const n = m.natures[k];
+    brancherLesGestes(bloc, n.gestes, { titre: n.titre, quitter: cible }, redessiner);
   });
 }
 
 /* L'ÉDITEUR D'UNE PARTIE D'UN MODÈLE (son contrat ou son avenant), en
-   paragraphes : la base se lit, un spécial s'écrit. Une donnée s'insère par la
-   liste (`champs` de la route), dans l'alinéa où l'on écrit ; la condition d'un
-   alinéa se choisit dans la même liste. `ouvrir` : rouvre la liste sur une autre
-   partie. */
-async function dessinerEditeurDeModele(cible, ici, geste, ouvrir) {
+   paragraphes. Un paragraphe d'un spécial a ses cases (`cases` : son titre, ses
+   alinéas en rangées, chacun sa condition et son texte), dessinées par le
+   dessinateur, et le geste qui les enregistre (`ecrire`) : chacun est un écran
+   retenu (`retenirLEcran`), et le quitter avec une saisie non enregistrée se
+   demande. Un paragraphe de la base se lit (`alineas`). Une donnée s'insère par
+   la liste (`champs` de la route), dans l'alinéa où l'on écrit. `redessiner` :
+   redessine la liste, l'éditeur ouvert sur la partie qu'on lui donne. */
+async function dessinerEditeurDeModele(cible, ici, redessiner) {
   let lu;
   try {
     lu = await appelerMoteur("modele-contrat", ici);
@@ -99,64 +87,61 @@ async function dessinerEditeurDeModele(cible, ici, geste, ouvrir) {
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
     return;
   }
-  const ecrit = !lu.base;
-  const contrat = lu.partie === "contrat";
-  const choix = (classe, premier, si) => `
-    <select class="${classe}" ${ecrit ? "" : "disabled"}>
+  const ecrit = lu.articles.some((p) => p.ecrire);
+  const choix = (classe, premier, si, actif) => `
+    <select class="${classe}" ${actif ? "" : "disabled"}>
       <option value="">${premier}</option>
       ${lu.champs.map((c) => `<option value="${echapper(c.marqueur)}" ${c.marqueur === si ? "selected" : ""}>${echapper(c.quoi)}</option>`).join("")}
     </select>`;
-  const alinea = (a) => `
+  // Un alinéa de la base, qui se lit seulement.
+  const alineaLu = (a) => `
     <div class="modele-alinea">
-      ${choix("modele-si", "Toujours", a.si)}
-      <textarea rows="3" ${ecrit ? "" : "readonly"}>${echapper(a.texte)}</textarea>
+      ${choix("modele-si", "Toujours", a.si, false)}
+      <textarea rows="3" readonly>${echapper(a.texte)}</textarea>
     </div>`;
-  const paragraphe = (p) => `
-    <div class="modele-paragraphe" data-numero="${p.numero}">
-      <div class="modele-entete">
+  const corps = (p) => (p.ecrire
+    ? `<div class="modele-entete"><b>${p.numero}</b></div>
+      <div data-paragraphe-cases>${grilleDesCases(p.cases.map(caseDeRoute).join(""), "", false)}</div>`
+    : `<div class="modele-entete">
         <b>${p.numero}</b>
-        <input type="text" class="modele-titre" value="${echapper(p.titre)}" ${ecrit ? "" : "readonly"}>
+        <input type="text" class="modele-titre" value="${echapper(p.titre)}" readonly>
       </div>
-      <div class="modele-alineas">${p.alineas.map(alinea).join("")}</div>
-      ${ecrit ? `<div class="modele-gestes">
-        <button type="button" data-enregistrer>Enregistrer</button>
-        <button type="button" class="lien" data-alinea>Ajouter un alinéa</button>
-        <button type="button" class="lien" data-monter>Monter</button>
-        <button type="button" class="lien" data-descendre>Descendre</button>
-        <button type="button" class="lien" data-retirer>Supprimer</button>
+      <div class="modele-alineas">${p.alineas.map(alineaLu).join("")}</div>`);
+  const paragraphe = (p) => `
+    <div class="modele-paragraphe">
+      ${corps(p)}
+      ${p.ecrire || p.gestes.length ? `<div class="modele-gestes">
+        ${p.ecrire ? `<button type="button" data-enregistrer>${echapper(p.ecrire.libelle)}</button>` : ""}
+        <span data-gestes>${boutonsDesGestes(p.gestes)}</span>
       </div>` : ""}
     </div>`;
   cible.innerHTML = `
     <div class="modele-gestes">
-      <button type="button" class="lien" data-partie="contrat" ${contrat ? "disabled" : ""}>Contrat</button>
-      <button type="button" class="lien" data-partie="avenant" ${contrat ? "" : "disabled"}>Avenant</button>
+      ${lu.parties.map((g, k) => `<button type="button" class="lien" data-partie="${k}" ${g.charge.partie === lu.partie ? "disabled" : ""}>${echapper(g.libelle)}</button>`).join("")}
     </div>
     ${lu.manques.length ? `<div class="encart erreur">${lu.manques.map(echapper).join("<br>")}</div>` : ""}
-    ${lu.base_changee && lu.base_changee.length ?`<div class="encart">${lu.base_changee.map(echapper).join("<br>")}</div>` : ""}
+    ${lu.base_changee && lu.base_changee.length ? `<div class="encart">${lu.base_changee.map(echapper).join("<br>")}</div>` : ""}
     <p class="discret">${echapper(lu.en_francais)}</p>
-    ${ecrit ? `<div class="modele-gestes">
-      <input type="text" class="modele-nom" value="${echapper(lu.nom)}">
-      <button type="button" class="lien" data-renommer>Renommer</button>
-    </div>` : ""}
+    ${lu.gestes.length ? `<div class="modele-gestes" data-modele-gestes>${boutonsDesGestes(lu.gestes)}</div>` : ""}
     <div class="modele-gestes">
       <select class="modele-engagement">
         ${lu.engagements.map((e, i) => `<option value="${i}">${echapper(e.nom)}</option>`).join("")}
       </select>
-      <button type="button" class="lien" data-apercu>Aperçu PDF</button>
+      <button type="button" class="lien" data-apercu>${echapper(lu.apercu.libelle)}</button>
     </div>
-    ${ecrit ? choix("modele-inserer", "Insérer une donnée", null) : ""}
-    ${lu.articles.map(paragraphe).join("")}
-    ${ecrit ? `<div class="modele-gestes">
-      <input type="text" class="modele-nouveau" placeholder="Titre">
-      <button type="button" class="lien" data-ajouter>Ajouter un paragraphe</button>
-    </div>` : ""}`;
+    ${ecrit ? choix("modele-inserer", "Insérer une donnée", null, true) : ""}
+    ${lu.articles.map(paragraphe).join("")}`;
 
-  cible.querySelectorAll("[data-partie]").forEach((b) => { b.onclick = () => ouvrir({ ...ici, partie: b.dataset.partie }); });
+  cible.querySelectorAll("[data-partie]").forEach((b) => {
+    b.onclick = async () => { if (await quitterLEcran(cible)) redessiner(lu.parties[+b.dataset.partie].charge); };
+  });
+  const gestes = cible.querySelector("[data-modele-gestes]");
+  if (gestes) brancherLesGestes(gestes, lu.gestes, { titre: lu.nom, quitter: cible }, () => redessiner());
   cible.querySelector("[data-apercu]").onclick = async (ev) => {
     const choisi = lu.engagements[cible.querySelector(".modele-engagement").value];
     const rallumer = occupe(ev.target);
     try {
-      const r = await api("apercu-modele-contrat", { nature: lu.nature, id: lu.id, partie: lu.partie, engagement: choisi ? choisi.engagement : null });
+      const r = await api(lu.apercu.route, { ...lu.apercu.charge, engagement: choisi ? choisi.engagement : null });
       await ouvrirEtDire(r.chemin, r.phrase);
     } catch (e) {
       dire(e.message, "erreur");
@@ -164,11 +149,38 @@ async function dessinerEditeurDeModele(cible, ici, geste, ouvrir) {
       rallumer();
     }
   };
+  cible.querySelectorAll(".modele-paragraphe").forEach((bloc, k) => {
+    const p = lu.articles[k];
+    const siens = bloc.querySelector("[data-gestes]");
+    if (siens) brancherLesGestes(siens, p.gestes, { titre: p.titre, quitter: cible }, () => redessiner());
+    if (!p.ecrire) return;
+    // Le geste qui enregistre le paragraphe part avec sa charge, que complète ce que ses cases disent, chacune sous sa
+    // clé ; une case que la route exige, vide, le retient et le dit sur elle.
+    const cases = bloc.querySelector("[data-paragraphe-cases]");
+    brancherLesCases(cases);
+    const champs = champsDuGeste(p.ecrire);
+    const enregistrer = async () => {
+      const charge = chargeDuGeste(cases, p.ecrire) || p.ecrire.charge;
+      if (marquerLesManquantes(cases, champs, charge)) return false;
+      try {
+        dire((await api(p.ecrire.route, charge)).phrase);
+        return true;
+      } catch (e) {
+        dire(e.message, "erreur");
+        return false;
+      }
+    };
+    retenirLEcran(cases, { enregistrer });
+    bloc.querySelector("[data-enregistrer]").onclick = async () => {
+      if (!(await enregistrer())) return;
+      oublierLEcran(cases);
+      if (await quitterLEcran(cible)) redessiner();
+    };
+  });
   if (!ecrit) return;
-  const sur = { id: lu.id, partie: lu.partie };
   // L'alinéa où l'on écrit en dernier reçoit la donnée choisie.
   let dernier = null;
-  cible.addEventListener("focusin", (ev) => { if (ev.target.matches(".modele-alinea textarea")) dernier = ev.target; });
+  cible.addEventListener("focusin", (ev) => { if (ev.target.matches("[data-paragraphe-cases] textarea")) dernier = ev.target; });
   const inserer = cible.querySelector(".modele-inserer");
   inserer.onchange = () => {
     if (dernier && inserer.value) {
@@ -180,19 +192,4 @@ async function dessinerEditeurDeModele(cible, ici, geste, ouvrir) {
     }
     inserer.value = "";
   };
-  cible.querySelector("[data-renommer]").onclick = () => geste("renommer-modele-contrat", { id: lu.id, nom: cible.querySelector(".modele-nom").value });
-  cible.querySelector("[data-ajouter]").onclick = () => geste("ajouter-paragraphe-contrat", { ...sur, numero: lu.articles.length + 1, titre: cible.querySelector(".modele-nouveau").value });
-  cible.querySelectorAll(".modele-paragraphe").forEach((bloc) => {
-    const numero = Number(bloc.dataset.numero);
-    bloc.querySelector("[data-enregistrer]").onclick = () => geste("ecrire-paragraphe-contrat", {
-      ...sur,
-      numero,
-      titre: bloc.querySelector(".modele-titre").value,
-      alineas: [...bloc.querySelectorAll(".modele-alinea")].map((a) => ({ si: a.querySelector("select").value || null, texte: a.querySelector("textarea").value })),
-    });
-    bloc.querySelector("[data-alinea]").onclick = () => bloc.querySelector(".modele-alineas").insertAdjacentHTML("beforeend", alinea({ si: null, texte: "" }));
-    bloc.querySelector("[data-monter]").onclick = () => geste("deplacer-paragraphe-contrat", { ...sur, numero, sens: "monter" });
-    bloc.querySelector("[data-descendre]").onclick = () => geste("deplacer-paragraphe-contrat", { ...sur, numero, sens: "descendre" });
-    bloc.querySelector("[data-retirer]").onclick = () => geste("supprimer-paragraphe-contrat", { ...sur, numero });
-  });
 }

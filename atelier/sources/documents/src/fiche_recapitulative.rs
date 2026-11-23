@@ -68,7 +68,8 @@ pub struct Recapitulatifs<'a> {
 }
 
 impl<'a> Recapitulatifs<'a> {
-    pub fn nouveau(ctx: &'a Contexte, mois: Option<Mois>, annee: Option<socle::mois::Annee>, toutes: bool, departs: engagement::departs::Departs) -> Self {
+    pub fn nouveau(ctx: &'a Contexte, periode: socle::mois::PeriodeDemandee, departs: engagement::departs::Departs) -> Self {
+        let (mois, annee, toutes) = periode.en_trois();
         let demande = Demande {
             mois,
             annee,

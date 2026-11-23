@@ -10,6 +10,7 @@ use socle::echec::{Classe, R};
 use super::enveloppe::{en_json, Charge, Dite, Rendu};
 
 pub use crate::affiche::Affiche;
+use crate::declaration::{ChampDuType, ChargeDuType};
 
 /// LES ROUTES, chacune une fois, par son nom : celui de `/api/<route>` et de `moteur route`. Une variante par fiche du
 /// catalogue (`au_catalogue`), et celles de l'atelier, qui n'en ont pas : l'horloge du banc, la route d'essai qui tombe.
@@ -66,13 +67,13 @@ routes! {
         Imprevus = "imprevus",
         Arrets = "arrets",
         FinsDeContrat = "fins-de-contrat",
-        ArretContrats = "arret-contrats",
         ArretEnregistrer = "arret-enregistrer",
         ArretProlonger = "arret-prolonger",
         ArretReprise = "arret-reprise",
         ArretIndemnites = "arret-indemnites",
         ArretSignaler = "arret-signaler",
         ArretOublier = "arret-oublier",
+        SuspensionSaisie = "suspension-saisie",
         SuspensionEnregistrer = "suspension-enregistrer",
         SuspensionModifier = "suspension-modifier",
         SuspensionOublier = "suspension-oublier",
@@ -151,15 +152,14 @@ routes! {
         SauvegardeMaintenant = "sauvegarde-maintenant",
         CompagnieSupprimer = "compagnie-supprimer",
         Identite = "identite",
+        IdentiteImage = "identite-image",
         PoserIdentite = "poser-identite",
         RetirerIdentite = "retirer-identite",
         MetiersCatalogue = "metiers-catalogue",
         MetierRetenu = "metier-retenu",
         MetierCree = "metier-cree",
         MetierModifie = "metier-modifie",
-        BulletinModeles = "bulletin-modeles",
         BulletinModeleApercu = "bulletin-modele-apercu",
-        BulletinModeleChoisir = "bulletin-modele-choisir",
         OrganismesContrats = "organismes-contrats",
         OrganismesEnregistrer = "organismes-enregistrer",
         SignalementApercu = "signalement-apercu",
@@ -282,7 +282,6 @@ pub enum Place {
     Fiches,
     Metiers,
     Organismes,
-    Bulletin,
     ModelesContrat,
     Identite,
     Coffre,
@@ -302,7 +301,6 @@ impl Place {
             Place::Fiches => "Configuration › Entreprise, Salariés, Spectacles",
             Place::Metiers => "Configuration › Métiers",
             Place::Organismes => "Configuration › Organismes et contrats",
-            Place::Bulletin => "Configuration › Modèle de bulletin",
             Place::ModelesContrat => "Configuration › Modèles de contrat",
             Place::Identite => "Configuration › Signature & tampon",
             Place::Coffre => "Configuration › Mots de passe",
@@ -322,6 +320,10 @@ impl Place {
 pub enum Ecran {
     /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine).
     Dessine(Place),
+    /// Le chemin simple : la lecture qui rend l'ecran de cette place tel qu'on le voit et le saisit
+    /// (`ecran::EcranRendu` : ce qu'il dit en tete, ses rangs, ses cases et le geste qui les enregistre) ; la page le
+    /// pose depuis sa reponse (`js/avance.js`, `poserLEcranRendu`), sans la nommer.
+    Rendu(Place),
     /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine), par ce bouton (viser un montant
     /// sur la carte).
     DessineAvecBouton(Place, Affiche),
@@ -344,7 +346,7 @@ pub enum Ecran {
 impl Ecran {
     pub fn place(self) -> Option<Place> {
         match self {
-            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
+            Ecran::Dessine(p) | Ecran::Rendu(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
             Ecran::Lecture | Ecran::LectureAvancee => None,
         }
     }
@@ -352,7 +354,7 @@ impl Ecran {
     /// La route est-elle « avancee » (hors du chemin simple) ?
     pub fn avance(self) -> bool {
         match self {
-            Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::Geste(_) | Ecran::Lecture => false,
+            Ecran::Dessine(_) | Ecran::Rendu(_) | Ecran::DessineAvecBouton(..) | Ecran::Geste(_) | Ecran::Lecture => false,
             Ecran::DessineAvance(_) | Ecran::GesteAvance(_) | Ecran::Auto(..) | Ecran::LectureAvancee => true,
         }
     }
@@ -360,6 +362,7 @@ impl Ecran {
     fn mot(self) -> &'static str {
         match self {
             Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::DessineAvance(_) => "dessine",
+            Ecran::Rendu(_) => "rendu",
             Ecran::Geste(_) | Ecran::GesteAvance(_) => "geste",
             Ecran::Auto(..) => "auto",
             Ecran::Lecture | Ecran::LectureAvancee => "lecture",
@@ -369,6 +372,7 @@ impl Ecran {
     /// Ce que `moteur routes` en dit.
     pub fn texte(self) -> String {
         match self {
+            Ecran::Rendu(p) => format!("{} (l'écran que la route rend)", p.nom()),
             Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) => p.nom().to_string(),
             Ecran::Geste(p) | Ecran::GesteAvance(p) => format!("{} (un geste qu'une route rend)", p.nom()),
             Ecran::Auto(p, _) => format!("{} › Avancé", p.nom()),
@@ -381,6 +385,9 @@ impl Ecran {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Forme {
     Texte,
+    /// UN TEXTE LONG, sur plusieurs lignes (un alinea d'un modele de contrat, le motif d'un depot reel sans test) : il se
+    /// lit comme un texte ; l'ecran le fait taper dans une zone de texte.
+    TexteLong,
     OuiNon,
     Nombre,
     /// UN MONTANT (des euros, ou des euros par unite : le taux d'une ligne de paie) : il se montre comme la page ecrit un
@@ -388,6 +395,10 @@ pub enum Forme {
     Montant,
     /// AAAA-MM.
     Mois,
+    /// UNE PERIODE : un mois (`AAAA-MM`), une annee (`AAAA`), ou toutes les annees (`toutes`), parmi celles que la route
+    /// rend a cote, sous la cle de la case (des choix : leur code est ce que la charge ecrit, leur groupe l'annee) ;
+    /// l'ecran la fait choisir dans son calendrier des periodes, d'un clic.
+    Periode,
     /// AAAA-MM-JJ : l'ecran la fait choisir dans son calendrier (`js/calendrier.js`), d'un jour.
     Date,
     /// Des jours, chacun AAAA-MM-JJ : l'ecran les fait cocher dans le meme calendrier, plusieurs a la fois (les jours
@@ -403,13 +414,22 @@ pub enum Forme {
     Lignes,
     /// Une valeur composee (un objet, une liste d'objets) : le `sens` la decrit ; l'ecran ne la saisit pas d'une case.
     Objet,
-    /// Une valeur d'une liste fermee : ses valeurs et leurs libelles ; l'ecran la fait choisir.
-    Choix(&'static [Choix]),
+    /// UNE VALEUR D'UNE LISTE FERMEE : ses valeurs et leurs libelles, tires du type qui la lit (`ListeDeChoix::de`) ;
+    /// l'ecran la fait choisir dans une liste deroulante, la ligne de commande la lit telle quelle.
+    Choix(ListeDeChoix),
+    /// DES VALEURS D'UNE LISTE FERMEE, plusieurs a la fois (`Vec` d'une `ListeFermee`) : ses valeurs et leurs libelles,
+    /// comme d'un choix ; l'ecran les fait cocher, une case par valeur, et la charge porte les codes coches, dans l'ordre
+    /// de la liste.
+    PlusieursChoix(ListeDeChoix),
     /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees, sous la cle de la case : les salaries,
     /// les spectacles, les metiers et les etablissements d'une carte (`choix` de la route etat), le genre d'un avantage en
     /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
     /// `propose`) ; l'ecran la fait choisir.
     ChoixRendu,
+    /// DES VALEURS D'UNE LISTE FERMEE QUE LA ROUTE REND A COTE, plusieurs a la fois, sous la cle de la case (les salaries a
+    /// qui partent les documents du mois : `choix` d'un geste) : l'ecran les fait cocher, une case par valeur, comme
+    /// `PlusieursChoix`, et la charge porte les codes coches.
+    PlusieursChoixRendus,
     /// UNE VALEUR FAITE DE PARTIES, chacune sa cle, son libelle et sa forme simple (`Partie`) : la route etat les rend
     /// sous la cle de la case (`parties`) ; la partie qui se choisit offre ce que la route rend sous la meme cle
     /// (`choix`), et chaque valeur offerte dit les parties qu'elle ouvre (`ouvre`) : une partie qui n'est pas de toujours
@@ -421,6 +441,12 @@ pub enum Forme {
     Rangees,
     /// Du HTML colle (la signature des courriels) : le moteur le nettoie et en dit le poids (`champs::Forme::Html`).
     Html,
+    /// UN FICHIER QUE LA PERSONNE CHOISIT SUR SON POSTE, d'un des types de media que la fiche admet (`image/png`…) : la
+    /// charge porte ses octets en base64 (une adresse data: aussi), ce que la ligne de commande donne pour le meme geste.
+    Fichier(&'static [&'static str]),
+    /// UN MOT DE PASSE QU'UN HUMAIN TAPE : la case le masque, et ni la page ni le journal de ses gestes ne le gardent ; il
+    /// part dans la charge, ce que la ligne de commande ne donne jamais (le moteur le demande lui-meme a un humain).
+    MotDePasse,
 }
 
 /// UNE PARTIE D'UNE VALEUR FAITE DE PARTIES (`Forme::Parties`) : sa cle dans la valeur, son libelle, sa forme, et si elle
@@ -464,31 +490,61 @@ impl serde::Serialize for Forme {
     }
 }
 
-/// Une valeur d'une liste fermee (`Forme::Choix`) : ce que la charge ecrit (`code`) et ce que l'ecran en montre.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Choix {
-    pub code: &'static str,
-    pub libelle: Affiche,
+/// LES VALEURS D'UNE LISTE FERMEE (`Forme::Choix`, `Forme::PlusieursChoix`), tirees du type qui lit le champ (`socle::liste::ListeFermee`) : elle
+/// ne se fabrique que par lui (`de`), jamais d'une liste ecrite a cote.
+#[derive(Clone, Copy)]
+pub struct ListeDeChoix(fn() -> R<Vec<ChoixEcrit>>);
+
+impl ListeDeChoix {
+    /// Les valeurs du type `T`, chacune son code et son libelle.
+    pub const fn de<T: socle::liste::ListeFermee>() -> ListeDeChoix {
+        ListeDeChoix(ecrits::<T>)
+    }
+
+    /// Les valeurs, ecrites.
+    pub fn ecrites(self) -> R<Vec<ChoixEcrit>> {
+        (self.0)()
+    }
 }
 
-/// Une valeur d'une liste fermee, telle que le catalogue l'ecrit.
+/// Deux listes sont la meme si elles viennent du meme type.
+impl PartialEq for ListeDeChoix {
+    fn eq(&self, autre: &ListeDeChoix) -> bool {
+        std::ptr::fn_addr_eq(self.0, autre.0)
+    }
+}
+
+impl Eq for ListeDeChoix {}
+
+impl std::fmt::Debug for ListeDeChoix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ListeDeChoix")
+    }
+}
+
+/// Les valeurs du type `T`, ecrites.
+fn ecrits<T: socle::liste::ListeFermee>() -> R<Vec<ChoixEcrit>> {
+    T::TOUTES.iter().map(|v| Ok(ChoixEcrit { code: v.code()?, libelle: v.libelle()? })).collect()
+}
+
+/// Une valeur d'une liste fermee, telle que le catalogue l'ecrit : ce que la charge ecrit (`code`) et ce que l'ecran en
+/// montre.
 #[derive(serde::Serialize)]
 pub struct ChoixEcrit {
-    code: &'static str,
+    code: String,
     libelle: &'static str,
 }
-
-/// Le mode d'un depot ou d'un fichier : un essai, ou le reel.
-pub const MODES: &[Choix] = &[Choix { code: "test", libelle: Affiche::new("Test") }, Choix { code: "reel", libelle: Affiche::new("Réel") }];
 
 impl Forme {
     pub fn mot(self) -> &'static str {
         match self {
             Forme::Texte => "texte",
+            Forme::TexteLong => "texte_long",
             Forme::OuiNon => "oui_non",
             Forme::Nombre => "nombre",
             Forme::Montant => "montant",
             Forme::Mois => "mois",
+            Forme::Periode => "periode",
             Forme::Date => "date",
             Forme::Jours => "jours",
             Forme::Liste => "liste",
@@ -496,18 +552,30 @@ impl Forme {
             Forme::Lignes => "lignes",
             Forme::Objet => "objet",
             Forme::Choix(_) => "choix",
+            Forme::PlusieursChoix(_) => "plusieurs_choix",
             Forme::ChoixRendu => "choix_rendu",
+            Forme::PlusieursChoixRendus => "plusieurs_choix_rendus",
             Forme::Parties(_) => "parties",
             Forme::Rangees => "rangees",
             Forme::Html => "html",
+            Forme::Fichier(_) => "fichier",
+            Forme::MotDePasse => "mot_de_passe",
         }
     }
 
     /// Les valeurs d'une liste fermee, ecrites ; aucune pour une autre forme.
-    fn choix(self) -> Option<Vec<ChoixEcrit>> {
+    fn choix(self) -> R<Option<Vec<ChoixEcrit>>> {
         match self {
-            Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html => None,
+            Forme::Choix(c) | Forme::PlusieursChoix(c) => Ok(Some(c.ecrites()?)),
+            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::PlusieursChoixRendus | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::Fichier(_) | Forme::MotDePasse => Ok(None),
+        }
+    }
+
+    /// Les types de media qu'un fichier admet ; aucun pour une autre forme.
+    fn admis(self) -> Option<&'static [&'static str]> {
+        match self {
+            Forme::Fichier(a) => Some(a),
+            Forme::Texte | Forme::TexteLong | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Periode | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::Choix(_) | Forme::PlusieursChoix(_) | Forme::ChoixRendu | Forme::PlusieursChoixRendus | Forme::Parties(_) | Forme::Rangees | Forme::Html | Forme::MotDePasse => None,
         }
     }
 
@@ -596,24 +664,29 @@ pub struct ChampEcrit {
     forme: Forme,
     #[serde(skip_serializing_if = "Option::is_none")]
     choix: Option<Vec<ChoixEcrit>>,
+    /// Les types de media qu'un fichier admet (`Forme::Fichier`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    admis: Option<&'static [&'static str]>,
     sens: &'static str,
     avance: bool,
+    /// Vrai : la route ne se fait pas sans lui (son type n'est pas `Option`).
+    obligatoire: bool,
 }
 
 impl Champ {
-    pub fn ecrit(&self) -> ChampEcrit {
-        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix(), sens: self.sens, avance: self.avance }
+    pub fn ecrit(&self, obligatoire: bool) -> R<ChampEcrit> {
+        Ok(ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix()?, admis: self.forme.admis(), sens: self.sens, avance: self.avance, obligatoire })
     }
 }
 
 /// La charge de la fiche porte-t-elle les changements d'une carte (`changements`) ?
-fn porte_une_carte(charge: &[Champ]) -> bool {
-    charge.iter().any(|c| c.nom == "changements")
+fn porte_une_carte(charge: &ChargeDuType) -> bool {
+    charge.champs.iter().any(|c| c.champ.nom == "changements")
 }
 
 /// LES NATURES D'UNE CARTE ET LEURS CASES, tirees du type (`engagement::carte::CarteValide::natures`), pour une fiche dont
 /// la charge porte une carte ; aucune sinon.
-fn natures_de_la_carte(charge: &[Champ]) -> R<Vec<NatureDecrite<Forme>>> {
+fn natures_de_la_carte(charge: &ChargeDuType) -> R<Vec<NatureDecrite<Forme>>> {
     if porte_une_carte(charge) { natures_des_cartes() } else { Ok(Vec::new()) }
 }
 
@@ -665,7 +738,8 @@ pub struct Fiche {
     pub route: Route,
     /// Le geste, en une phrase breve.
     pub geste: &'static str,
-    pub charge: &'static [Champ],
+    /// Sa charge : `&Type::CHARGE`, celle que la route declare (`charge!`).
+    pub charge: &'static ChargeDuType,
     /// Une charge que la route accepte sur une compagnie de test (`tests/fichiers/routes.rs`), en JSON.
     pub exemple: &'static str,
     pub rend: &'static str,
@@ -679,9 +753,7 @@ pub struct Fiche {
     pub pendant_la_demande: PendantLaDemande,
 }
 
-/// Ce que bien des fiches partagent : le mois de l'ecran, et les refus de la forme de la charge.
-pub const MOIS: Champ = Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois de l'écran, AAAA-MM", avance: false };
-pub const SALARIE: Champ = Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé de la fiche du salarié (ou son nom)", avance: false };
+/// Ce que bien des fiches partagent : les refus de la forme de la charge.
 pub const MANQUE: Refus = Refus { classe: Classe::Manque, corriger: "le champ de la charge, ou la fiche, que la phrase nomme" };
 pub(crate) const ILLISIBLE: Refus = Refus { classe: Classe::Illisible, corriger: "la date ou la valeur que la phrase dit illisible" };
 pub const FORME: Refus = Refus { classe: Classe::MalFormee, corriger: "le champ de la charge que la phrase nomme" };
@@ -700,7 +772,7 @@ impl Fiche {
         Ok(FicheEcrite {
             nom: self.nom(),
             geste: self.geste,
-            charge: self.charge.iter().map(Champ::ecrit).collect(),
+            charge: self.charge.champs.iter().map(|c| c.champ.ecrit(c.obligatoire)).collect::<R<_>>()?,
             natures: natures_de_la_carte(self.charge)?,
             exemple,
             rend: self.rend,
@@ -716,7 +788,7 @@ impl Fiche {
             affichage: self.ecran.mot(),
             bouton: match self.ecran {
                 Ecran::Auto(_, b) | Ecran::DessineAvecBouton(_, b) => Some(b.texte()),
-                Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
+                Ecran::Dessine(_) | Ecran::Rendu(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
             },
             servie_pendant_la_demande: self.pendant_la_demande == PendantLaDemande::Servie,
         })
@@ -724,8 +796,26 @@ impl Fiche {
 
     pub fn en_texte(&self) -> R<String> {
         let mut t = format!("{}{} : {}\n  Acte : {}\n  Charge :\n", self.nom(), if self.ecran.avance() { " (avancé)" } else { "" }, self.geste, self.acte.mot());
-        for c in self.charge {
-            t.push_str(&format!("    {}{} : {}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens));
+        for ChampDuType { champ: c, obligatoire } in self.charge.champs {
+            let admis = match c.forme.admis() {
+                Some(a) => format!(" (un fichier : {})", a.join(", ")),
+                None => String::new(),
+            };
+            // Une liste fermee se lit telle que l'ecran la propose : chaque code et son libelle.
+            let choix = match c.forme.choix()? {
+                Some(v) => format!(" ; au choix : {}", v.iter().map(|x| format!("{} ({})", x.code, x.libelle)).collect::<Vec<_>>().join(", ")),
+                None => String::new(),
+            };
+            // Ce que la ligne dit du champ, comme d'une case d'une carte : sa forme, s'il est obligatoire, s'il est avance.
+            let dit: Vec<&str> = [
+                Some(c.forme.mot()),
+                Some(if *obligatoire { "obligatoire" } else { "facultatif" }),
+                c.avance.then_some("avancé"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            t.push_str(&format!("    {} ({}) : {}{}{}\n", c.nom, dit.join(", "), c.sens, admis, choix));
         }
         for n in natures_de_la_carte(self.charge)? {
             t.push_str(&format!(
@@ -767,7 +857,7 @@ pub fn dans(fiches: &[Fiche], route: Route) -> Option<Fiche> {
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::Routes,
     geste: "Dire les routes : leur fiche, le chemin simple d'abord.",
-    charge: &[Champ { nom: "avance", libelle: Affiche::new("Toutes les routes"), forme: Forme::OuiNon, sens: "vrai : toutes les routes, les avancées comprises", avance: true }],
+    charge: &ChargeDuCatalogue::CHARGE,
     exemple: r#"{"avance": true}"#,
     rend: "routes : la fiche de chaque route (nom, geste, charge, exemple, rend, refus, acte, avance, longueur_de_phrase)",
     refus: &[FORME],
@@ -777,11 +867,11 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     pendant_la_demande: PendantLaDemande::Servie,
 }];
 
-/// La charge de `routes` : toutes les routes (`avance`), ou le chemin simple.
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDuCatalogue {
-    avance: Option<bool>,
+crate::declaration::charge! {
+    /// La charge de `routes` : toutes les routes (`avance`), ou le chemin simple.
+    struct ChargeDuCatalogue {
+        avance: Option<bool> = crate::declaration::dit("Toutes les routes", "vrai : toutes les routes, les avancées comprises").avancee(),
+    }
 }
 
 /// Ce que rend `routes` : la phrase, une ligne par route (« nom : geste »), et la fiche de chacune.

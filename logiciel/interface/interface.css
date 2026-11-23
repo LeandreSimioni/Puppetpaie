@@ -194,6 +194,8 @@ h2 {
   border-bottom: 1px solid var(--bord);
 }
 h2:first-child { margin-top: 0; }
+/* Le titre des corrections, que la route rend, ouvre son bloc mais suit la section de l'année. */
+#regularisation > h2:first-child { margin-top: 22px; }
 h2 .discret { text-transform: none; letter-spacing: 0; font-weight: normal; }
 .discret { color: var(--discret); font-weight: normal; }
 
@@ -314,8 +316,13 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .case-parties .partie { display: inline-flex; gap: 4px; align-items: center; }
 .case-parties .partie:has(input[type=text]) { flex: 1 1 14em; }
 .case-parties .partie input[type=text] { flex: 1; min-width: 0; }
+/* Un texte long dans une partie (le texte d'un alinéa) prend la ligne. */
+.case-parties .partie:has(textarea) { flex: 1 1 100%; align-items: flex-start; }
+.case-parties .partie textarea { flex: 1; min-width: 0; }
 /* Une fiche rendue : deux cases par ligne, une case « pleine » sur toute la ligne, un titre à chaque bloc. */
 .e-cases.fiche-cases { grid-template-columns: 1fr 1fr; align-items: start; }
+/* Le dossier d'un salarié : des listes à cocher, hautes ; chaque case part du haut. */
+#d-cases > .e-cases { align-items: start; gap: 14px 28px; margin: 10px 0; }
 .fiche-cases > .pleine, .fiche-cases > .bloc-titre { grid-column: 1 / -1; }
 .fiche-cases > .bloc-titre { margin: 12px 0 0; font-size: 14px; color: var(--texte); }
 .case-rangees { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
@@ -406,7 +413,7 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .e-contrat-champs label[hidden] { display: none; }
 .supprimer { color: var(--erreur); border: none; background: none; font-size: 18px; }
 
-.actions { display: flex; gap: 10px; margin-top: 18px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .note { font-size: 12px; color: var(--discret); margin: 10px 0 0; }
 
 /* --------------------------------------------------------------- apercu */
@@ -479,9 +486,6 @@ tr.total td { font-weight: bold; border-top: 2px solid var(--texte); border-bott
 .rang.fiche .annees { display: block; margin-top: 2px; }
 .rang.fiche .annees .lien { font-size: 12px; }
 .rang-infos .a-completer { font-weight: normal; font-style: italic; color: var(--alerte); }
-/* Le compte qu'ouvre un mot de passe, sous ce à quoi il sert. */
-.rang-infos .compte { display: block; margin-top: 2px; color: var(--texte); }
-.rang-infos .compte.a-completer { color: var(--alerte); }
 /* La recherche d'une liste : dans tous les champs de toutes les fiches. */
 .barre-liste { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
 .barre-liste input.recherche { max-width: 34rem; margin: 0; }
@@ -492,18 +496,6 @@ details.relire[open] > summary { margin-bottom: 8px; }
 .carte > .rang:only-child, .carte > .rang:first-child { margin-bottom: 0; border: 0; padding: 0; }
 /* La phrase qui ouvre une page de la Configuration : à quoi elle sert. */
 .intro { margin: 0 0 14px; color: var(--discret); font-size: 13px; }
-/* MODIFIER : un seul bouton, un crayon et le mot, neutre
-   partout. */
-.modifier { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px;
-  font-size: 14px; color: var(--texte); background: var(--carte);
-  border: 1px solid var(--bord); border-radius: 3px; cursor: pointer; white-space: nowrap; }
-.modifier:hover { border-color: var(--discret); }
-.modifier svg { width: 15px; height: 15px; fill: none; stroke: currentColor;
-  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.modifier:hover svg { animation: ecrire .6s ease-in-out infinite alternate; }
-.modifier input { display: none; }
-@keyframes ecrire { from { transform: translate(-2px, 1px) rotate(-8deg); }
-                    to { transform: translate(2px, -1px) rotate(6deg); } }
 .pastille {
   display: inline-block; padding: 1px 7px; border-radius: 9px;
   font-size: 11px; margin-top: 6px;
@@ -534,6 +526,7 @@ details.relire[open] > summary { margin-bottom: 8px; }
 .libelle-boutons { font-size: 12px; color: var(--discret); }
 .boutons-choix { margin-top: 3px; }
 .boutons-choix label.coche { align-items: flex-start; }
+.choix-et-exemple { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; }
 .boutons-choix label.coche input { margin-top: 3px; }
 .ligne-structure {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
@@ -619,37 +612,19 @@ details.historique-fiche[open] > summary { margin-bottom: 8px; }
 .rang-etat { font-size: 12px; }
 .rang .pastille { margin-top: 0; }
 .rang-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
-.rang > .encart, .rang > .k-verdict, .rang > .rang-forme { flex-basis: 100%; }
-.rang .k-verdict { font-size: 12px; }
-/* La ligne où mène un lien du bandeau. */
-.rang.montre { border-color: var(--alerte); box-shadow: inset 3px 0 0 var(--alerte); }
-.rang .k-verdict:empty { display: none; }
-/* Ce qui s'ouvre sous la ligne : la saisie d'un mot de passe. */
-.rang-forme { display: flex; flex-wrap: wrap; align-items: end;
-  gap: 10px 14px; padding-top: 10px; border-top: 1px solid var(--bord); }
-.rang-forme[hidden] { display: none; }
-.rang-forme label { display: flex; flex-direction: column; gap: 3px; font-size: 12px;
-  color: var(--discret); flex: 1 1 14rem; max-width: 26rem; }
-.rang-forme .barre-boutons { display: flex; gap: 14px; align-items: center; }
-.rang-forme .note { flex-basis: 100%; margin: 0; }
+.rang > .encart { flex-basis: 100%; }
 /* Les mois de l'Historique : en grille, pour que leurs états et leurs
    documents tombent en colonne d'un mois à l'autre. */
 .rang.mois { display: grid; grid-template-columns: 11rem auto minmax(0, 1fr) auto; }
 .rang.mois .rang-infos { min-width: 0; }
 .rang.exercice .rang-infos { font-size: 13px; }
 .rang.import .rang-nom { min-width: 220px; }
-/* Signature, tampon, logo : l'image en place, à gauche. */
-.rang-image .identite-apercu { width: 13rem; flex: none; margin: 0; min-height: 76px; padding: 6px; }
-.rang-image .identite-apercu img { max-height: 84px; }
+/* Un rang d'un écran qu'une route rend (`montrerLEcran`) : ce qui s'y regarde, à gauche. */
+.rang-image .rang-apercu { width: 13rem; flex: none; margin: 0; min-height: 76px; padding: 6px; }
+.rang-image .rang-apercu img { max-height: 84px; }
+.rang-image .rang-apercu:empty { visibility: hidden; }
 .rang-image .rang-infos { display: flex; flex-direction: column; gap: 4px; }
-.identite-apercu.vide { color: var(--vide-texte); font-size: 12px; font-style: italic; }
-.bouton-fichier { display: inline-block; padding: 7px 14px; border: 1px solid var(--bord);
-  border-radius: 3px; background: var(--carte); color: var(--texte); font-size: 14px;
-  cursor: pointer; white-space: nowrap; }
-.bouton-fichier:hover { border-color: var(--action); }
-.bouton-fichier input { display: none; }
 .acte-dernier.faute { color: var(--erreur); }
-#titre-corrections[hidden] { display: none; }
 @media (max-width: 780px) {
   .rang.mois { grid-template-columns: 1fr auto; }
   .rang.mois .rang-infos { grid-column: 1 / -1; }
@@ -860,8 +835,6 @@ input.x-court { width: auto; }
 }
 .histoire-ligne:last-child { border-bottom: none; }
 .histoire-ligne.en-vigueur .histoire-date { color: var(--texte); font-weight: bold; }
-/* Sous une case datée : sa valeur d'avant et celle à venir. */
-.champ .temps-case { font-size: 12px; margin-top: 3px; }
 .histoire-champ { color: var(--discret); min-width: 130px; }
 .histoire-valeur { color: var(--texte); font-weight: bold; }
 .histoire-date { margin-left: auto; color: var(--discret); }
@@ -1162,8 +1135,7 @@ pre.reponse {
 .echeance:first-child { border-top: 0; }
 .echeance-titre { font-weight: bold; }
 .echeance .note { margin: 2px 0 0; }
-.echeance.fait .echeance-titre { color: var(--discret); font-weight: normal; }
-.echeance button.petit { margin-top: 6px; padding: 3px 10px; font-size: 12px; }
+.echeance .actions { margin-top: 4px; }
 .accueil-annee { margin-top: 10px; }
 .accueil-annee summary { cursor: pointer; color: var(--discret); }
 .echeances-annee { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
@@ -1208,11 +1180,11 @@ table.compta tr.total-general td {
   font-size: 13px;
 }
 
-/* L'apercu d'une identite : signature, tampon, logo.
+/* Ce qui se regarde dans un rang (une signature, un tampon, un logo).
    Fond blanc impose -- une signature scannee est souvent transparente, et
    sur un fond sombre elle disparaitrait. On voit ce qui part sur le papier,
    pas ce que le theme de la page en fait. */
-.identite-apercu {
+.rang-apercu {
   background: var(--blanc);
   border: 1px solid var(--apercu-bord);
   border-radius: 6px;
@@ -1223,7 +1195,7 @@ table.compta tr.total-general td {
   justify-content: center;
   min-height: 90px;
 }
-.identite-apercu img { max-width: 100%; max-height: 120px; }
+.rang-apercu img { max-width: 100%; max-height: 120px; }
 
 /* Les soucis du bandeau au-dela du premier : derriere un clic. */
 .ennuis { display: inline; }
@@ -1368,14 +1340,6 @@ section.bloc > .encart { margin-bottom: 10px; }
 .carte-export > summary h2::before { content: "▸ "; color: var(--discret); }
 .carte-export[open] > summary h2::before { content: "▾ "; }
 .carte-export[open] > summary { margin-bottom: 12px; }
-/* Le calendrier des exports : une ligne par année, douze mois. */
-.calendrier { display: flex; flex-direction: column; gap: 4px; }
-.calendrier .rangee { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
-.calendrier button { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--bord);
-  background: var(--carte); color: var(--texte); border-radius: 4px; cursor: pointer; min-width: 38px; }
-.calendrier button.an { font-weight: bold; min-width: 56px; }
-.calendrier button:disabled { opacity: .35; cursor: default; }
-.calendrier button.pris { background: var(--action); border-color: var(--action); color: #fff; }
 .carte-export h2 .discret { text-transform: none; letter-spacing: 0; }
 #vue-exports .champs { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 #vue-exports .champ .aide { max-width: 34rem; }
@@ -1492,7 +1456,6 @@ body:has(#voile:not(.cachee) #signaler-voile) #signaler { visibility: hidden; }
                padding: 8px 14px; border: none; border-radius: 18px; cursor: pointer;
                background: var(--action); color: #fff; font: inherit; font-size: 13px;
                box-shadow: 0 4px 16px rgba(0,0,0,.25); }
-.sg-liste { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
 .sg-nouvelles { font-weight: 600; color: var(--action); text-decoration: none; }
 .sg-titre-messages { margin: 20px 0 6px; font-size: 13px; }
 .sg-messages { margin: 0; padding: 0; list-style: none; font-size: 13px; }
@@ -1561,9 +1524,7 @@ details.pourquoi > summary { cursor: pointer; display: inline; list-style: none;
 details.pourquoi > summary::-webkit-details-marker { display: none; }
 details.pourquoi[open] { padding: 4px 0 2px; }
 details.pourquoi p, details.pourquoi ul { margin: 4px 0; }
-/* Les boîtes des imprévus : deux champs côte à côte, oui ou non. */
-.champs-deux { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
-.champs-deux[hidden] { display: none; }
+/* Les boîtes des imprévus : oui ou non. */
 .oui-non { display: flex; gap: 18px; margin-top: 4px; }
 .liste-jours { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 /* Le dossier du salarié. */
@@ -1599,13 +1560,23 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
    son titre et ses alinéas (la condition à gauche, le texte à droite). */
 .modele-contrat { margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 6px; }
 .modele-entete { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.modele-gestes { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
-.modele-copier { display: flex; gap: 8px; margin: 6px 0; }
+.modele-gestes, .modele-gestes [data-gestes] { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.modele-gestes { margin: 6px 0; }
+.modele-gestes .modele-engagement { width: auto; }
 .modele-paragraphe { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--bord); }
 .modele-titre { flex: 1; font-weight: bold; }
 .modele-alinea { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }
 .modele-alinea select { flex: 0 0 180px; max-width: 180px; }
 .modele-alinea textarea { flex: 1; }
+/* Les alinéas d'un paragraphe qui s'écrit : chacun sur toute la largeur. */
+.modele-paragraphe .e-cases { grid-template-columns: 1fr; }
+.modele-paragraphe .case-rangees { align-items: stretch; }
+.modele-paragraphe .case-rangees .rangee { flex-wrap: nowrap; align-items: flex-start; margin: 4px 0; }
+.modele-paragraphe .case-rangees .rangee > .case-parties { flex: 1; display: flex; flex-wrap: nowrap; gap: 8px; align-items: flex-start; }
+.modele-paragraphe .case-parties .partie:has(select) { flex: 0 0 auto; }
+.modele-paragraphe .case-parties .partie select { max-width: 220px; }
+.modele-paragraphe .case-parties .partie:has(textarea) { flex: 1 1 auto; }
+.modele-paragraphe .case-parties .partie textarea { font: inherit; }
 
 /* Une compagnie fictive : ce que ses boutons envoient est joué. */
 body.fictive button.envoi::after { content: " — simulé"; }

@@ -21,6 +21,7 @@ pub mod iban;
 pub mod json_ascii;
 pub mod lecture_xlsx;
 pub mod ligne;
+pub mod liste;
 pub mod memoire;
 pub mod mode;
 pub mod mois;
@@ -78,8 +79,26 @@ macro_rules! dire_sans_ligne {
 /// s'ecrit. Elle se lit et s'ecrit par son nom ; un nom qu'elle n'a pas se refuse a la lecture, en nommant ceux qu'elle
 /// a. Dans l'ordre de ses noms : un objet indexe par elle s'ecrit comme quand son nom etait un texte. Une liste qu'un
 /// texte depose dit est `droit::codes_fermes!`.
+///
+/// AVEC SES LIBELLES (`Cadre = "cadre" : "Cadre",`) : ce que l'ecran montre de chacune ; elle est alors une liste qu'une
+/// charge peut lire (`liste::ListeFermee`), et la fiche de la route en tire son champ (`routes::catalogue::ListeDeChoix`).
 #[macro_export]
 macro_rules! noms_fermes {
+    ($(#[$a:meta])* $nom:ident, $quoi:literal { $( $(#[$va:meta])* $v:ident = $n:literal : $l:literal, )* }) => {
+        $crate::noms_fermes! { $(#[$a])* $nom, $quoi { $( $(#[$va])* $v = $n, )* } }
+
+        impl $crate::liste::ListeFermee for $nom {
+            const TOUTES: &'static [$nom] = $nom::TOUTES;
+
+            fn code(&self) -> $crate::echec::R<String> {
+                Ok(self.nom().to_string())
+            }
+
+            fn libelle(&self) -> $crate::echec::R<&'static str> {
+                Ok(match self { $( $nom::$v => $l, )* })
+            }
+        }
+    };
     ($(#[$a:meta])* $nom:ident, $quoi:literal { $( $(#[$va:meta])* $v:ident = $n:literal, )* }) => {
         $(#[$a])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -130,7 +149,7 @@ macro_rules! noms_fermes {
                 let nom = <String as serde::Deserialize>::deserialize(d)?;
                 $nom::du_nom(&nom).ok_or_else(|| {
                     let connus: Vec<&str> = $nom::TOUTES.iter().map(|a| a.nom()).collect();
-                    serde::de::Error::custom(format!("{} inconnu : {}. Connus : {}.", $quoi, $crate::fichiers::repr(&nom), connus.join(", ")))
+                    serde::de::Error::custom($crate::liste::pas_de_la_liste($quoi, &nom, &connus))
                 })
             }
         }

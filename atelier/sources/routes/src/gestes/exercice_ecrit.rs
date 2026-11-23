@@ -30,6 +30,8 @@ use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip
 use documents::ecritures_comptables::{csv_compta, ecritures_du_mois, Ecriture};
 use documents::plan_comptable::plan_comptable;
 use crate::rappels::mois_de_l_annee;
+use crate::declaration::{charge, dit};
+use crate::historique::ANNEE;
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> Echec {
@@ -91,6 +93,21 @@ pub(crate) struct EcritureRendue {
     mois: socle::mois::Mois,
     auxiliaire: Option<documents::ecritures_comptables::NumeroDeCompte>,
     auxiliaire_libelle: Option<String>,
+    /// La ligne telle que le tableau la montre, une cellule par colonne (`EcranDeLExportCompta::colonnes`) : le mois de
+    /// sa date, le compte, le libelle, le debit et le credit (vides quand ils sont nuls), l'analytique.
+    cellules: [String; 6],
+}
+
+/// CE QUE L'ECRAN DIT DE L'EXPORT COMPTA : son titre, ce qu'il resume (ses mois, ses ecritures, l'equilibre du debit et
+/// du credit, le fichier ecrit), les colonnes du tableau, le bouton du dossier (quand il est ecrit) et celui qui ferme.
+#[derive(Debug, Serialize)]
+pub(crate) struct EcranDeLExportCompta {
+    titre: String,
+    resume: String,
+    colonnes: [&'static str; 6],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ouvrir: Option<&'static str>,
+    fermer: &'static str,
 }
 
 /// Ce que rend `export-compta` : sa phrase, l'annee et ses mois (de `du` a `au`), les ecritures et leurs totaux, le
@@ -112,6 +129,7 @@ pub(crate) struct ExportComptaRendu {
     fichier: Option<NomDeFichier>,
     plan: String,
     avertissements: Vec<String>,
+    ecran: EcranDeLExportCompta,
 }
 
 impl crate::enveloppe::Dite for ExportComptaRendu {
@@ -129,6 +147,26 @@ impl ExportCompta {
             Some(f) => socle::phrase!("Export comptable de {} : {} écritures, dans {} (le dossier des exercices).", self.annee, self.ecritures.len(), f),
             None => socle::phrase!("Export comptable de {} : {} écritures, rien n'est écrit.", self.annee, self.ecritures.len()),
         };
+        // Un montant nul ne se montre pas : sa cellule est vide.
+        let montant_montre = |m: Montant| if m == Montant::ZERO { String::new() } else { socle::grandeurs::ecrit::texte::dit(m) };
+        let ecrit_dit = match &fichier {
+            Some(f) => format!(" Écrit : {}.", f),
+            None => String::new(),
+        };
+        let ecran = EcranDeLExportCompta {
+            titre: format!("Export compta — {}", self.annee),
+            resume: format!(
+                "Mois {} — {} écritures, débit {} = crédit {}.{}",
+                self.mois.iter().map(|m| m.mm()).collect::<Vec<_>>().join(", "),
+                self.ecritures.len(),
+                socle::texte::euros(self.total_debit),
+                socle::texte::euros(self.total_credit),
+                ecrit_dit
+            ),
+            colonnes: ["Mois", "Compte", "Libellé", "Débit", "Crédit", "Analytique"],
+            ouvrir: dossier.as_ref().map(|_| "Ouvrir le dossier"),
+            fermer: "Fermer",
+        };
         Ok(ExportComptaRendu {
             phrase,
             annee: self.annee,
@@ -139,6 +177,17 @@ impl ExportCompta {
                 .ecritures
                 .into_iter()
                 .map(|e| EcritureRendue {
+                    cellules: [
+                        e.date.mois_civil().mm(),
+                        e.compte.to_string(),
+                        e.libelle.clone(),
+                        montant_montre(e.debit),
+                        montant_montre(e.credit),
+                        match &e.analytique {
+                            Some(a) => a.clone(),
+                            None => String::new(),
+                        },
+                    ],
                     journal: e.journal,
                     date: e.date,
                     compte: e.compte,
@@ -157,6 +206,7 @@ impl ExportCompta {
             fichier,
             plan: self.plan,
             avertissements: self.avertissements,
+            ecran,
         })
     }
 }
@@ -261,14 +311,15 @@ pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
     Ok(compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie).map(a_jour).transpose()?.is_some_and(|oui| oui))
 }
 
-/// La charge de `export-compta` : l'annee, du mois au mois (toute l'annee sans eux), et l'apercu (rien n'est ecrit).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeExportCompta {
-    annee: Annee,
-    du: Option<u32>,
-    au: Option<u32>,
-    apercu: Option<bool>,
+charge! {
+    /// La charge de `export-compta` : l'annee, du mois au mois (toute l'annee sans eux), et l'apercu (rien n'est ecrit).
+    #[derive(Debug)]
+    pub(crate) struct ChargeExportCompta {
+        annee: Annee = ANNEE,
+        du: Option<u32> = dit("Du mois", "le premier mois, 1 à 12").avancee(),
+        au: Option<u32> = dit("Au mois", "le dernier mois, 1 à 12").avancee(),
+        apercu: Option<bool> = dit("Aperçu seulement", "vrai : dire ce qui s'écrirait, sans écrire").avancee(),
+    }
 }
 
 /// La route `export-compta` : sans `du` ni `au`, de janvier a decembre.
@@ -559,15 +610,45 @@ pub(crate) enum Cloture {
     Rouverte(ExerciceRouvert),
 }
 
-/// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la ligne
-/// de commande ecrit `cli`, la page rien (`interface`).
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeCloture {
-    annee: Annee,
-    forcer: Option<bool>,
-    rouvrir: Option<bool>,
-    qui: Option<socle::forme::TexteDit>,
+charge! {
+    /// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la
+    /// ligne de commande ecrit `cli`, la page rien (`interface`). L'Historique la rend dans le geste qui clot une annee
+    /// ouverte (`geste_de_cloture`) et dans celui qui rouvre une annee close (`ChargeCloture::rouvrir`).
+    #[derive(Debug, Serialize)]
+    pub(crate) struct ChargeCloture {
+        annee: Annee = ANNEE,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        forcer: Option<bool> = dit("Clore malgré tout", "vrai : clore malgré un mois sans DSN réelle acceptée").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rouvrir: Option<bool> = dit("Rouvrir l'année", "vrai : rouvrir l'année close (son archive reste)").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        qui: Option<socle::forme::TexteDit> = dit("Qui", "qui clôt : la ligne de commande écrit cli ; la page ne le dit pas (interface)").avancee(),
+    }
+}
+
+impl ChargeCloture {
+    /// La charge qui rouvre l'annee `annee`.
+    pub(crate) fn rouvrir(annee: Annee) -> ChargeCloture {
+        ChargeCloture { annee, forcer: None, rouvrir: Some(true), qui: None }
+    }
+}
+
+/// Le bouton qui clot une annee ouverte.
+const CLOTURER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Clôturer l'exercice");
+
+/// LE GESTE QUI CLOT L'ANNEE `annee`, ouverte : sa boite dit ce que la cloture fait et quand elle se refuse, et fait
+/// cocher `forcer` (clore malgre un mois sans DSN acceptee). L'Historique le rend sur l'annee, et le rappel de la
+/// cloture y mene.
+pub(crate) fn geste_de_cloture(annee: Annee) -> R<crate::imprevus::GesteDeRoute<ChargeCloture, crate::SansCharge, crate::SansCharge>> {
+    use crate::ouverture::aide;
+    let charge = ChargeCloture { annee, forcer: None, rouvrir: None, qui: None };
+    let cases = vec![crate::declaration::cle!(ChargeCloture, forcer)];
+    let phrases = vec![
+        format!("L'année se fige. {}", aide("cloture")?),
+        aide("cloture_refus")?.to_string(),
+        aide("cloture_forcer")?.to_string(),
+    ];
+    Ok(crate::imprevus::GesteDeRoute::avec_cases(crate::catalogue::Route::Cloture, charge, CLOTURER, cases, crate::SansCharge {}, crate::SansCharge {}).disant(phrases))
 }
 
 /// Retire la cloture. L'archive reste sur le disque : elle dit ce

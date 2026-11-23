@@ -54,6 +54,7 @@ const AAD_POSTE: &[u8] = b"puppetpaie/enveloppe/poste";
 const AAD_MOTDEPASSE: &[u8] = b"puppetpaie/enveloppe/motdepasse";
 const AAD_GARDEE: &[u8] = b"puppetpaie/ouverture-gardee";
 
+#[derive(Debug)]
 pub struct Service {
     pub nom: &'static str,
     pub libelle: &'static str,
@@ -85,6 +86,26 @@ pub const SERVICES: [Service; 3] = [
         avec_compte: true,
     },
 ];
+
+/// LES SERVICES DU COFFRE SONT UNE LISTE QU'UNE CHARGE NOMME (`service`), par leur nom.
+impl socle::liste::ListeFermee for Service {
+    const TOUTES: &'static [Service] = &SERVICES;
+
+    fn code(&self) -> R<String> {
+        Ok(self.nom.to_string())
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(self.libelle)
+    }
+}
+
+impl<'de> Deserialize<'de> for &'static Service {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let nom = String::deserialize(d)?;
+        SERVICES.iter().find(|s| s.nom == nom).ok_or_else(|| serde::de::Error::custom(socle::liste::pas_de_la_liste("Service", &nom, &SERVICES.each_ref().map(|s| s.nom))))
+    }
+}
 
 // ------------------------------------------------------------------ les formes
 

@@ -784,10 +784,10 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     // L'EMPREINTE DE TOUTE LA COMPAGNIE, prise avant (celle de l'etat d'ouverture, `etat_garde::empreinte_de`) : le fil de
     // la fenetre ne le refait pas tant qu'elle n'a pas bouge (`FileDesEtats::faire_le_tableau`).
     let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, None, ctx.aujourdhui);
-    let rappels = crate::rappels::rappels(ctx).map_err(|e| e.reclasser(Classe::Refuse))?;
+    let rappels = crate::rappels::rappels_dus(ctx).map_err(|e| e.reclasser(Classe::Refuse))?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut declarations = Vec::new();
-    for r in &rappels.rappels {
+    for r in &rappels {
         if let Some(d) = declaration(ctx, &lignes, r)? {
             declarations.push(d);
         }
@@ -1030,6 +1030,11 @@ pub struct ASuivre {
     pub dossier: DossierRattache,
     #[serde(flatten)]
     pub(crate) depot: crate::depots::ChargeSuivre,
+}
+
+/// Dans une charge (`administrateur-suivre`), elle se dit d'un objet.
+impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for ASuivre {
+    const FORME: crate::catalogue::Forme = crate::catalogue::Forme::Objet;
 }
 
 /// Ou en est une declaration suivie : sa compagnie, et ce que sa route `suivre-depot` rend.

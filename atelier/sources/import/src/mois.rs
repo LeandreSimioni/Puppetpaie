@@ -21,10 +21,10 @@ use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, Lig
 use envois::etats;
 use socle::date::{Jour, Periode};
 use socle::echec::R;
-use socle::ecran::EtatDEcran;
+use socle::ecran::{ColonneRendue, EtatDEcran, QuandDeLaCarte, RangeeRendue, SorteDeRangee};
 use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
-use socle::grandeurs::{Cachets, Heures, Jours};
+use socle::grandeurs::Cachets;
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::Montant;
 use crate::proposee::A_COMPLETER;
@@ -160,8 +160,8 @@ fn spectacle_de(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<(IdSpec
 /// LA PERIODE D'UN CONTRAT IMPORTE DANS `mois`, en clair, quand le bulletin ne dit pas ses jours : « 20–27 » pour un
 /// contrat qui commence et finit dans le mois (le 1er quand il a commence avant), « 20/11 – 03/12 » pour un contrat a
 /// cheval sur un autre mois (« 01/09/2022 – 31/12 » quand il a commence une autre annee), « … » pour une borne que
-/// l'import n'a pas lue.
-fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
+/// l'import n'a pas lue. Vrai avec elle : la periode est a cheval sur un autre mois (elle se dit eparse).
+fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> (String, bool) {
     let dans = |j: &Jour| mois.contient(j);
     let dehors = d.as_ref().is_some_and(|j| !dans(j)) || f.as_ref().is_some_and(|j| !dans(j));
     let borne = |j: Option<&Jour>, inconnue: &str| match j {
@@ -172,9 +172,9 @@ fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
     };
     let (a, b) = (borne(d.as_ref(), if dehors { "…" } else { "1" }), borne(f.as_ref(), "…"));
     match (a == b, dehors) {
-        (true, _) => a,
-        (false, true) => format!("{} – {}", a, b),
-        (false, false) => format!("{}–{}", a, b),
+        (true, _) => (a, false),
+        (false, true) => (format!("{} – {}", a, b), true),
+        (false, false) => (format!("{}–{}", a, b), false),
     }
 }
 
@@ -191,8 +191,8 @@ fn jours_du_mois(dates: &[Periode], mois: Mois) -> Vec<Jour> {
 }
 
 /// UNE CASE QU'AUCUNE PIECE NE PORTE : laquelle, son libelle, et ce qui l'aurait donnee.
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct Manque {
+#[derive(Debug, Clone)]
+struct Manque {
     champ: &'static str,
     libelle: &'static str,
     phrase: String,
@@ -218,22 +218,8 @@ fn couleur_ecrite<S: serde::Serializer>(etat: &EtatDEcran, s: S) -> Result<S::Ok
     s.serialize_str(socle::ecran::couleur_de_l_etat(*etat))
 }
 
-/// LA PIECE D'OU VIENT UNE VALEUR D'UNE CARTE, ecrite comme la page Paie la montre : « DSN » en capitales, les autres
-/// par leur nom (`Source::nom`).
-mod piece_de_la_carte {
-    use crate::reponse::Source;
-
-    pub(super) fn serialize<S: serde::Serializer>(source: &Option<Source>, s: S) -> Result<S::Ok, S::Error> {
-        match source {
-            Some(Source::Dsn) => s.serialize_str("DSN"),
-            Some(autre) => s.serialize_str(autre.nom()),
-            None => s.serialize_none(),
-        }
-    }
-}
-
 /// Les etats des actes d'une carte.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub(crate) struct EtatsDeCarte {
     pub(crate) dpae: EtatDeCarte,
     signature: EtatDeCarte,
@@ -254,110 +240,117 @@ fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::Insta
     EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "DPAE faite avant PuppetPaie : aucun certificat de l'Urssaf n'est relevé pour cette embauche".to_string() }
 }
 
-/// Les montants qu'une piece importee porte, chacun exact ; un montant qu'aucune ne porte n'y est pas.
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct Montants {
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    brut: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    net_imposable: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    net_a_payer: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    pas: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    net_verse: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    cotisations_salariales: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    cotisations_patronales: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    cout_employeur: Option<Montant>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    net_avant_impot: Option<Montant>,
-}
-
-/// D'ou vient chaque montant : la DSN, le bulletin, l'AEM, l'historique.
-#[derive(Debug, Clone, Default, Serialize)]
-pub(crate) struct Sources {
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    brut: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    net_imposable: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    net_a_payer: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    pas: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    net_verse: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    cotisations_salariales: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    cotisations_patronales: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    cout_employeur: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
-    net_avant_impot: Option<Source>,
-}
-
-/// Le spectacle d'une carte : sa fiche, son numero d'objet, son titre.
+/// UNE CARTE D'ENGAGEMENT IMPORTE, telle qu'elle se lit (la page Paie la pose : `carteImportee` de js/saisie-mois.js) :
+/// le salarie qu'elle paie, son resume (la carte fermee), ce que l'import n'a pas lu, ses cases en lecture et les lignes
+/// de son bulletin. Rien ne s'y saisit.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct SpectacleDeCarte {
-    cle: Option<IdSpectacle>,
-    numero_objet: Option<NumeroObjetSpectacle>,
-    titre: Option<String>,
+pub struct CarteImportee {
+    salarie: Option<droit::contexte::IdSalarie>,
+    resume: ResumeDeLaCarte,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    non_lu: Option<NonLuDeLaCarte>,
+    cases: Vec<CaseLue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lignes: Option<LignesDeLaCarte>,
+    /// Son debut et son nom, qui rangent les cartes du mois.
+    #[serde(skip)]
+    debut: Option<Jour>,
+    #[serde(skip)]
+    nom: Option<String>,
+    #[serde(skip)]
+    pub(crate) bulletin: Option<BulletinSource>,
+    #[serde(skip)]
+    pub(crate) etats: EtatsDeCarte,
 }
 
-/// UNE LIGNE DU BULLETIN, telle que la carte la montre : son libelle, ce qu'elle paie tel qu'une phrase le dit (sa
-/// quantite, son taux en euros par unite ou en pourcent : `PaiementDeLigne`), quand l'import l'a rattachee, et son
-/// montant.
+/// LA CARTE FERMEE : quand (`QuandDeLaCarte` : les jours travailles, ou la periode du contrat, et au survol leurs dates,
+/// comme sur la carte d'un engagement) ; qui (le nom, le mot
+/// « importé », les pieces lues au survol) ; quoi ; ses pastilles ; le montant que la carte dit (le net a payer ; sans
+/// lui, le brut, que son mot precede) et ce qu'il est, au survol.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct LigneDeLaCarte {
-    libelle: String,
-    quantite: Option<String>,
-    taux: Option<String>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    montant: Option<Montant>,
+struct ResumeDeLaCarte {
+    quand: QuandDeLaCarte,
+    /// Le nom du salarie ; aucun : ni la piece ni la fiche ne le disent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nom: Option<String>,
+    mot: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origine_dit: Option<String>,
+    quoi_dit: String,
+    pastilles: Vec<PastilleDeLaCarte>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    montant: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    montant_mot: Option<&'static str>,
+    montant_titre: &'static str,
 }
 
-impl LigneDeLaCarte {
-    fn de(l: &LigneImprimee) -> LigneDeLaCarte {
-        LigneDeLaCarte { libelle: l.libelle.clone(), quantite: l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite), taux: l.paiement.map(|p| p.taux().dit()), montant: l.montant }
+/// Une pastille de la carte : son titre, la couleur de son etat (`socle::ecran::couleur_de_l_etat`) et sa phrase.
+#[derive(Debug, Clone, Serialize)]
+struct PastilleDeLaCarte {
+    titre: &'static str,
+    #[serde(flatten)]
+    etat: EtatDeCarte,
+}
+
+/// CE QUE L'IMPORT N'A PAS LU, en une ligne sur la carte fermee : son titre, les cases qu'il n'a pas lues, et ou lire
+/// pourquoi.
+#[derive(Debug, Clone, Serialize)]
+struct NonLuDeLaCarte {
+    titre: &'static str,
+    quoi: String,
+    dit: &'static str,
+}
+
+/// UNE CASE DE LA CARTE, EN LECTURE : son libelle ; sa valeur dite et la piece d'ou elle vient ; vide, ce qu'elle montre
+/// a sa place (`vide_dit` : ce que l'import en dit quand il ne l'a pas lue, sinon le tiret), si l'import ne l'a pas lue
+/// (`non_lu`), et pourquoi, sous la premiere case qui le dit.
+#[derive(Debug, Clone, Serialize)]
+struct CaseLue {
+    libelle: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    valeur: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vide_dit: Option<&'static str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    non_lu: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pourquoi: Option<String>,
+}
+
+/// LES LIGNES DU BULLETIN, en tableau : ses colonnes (a droite pour un nombre), et chaque ligne ses cellules dites (vide :
+/// ce que le bulletin n'imprime pas).
+#[derive(Debug, Clone, Serialize)]
+struct LignesDeLaCarte {
+    colonnes: Vec<ColonneRendue>,
+    rangees: Vec<RangeeRendue>,
+}
+
+/// Ce que dit une carte dont la periode est lue sans ses jours, au survol de « quand ».
+const DATES_NON_LUES: &str = "Début et fin du contrat : les jours exacts ne sont pas lus.";
+/// Ce que dit le montant d'une carte qui n'a pas lu son net a payer, au survol.
+const BRUT_SEUL: &str = "Le brut : le net à payer n'est pas lu.";
+/// Ou lire pourquoi une case n'est pas lue.
+const POURQUOI_NON_LU: &str = "Un clic sur la carte montre ses cases, et sous chacune pourquoi.";
+
+
+/// La piece qui atteste un contrat, ecrite comme la carte la montre.
+fn attestation_dite(a: Attestation) -> &'static str {
+    match a {
+        Attestation::Aem => "AEM",
+        Attestation::Bulletin => "bulletin",
+        Attestation::Certificat => "certificat",
     }
 }
 
-/// UNE CARTE D'ENGAGEMENT IMPORTE, telle que la page Paie la dessine (`carteImportee` de js/saisie-mois.js).
-#[derive(Debug, Clone, Serialize)]
-pub struct CarteImportee {
-    quoi_dit: String,
-    origine_dit: Option<String>,
-    spectacle_dit: Option<String>,
-    net_titre: Option<&'static str>,
-    salarie: Option<droit::contexte::IdSalarie>,
-    nom: Option<String>,
-    spectacle: SpectacleDeCarte,
-    contrat: Option<String>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
-    periode: String,
-    dates: Vec<Jour>,
-    /// L'activite du mois (`engagement::importe::activite_du_mois`) : des cachets entiers ; des heures et des jours tels
-    /// que la DSN les declare (`151.67`), en nombre JSON, entier quand ils le sont.
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
-    cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    heures: Option<Heures>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    jours: Option<Jours>,
-    montants: Montants,
-    sources: Sources,
-    lignes: Vec<LigneDeLaCarte>,
-    #[serde(with = "piece_de_la_carte")]
-    declare_par: Option<Source>,
-    atteste_par: Option<Attestation>,
-    pub(crate) bulletin: Option<BulletinSource>,
-    pub(crate) etats: EtatsDeCarte,
-    pub(crate) manque: Vec<Manque>,
+/// La piece d'ou vient une valeur, ecrite comme la carte la montre : « DSN » en capitales, les autres par leur nom.
+fn piece_dite(s: Source) -> String {
+    match s {
+        Source::Dsn => "DSN".to_string(),
+        autre => autre.nom().to_string(),
+    }
 }
 
 /// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul.
@@ -382,9 +375,9 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     // pour le mois, ce que la piece du contrat entier atteste.
     let bornes = contrat.and_then(|x| x.periode);
     let du_mois = engagement::importe::activite_du_mois(mois, p, c, bornes.map(|o| o.debut()), bornes.and_then(|o| o.fin()));
-    let (cachets, heures, jours) = match du_mois.est_muette() {
-        true => (c.and_then(|c| c.cachets), c.and_then(|c| c.heures), c.and_then(|c| c.jours)),
-        false => (du_mois.cachets, du_mois.heures, du_mois.jours),
+    let (cachets, heures) = match du_mois.est_muette() {
+        true => (c.and_then(|c| c.cachets), c.and_then(|c| c.heures)),
+        false => (du_mois.cachets, du_mois.heures),
     };
     let bulletin = p.and_then(|p| p.bulletin.clone());
     // La piece qui declare la paie : sa cle le dit (`CleDePaieVersee`).
@@ -392,32 +385,31 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let declare_par = p.map(declaree_par);
     let par_aem = c.is_some_and(|c| c.atteste_par == Attestation::Aem);
 
-    // Les montants, et d'ou chacun vient : le bulletin fait foi sur ceux qu'il imprime (`import::bulletins::completer`).
-    let (mut montants, mut sources) = (Montants::default(), Sources::default());
-    let lus: [(&str, fn(&PaieVersee) -> Option<Montant>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Montant>, &'a mut Option<Source>)); 9] = [
-        ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
-        ("net_imposable", |p| p.nets.net_imposable,|m, s| (&mut m.net_imposable, &mut s.net_imposable)),
-        ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
-        ("pas", |p| p.nets.pas,|m, s| (&mut m.pas, &mut s.pas)),
-        ("net_verse", |p| p.nets.net_verse,|m, s| (&mut m.net_verse, &mut s.net_verse)),
-        ("cotisations_salariales", |p| p.cotisations_salariales, |m, s| (&mut m.cotisations_salariales, &mut s.cotisations_salariales)),
-        ("cotisations_patronales", |p| p.cotisations_patronales, |m, s| (&mut m.cotisations_patronales, &mut s.cotisations_patronales)),
-        ("cout_employeur", |p| p.cout_employeur, |m, s| (&mut m.cout_employeur, &mut s.cout_employeur)),
-        ("net_avant_impot", |p| p.net_avant_impot, |m, s| (&mut m.net_avant_impot, &mut s.net_avant_impot)),
+    // Les montants, chacun sa case et d'ou il vient : le bulletin fait foi sur ceux qu'il imprime
+    // (`import::bulletins::completer`).
+    let lus: [(&str, &'static str, fn(&PaieVersee) -> Option<Montant>); 8] = [
+        ("brut", "Brut", |p| p.brut),
+        ("net_imposable", "Net imposable", |p| p.nets.net_imposable),
+        ("net_a_payer", "Net à payer", |p| p.net_a_payer),
+        ("pas", "Prélèvement à la source", |p| p.nets.pas),
+        ("net_verse", "Net versé (DSN)", |p| p.nets.net_verse),
+        ("cotisations_salariales", "Cotisations salariales", |p| p.cotisations_salariales),
+        ("cotisations_patronales", "Cotisations patronales", |p| p.cotisations_patronales),
+        ("cout_employeur", "Coût employeur", |p| p.cout_employeur),
     ];
-    for (k, lu, place) in lus {
-        // Le montant que la paie porte ; sans paie, le brut que l'AEM atteste.
-        let porte = match (p, k == "brut") {
-            (Some(p), _) => lu(p).map(|d| (d, if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
-            (None, true) => c.and_then(|c| c.brut).map(|b| (b, Source::Aem)),
-            (None, false) => None,
-        };
-        if let Some((v, source)) = porte {
-            let (m, s) = place(&mut montants, &mut sources);
-            *m = Some(v);
-            *s = Some(source);
-        }
-    }
+    let montants: Vec<(&str, &'static str, Option<(Montant, Source)>)> = lus
+        .into_iter()
+        .map(|(k, libelle, lu)| {
+            // Le montant que la paie porte ; sans paie, le brut que l'AEM atteste.
+            let porte = match (p, k == "brut") {
+                (Some(p), _) => lu(p).map(|d| (d, if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
+                (None, true) => c.and_then(|c| c.brut).map(|b| (b, Source::Aem)),
+                (None, false) => None,
+            };
+            (k, libelle, porte)
+        })
+        .collect();
+    let montant = |k: &str| montants.iter().find(|(x, _, _)| *x == k).and_then(|(_, _, m)| m.map(|(v, _)| v));
 
     // CE QUI MANQUE, case par case, et ce qui l'aurait donne.
     let mut manques: Vec<Manque> = Vec::new();
@@ -460,19 +452,19 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         ));
     }
     for (k, libelle, porte, pourquoi) in [
-        ("brut", "brut", montants.brut.is_some(), "aucune pièce importée ne le porte"),
-        ("net_imposable", "net imposable", montants.net_imposable.is_some(), "aucune pièce importée ne le porte"),
+        ("brut", "brut", montant("brut").is_some(), "aucune pièce importée ne le porte"),
+        ("net_imposable", "net imposable", montant("net_imposable").is_some(), "aucune pièce importée ne le porte"),
         (
             "net_a_payer",
             "net à payer",
-            montants.net_a_payer.is_some(),
+            montant("net_a_payer").is_some(),
             if declare_par == Some(Source::Dsn) {
                 "la DSN ne le déclare pas (son 50.004 est le net versé) ; le bulletin de cette paie le donnerait"
             } else {
                 "aucune pièce importée ne le porte ; le bulletin de cette paie le donnerait"
             },
         ),
-        ("pas", "prélèvement à la source", montants.pas.is_some(), "aucune pièce importée ne le porte"),
+        ("pas", "prélèvement à la source", montant("pas").is_some(), "aucune pièce importée ne le porte"),
     ] {
         if !porte {
             manques.push(manque(k, libelle, pourquoi.into()));
@@ -519,37 +511,105 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         (None, Some(n)) => Some(format!("n° {}", n)),
         (None, None) => None,
     };
-    let net_titre = montants.net_a_payer.is_some().then_some("net à payer");
-    let periode = periode_en_clair(debut, fin, mois);
-    Ok(CarteImportee {
-        quoi_dit,
+    let nom = nom.or_else(|| salarie.as_ref().map(ToString::to_string));
+    let etats = EtatsDeCarte {
+        dpae,
+        signature: EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "contrat fait avant PuppetPaie : sa signature n'est pas suivie ici".to_string() },
+        documents,
+    };
+
+    // QUAND : les jours travailles que le bulletin imprime ; sans eux, la periode du contrat.
+    // EPARS : des jours qui ne se suivent pas, ou une periode a cheval sur un autre mois.
+    let quand = match dates.is_empty() {
+        false => QuandDeLaCarte::des_jours(&dates, mois)?,
+        true => {
+            let (jours, epars) = periode_en_clair(debut, fin, mois);
+            QuandDeLaCarte { jours, epars, titre: DATES_NON_LUES.to_string(), mois: mois.nom(Graphie::Abregee) }
+        }
+    };
+    // LE MONTANT : le net a payer ; sans lui (une DSN seule ne le declare pas), le brut, et la carte le dit.
+    let (montant_dit, montant_mot) = match (montant("net_a_payer"), montant("brut")) {
+        (Some(n), _) => (Some(socle::texte::euros(n)), None),
+        (None, Some(b)) => (Some(socle::texte::euros(b)), Some("brut")),
+        (None, None) => (None, None),
+    };
+    let resume = ResumeDeLaCarte {
+        quand,
+        nom: nom.clone(),
+        mot: "importé",
         origine_dit,
-        spectacle_dit,
-        net_titre,
-        nom: nom.or_else(|| salarie.as_ref().map(ToString::to_string)),
-        salarie,
-        spectacle: SpectacleDeCarte { cle: spectacle.as_ref().map(|s| s.0.clone()), numero_objet: numero, titre },
-        contrat: p.map(|p| p.contrat.dite()),
-        debut,
-        fin,
-        periode,
-        dates,
-        cachets,
-        heures,
-        jours,
-        montants,
-        sources,
-        lignes: p.iter().flat_map(|p| p.lignes.iter().map(LigneDeLaCarte::de)).collect(),
-        declare_par,
-        atteste_par: c.map(|c| c.atteste_par),
-        bulletin,
-        etats: EtatsDeCarte {
-            dpae,
-            signature: EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "contrat fait avant PuppetPaie : sa signature n'est pas suivie ici".to_string() },
-            documents,
-        },
-        manque: manques,
-    })
+        quoi_dit,
+        pastilles: vec![
+            PastilleDeLaCarte { titre: "DPAE", etat: etats.dpae.clone() },
+            PastilleDeLaCarte { titre: "Contrat", etat: etats.signature.clone() },
+            PastilleDeLaCarte { titre: "Documents", etat: etats.documents.clone() },
+        ],
+        montant_titre: if montant("net_a_payer").is_some() { "net à payer" } else { BRUT_SEUL },
+        montant: montant_dit,
+        montant_mot,
+    };
+
+    // CE QUE L'IMPORT N'A PAS LU : sur la carte fermee, en une ligne ; sous la premiere case vide qu'il touche, pourquoi.
+    let non_lu = (!manques.is_empty()).then(|| NonLuDeLaCarte {
+        titre: "Non lu par l'import",
+        quoi: manques.iter().map(|m| m.libelle).collect::<Vec<_>>().join(" · "),
+        dit: POURQUOI_NON_LU,
+    });
+    let mut dits: BTreeSet<&str> = BTreeSet::new();
+    let mut case = |libelle: &'static str, valeur: Option<String>, source: Option<String>, champ: &str| {
+        let valeur = valeur.filter(|v| !v.is_empty());
+        let absent = match valeur {
+            Some(_) => None,
+            None => manques.iter().find(|m| m.champ == champ),
+        };
+        let pourquoi = absent.filter(|m| dits.insert(m.champ)).map(|m| m.phrase.clone());
+        CaseLue {
+            libelle,
+            source: valeur.as_ref().and(source),
+            vide_dit: match (&valeur, absent) {
+                (Some(_), _) => None,
+                (None, Some(m)) => Some(m.dit),
+                (None, None) => Some("—"),
+            },
+            non_lu: absent.is_some(),
+            pourquoi,
+            valeur,
+        }
+    };
+    let atteste = c.map(|c| attestation_dite(c.atteste_par).to_string());
+    let mut cases = vec![
+        case("Salarié", nom.clone(), Some("fiche".to_string()), "salarie"),
+        case("Spectacle", spectacle_dit, None, "spectacle"),
+        case("Contrat", p.map(|p| p.contrat.dite()), None, "contrat"),
+        case("Début", debut.map(|j| j.jj_mm_aaaa()), None, "debut"),
+        case("Fin", fin.map(|j| j.jj_mm_aaaa()), None, "fin"),
+        case("Jours travaillés", (!dates.is_empty()).then(|| dates.iter().map(|j| j.cases()[0].clone()).collect::<Vec<_>>().join(" · ")), Some("bulletin".to_string()), "dates"),
+        case("Cachets", cachets.map(socle::grandeurs::ecrit::sans_zero::dit), atteste.clone(), "cachets"),
+        case("Heures", heures.map(socle::grandeurs::ecrit::sans_zero::dit), atteste, "cachets"),
+    ];
+    for &(k, libelle, porte) in &montants {
+        cases.push(case(libelle, porte.map(|(v, _)| socle::texte::euros(v)), porte.map(|(_, s)| piece_dite(s)), k));
+    }
+
+    // LES LIGNES DU BULLETIN : ce que chacune paie, telle qu'une phrase le dit, et son montant.
+    let lignes: Vec<RangeeRendue> = p
+        .iter()
+        .flat_map(|p| p.lignes.iter())
+        .map(|l: &LigneImprimee| RangeeRendue {
+            sorte: SorteDeRangee::Ligne,
+            cellules: vec![
+                Some(l.libelle.clone()),
+                l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite),
+                l.paiement.map(|x| x.taux().dit()),
+                l.montant.map(socle::texte::euros),
+            ],
+        })
+        .collect();
+    let lignes = (!lignes.is_empty()).then(|| LignesDeLaCarte {
+        colonnes: vec![ColonneRendue::de_texte("Ligne du bulletin"), ColonneRendue::de_nombres("Quantité"), ColonneRendue::de_nombres("Taux"), ColonneRendue::de_nombres("Montant")],
+        rangees: lignes,
+    });
+    Ok(CarteImportee { salarie, resume, non_lu, cases, lignes, debut, nom, bulletin, etats })
 }
 
 /// LES ETAPES D'UN MOIS TENU AVANT (`bilan_du_mois`, le panneau du mois) : tout s'est fait ailleurs,

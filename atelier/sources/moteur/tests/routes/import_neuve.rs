@@ -398,7 +398,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     reussi(&crate::outils::valider(&racine, "2026-12", None, &e, jour));
     // Le contrat a ete signe dans l'ancien logiciel : il ne se refait pas signer ici.
     let signature = reussi(&route("signature-apercu", json!({"mois": "2026-12"}))).clone();
-    let a_signer: Vec<&Value> = signature["contrats"].as_array().into_iter().flatten().filter(|c| c["salarie"] == "FULLER").collect();
+    let a_signer: Vec<&Value> = ["a_envoyer", "en_attente"].iter().flat_map(|l| signature[*l].as_array().into_iter().flatten()).filter(|c| c["salarie"] == "FULLER").collect();
     assert!(a_signer.is_empty(), "le contrat repris se fait signer : {:?}", a_signer);
     // Le bulletin de decembre suit le 1/2026 que le bulletin importe imprime : deux bulletins de l'annee n'ont jamais le
     // meme numero.

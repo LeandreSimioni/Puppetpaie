@@ -1,4 +1,4 @@
-/* La configuration : la liste, l'importation, metiers, organismes, AT/MP, sante. */
+/* La configuration : la liste, l'importation, metiers, AT/MP, sante ; les écrans qu'une route rend (`js/avance.js`). */
 "use strict";
 
 /* =======================================================================
@@ -11,7 +11,7 @@ let FICHE_NEUVE = false;
 
 document.querySelectorAll(".sous-onglets button").forEach((b) => {
   b.onclick = async () => {
-    if (!(await quitterLaFiche())) return;
+    if (!(await quitterLEcran())) return;
     document.querySelectorAll(".sous-onglets button").forEach((x) => x.classList.remove("actif"));
     b.classList.add("actif");
     if (FICHE_ACTIVE !== b.dataset.fiche) FICHE_NEUVE = false;
@@ -44,35 +44,21 @@ function dessinerConfig() {
   const avance = document.getElementById("config-avance");
   avance.dataset.auto = document.querySelector(`.sous-onglets button[data-fiche="${FICHE_ACTIVE}"]`).dataset.place;
   dessinerAvance(avance);
+  // Un sous-onglet dont une route rend l'écran (sa fiche : `affichage: "rendu"`, sa place) : le dessinateur le pose.
+  const rendu = routeQuiRend(avance.dataset.auto);
+  if (rendu) {
+    document.getElementById("config-formulaire").innerHTML = "";
+    dessinerLEcranRendu(liste, rendu);
+    return;
+  }
   if (FICHE_ACTIVE === "importer") {
     document.getElementById("config-formulaire").innerHTML = "";
     dessinerImportation(liste);
     return;
   }
-  if (FICHE_ACTIVE === "coffre") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerCoffre(liste);
-    return;
-  }
-  if (FICHE_ACTIVE === "identite") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerIdentite(liste);
-    return;
-  }
   if (FICHE_ACTIVE === "metiers") {
     document.getElementById("config-formulaire").innerHTML = "";
     dessinerMetiers(liste);
-    return;
-  }
-  if (FICHE_ACTIVE === "organismes") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerOrganismes(liste);
-    return;
-  }
-  // Le modèle du bulletin : `modeles-bulletin.js`.
-  if (FICHE_ACTIVE === "bulletin") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerModelesBulletin(liste);
     return;
   }
   // Les modèles de contrat et les clauses particulières : `modeles-contrat.js`.
@@ -284,7 +270,7 @@ function dessinerConfig() {
         } catch (err) { dire(err.message, "erreur"); }
       };
       const ouvrir = async (c) => {
-        if (c !== CLE_ACTIVE && !(await quitterLaFiche())) return;
+        if (c !== CLE_ACTIVE && !(await quitterLEcran())) return;
         CLE_ACTIVE = c;
         FICHE_NEUVE = false;
         dessinerConfig();
@@ -564,7 +550,7 @@ document.addEventListener("click", async (ev) => {
 
 /* Ouvrir, dans Configuration, la fiche que l'import vient de créer. */
 async function ouvrirFicheImportee(nom, cle) {
-  if (!(await quitterLaFiche())) return;
+  if (!(await quitterLEcran())) return;
   document.querySelectorAll(".sous-onglets button").forEach((x) => x.classList.toggle("actif", x.dataset.fiche === nom));
   FICHE_ACTIVE = nom;
   CLE_ACTIVE = nom === "entreprise" ? null : cle;
@@ -774,8 +760,8 @@ async function ecrireImportation() {
   }
 }
 
-/* La fiche que le formulaire montre en ce moment : `quitterLaFiche` en a
- * besoin pour pouvoir l'enregistrer avant de partir. */
+/* La fiche que le formulaire montre en ce moment : une réponse de la route `fiche` qui arrive pour une autre ne se
+ * dessine pas (`ouvrirLaFicheRendue`). */
 let FICHE_COURANTE = null;
 
 /* CE QU'UN SPECTACLE, OU UN SALARIÉ, A COÛTÉ DANS L'ANNÉE.
@@ -896,60 +882,6 @@ async function dessinerMetiers(cible) {
   document.getElementById("metiers-filtre").oninput = (e) => { METIERS_FILTRE = e.target.value; peindre(); };
   document.getElementById("metiers-tous").onchange = (e) => { METIERS_TOUS = e.target.checked; peindre(); };
   peindre();
-}
-
-/* LES ORGANISMES ET LES CONTRATS DE LA DSN. Une ligne par
- * contrat que la convention exige ; le moteur (`organismes-contrats`) dit ce
- * qui est fixé par la branche et ce que la compagnie saisit. Enregistrer
- * écrit ce que la compagnie saisit (`organismes-enregistrer`) : la page ne
- * décide rien. */
-async function dessinerOrganismes(cible) {
-  let r;
-  // Les contrats de la periode regardee : le mois de l'onglet Paie, sinon le moteur prend celui du jour.
-  const mois = typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE ? { mois: MOIS_AFFICHE } : {};
-  try { r = await api("organismes-contrats", mois); }
-  catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-  const champ = (c, k, fixe, place) => fixe
-    ? `<span>${c[k] == null ? "" : echapper(c[k])}</span>`
-    : `<input type="text" data-contrat="${echapper(c.cle)}" data-champ="${k}"${valeurDeDepart(c[k])}
-         placeholder="${place}" maxlength="${k === "libelle" ? 30 : 9}">`;
-  // Ce qui est saisi d'un contrat, à une date : sa référence et son organisme.
-  const saisi = (v) => v ? [v.libelle, v.organisme].filter(Boolean).join(" · ") : "—";
-  // Sous le contrat, sa valeur d'avant et celle à venir ; toutes ses valeurs datées, repliées.
-  const temps = (c) => c.temps ? `${lignesDuTemps(c.temps, saisi)}${c.temps.valeurs.length ? `
-        <details class="historique-fiche"><summary>${aideDe("historique_titre")}</summary>
-          <div class="histoire">${lignesDHistoire(c.temps, c.quoi, saisi)}</div></details>` : ""}` : "";
-  const ligne = (c) => `
-    <tr>
-      <td><b>${echapper(c.quoi)}</b>
-        ${c.periode ? `<div class="note">${echapper(c.periode)}</div>` : ""}
-        ${c.note ? `<div class="note">${echapper(c.note)}</div>` : ""}
-        ${temps(c)}</td>
-      <td>${echapper(c.beneficiaires)}</td>
-      <td>${champ(c, "organisme", c.organisme_fixe, "P0983")}</td>
-      <td>${champ(c, "libelle", c.libelle_fixe, "référence du contrat")}</td>
-    </tr>`;
-  cible.innerHTML = `
-    <div class="carte">
-      <h2>Organismes et contrats DSN</h2>
-      ${encarts(r.encarts)}
-      <table class="tableau">
-        <thead><tr><th>Contrat</th><th>Bénéficiaires</th><th>Organisme</th><th>Référence du contrat</th></tr></thead>
-        <tbody>${r.contrats.map(ligne).join("")}</tbody>
-      </table>
-      <div class="actions"><button id="organismes-enregistrer">Enregistrer</button></div>
-    </div>`;
-  document.getElementById("organismes-enregistrer").onclick = async () => {
-    const contrats = {};
-    cible.querySelectorAll("input[data-contrat]").forEach((i) => {
-      (contrats[i.dataset.contrat] ||= {})[i.dataset.champ] = i.value.trim() || null;
-    });
-    try {
-      const x = await api("organismes-enregistrer", { contrats, ...mois });
-      dire(x.phrase);
-      dessinerOrganismes(cible);
-    } catch (e) { dire(e.message, "erreur"); }
-  };
 }
 
 

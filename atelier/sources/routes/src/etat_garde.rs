@@ -49,7 +49,8 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{CheminRelatif, Empreinte};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, ILLISIBLE, MOIS};
+use crate::catalogue::{Acte, Ecran, Fiche, Route, ILLISIBLE};
+use crate::declaration::{charge, dit, legendes};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Options, Phrase, Porte, Rendu, Reponse};
 use crate::etapes::{Bilan, ChargeMois};
 
@@ -65,16 +66,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Mois,
         geste: "Lire tout l'écran d'un mois d'un coup : engagements, étapes, imprévus.",
-        charge: &[
-            MOIS,
-            Champ {
-                nom: "attendre",
-                libelle: Affiche::new("État frais"),
-                forme: Forme::OuiNon,
-                sens: "vrai : l'état juste, refait s'il le faut ; sinon, dans la fenêtre, le dernier état connu, marqué perime",
-                avance: true,
-            },
-        ],
+        charge: &ChargeEcranDuMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "lectures : la réponse de chaque route de l'écran du mois (saisie, etat-par-engagement, etat-du-mois…), perime",
         refus: &[ILLISIBLE],
@@ -86,13 +78,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Demarrage,
         geste: "Lire d'un coup ce que l'écran d'une compagnie montre en s'ouvrant.",
-        charge: &[Champ {
-            nom: "patienter",
-            libelle: Affiche::new("Patienter"),
-            forme: Forme::Nombre,
-            sens: "les millisecondes que la fenêtre attend un état juste (5000 au plus) ; hors de la fenêtre, l'état se refait",
-            avance: true,
-        }],
+        charge: &ChargeDemarrage::CHARGE,
         exemple: r#"{"patienter":400}"#,
         rend: "pret ; prêt : le mois à ouvrir et son écran, aujourdhui, les lectures de l'ouverture (etat, echeancier, rappels…), la veille, la mise à jour, les signalements ; sinon la phrase de ce que fait le moteur",
         refus: &[ILLISIBLE],
@@ -104,9 +90,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EtatParEngagement,
         geste: "Lire l'état de chaque engagement du mois : ses carrés DPAE, Contrat, Documents.",
-        charge: &[MOIS],
+        charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire), non_actifs",
+        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -116,9 +102,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EtatDuMois,
         geste: "Lire les quatre étapes du mois : DPAE, Contrats, DSN, Documents.",
-        charge: &[MOIS],
+        charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic",
+        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -144,11 +130,11 @@ const TABLEAU: &str = "tableau";
 /// rendue telle quelle (resultat ou refus), au format d'une reponse de la page. Le mois a ouvrir y est aussi, lu en sa
 /// forme (`etapes::le_mois_a_ouvrir`). Ce qui vit dans la memoire de la fenetre (la veille, la mise a jour) et ce que
 /// l'ecran ne garde pas (`journal/signalements.json`) se lit a chaque ouverture, a cote (`interface/api.rs`).
-const LECTURES_OUVERTURE: [(Route, &str); 6] = [
+/// `rappels` et `pour-demarrer` y sont aussi, faites ensemble : la liste de « Pour démarrer » ne se calcule qu'une fois
+/// (`rappels::rappels_et_pour_demarrer`).
+const LECTURES_OUVERTURE: [(Route, &str); 4] = [
     (Route::Etat, "{}"),
     (Route::Echeancier, "{}"),
-    (Route::Rappels, "{}"),
-    (Route::PourDemarrer, "{}"),
     (Route::ConseilsResume, "{}"),
     (Route::ConseilDuJour, r#"{"decalage": 0}"#),
 ];
@@ -595,19 +581,19 @@ impl<'a> Demarrage<'a> {
     }
 }
 
-/// La charge de `demarrage` : ce que la fenetre attend un etat juste, en millisecondes.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeDemarrage {
-    patienter: u64,
+charge! {
+    /// La charge de `demarrage` : ce que la fenetre attend un etat juste, en millisecondes.
+    pub(crate) struct ChargeDemarrage {
+        patienter: u64 = dit("Patienter", "les millisecondes que la fenêtre attend un état juste (5000 au plus) ; hors de la fenêtre, l'état se refait").avancee(),
+    }
 }
 
-/// La charge de `mois` : le mois, et si la page veut l'etat juste (`attendre`).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeEcranDuMois {
-    mois: Mois,
-    attendre: Option<bool>,
+charge! {
+    /// La charge de `mois` : le mois, et si la page veut l'etat juste (`attendre`).
+    pub(crate) struct ChargeEcranDuMois {
+        mois: Mois = legendes::MOIS,
+        attendre: Option<bool> = dit("État frais", "vrai : l'état juste, refait s'il le faut ; sinon, dans la fenêtre, le dernier état connu, marqué perime").avancee(),
+    }
 }
 
 // ------------------------------------------------------------------------------------------------- refaire
@@ -643,7 +629,7 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: Empreinte
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let etats = crate::etapes::les_deux_etats(ctx, mois)?;
-    let par_engagement = Rendu::de(&etats.par_engagement())?;
+    let par_engagement = Rendu::de(&etats.par_engagement()?)?;
     Ok(EtatDuMois { mois, empreinte, par_engagement, bilan: etats.bilan, lectures })
 }
 
@@ -656,6 +642,14 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: Empreinte) -> R<E
         lectures.insert(route.nom().to_string(), lecture(o, route, &c));
     }
     compagnie::incidents::brancher_l_engagement();
+    let (rappels, pour_demarrer) = {
+        // Une lecture, comme une route servie (`servir_la_route`) : le code et la compagnie lus une fois.
+        let (_code, _geste) = (socle::fichiers::code_fige(), socle::forme::geste());
+        crate::rappels::rappels_et_pour_demarrer(ctx)
+    };
+    for (route, rendu) in [(Route::Rappels, rappels), (Route::PourDemarrer, pour_demarrer)] {
+        lectures.insert(route.nom().to_string(), socle::ecriture::json_en_ligne(&Reponse::de(route, rendu)));
+    }
     let (ouvre, reponse) = match crate::etapes::le_mois_a_ouvrir(ctx) {
         Ok((m, rendu)) => (Some(m), Reponse::de(Route::MoisAOuvrir, Ok(rendu))),
         Err(e) => (None, Reponse::de(Route::MoisAOuvrir, Err(e))),
@@ -758,7 +752,7 @@ pub fn route(o: &Options, porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::EtatParEngagement => {
             let ChargeMois { mois } = charge.lire()?;
             let etats = crate::etapes::les_deux_etats(porte.ctx, mois)?;
-            let par: crate::etapes::EtatParEngagement = etats.par_engagement();
+            let par: crate::etapes::EtatParEngagement = etats.par_engagement()?;
             en_json(par)
         }
         Route::EtatDuMois => {

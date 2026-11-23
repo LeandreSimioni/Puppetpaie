@@ -46,7 +46,8 @@ use socle::grandeurs::{Cachets, Coefficient, Grandeur, Heures, HeuresParUnite, J
 use socle::echec::R;
 use socle::texte::Phrase;
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION, SALARIE};
+use crate::catalogue::{Acte, Fiche, Forme, OPERATION};
+use crate::declaration::{charge, dit, legendes, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
@@ -59,7 +60,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ConseilDuJour,
         geste: "Dire le conseil du jour (« Le saviez-vous ? »).",
-        charge: &[Champ { nom: "decalage", libelle: Affiche::new("Autre conseil"), forme: Forme::Nombre, sens: "un autre conseil : +1 le suivant, -1 le précédent", avance: false }],
+        charge: &ChargeConseilDuJour::CHARGE,
         exemple: r#"{}"#,
         rend: "le conseil (titre, texte, ce qu'il ouvre)",
         refus: &[OPERATION],
@@ -71,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ConseilsSalarie,
         geste: "Dire les conseils qui valent pour un salarié.",
-        charge: &[SALARIE],
+        charge: &ChargeConseilsSalarie::CHARGE,
         exemple: r#"{"salarie":"FULLER"}"#,
         rend: "conseils",
         refus: &[OPERATION],
@@ -83,7 +84,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ConseilsResume,
         geste: "Dire les conseils qui valent pour la compagnie, en résumé.",
-        charge: &[],
+        charge: &crate::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "conseils",
         refus: &[OPERATION],
@@ -1207,18 +1208,23 @@ fn et(noms: &[String]) -> String {
 
 // ------------------------------------------------------------------ routes
 
-/// La charge de `conseil-du-jour` : le decalage d'« un autre » ; sans lui, le conseil du jour.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeConseilDuJour {
-    decalage: Option<DecalageDansUneSuite>,
+/// Un decalage dans une suite (+1 le suivant, -1 le precedent) : un nombre.
+impl ValeurDeLaCharge<ParSaForme> for DecalageDansUneSuite {
+    const FORME: Forme = Forme::Nombre;
 }
 
-/// La charge de `conseils-salarie` : la cle du salarie.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeConseilsSalarie {
-    salarie: droit::contexte::IdSalarie,
+charge! {
+    /// La charge de `conseil-du-jour` : le decalage d'« un autre » ; sans lui, le conseil du jour.
+    struct ChargeConseilDuJour {
+        decalage: Option<DecalageDansUneSuite> = dit("Autre conseil", "un autre conseil : +1 le suivant, -1 le précédent"),
+    }
+}
+
+charge! {
+    /// La charge de `conseils-salarie` : la cle du salarie.
+    struct ChargeConseilsSalarie {
+        salarie: droit::contexte::IdSalarie = legendes::SALARIE,
+    }
 }
 
 /// Ce que rend `conseil-du-jour` : le conseil, ou rien quand l'option est decochee ; sa phrase est son texte.

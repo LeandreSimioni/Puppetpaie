@@ -21,8 +21,9 @@ use socle::date::Jour;
 use socle::mois::{Annee, Graphie, Mois};
 use engagement;
 use compagnie::etat_dsn;
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
+use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::catalogue::Route;
+use crate::declaration::{charge, cle, dit, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use crate::imprevus::{FinASignaler, FinLue, ResumeDArret};
 use crate::SansCharge;
@@ -30,7 +31,10 @@ use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
 use declarations::champs::FicheAJuger;
 use socle::echec::{erreur, Classe};
-use crate::catalogue::{Ecran, Place};
+use crate::catalogue::{Affiche, Ecran, Place};
+use crate::ecran::RangDeLEcran;
+use crate::etapes::ChargeDuGeste;
+use crate::imprevus::GesteDeRoute;
 
 // ------------------------------------------------------------------ les refus
 
@@ -44,9 +48,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Rappels,
         geste: "Dire ce que la compagnie a à faire ce jour : DSN, fins de contrat, DPAE…",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton)",
+        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; les spectacles que sa revue demande, chacun dit avec son numéro d'objet ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton, la vue qu'il ouvre quand la route en a deux ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait », choisir les spectacles qui continuent), fermer_dit : le bouton qui ferme la boîte ; ouvrir_a_l_ouverture : vrai quand il y a quelque chose à montrer (un rappel, une échéance du mois à faire, une ligne de « Pour démarrer » ou son refus, ce qu'une DSN donnerait)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -56,9 +60,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Echeancier,
         geste: "Lire les échéances du mois et de l'année.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: "{}",
-        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état et si un rappel la dit",
+        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_mois (l'année qui vient, mois par mois : le mois et les titres de ce qui y tombe)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -68,21 +72,21 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::RevueSpectacles,
         geste: "Archiver les spectacles qui ne continuent pas, et noter la revue faite.",
-        charge: &[ANNEE, Champ { nom: "continuent", libelle: Affiche::new("Spectacles qui continuent"), forme: Forme::Liste, sens: "les spectacles qui continuent (leurs clés) ; les autres s'archivent", avance: false }],
+        charge: &ChargeRevue::CHARGE,
         exemple: r#"{"annee":2026,"continuent":["le-banc-des-menteurs"]}"#,
         rend: "phrase, archives, continuent, configuration",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "les spectacles qui continuent : des spectacles actifs, par leur clé" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::Dessine(Place::Paie),
+        ecran: Ecran::Geste(Place::Paie),
     },
     Fiche {
         route: Route::PourDemarrer,
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
+        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; enregistrer : la route qui écrit sa case et la part fixe de sa charge, la fiche et sa clé, la case partant dans ses changements, une écriture par fiche ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information) et poses_titre ; les mots de la liste : trouver_dit (ce qui ouvre où trouver une valeur), enregistrer (le bouton qui enregistre, quand une ligne a une case ou un geste), configuration_dit",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -92,39 +96,42 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EcheanceFaite,
         geste: "Cocher une échéance annuelle que seule la compagnie peut dire faite.",
-        charge: &[
-            Champ { nom: "cle", libelle: Affiche::new("Échéance"), forme: Forme::Texte, sens: "l'échéance et son année, « quoi:AAAA » (celle que rappels ou echeancier rendent)", avance: false },
-            Champ { nom: "fait", libelle: Affiche::new("Faite"), forme: Forme::OuiNon, sens: "faux : la décocher", avance: false },
-        ],
+        charge: &ChargeFaite::CHARGE,
         exemple: r#"{"cle":"revue-spectacles:2026"}"#,
         rend: "cle, fait",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "une échéance qui se coche, avec son année" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::Dessine(Place::Paie),
+        ecran: Ecran::Geste(Place::Paie),
     },
 ];
 
-const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false };
-
 // ------------------------------------------------------------------ les charges
 
-/// La charge de `revue-spectacles` : l'annee de la revue, et les spectacles qui continuent (leurs cles ; les autres
-/// s'archivent). Le geste qu'offre son rappel l'ecrit aussi.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeRevue {
-    annee: Annee,
-    continuent: Vec<droit::contexte::IdSpectacle>,
+charge! {
+    /// La charge de `revue-spectacles` : l'annee de la revue, et les spectacles qui continuent (leurs cles ; les autres
+    /// s'archivent). Le geste qu'offre son rappel l'ecrit aussi.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeRevue {
+        annee: Annee = crate::historique::ANNEE,
+        continuent: Vec<droit::contexte::IdSpectacle> = dit("Spectacles qui continuent", "les spectacles qui continuent (leurs clés) ; les autres s'archivent"),
+    }
 }
 
-/// La charge de `echeance-faite` : l'echeance « quoi:AAAA », cochee sauf `fait: false`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeFaite {
-    cle: CleDEcheance,
-    fait: Option<bool>,
+charge! {
+    /// La charge de `echeance-faite` : l'echeance « quoi:AAAA », cochee sauf `fait: false`. Le geste « C'est fait » d'une
+    /// echeance l'ecrit aussi (`Echeance::gestes`).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeFaite {
+        cle: CleDEcheance = dit("Échéance", "l'échéance et son année, « quoi:AAAA » (celle que rappels ou echeancier rendent)"),
+        fait: Option<bool> = dit("Faite", "faux : la décocher"),
+    }
+}
+
+/// Dans une charge, la cle d'une echeance se dit en texte (« quoi:AAAA »).
+impl ValeurDeLaCharge<ParSaForme> for CleDEcheance {
+    const FORME: Forme = Forme::Texte;
 }
 
 /// LA CLE D'UNE ECHEANCE : ce qui la nomme d'un rappel a l'autre, que la page renvoie pour la cocher
@@ -215,9 +222,13 @@ impl Ord for CleDEcheance {
 #[derive(Debug, Serialize)]
 pub(crate) struct Rappels {
     phrase: Phrase,
-    pub(crate) rappels: Vec<EcheanceDite>,
+    rappels: Vec<EcheanceDite>,
     /// La boite des rappels se ferme « plus tard » quand il y a quelque chose a faire.
     fermer_dit: &'static str,
+    /// LA BOITE DE L'OUVERTURE S'OUVRE-T-ELLE : quand il y a quelque chose a montrer, et seulement alors (un rappel du, une
+    /// echeance du mois a faire, une ligne de « Pour démarrer », ce qu'une DSN pourrait donner). « Pour démarrer » refuse :
+    /// la boite s'ouvre aussi, et son refus se dit a sa place.
+    ouvrir_a_l_ouverture: bool,
     phrases: Vec<String>,
 }
 
@@ -238,8 +249,78 @@ struct Echeancier {
     ce_mois: Vec<EcheanceDite>,
     a_venir: Vec<EcheanceDite>,
     a_faire: usize,
+    /// CE QUE L'ECRAN EN MONTRE, sous la date et la bienvenue, dans cet ordre : « Ce mois-ci » (aucun titre quand tout ce
+    /// qui est du ce mois, un rappel le dit), ses echeances, ou « Rien à faire » ; puis « L'année qui vient » et ses
+    /// echeances. Une chose se dit une fois : une echeance qu'un rappel dit n'est pas un rang du mois.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ce_mois_titre: Option<&'static str>,
+    ce_mois_rangs: Vec<RangDEcheance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ce_mois_vide: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annee_titre: Option<&'static str>,
+    annee_mois: Vec<MoisAVenir>,
     phrases: Vec<String>,
 }
+
+/// Un mois de l'annee qui vient : son nom, et ce qui y tombe, chaque echeance par son titre (« ✓ » apres une faite).
+/// `mois` vide : des echeances sans date butoir.
+#[derive(Debug, Serialize)]
+struct MoisAVenir {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mois: Option<String>,
+    echeances: Vec<String>,
+}
+
+/// Une echeance en rang de l'echeancier : son titre, ce qu'elle dit, sa pastille et ses gestes.
+type RangDEcheance = RangDeLEcran<ChargeDuGeste, ValeursDeLEcheance, ChoixDeLEcheance>;
+
+/// Un geste d'une echeance (`Echeance::gestes`) : la charge de sa route, ce que ses cases montrent d'abord, ce qu'elles
+/// offrent. Une obligation due d'un arret ou d'une fin de contrat a les memes (`obligations::Obligation::geste_qui_la_dit_faite`,
+/// `imprevus::geste_du_signalement`, `imprevus::gestes_d_une_fin`).
+pub(crate) type GesteDEcheance = GesteDeRoute<ChargeDuGeste, ValeursDeLEcheance, ChoixDeLEcheance>;
+
+/// Ce que les cases d'un geste d'une echeance montrent d'abord : les spectacles de la revue, tous cochés ; une obligation
+/// hors DSN deja dite faite, ce qui en est dit (le jour, le lieu, la reference) ; la connaissance d'un arret ou d'un
+/// accident deja dite, son jour et son heure.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct ValeursDeLEcheance {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) continuent: Option<Vec<droit::contexte::IdSpectacle>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) le: Option<Jour>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) depot: Option<declarations::obligations::LieuHorsDsn>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) jour: Option<Jour>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) heure: Option<socle::paris::HeureDuJour>,
+}
+
+/// Ce qu'offrent les cases d'un geste d'une echeance : les spectacles de la revue, chacun dit avec son numero d'objet ;
+/// les lieux ou une obligation hors DSN se fait, chacun dit en court.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct ChoixDeLEcheance {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) continuent: Option<Vec<crate::ouverture::Choix>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) depot: Option<Vec<crate::ouverture::Choix>>,
+}
+
+/// Le titre de l'echeancier du mois, ce qu'il dit quand il n'a rien, et celui de l'annee qui vient.
+const CE_MOIS: &str = "Ce mois-ci";
+const RIEN_A_FAIRE: &str = "Rien à faire";
+const L_ANNEE_QUI_VIENT: &str = "L'année qui vient";
+
+/// Les libelles du geste « C'est fait » d'une echeance que seule la compagnie peut dire faite, et de celui qui le defait.
+const C_EST_FAIT: Affiche = Affiche::new("C'est fait");
+const PAS_ENCORE_FAIT: Affiche = Affiche::new("Pas encore fait");
+
+/// Le libelle du geste de la revue des spectacles, et ce que sa boite dit sous la question.
+const CHOISIR_LES_SPECTACLES: Affiche = Affiche::new("Choisir les spectacles");
+const REVUE_DIT: &str = "Décochés, ils s'archivent : ils restent lisibles et se réactivent d'un clic (Configuration › Spectacles). Ceux qui continuent gardent leur numéro d'objet.";
 
 /// Ce que rend `revue-spectacles`.
 #[derive(Debug, Serialize)]
@@ -278,13 +359,26 @@ impl Dite for Faite {
     }
 }
 
+/// CE QUE LA COMPAGNIE PEUT REMPLIR D'AVANCE (`declarations::demarrage::route`), avec les acces aux organismes et le
+/// Drive qui se proposent (`acces_proposes`), et la pastille de ce qui est simule quand rien ne part de la compagnie. Ce
+/// qu'une DSN pourrait donner se range a part quand l'import n'en a repris aucune.
+fn pour_demarrer(ctx: &Contexte) -> DemarrageLu {
+    let (proposes, simules) = acces_proposes(ctx)?;
+    let (simule, pastille_simulee) = match simules {
+        Some((pose, pastille)) => (Some(pose), Some(pastille)),
+        None => (None, None),
+    };
+    let repris = crate::importation::parametrage::ce_que_l_import_a_repris(ctx)?;
+    Ok((declarations::demarrage::route(ctx, proposes, simule, repris)?, pastille_simulee))
+}
+
 /// Une route de ce module.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
     match porte.route {
         Route::Rappels => {
             let SansCharge {} = charge.lire()?;
-            en_json(rappels(ctx)?)
+            en_json(rappels(ctx, &pour_demarrer(ctx))?)
         }
         Route::Echeancier => {
             let SansCharge {} = charge.lire()?;
@@ -292,39 +386,57 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::RevueSpectacles => en_json(revue_spectacles(ctx, charge.lire()?)?),
         Route::EcheanceFaite => en_json(echeance_faite(ctx, charge.lire()?)?),
-        // Ce que la compagnie peut remplir d'avance, d'un coup ; ce que le moteur a pose de lui-meme se dit en information
-        // (gris) ; les acces aux organismes et le Drive se proposent (`acces_proposes`).
         Route::PourDemarrer => {
             let SansCharge {} = charge.lire()?;
-            let (proposes, simules) = acces_proposes(ctx)?;
-            let (simule, pastille_simulee) = match simules {
-                Some((pose, pastille)) => (Some(pose), Some(pastille)),
-                None => (None, None),
-            };
-            // Ce qu'une DSN pourrait donner se range a part quand l'import n'en a repris aucune.
-            let repris = crate::importation::parametrage::ce_que_l_import_a_repris(ctx)?;
-            let d = declarations::demarrage::route(ctx, proposes, simule, repris)?;
-            // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
-            let n = d.poses.len();
-            let poses = d
-                .poses
-                .into_iter()
-                .enumerate()
-                .map(|(i, pose)| {
-                    let pastille = match (&pastille_simulee, i + 1 == n) {
-                        (Some(p), true) => p.clone(),
-                        _ => Pastille::de(socle::ecran::EtatDEcran::Information, "posé pour vous"),
-                    };
-                    PoseVue { pose, pastille }
-                })
-                .collect();
-            // Les listes de la fiche d'un salarie se lisent une fois pour toutes les lignes.
-            let listes = std::cell::OnceCell::new();
-            let manques = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
-            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques, dsn: d.dsn, poses })
+            en_json(pour_demarrer_vu(ctx, pour_demarrer(ctx)?)?)
         }
         autre => Err(route_inconnue(autre.nom())),
     }
+}
+
+/// LES DEUX LECTURES DE L'OUVERTURE QUI DISENT « POUR DÉMARRER » (`etat_garde`), d'un seul calcul de sa liste : `rappels`
+/// (qu'elle ouvre la boite, ou son refus) et `pour-demarrer`.
+pub(crate) fn rappels_et_pour_demarrer(ctx: &Contexte) -> (R<Rendu>, R<Rendu>) {
+    let demarrage = pour_demarrer(ctx);
+    let rappels = rappels(ctx, &demarrage).and_then(en_json);
+    (rappels, demarrage.and_then(|d| pour_demarrer_vu(ctx, d)).and_then(en_json))
+}
+
+/// `pour-demarrer` : ce que la compagnie peut remplir d'avance, d'un coup ; ce que le moteur a pose de lui-meme se dit en
+/// information (gris) ; les acces aux organismes et le Drive se proposent (`acces_proposes`).
+fn pour_demarrer_vu(ctx: &Contexte, (d, pastille_simulee): (declarations::demarrage::PourDemarrer, Option<Pastille>)) -> R<PourDemarrerVu> {
+    // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
+    let n = d.poses.len();
+    let poses: Vec<PoseVue> = d
+        .poses
+        .into_iter()
+        .enumerate()
+        .map(|(i, pose)| {
+            let pastille = match (&pastille_simulee, i + 1 == n) {
+                (Some(p), true) => p.clone(),
+                _ => Pastille::de(socle::ecran::EtatDEcran::Information, "posé pour vous"),
+            };
+            PoseVue { pose, pastille }
+        })
+        .collect();
+    // Les listes de la fiche d'un salarie se lisent une fois pour toutes les lignes.
+    let listes = std::cell::OnceCell::new();
+    let manques: Vec<ManqueVu> = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
+    let poses_titre = (!poses.is_empty()).then_some("Posé pour vous");
+    let enregistrer = manques.iter().any(|m| m.case_rendue.is_some() || !m.a_enregistrer.is_empty()).then_some("Enregistrer");
+    Ok(PourDemarrerVu {
+        phrase: socle::phrase!("{}", d.phrase),
+        phrases: d.phrases,
+        titre: d.titre,
+        note: d.note,
+        manques,
+        dsn: d.dsn,
+        poses,
+        poses_titre,
+        trouver_dit: "Où le trouver",
+        enregistrer,
+        configuration_dit: "Ouvrir la configuration",
+    })
 }
 
 /// Archive les spectacles actifs qui ne sont pas dans
@@ -586,16 +698,6 @@ pub(crate) enum Objet {
     Arret(Box<ResumeDArret>),
 }
 
-impl Objet {
-    /// Le salarie qu'il nomme (la cle de sa fiche).
-    fn salarie(&self) -> droit::contexte::IdSalarie {
-        match self {
-            Objet::Fin(f) => f.salarie.clone(),
-            Objet::Arret(a) => a.salarie().clone(),
-        }
-    }
-}
-
 impl Echeance {
     fn nouveau(quoi: GenreDEcheance, cle: CleDEcheance, titre: String, question: String, tombe: Option<Mois>) -> Echeance {
         Echeance {
@@ -632,6 +734,12 @@ impl Echeance {
         self.quand_dit = format!("le {}", jour.jj_mm_aaaa());
     }
 
+    /// A FAIRE CE MOIS-CI, SANS QU'UN RAPPEL LA DISE : elle tombe ce mois (`courant`), n'est pas due, et n'est pas faite.
+    /// L'echeancier les compte (`a_faire`) ; elles ouvrent la boite de l'ouverture (`rappels`).
+    fn a_faire_dans(&self, courant: Mois) -> bool {
+        !self.due && self.tombe == Some(courant) && matches!(self.etat, AFaire | EnRetard)
+    }
+
     /// Ce sur quoi l'echeancier la range : son dernier jour, ou le mois ou elle tombe (en texte : « 2026-11-05 » se range
     /// apres « 2026-11 »).
     fn rang(&self) -> Option<String> {
@@ -643,22 +751,12 @@ impl Echeance {
 
     /// LE GESTE QUI LA FAIT, en routes du catalogue (`etapes::action` : la route qu'il ouvre, sa charge, la route de
     /// l'acte qui suit, le mot du bouton), celles que l'ecran et le LLM appellent. Une obligation, lue sur ses champs : la
-    /// fin d'un contrat se signale (ou, s'il manque une case, se complete dans sa carte : la saisie du mois, puis
-    /// l'engagement modifie) ; un signalement DSN d'arret ou de reprise se signale ; une obligation hors DSN qu'une route
-    /// dit faite (`accident-declare`, `attestation-declare`) se dit faite ; le reste s'ouvre dans son mois. Une DSN, une
-    /// DPAE : l'apercu de son depot, puis le depot. La cloture, l'export compta, la revue des spectacles : leur route.
-    /// Le geste d'une route qui a sa structure de charge (le mois, les signalements des imprevus, la revue des
-    /// spectacles) la passe ; un objet qui ne la remplit pas (un arret sans son salarie ou son dernier jour travaille)
-    /// n'offre pas de geste.
+    /// fin d'un contrat a qui il manque une case se complete dans sa carte (la saisie du mois, puis l'engagement
+    /// modifie) ; un signalement, une obligation hors DSN qu'une route dit faite, se font par un des `gestes` de
+    /// l'echeance, et n'ont pas d'action ; le reste s'ouvre dans son mois. Une DSN, une DPAE : l'apercu de son depot, puis
+    /// le depot. La cloture, l'export compta : leur route (la revue des spectacles est un de ses `gestes`).
     fn action(&self) -> R<Option<crate::etapes::Action>> {
-        use crate::etapes::{action, deposer_dsn, ChargeAnnee, ChargeMois, ChargeObligationDArret};
-        use crate::imprevus::{ChargeArretSignaler, ChargeFinContratSignaler, NatureSignalement};
-        // L'arret sur lequel porte l'obligation : son salarie et son dernier jour travaille.
-        let arret = || match &self.objet {
-            Some(Objet::Arret(a)) => Some((a.salarie().clone(), a.dernier_jour_travaille())),
-            _ => None,
-        };
-        let salarie = || self.objet.as_ref().map(Objet::salarie);
+        use crate::etapes::{action, deposer_dsn, ChargeAnnee, ChargeMois};
         Ok(Some(match &self.quoi {
             GenreDEcheance::Obligation => {
                 let Some(o) = self.obligation.as_ref() else { return Ok(None) };
@@ -669,20 +767,9 @@ impl Echeance {
                     C::SignalementFinContrat if !self.a_saisir.is_empty() => {
                         action(Route::Saisie, ChargeMois { mois }, Some(Route::ModifierEngagement), "Compléter le contrat".into())
                     }
-                    C::SignalementFinContrat => {
-                        let Some(s) = salarie() else { return Ok(None) };
-                        action(Route::FinContratSignaler, ChargeFinContratSignaler::de(mois, s), Some(Route::Deposer), "Signaler…".into())
-                    }
-                    cle @ (C::SignalementArret | C::SignalementArretRectificatif | C::SignalementReprise) => {
-                        let Some((s, dernier_jour)) = arret() else { return Ok(None) };
-                        let nature = if cle == C::SignalementReprise { NatureSignalement::Reprise } else { NatureSignalement::Arret };
-                        action(Route::ArretSignaler, ChargeArretSignaler::de(s, dernier_jour, nature), Some(Route::Deposer), "Signaler…".into())
-                    }
-                    C::DeclarationAccident | C::AttestationSalaire if hors_dsn => {
-                        let Some((salarie, dernier_jour)) = arret() else { return Ok(None) };
-                        let route = if cle == C::DeclarationAccident { Route::AccidentDeclare } else { Route::AttestationDeclare };
-                        action(route, ChargeObligationDArret { salarie, dernier_jour }, None, "Faite le".into())
-                    }
+                    // Un signalement, une obligation hors DSN : un des `gestes` de l'echeance (`Echeance::gestes`).
+                    C::SignalementFinContrat | C::SignalementArret | C::SignalementArretRectificatif | C::SignalementReprise => return Ok(None),
+                    C::DeclarationAccident | C::AttestationSalaire if hors_dsn => return Ok(None),
                     _ => action(Route::EtatDuMois, ChargeMois { mois }, None, "Ouvrir le mois".into()),
                 }
             }
@@ -692,18 +779,14 @@ impl Echeance {
             }
             GenreDEcheance::Dpae => {
                 let Some(mois) = self.mois else { return Ok(None) };
-                action(Route::DepotApercu, crate::depots::Designation::du_mois(crate::depots::Quoi::Dpae, mois), Some(Route::Deposer), "Préparer la DPAE".into())
+                crate::etapes::vers(crate::etapes::VueDuGeste::EmbauchesAChoisir, crate::depots::Designation::du_mois(crate::depots::Quoi::Dpae, mois), Some(Route::Deposer), "Préparer la DPAE".into())
             }
-            GenreDEcheance::DeLAnnee(cle) if *cle == CLOTURE || *cle == EXPORT_COMPTA || *cle == REVUE_SPECTACLES => {
+            GenreDEcheance::DeLAnnee(cle) if *cle == CLOTURE || *cle == EXPORT_COMPTA => {
                 let Some(annee) = self.annee else { return Ok(None) };
                 if *cle == CLOTURE {
                     action(Route::Cloture, ChargeAnnee { annee }, None, format!("Clôturer {}", annee))
-                } else if *cle == EXPORT_COMPTA {
-                    action(Route::ExportCompta, ChargeAnnee { annee }, None, "Exporter pour la compta".into())
                 } else {
-                    // Tous continuent, tant qu'on n'en a pas décoché un : la boîte s'ouvre ainsi.
-                    let charge = ChargeRevue { annee, continuent: self.spectacles.iter().map(|s| s.cle.clone()).collect() };
-                    action(Route::RevueSpectacles, charge, None, "Choisir les spectacles".into())
+                    action(Route::ExportCompta, ChargeAnnee { annee }, None, "Exporter pour la compta".into())
                 }
             }
             GenreDEcheance::DeLAnnee(_) => return Ok(None),
@@ -726,8 +809,7 @@ impl Echeance {
             en_retard: self.etat == EnRetard,
             rappel: self.due,
             etape: self.etape,
-            cochable: self.cochable,
-            pastille: Pastille::de(self.etat.a_l_ecran(), self.etat.mots()),
+            pastille: self.pastille(),
             mois: self.mois,
             annee: self.annee,
             fichier: self.fichier.clone(),
@@ -740,9 +822,51 @@ impl Echeance {
             obligation: self.obligation.clone(),
             objet: self.objet.clone(),
             action: self.action()?,
-            bouton_coche: if self.etat == Fait { "Pas encore fait" } else { "C'est fait" },
-            titre_boite: self.annee.map(|a| format!("Les spectacles de {}", a)),
+            gestes: self.gestes()?,
         })
+    }
+
+    /// LES GESTES QUE SA BOITE FAIT, tels que la page les dessine en boutons (`js/avance.js`, `brancherLesGestes`) : une
+    /// echeance que seule la compagnie peut dire faite se coche (« C'est fait », `echeance-faite`), et se decoche une fois
+    /// faite (« Pas encore fait ») ; la revue des spectacles fait cocher ceux qui continuent, tous cochés d'abord (la
+    /// charge n'en porte aucun : tout décocher les archive tous). Une obligation due se fait par le geste que son objet
+    /// rend : le signalement d'un arret, de sa reprise ou d'une fin de contrat ; une obligation hors DSN se dit faite.
+    fn gestes(&self) -> R<Vec<GesteDEcheance>> {
+        let mut gestes = Vec::new();
+        if let (true, Some(o), Some(objet)) = (self.due, self.obligation.as_ref(), self.objet.as_ref()) {
+            let geste = match objet {
+                Objet::Arret(a) => crate::imprevus::geste_qui_fait(a, o)?,
+                Objet::Fin(f) => crate::imprevus::geste_du_signalement_de_fin(f)?,
+            };
+            gestes.extend(geste);
+        }
+        if let (GenreDEcheance::DeLAnnee(cle), Some(annee)) = (&self.quoi, self.annee) {
+            if *cle == REVUE_SPECTACLES {
+                let charge = ChargeRevue { annee, continuent: Vec::new() };
+                let valeurs = ValeursDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| s.cle.clone()).collect()), ..ValeursDeLEcheance::default() };
+                let choix = ChoixDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| crate::ouverture::Choix::de(&s.cle, &s.dit)).collect()), ..ChoixDeLEcheance::default() };
+                let geste = GesteDeRoute::avec_cases(Route::RevueSpectacles, charge.into(), CHOISIR_LES_SPECTACLES, vec![cle!(ChargeRevue, continuent)], valeurs, choix);
+                // Une revue qui n'est pas encore due ne pose pas sa question : sa boite ne dit que l'aide.
+                gestes.push(geste.disant([self.question.as_str(), REVUE_DIT].into_iter().filter(|l| !l.is_empty()).map(str::to_string).collect()));
+            }
+        }
+        if self.cochable {
+            let fait = self.etat != Fait;
+            let charge = ChargeFaite { cle: self.cle.clone(), fait: Some(fait) };
+            let libelle = if fait { C_EST_FAIT } else { PAS_ENCORE_FAIT };
+            gestes.push(GesteDeRoute::avec_cases(Route::EcheanceFaite, charge.into(), libelle, Vec::new(), ValeursDeLEcheance::default(), ChoixDeLEcheance::default()));
+        }
+        Ok(gestes)
+    }
+
+    /// Sa pastille : la couleur et les mots de son etat.
+    fn pastille(&self) -> Pastille {
+        Pastille::de(self.etat.a_l_ecran(), self.etat.mots())
+    }
+
+    /// L'echeance en rang de l'echeancier, disant `dit`.
+    fn en_rang(&self, dit: Vec<String>) -> R<RangDEcheance> {
+        Ok(RangDeLEcran { titre: self.titre.clone(), dit, pastille: self.pastille(), etat: None, montre: None, gestes: self.gestes()? })
     }
 }
 
@@ -767,7 +891,6 @@ pub(crate) struct EcheanceDite {
     pub(crate) rappel: bool,
     #[serde(serialize_with = "etape_ecrite")]
     pub(crate) etape: Option<EtapeDEcheance>,
-    pub(crate) cochable: bool,
     /// Sa pastille : la couleur et les mots de son etat.
     pub(crate) pastille: Pastille,
     pub(crate) mois: Option<Mois>,
@@ -787,20 +910,20 @@ pub(crate) struct EcheanceDite {
     pub(crate) objet: Option<Objet>,
     /// Le geste qui la fait (`etapes::action` : une route du catalogue et son bouton).
     pub(crate) action: Option<crate::etapes::Action>,
-    /// La case « C'est fait ».
-    pub(crate) bouton_coche: &'static str,
-    /// Le titre de sa boite.
-    pub(crate) titre_boite: Option<String>,
+    /// Les gestes que sa boite fait (`Echeance::gestes`).
+    pub(crate) gestes: Vec<GesteDEcheance>,
 }
 
 /// Un spectacle actif que la revue de l'annee demande : sa cle, son titre et son numero d'objet tels que sa fiche les
-/// porte (vides quand elle ne les dit pas), et son nom a l'ecran (`nomme` : son titre, sinon sa cle).
+/// porte (vides quand elle ne les dit pas), son nom a l'ecran (`nomme` : son titre, sinon sa cle), et ce que la revue en
+/// dit (`dit` : son nom et son numero d'objet, ou « aucun numéro »).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SpectacleARevoir {
     cle: droit::contexte::IdSpectacle,
     titre: Option<String>,
     numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
     nomme: String,
+    dit: String,
 }
 
 /// Ce qu'une echeance lit : la compagnie, le jour, et le journal des depots (lu une fois).
@@ -820,10 +943,32 @@ impl Etat<'_> {
     }
 }
 
-/// `rappels` : les echeances dues maintenant (`echeances`, `due`), dans l'ordre ou elles se font, au jour de la compagnie.
-pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
+/// Les echeances dues maintenant (`due`), dites, dans l'ordre ou elles se font : les rappels.
+fn dues(tout: &[Echeance]) -> R<Vec<EcheanceDite>> {
+    tout.iter().filter(|e| e.due).map(Echeance::dite).collect()
+}
+
+/// Les rappels de la compagnie au jour de `ctx` (le tableau de l'administrateur les lit).
+pub(crate) fn rappels_dus(ctx: &Contexte) -> R<Vec<EcheanceDite>> {
+    dues(&echeances(&Etat::de(ctx)?)?)
+}
+
+/// Ce que « Pour démarrer » a dit (`pour_demarrer`), ou son refus.
+type DemarrageLu = R<(declarations::demarrage::PourDemarrer, Option<Pastille>)>;
+
+/// `rappels` : les echeances dues maintenant (`echeances`, `due`), dans l'ordre ou elles se font, au jour de la compagnie,
+/// et si la boite de l'ouverture s'ouvre, d'apres elles, ce qui est a faire ce mois-ci et ce que « Pour démarrer » a dit
+/// (`demarrage` : son refus ne ferme rien, il ouvre la boite, ou il se dit).
+fn rappels(ctx: &Contexte, demarrage: &DemarrageLu) -> socle::echec::R<Rappels> {
     let st = Etat::de(ctx)?;
-    let rappels: Vec<EcheanceDite> = echeances(&st)?.iter().filter(|e| e.due).map(Echeance::dite).collect::<R<_>>()?;
+    let tout = echeances(&st)?;
+    let rappels = dues(&tout)?;
+    let courant = st.aujourdhui.mois_civil();
+    let demarrage_a_quelque_chose = match demarrage {
+        Ok((d, _)) => !d.manques.is_empty() || d.dsn.is_some(),
+        Err(_) => true,
+    };
+    let ouvrir_a_l_ouverture = !rappels.is_empty() || tout.iter().any(|e| e.a_faire_dans(courant)) || demarrage_a_quelque_chose;
     let mut phrases: Vec<String> = rappels
         .iter()
         .map(|r| {
@@ -836,6 +981,7 @@ pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
         phrase: socle::phrase!("Rappels : {}.", rappels.len()),
         fermer_dit: if rappels.is_empty() { "Fermer" } else { "Plus tard" },
         rappels,
+        ouvrir_a_l_ouverture,
         phrases,
     })
 }
@@ -887,7 +1033,36 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         Some(c) => socle::phrase!("{} : {} ce mois-ci, {} à venir.", c, ce_mois_dit, a_venir_dit),
         None => socle::phrase!("{} ce mois-ci, {} à venir.", ce_mois_dit, a_venir_dit),
     };
-    let a_faire = ce_mois.iter().filter(|x| !x.due && matches!(x.etat, AFaire | EnRetard)).count();
+    let a_faire = ce_mois.iter().filter(|x| x.a_faire_dans(courant)).count();
+    // CE QUI EST FAIT NE SE RAPPELLE PAS : une echeance faite se tait, sauf celle qui se coche, qui reste pour se
+    // decocher ; faite, elle ne dit plus ni quand ni quoi. UNE CHOSE SE DIT UNE FOIS : celle qu'un rappel dit, avec sa date
+    // et son geste, n'est pas un rang du mois.
+    let ce_mois_rangs: Vec<RangDEcheance> = ce_mois
+        .iter()
+        .filter(|e| (e.etat != Fait || e.cochable) && !e.due)
+        .map(|e| {
+            let dit = if e.etat == Fait { Vec::new() } else { [&e.quand_dit, &e.detail].into_iter().filter(|l| !l.is_empty()).cloned().collect() };
+            e.en_rang(dit)
+        })
+        .collect::<R<_>>()?;
+    let dit_ailleurs = ce_mois.iter().any(|e| e.due);
+    let (ce_mois_titre, ce_mois_vide) = match (ce_mois_rangs.is_empty(), dit_ailleurs) {
+        (false, _) => (Some(CE_MOIS), None),
+        (true, false) => (Some(CE_MOIS), Some(RIEN_A_FAIRE)),
+        (true, true) => (None, None),
+    };
+    // L'annee qui vient, mois par mois, dans l'ordre ou ils viennent : ce qui tombe dans chacun.
+    let mut annee_mois: Vec<(Option<Mois>, MoisAVenir)> = Vec::new();
+    for e in &a_venir {
+        let titre = if e.etat == Fait { format!("{} ✓", e.titre) } else { e.titre.clone() };
+        match annee_mois.iter_mut().find(|(m, _)| *m == e.tombe) {
+            Some((_, m)) => m.echeances.push(titre),
+            None => annee_mois.push((e.tombe, MoisAVenir { mois: e.tombe.map(|m| m.libelle(Graphie::Accentuee)), echeances: vec![titre] })),
+        }
+    }
+    annee_mois.sort_by_key(|(m, _)| *m);
+    let annee_mois: Vec<MoisAVenir> = annee_mois.into_iter().map(|(_, m)| m).collect();
+    let annee_titre = (!annee_mois.is_empty()).then_some(L_ANNEE_QUI_VIENT);
     let ce_mois: Vec<EcheanceDite> = ce_mois.iter().map(Echeance::dite).collect::<R<_>>()?;
     let a_venir: Vec<EcheanceDite> = a_venir.iter().map(Echeance::dite).collect::<R<_>>()?;
     let ligne = |x: &EcheanceDite| format!("{} ({}{})", x.titre, x.pastille.mots, if x.quand_dit.is_empty() { String::new() } else { format!(", {}", x.quand_dit) });
@@ -903,6 +1078,11 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         ce_mois,
         a_venir,
         a_faire,
+        ce_mois_titre,
+        ce_mois_rangs,
+        ce_mois_vide,
+        annee_titre,
+        annee_mois,
         phrases,
     })
 }
@@ -1262,7 +1442,12 @@ fn spectacles_a_revoir(ctx: &Contexte, annee: Annee, faites: &Cochees) -> R<Vec<
                 Some(t) => t.clone(),
                 None => cle.to_string(),
             };
-            SpectacleARevoir { cle: cle.clone(), titre, numero_objet: s.numero_objet.dite().cloned(), nomme }
+            let numero_objet = s.numero_objet.dite().cloned();
+            let dit = match &numero_objet {
+                Some(n) => format!("{} — {}", nomme, n),
+                None => format!("{} — aucun numéro", nomme),
+            };
+            SpectacleARevoir { cle: cle.clone(), titre, numero_objet, nomme, dit }
         })
         .collect())
 }
@@ -1666,6 +1851,18 @@ struct ManqueVu {
     /// (`fiches::case_a_remplir`) : sa valeur est celle que le moteur propose (`propose`), sinon celle de la fiche.
     #[serde(skip_serializing_if = "Option::is_none")]
     case_rendue: Option<crate::fiches::CaseDeLaFiche>,
+    /// CE QUI ENREGISTRE LA CASE RENDUE : sa route (`enregistrer-fiche`) et la part fixe de sa charge (la fiche et sa
+    /// cle) ; la case part dans ses `changements` (`[{case, valeur}]`, la case sous la cle que la case rendue porte), une
+    /// ecriture par fiche.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enregistrer: Option<EnregistrerLaCase>,
+}
+
+/// La route qui enregistre une case de « Pour démarrer », et la part fixe de sa charge.
+#[derive(Debug, Serialize)]
+struct EnregistrerLaCase {
+    route: Route,
+    charge: crate::redire::ChargeDUneFiche,
 }
 
 /// L'EFFECTIF D'UNE ANNEE, en geste que « Enregistrer » joue, dans la forme que la page dessine (`js/avance.js`) : la
@@ -1699,6 +1896,12 @@ impl ManqueVu {
     /// reprises donnent, et sa phrase. `listes` : celles de la fiche d'un salarie, lues une fois pour toutes les lignes.
     fn de(ctx: &Contexte, listes: &std::cell::OnceCell<crate::fiches::ListesDuSalarie>, mut manque: Manque) -> socle::echec::R<ManqueVu> {
         let proposee = manque.propose.as_ref().and_then(droit::fiche::ValeurDeCase::de);
+        let fiche = match (&manque.spectacle, &manque.salarie, manque.onglet.as_str()) {
+            (Some(s), _, _) => Some(droit::fiche::FicheNommee::Spectacle(s.clone())),
+            (None, Some(s), _) => Some(droit::fiche::FicheNommee::Salarie(s.clone())),
+            (None, None, "entreprise") => Some(droit::fiche::FicheNommee::Entreprise),
+            _ => None,
+        };
         let case_rendue = match (&manque.spectacle, &manque.salarie, manque.onglet.as_str(), &manque.case) {
             (Some(s), _, _, Some(chemin)) => match ctx.spectacles.get(s) {
                 Some(f) => {
@@ -1728,13 +1931,17 @@ impl ManqueVu {
                 route: Route::Effectif,
                 charge: crate::fiches::ChargeEffectif { annee: Some(e.annee), valeur: None },
                 libelle: format!("L'effectif de {}", e.annee),
-                cases: vec!["valeur"],
+                cases: vec![cle!(crate::fiches::ChargeEffectif, valeur)],
                 valeurs: EffectifDeDepart { valeur: e.valeur },
                 choix: SansChoix {},
                 phrases: vec![e.phrase],
             })
             .collect();
-        Ok(ManqueVu { manque, a_enregistrer, case_rendue })
+        let enregistrer = match (&case_rendue, fiche) {
+            (Some(_), Some(f)) => Some(EnregistrerLaCase { route: Route::EnregistrerFiche, charge: crate::redire::ChargeDUneFiche::de(&f) }),
+            _ => None,
+        };
+        Ok(ManqueVu { manque, a_enregistrer, case_rendue, enregistrer })
     }
 }
 
@@ -1751,6 +1958,15 @@ struct PourDemarrerVu {
     #[serde(skip_serializing_if = "Option::is_none")]
     dsn: Option<declarations::demarrage::ParUneDsn>,
     poses: Vec<PoseVue>,
+    /// LES MOTS DE LA LISTE : le titre de ce que le moteur a pose (quand il a pose quelque chose), ce qui ouvre ou
+    /// trouver une valeur (`trouver` d'une ligne), le bouton qui enregistre la liste (quand une ligne a une case ou un
+    /// geste a jouer) et celui qui mene a la configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    poses_titre: Option<&'static str>,
+    trouver_dit: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enregistrer: Option<&'static str>,
+    configuration_dit: &'static str,
 }
 
 const OU_DES_ACCES: &str = "Configuration › Mots de passe";

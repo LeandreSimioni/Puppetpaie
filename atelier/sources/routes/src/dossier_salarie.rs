@@ -19,9 +19,9 @@ use droit::fiche::Lue as _;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use socle::fichiers::NomDeFichier;
-use socle::mois::Mois;
+use socle::mois::{Mois, PeriodeDemandee};
 
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
@@ -35,7 +35,8 @@ use documents::{CategorieDeDocument, SorteDePieceProduite};
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
 use socle::echec::{erreur, Classe, Echec, R};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::declaration::{charge, dit};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 
@@ -46,14 +47,8 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::DossierSalarie,
     geste: "Assembler les documents de salariés sur une période, en PDF ou en ZIP.",
-    charge: &[
-        Champ { nom: "salaries", libelle: Affiche::new("Salariés"), forme: Forme::Liste, sens: "les clés des salariés", avance: false },
-        Champ { nom: "mois", libelle: Affiche::new("Période"), forme: Forme::Texte, sens: "un mois AAAA-MM ; ou annee, ou toutes_les_annees", avance: false },
-        Champ { nom: "categories", libelle: Affiche::new("Sortes de documents"), forme: Forme::Liste, sens: "les sortes de documents (bulletins, contrats…) ; toutes par défaut", avance: true },
-        Champ { nom: "ensemble", libelle: Affiche::new("Un seul fichier"), forme: Forme::OuiNon, sens: "vrai : un seul fichier pour tous", avance: true },
-        Champ { nom: "apercu", libelle: Affiche::new("Aperçu seulement"), forme: Forme::OuiNon, sens: "vrai : dire ce qui serait assemblé, sans rien écrire", avance: true },
-    ],
-    exemple: r#"{"salaries":["FULLER"],"mois":"2026-11","apercu":true}"#,
+    charge: &DemandeDeDossier::CHARGE,
+    exemple: r#"{"salaries":["FULLER"],"periode":"2026-11","apercu":true}"#,
     rend: "les fichiers écrits (ou à écrire, en aperçu), par salarié et par sorte",
     refus: &[OPERATION, MANQUE, ILLISIBLE, FORME],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
@@ -91,19 +86,18 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
 
 // ------------------------------------------------------------------ les formes
 
-/// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
-/// chacun), UNE periode (le mois, l'annee, ou toutes les annees), ce qu'il porte (rien : tout), un seul fichier pour
-/// tous (`ensemble`), et `apercu` pour dire ce qui s'ecrirait sans rien ecrire.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DemandeDeDossier {
-    pub(crate) salaries: Option<Vec<IdSalarie>>,
-    pub(crate) mois: Option<Mois>,
-    pub(crate) annee: Option<socle::mois::Annee>,
-    pub(crate) toutes_les_annees: Option<bool>,
-    pub(crate) categories: Option<Vec<CategorieDeDocument>>,
-    pub(crate) ensemble: Option<bool>,
-    pub(crate) apercu: Option<bool>,
+charge! {
+    /// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
+    /// chacun), la periode, ce qu'il porte (rien : tout), un seul fichier pour tous (`ensemble`), et `apercu` pour dire
+    /// ce qui s'ecrirait sans rien ecrire.
+    #[derive(Debug, Clone)]
+    pub(crate) struct DemandeDeDossier {
+        pub(crate) salaries: Option<Vec<IdSalarie>> = dit("Salariés", "les clés des salariés ; aucun : chacun"),
+        pub(crate) periode: socle::mois::PeriodeDemandee = crate::archives::PERIODE,
+        pub(crate) categories: Option<Vec<CategorieDeDocument>> = dit("Sortes de documents", "les sortes de documents (bulletins, contrats…) ; toutes par défaut").avancee(),
+        pub(crate) ensemble: Option<bool> = dit("Un seul fichier, qui ne s'envoie pas", "vrai : un seul fichier pour tous ; il ne s'envoie à personne").avancee(),
+        pub(crate) apercu: Option<bool> = dit("Aperçu seulement", "vrai : dire ce qui serait assemblé, sans rien écrire").avancee(),
+    }
 }
 
 /// Une table JSON dont les cles gardent l'ordre ou elles sont venues (les salaries, puis leurs categories).
@@ -160,12 +154,38 @@ pub(crate) struct DossierRendu {
     phrases: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     envoi: Option<DossierEnvoye>,
+    titre: String,
+    lignes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ecrit_dit: Option<String>,
 }
 
 impl DossierRendu {
+    /// Le dossier rendu, et ce que l'ecran en dit : son titre, une ligne par salarie (ses pages, par categorie), les
+    /// fichiers ecrits (`ecrit_dit`, s'il y en a).
     pub(crate) fn de(d: Dossier, phrase: Phrase, envoi: Option<DossierEnvoye>) -> DossierRendu {
         let phrases = d.avertissements.iter().chain(&d.refus).cloned().collect();
+        let lignes = d
+            .salaries
+            .iter()
+            .map(|s| {
+                // Un salarie sans piece n'a pas de pages.
+                let pages: Vec<String> = match d.pages.get(s.as_str()) {
+                    Some(p) => CategorieDeDocument::TOUTES.iter().filter_map(|c| p.get(c.texte()).map(|n| format!("{} : {} p.", c.libelle(), n))).collect(),
+                    None => Vec::new(),
+                };
+                if pages.is_empty() {
+                    format!("{} : aucune page", s.as_str())
+                } else {
+                    format!("{} : {}", s.as_str(), pages.join(" · "))
+                }
+            })
+            .collect();
+        let ecrit_dit = (!d.fichiers.is_empty()).then(|| format!("Écrit : {}", d.fichiers.iter().map(|f| f.display().to_string()).collect::<Vec<_>>().join(", ")));
         DossierRendu {
+            titre: format!("Dossier — {}", d.periode),
+            lignes,
+            ecrit_dit,
             phrase,
             salaries: d.salaries,
             categories: d.categories,
@@ -235,62 +255,21 @@ fn marquer(chemin: &Path, aujourdhui: &Jour) -> R<()> {
 // ------------------------------------------------------------------ la periode
 
 
-/// Un mois, une annee, ou tout. Les bornes servent aux pages CoolPaie, qui n'ont qu'une date.
-enum Periode {
-    Mois(Mois),
-    Annee(socle::mois::Annee),
-    Toutes,
+/// La periode `p` dans les phrases et le courriel du dossier.
+fn libelle_de(p: &PeriodeDemandee) -> String {
+    match p {
+        PeriodeDemandee::Mois(m) => m.libelle(socle::mois::Graphie::Minuscule),
+        PeriodeDemandee::Annee(a) => a.to_string(),
+        PeriodeDemandee::Toutes => "toute la période".to_string(),
+    }
 }
 
-impl Periode {
-    fn nouveau(mois: Option<Mois>, annee: Option<socle::mois::Annee>, toutes: bool) -> R<Periode> {
-        match (mois, annee, toutes) {
-            (Some(m), None, false) => Ok(Periode::Mois(m)),
-            (None, Some(a), false) => {
-                if a < socle::annee!("1000") {
-                    return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a)));
-                }
-                Ok(Periode::Annee(a))
-            }
-            (None, None, true) => Ok(Periode::Toutes),
-            _ => Err(erreur_operation(
-                "Un dossier se demande pour UNE période : un mois (--mois AAAA-MM), une année (--annee AAAA), ou toute la période (--toutes-les-annees).",
-            )),
-        }
-    }
-
-    /// `m` : AAAA-MM.
-    fn contient(&self, m: Mois) -> bool {
-        match self {
-            Periode::Mois(x) => m == *x,
-            Periode::Annee(a) => socle::mois::Annee::du_mois(m) == *a,
-            Periode::Toutes => true,
-        }
-    }
-
-    fn libelle(&self) -> String {
-        match self {
-            Periode::Mois(m) => m.libelle(socle::mois::Graphie::Minuscule),
-            Periode::Annee(a) => a.to_string(),
-            Periode::Toutes => "toute la période".to_string(),
-        }
-    }
-
-    fn nom(&self) -> String {
-        match self {
-            Periode::Mois(m) => m.to_string(),
-            Periode::Annee(a) => a.to_string(),
-            Periode::Toutes => "toute-la-periode".to_string(),
-        }
-    }
-
-    /// Le mois, l'annee, ou toutes, comme les recapitulatifs les prennent.
-    fn bornes(&self) -> (Option<Mois>, Option<socle::mois::Annee>, bool) {
-        match self {
-            Periode::Mois(m) => (Some(*m), None, false),
-            Periode::Annee(a) => (None, Some(*a), false),
-            Periode::Toutes => (None, None, true),
-        }
+/// La periode `p` dans le nom des fichiers du dossier.
+fn nom_de_la_periode(p: &PeriodeDemandee) -> String {
+    match p {
+        PeriodeDemandee::Mois(m) => m.to_string(),
+        PeriodeDemandee::Annee(a) => a.to_string(),
+        PeriodeDemandee::Toutes => "toute-la-periode".to_string(),
     }
 }
 
@@ -827,7 +806,7 @@ fn sans_accents(t: &str) -> String {
 
 /// `signatures` : les courriels de signature d'un salarie sur la periode, la preuve de ses contrats
 /// signes. Ils vont dans le ZIP, pas dans un PDF.
-fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
+fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &PeriodeDemandee) -> R<Vec<PathBuf>> {
     let mut out = Vec::new();
     for mois in engagement::stock::mois_saisis(&ctx.racine)? {
         if !p.contient(mois) {
@@ -842,7 +821,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
 /// Les pages des bulletins de paie que l'import a repris (les paies versees des engagements importes, colonne `bulletin` : le fichier de
 /// sa copie dans `historique/bulletins/` et la page) : rattachees par la cle du salarie, datees du debut de la paie,
 /// dans la periode par le mois de la paie. Une copie qui manque se dit ; rien d'autre ne se devine.
-fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
+fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &PeriodeDemandee, d: &mut Dossier) -> R<Vec<Page>> {
     let lignes = engagement::importe::paies_lues(&ctx.racine)?;
     let dossier = import::mois::dossier_des_bulletins(&ctx.racine);
     let (mut pages, mut manquent): (Vec<Page>, Vec<NomDeFichier>) = (Vec::new(), Vec::new());
@@ -1056,8 +1035,8 @@ fn contenu_de<'a>(contenus: &'a Contenus, cle: &IdSalarie) -> Option<&'a Vec<(Ca
 }
 
 /// Ecrit le dossier d'un salarie (un fichier par categorie, ou un seul PDF) et rend son chemin.
-fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(CategorieDeDocument, Vec<u8>)], preuves: &[PathBuf], cats: &[CategorieDeDocument], p: &Periode, un_seul: bool) -> R<PathBuf> {
-    let base = format!("{}{}_{}", SorteDePieceProduite::Dossier.prefixe(), nom_salarie(cle.as_str()), p.nom());
+fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(CategorieDeDocument, Vec<u8>)], preuves: &[PathBuf], cats: &[CategorieDeDocument], p: &PeriodeDemandee, un_seul: bool) -> R<PathBuf> {
+    let base = format!("{}{}_{}", SorteDePieceProduite::Dossier.prefixe(), nom_salarie(cle.as_str()), nom_de_la_periode(p));
     if un_seul && !(cats == [CategorieDeDocument::ContratsSignes] && !preuves.is_empty()) {
         let cat = cats[0];
         let chemin = dossier.join(format!("{}_{}.pdf", base, nom_de(cat)));
@@ -1079,8 +1058,8 @@ fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(CategorieDeDocument, 
 
 /// Tous les salaries dans le meme fichier : un PDF par categorie qui les
 /// enchaine (une seule categorie : ce PDF-la), sinon un ZIP.
-fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, Vec<PathBuf>)], cats: &[CategorieDeDocument], p: &Periode, un_seul: bool, tmp: &Path) -> R<PathBuf> {
-    let base = format!("{}{}", SorteDePieceProduite::Dossiers.prefixe(), p.nom());
+fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, Vec<PathBuf>)], cats: &[CategorieDeDocument], p: &PeriodeDemandee, un_seul: bool, tmp: &Path) -> R<PathBuf> {
+    let base = format!("{}{}", SorteDePieceProduite::Dossiers.prefixe(), nom_de_la_periode(p));
     let mut cles: Vec<&IdSalarie> = contenus.iter().map(|(c, _)| c).collect();
     cles.sort();
     let mut par_cat: Vec<(CategorieDeDocument, Vec<Vec<u8>>)> = Vec::new();
@@ -1120,9 +1099,8 @@ fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, V
 /// Le dossier construit (et ecrit, sauf `apercu`). L'envoi (`archives`, `dossier-envoyer`)
 /// en a besoin tel quel : ses salaries, ses fichiers, ses pages.
 pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossier> {
-    let annee = demande.annee;
     let (ensemble, ecrire) = (demande.ensemble == Some(true), demande.apercu != Some(true));
-    let p = Periode::nouveau(demande.mois, annee, demande.toutes_les_annees == Some(true))?;
+    let p = demande.periode;
     // Le jour reel de Paris, pas `ctx.aujourdhui`.
     let aujourdhui = socle::temps::jour_de_paris();
     // Les categories dites ; aucune dite, toutes.
@@ -1145,7 +1123,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     let mut d = Dossier {
         salaries: Vec::new(),
         categories: cats.clone(),
-        periode: p.libelle(),
+        periode: libelle_de(&p),
         fichiers: Vec::new(),
         pages: Ordonnee::default(),
         avertissements: Vec::new(),
@@ -1171,8 +1149,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
         pages.extend(pages_importees(ctx, &ensemble_cles, &p, &mut d)?);
     }
     if cats.contains(&CategorieDeDocument::Recapitulatif) {
-        let (m, a, toutes) = p.bornes();
-        let mut recaps = Recapitulatifs::nouveau(ctx, m, a, toutes, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+        let mut recaps = Recapitulatifs::nouveau(ctx, p, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
         for cle in &cles {
             if let Some(r) = recaps.pdf(cle, tmp)? {
                 for i in 0..pages_pdf(&r)? {
@@ -1205,7 +1182,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
         // `AucunDocument` : une reponse, pas un incident.
         return Err(erreur(Classe::AucunDocument, format!(
             "Aucun document sur la période ({}) pour {}.",
-            p.libelle(),
+            libelle_de(&p),
             if demandes.is_some() { cles.iter().map(IdSalarie::as_str).collect::<Vec<_>>().join(", ") } else { "aucun salarié".to_string() }
         )));
     }

@@ -1094,7 +1094,7 @@ impl Fenetre {
     }
 
     /// L'apercu d'un modele de bulletin : le PDF d'une paie fictive, que la route `bulletin-modele-apercu` fait dans le
-    /// processus de la fenetre, comme toute route ; le lecteur de la fenetre l'affiche (Configuration).
+    /// processus de la fenetre, comme toute route ; la fiche Entreprise l'ouvre a cote de chaque modele.
     fn apercu_bulletin(&self, r: &Requete) -> Reponse {
         let interdit = Reponse::nouvelle(403, "text/plain", Vec::new());
         let Phase::Ouverte { racine, .. } = self.phase() else { return interdit };
@@ -1119,35 +1119,26 @@ impl Fenetre {
         }
     }
 
-    /// L'image posee pour la signature, le logo ou le cachet ; ou le cachet que le logiciel dessine.
+    /// La signature, le logo ou le cachet, tels que la route `identite-image` les rend (l'image posee, ou le cachet que
+    /// le logiciel dessine), dans le processus de la fenetre, comme toute route : l'ecran Signature & tampon les nomme a
+    /// cette adresse (`identite::adresse_de_l_image`).
     fn identite(&self, r: &Requete, quoi: &str) -> Reponse {
-        let rien = || Reponse::nouvelle(404, "text/plain", Vec::new());
         if !self.autorise(r) {
             return Reponse::nouvelle(403, "text/plain", Vec::new());
         }
-        let Phase::Ouverte { racine, .. } = self.phase() else { return rien() };
-        if quoi == "cachet-automatique" {
-            let ent = match droit::contexte::Contexte::nouveau(&racine, None) {
-                Ok(c) => c.entreprise,
-                Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", e.phrase),
-            };
-            return match documents::cachet::svg(&ent) {
-                Some(d) => Reponse::nouvelle(200, "image/svg+xml; charset=utf-8", d),
-                None => rien(),
-            };
+        let Phase::Ouverte { racine, .. } = self.phase() else { return Reponse::nouvelle(404, "text/plain", Vec::new()) };
+        // La route, comme la page l'appellerait : sa charge et sa reponse lues par leur forme.
+        let lire = || -> R<(String, Vec<u8>)> {
+            let quoi = documents::SorteDImage::du_nom(quoi).ok_or_else(|| socle::echec::refus("Cette image n'existe pas."))?;
+            let charge = Charge::de_forme(&routes::identite::ChargeQuoi { quoi })?;
+            let i: routes::identite::ImageDeLIdentite = api::route(&racine, Route::IdentiteImage, &charge).lire().map_err(|x| socle::echec::refus(x.phrase))?;
+            let octets = socle::base64::lire(&i.image).map_err(|e| e.reformuler(|p| format!("L'image ne se lit pas : {}.", p)))?;
+            Ok((i.media, octets))
+        };
+        match lire() {
+            Ok((media, octets)) => Reponse::nouvelle(200, &media, octets),
+            Err(e) => Reponse::nouvelle(404, "text/plain; charset=utf-8", e.phrase),
         }
-        let Some(sorte) = documents::SorteDImage::du_nom(quoi) else { return rien() };
-        let dossier = racine.join(droit::contexte::GABARITS).join("identite");
-        for format in fabrique_pdf::alleger::FormatDImage::TOUS {
-            let f = dossier.join(format!("{}{}", sorte.nom(), format.extension()));
-            match std::fs::read(&f) {
-                Ok(o) => return Reponse::nouvelle(200, format.mime(), o),
-                // Pas d'image dans ce format : le suivant.
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", socle::echec::du_disque(&f, &e).phrase),
-            }
-        }
-        rien()
     }
 
     /// L'adresse que la fenetre charge (avec le jeton, qui passe aussitot en cookie).

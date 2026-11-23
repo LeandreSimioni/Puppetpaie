@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 
 use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Forme, Fiche, Refus, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use declarations::dpae::{Chemins, Embauche, Parametres};
 use droit::contexte::{Contexte, IdSalarie};
@@ -39,10 +40,10 @@ use socle::ecran::Pastille;
 use crate::catalogue::{Ecran, Place};
 
 // LA DESIGNATION d'une declaration (`designee`) : la DSN ou la DPAE d'un mois, ou un signalement ecrit.
-const QUOI: Champ = Champ { nom: "quoi", libelle: Affiche::new("DPAE ou DSN"), forme: Forme::Texte, sens: "dpae ou dsn", avance: false };
-const ETABLISSEMENT: Champ = Champ { nom: "etablissement", libelle: Affiche::new("Établissement"), forme: Forme::Texte, sens: "le NIC de l'établissement (DSN), le principal sinon", avance: true };
-const ENGAGEMENTS: Champ = Champ { nom: "engagements", libelle: Affiche::new("Embauches"), forme: Forme::Objet, sens: "seulement ces embauches (DPAE) : [{salarie, numero}]", avance: true };
-const SIGNALEMENT: Champ = Champ { nom: "fichier", libelle: Affiche::new("Signalement"), forme: Forme::Texte, sens: "un signalement écrit, tel que sa route le rend, à la place du mois", avance: true };
+const QUOI: Legende = dit("DPAE ou DSN", "la déclaration (un signalement est une DSN)");
+const ETABLISSEMENT: Legende = dit("Établissement", "le NIC de l'établissement (DSN), le principal sinon").avancee();
+const ENGAGEMENTS: Legende = dit("Embauches", "seulement ces embauches (DPAE) : [{salarie, numero}]").avancee();
+const SIGNALEMENT: Legende = dit("Signalement", "un signalement écrit, tel que sa route le rend, à la place du mois").avancee();
 /// L'exemple : la DPAE de novembre, que `depot-apercu` ecrit.
 const DPAE_DE_L_EXEMPLE: &str = r#"{"quoi":"dpae","mois":"2026-11"}"#;
 const ILLISIBLE_FICHIER: Refus = Refus { classe: Classe::FichierAbsent, corriger: "le signalement : le fichier que sa route a rendu" };
@@ -55,9 +56,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DepotApercu,
         geste: "Écrire ou reprendre la DSN ou la DPAE du mois ; dire ce qu'elle déclare.",
-        charge: &[QUOI, MOIS, ETABLISSEMENT, ENGAGEMENTS, SIGNALEMENT],
+        charge: &Designation::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
-        rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel)",
+        rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel) ; les dépôts ouverts maintenant, chacun un geste de deposer (route, charge, libellé, cases, phrases, demande du mot de passe) : principal (le test, ou le réel une fois le test conforme), autres, sans_test (le réel sans test, avec son motif), et reel_ferme (pourquoi le réel n'est pas ouvert)",
         refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -67,16 +68,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Deposer,
         geste: "Déposer la DSN ou la DPAE du mois : en test, ou en réel après son test.",
-        charge: &[
-            QUOI,
-            MOIS,
-            ETABLISSEMENT,
-            ENGAGEMENTS,
-            SIGNALEMENT,
-            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::MODES), sens: "test, ou reel : le dépôt réel (le mot de passe du logiciel, tapé par un humain au moment de l'acte)", avance: false },
-            Champ { nom: "forcer", libelle: Affiche::new("Annule et remplace"), forme: Forme::OuiNon, sens: "vrai : l'annule-et-remplace d'une DSN déjà déposée, après l'avertissement", avance: true },
-            Champ { nom: "contournement", libelle: Affiche::new("Motif d'un dépôt réel sans test"), forme: Forme::Texte, sens: "le motif écrit d'un dépôt réel sans test", avance: true },
-        ],
+        charge: &ChargeDeposer::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
         rend: "le dépôt : accepté ou non, le retour de l'organisme, ses suites (chaque demande de taux), phrase, avis (l'encart à montrer après la DSN réelle d'un mois qui a des salariés)",
         refus: &[
@@ -89,12 +81,13 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 400,
-        ecran: ECRAN,
+        // `depot-apercu` la rend en gestes (`depots_ouverts`).
+        ecran: Ecran::Geste(Place::Paie),
     },
     Fiche {
         route: Route::SuivreDepot,
         geste: "Après un dépôt réel, relever les retours et dire s'il est passé ou refusé.",
-        charge: &[QUOI, Champ { nom: "flux", libelle: Affiche::new("Flux"), forme: Forme::Texte, sens: "le flux du dépôt, tel que deposer le rend", avance: false }, MOIS],
+        charge: &ChargeSuivre::CHARGE,
         exemple: r#"{"quoi":"dpae"}"#,
         rend: "fini, passe, refuse, a_dire (ce que le relevé a à dire : incidents, a_faire), phrase et couleur",
         refus: &[MANQUE],
@@ -106,7 +99,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::BilanRepetition,
         geste: "Dire où en est le test de la DSN ou de la DPAE ; chercher son compte rendu.",
-        charge: &[QUOI, MOIS, ETABLISSEMENT, ENGAGEMENTS, SIGNALEMENT],
+        charge: &Designation::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
         rend: "etat (testee : le réel peut partir ; en_test ; test_refuse, et son motif ; ecrite), titre et phrase de l'encart, conforme, a_dire (ce que le relevé a à dire : incidents, a_faire)",
         refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
@@ -127,6 +120,21 @@ pub enum Quoi {
     Dsn,
 }
 
+impl socle::liste::ListeFermee for Quoi {
+    const TOUTES: &'static [Quoi] = &[Quoi::Dpae, Quoi::Dsn];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(match self {
+            Quoi::Dpae => "DPAE",
+            Quoi::Dsn => "DSN",
+        })
+    }
+}
+
 impl Quoi {
     /// Sa sorte au journal des envois.
     pub(crate) fn acte(self) -> documents::Acte {
@@ -145,21 +153,27 @@ pub(crate) struct EmbaucheDesignee {
     pub(crate) numero: NumeroContrat,
 }
 
-/// LA DESIGNATION D'UNE DECLARATION, la charge de `depot-apercu` et de `bilan-repetition` : la DSN ou la DPAE d'un mois
-/// (`mois`, et l'etablissement d'une DSN, les embauches d'une DPAE), ou un signalement ecrit (`fichier`). C'est aussi
-/// la charge du geste qui ouvre la boite du depot (`etapes::Action`).
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Designation {
-    pub(crate) quoi: Quoi,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) mois: Option<Mois>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) etablissement: Option<Nic>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) engagements: Option<Vec<EmbaucheDesignee>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) fichier: Option<PathBuf>,
+/// Dans une charge, elle se dit d'un objet (`{salarie, numero}`).
+impl ValeurDeLaCharge<ParSaForme> for EmbaucheDesignee {
+    const FORME: Forme = Forme::Objet;
+}
+
+charge! {
+    /// LA DESIGNATION D'UNE DECLARATION, la charge de `depot-apercu` et de `bilan-repetition` : la DSN ou la DPAE d'un
+    /// mois (`mois`, et l'etablissement d'une DSN, les embauches d'une DPAE), ou un signalement ecrit (`fichier`). C'est
+    /// aussi la charge du geste qui ouvre la boite du depot (`etapes::Action`).
+    #[derive(Debug, Clone, Serialize)]
+    pub struct Designation {
+        pub(crate) quoi: Quoi = QUOI,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) mois: Option<Mois> = legendes::MOIS,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) etablissement: Option<Nic> = ETABLISSEMENT,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) engagements: Option<Vec<EmbaucheDesignee>> = ENGAGEMENTS,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) fichier: Option<PathBuf> = SIGNALEMENT,
+    }
 }
 
 impl Designation {
@@ -179,26 +193,28 @@ impl Designation {
     }
 }
 
-/// La charge de `deposer` : la designation, et ce que le depot demande (le reel, l'annule-et-remplace voulu, le motif
-/// d'un reel sans test) ; absents, ils ne sont pas demandes. Le mot de passe du logiciel est a l'enveloppe.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeDeposer {
-    quoi: Quoi,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mois: Option<Mois>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    etablissement: Option<Nic>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    engagements: Option<Vec<EmbaucheDesignee>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mode: Option<Mode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    forcer: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    contournement: Option<String>,
+charge! {
+    motdepasse = crate::declaration::dit("Mot de passe du logiciel", "pour un dépôt réel : le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
+    /// La charge de `deposer` : la designation, et ce que le depot demande (le reel, l'annule-et-remplace voulu, le
+    /// motif d'un reel sans test) ; absents, ils ne sont pas demandes. Le mot de passe du logiciel est a l'enveloppe.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeDeposer {
+        quoi: Quoi = QUOI,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mois: Option<Mois> = legendes::MOIS,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        etablissement: Option<Nic> = ETABLISSEMENT,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        engagements: Option<Vec<EmbaucheDesignee>> = ENGAGEMENTS,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        fichier: Option<PathBuf> = SIGNALEMENT,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mode: Option<Mode> = dit("Test ou réel", "le réel demande le mot de passe du logiciel, tapé par un humain au moment de l'acte"),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        forcer: Option<bool> = dit("Annule et remplace", "vrai : l'annule-et-remplace d'une DSN déjà déposée, après l'avertissement").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        contournement: Option<String> = dit("Motif d'un dépôt réel sans test", "le motif écrit d'un dépôt réel sans test").avancee().longue(),
+    }
 }
 
 /// Le depot d'une declaration tel qu'un programme le demande a la route `deposer` : sa charge, et le mot de passe du
@@ -215,20 +231,72 @@ pub(crate) struct DepotDemande {
 impl ChargeDeposer {
     /// Le depot de la declaration `d`, reel ou de test, sous le mot de passe tape.
     pub(crate) fn de(d: Designation, mode: Mode, motdepasse: Option<socle::secret::Secret>) -> DepotDemande {
+        DepotDemande { charge: ChargeDeposer::du_mode(d, mode), motdepasse }
+    }
+
+    /// Le depot de la declaration `d` en `mode`, sans rien de plus demande.
+    fn du_mode(d: Designation, mode: Mode) -> ChargeDeposer {
         let Designation { quoi, mois, etablissement, engagements, fichier } = d;
-        DepotDemande { charge: ChargeDeposer { quoi, mois, etablissement, engagements, fichier, mode: Some(mode), forcer: None, contournement: None }, motdepasse }
+        ChargeDeposer { quoi, mois, etablissement, engagements, fichier, mode: Some(mode), forcer: None, contournement: None }
     }
 }
 
-/// La charge de `suivre-depot` : ce qui est parti (`flux`, tel que `deposer` le rend ; absent, tout flux) et son mois.
-/// Le depot groupe de l'administrateur la rend pour chaque declaration partie en reel (`administrateur::ASuivre`).
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeSuivre {
-    pub(crate) quoi: Quoi,
-    /// Tel que `deposer` le rend : `null` quand le depot n'a pas de flux.
-    pub(crate) flux: Option<envois::retours::IdDeFlux>,
-    pub(crate) mois: Option<Mois>,
+/// Un depot que la boite du depot ouvre : un geste de la route `deposer`.
+pub(crate) type GesteDuDepot = crate::imprevus::GesteDeRoute<ChargeDeposer>;
+
+// Les libelles des depots, en constantes : un texte fautif ne compile pas (`Affiche::new`).
+const ENVOYER_LE_TEST: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer le test");
+const ENVOYER_LE_REEL: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer le réel");
+const SANS_TEST: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Envoyer sans test");
+
+/// LES DEPOTS OUVERTS MAINTENANT pour la declaration `d`, dans l'ordre de la boite : le principal, les autres, le reel
+/// sans test, et pourquoi le reel n'est pas ouvert quand il ne l'est pas. Le test s'ouvre toujours ; le reel, pour un
+/// fichier code reel (`mode`), quand le test de ce contenu est revenu conforme (`testee`) -- c'est ce que `deposer`
+/// exige avant tout depot reel (`depot_acte::exiger_repetition`) -- et il devient le principal ; avant, le reel part sans
+/// test avec un motif ecrit. `demande` : le mot de passe du logiciel que le reel exige.
+fn depots_ouverts(
+    d: &Designation,
+    mode: Option<Mode>,
+    testee: bool,
+    demande: &compagnie::demande::DemandeDuMotDePasse,
+) -> (GesteDuDepot, Vec<GesteDuDepot>, Option<GesteDuDepot>, Option<Phrase>) {
+    let test = GesteDuDepot::sans_cases(Route::Deposer, ChargeDeposer::du_mode(d.clone(), Mode::Test), ENVOYER_LE_TEST);
+    if mode != Some(Mode::Reel) {
+        return (test, Vec::new(), None, None);
+    }
+    let reel = ChargeDeposer::du_mode(d.clone(), Mode::Reel);
+    if !testee {
+        let sans_test = GesteDuDepot::avec_cases(
+            Route::Deposer,
+            reel,
+            SANS_TEST,
+            vec![crate::declaration::cle!(ChargeDeposer, contournement)],
+            crate::imprevus::ValeursDeDepart::default(),
+            crate::imprevus::ChoixDesCases::default(),
+        )
+        .disant(vec![
+            "Ce contenu n'est pas revenu conforme d'un test.".to_string(),
+            "Si le service de test est indisponible et que l'échéance ne peut pas attendre, le réel part avec un motif écrit (dix caractères au moins) : ce qui empêchait le test, noté au journal des dépôts.".to_string(),
+        ])
+        .exigeant(Some(demande.clone()));
+        return (test, Vec::new(), Some(sans_test), Some(Phrase::fixe("Le réel s'ouvre quand le test de ce contenu revient conforme.")));
+    }
+    // Une DSN reelle deja partie pour ce mois : c'est `deposer` qui le refuse (`DsnDejaDeposee`), a lui seul ; le renvoi
+    // ne s'offre jamais d'avance.
+    let principal = GesteDuDepot::sans_cases(Route::Deposer, reel, ENVOYER_LE_REEL);
+    (principal.exigeant(Some(demande.clone())), vec![test], None, None)
+}
+
+charge! {
+    /// La charge de `suivre-depot` : ce qui est parti (`flux`, tel que `deposer` le rend ; absent, tout flux) et son
+    /// mois. Le depot groupe de l'administrateur la rend pour chaque declaration partie en reel (`administrateur::ASuivre`).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeSuivre {
+        pub(crate) quoi: Quoi = QUOI,
+        /// Tel que `deposer` le rend : `null` quand le depot n'a pas de flux.
+        pub(crate) flux: Option<envois::retours::IdDeFlux> = dit("Flux", "le flux du dépôt, tel que deposer le rend"),
+        pub(crate) mois: Option<Mois> = legendes::MOIS,
+    }
 }
 
 /// Le depot reel d'une DSN, tel que la demande du mot de passe le dit : sa nature, et son mois, ou le jour de
@@ -259,6 +327,14 @@ pub(crate) struct Dit<A> {
     phrases: Vec<Phrase>,
     avertissements: Vec<String>,
     informations: Vec<String>,
+    /// Les depots ouverts maintenant (`depots_ouverts`) : le principal, les autres, le reel sans test.
+    principal: GesteDuDepot,
+    autres: Vec<GesteDuDepot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sans_test: Option<GesteDuDepot>,
+    /// Pourquoi le reel n'est pas ouvert, quand il ne l'est pas pour un fichier code reel.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reel_ferme: Option<Phrase>,
     #[serde(flatten)]
     apercu: A,
 }
@@ -1166,7 +1242,9 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
                 None => socle::phrase!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
             };
             let demande = crate::coffre::demande(&ctx.racine, &geste_dsn(a.nature_declaration, a.mois, a.evenement))?;
-            DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
+            let testee = a.repetition.ouvre_le_reel();
+            let (principal, autres, sans_test, reel_ferme) = depots_ouverts(&d, a.mode, testee, &demande);
+            DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, principal, autres, sans_test, reel_ferme, apercu: a })
         }
         Quoi::Dpae => {
             let a = apercu_depot_dpae(ctx, &fichier)?;
@@ -1178,7 +1256,9 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
                 (None, None) => socle::phrase!("DPAE : {}.", embauches),
             };
             let demande = crate::coffre::demande(&ctx.racine, &geste_dpae(a.mois))?;
-            DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
+            let testee = a.repetition.ouvre_le_reel();
+            let (principal, autres, sans_test, reel_ferme) = depots_ouverts(&d, a.mode, testee, &demande);
+            DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, principal, autres, sans_test, reel_ferme, apercu: a })
         }
     };
     // Les phrases de ses parties (le remplacement, le recapitulatif, le test), a la suite de la sienne. Celles de ses
@@ -1200,11 +1280,13 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
     match &mut a {
         DepotApercu::Dsn(dit) => {
             lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
+            lignes.extend(dit.reel_ferme.clone());
             dit.encarts = encarts;
             dit.phrases = lignes;
         }
         DepotApercu::Dpae(dit) => {
             lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
+            lignes.extend(dit.reel_ferme.clone());
             dit.encarts = encarts;
             dit.phrases = lignes;
         }

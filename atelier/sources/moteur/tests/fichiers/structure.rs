@@ -146,6 +146,10 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
         for c in f["charge"].as_array().unwrap() {
             voir(format!("le libellé de {}.{}", nom, c["nom"].as_str().unwrap()), c["libelle"].as_str().unwrap(), COURT, true);
+            // Les valeurs d'une liste fermee, telles que leur type les dit (`socle::liste::ListeFermee`).
+            for v in c["choix"].as_array().into_iter().flatten() {
+                voir(format!("{}.{} : le choix « {} »", nom, c["nom"].as_str().unwrap(), v["code"].as_str().unwrap()), v["libelle"].as_str().unwrap(), CHOIX, false);
+            }
         }
         // Les cases de la carte, telles que la page les montre (`natures[].cases`, et celles qu'un motif de recours porte).
         for n in f["natures"].as_array().unwrap() {
@@ -477,8 +481,8 @@ fn le_catalogue_est_range() {
     use routes::catalogue::{Acte, Ecran, Forme, FICHES};
     for f in catalogue() {
         match f.ecran {
-            Ecran::Auto(..) => assert!(f.charge.iter().all(|c| c.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
-            Ecran::Lecture | Ecran::LectureAvancee => assert!(f.acte == Acte::Lit, "{} est une lecture et écrit", f.nom()),
+            Ecran::Auto(..) => assert!(f.charge.champs.iter().all(|c| c.champ.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
+            Ecran::Rendu(_) | Ecran::Lecture | Ecran::LectureAvancee => assert!(f.acte == Acte::Lit, "{} est une lecture et écrit", f.nom()),
             _ => {}
         }
     }

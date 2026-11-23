@@ -12,24 +12,36 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use compagnie::incidents::{self, BilanIncidents, Ligne, Nature, Paquet, PourLEditeur, DEPOSE, EN_ATTENTE};
 use compagnie::nombre_de_paies::{AnneePartie, ContenuParti};
 use compagnie::problemes::{self, Apercu, BilanMessages, CaptureDeLaPage, EtatDuMessage, SignalementVu};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, OPERATION};
+use crate::catalogue::{Acte, Affiche, Fiche, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
+use crate::declaration::{charge, dit, ChampDuType, ChargeDuType, Legende};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use socle::echec::{Classe, R};
 use socle::paris::Moment;
 
-const TEXTE: Champ = Champ { nom: "texte", libelle: Affiche::new("Message"), forme: Forme::Texte, sens: "le message, en mots", avance: false };
-const OU: Champ = Champ { nom: "ecran", libelle: Affiche::new("Où l'on était"), forme: Forme::Texte, sens: "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)", avance: false };
-const CAPTURES: Champ = Champ { nom: "captures", libelle: Affiche::new("Captures"), forme: Forme::Objet, sens: "[{type, donnees}] : des images en base64", avance: true };
-const QUOI: Champ = Champ { nom: "quoi", libelle: Affiche::new("Nature"), forme: Forme::Texte, sens: "une seule nature d'incident ; toutes sinon", avance: true };
+const QUOI: Legende = dit("Nature", "une seule nature d'incident ; toutes sinon").avancee();
+// La charge de `incident-navigateur`, champ par champ : sa structure est celle du journal des incidents
+// (`compagnie::incidents::RapportNavigateur`), d'une autre crate que `charge!`.
+const CHARGE_INCIDENT_NAVIGATEUR: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, String>("genre", dit("Genre", "le genre de l'erreur (TypeError…)")),
+        ChampDuType::du_type::<_, String>("message", dit("Ce que la page a vu", "ce que la page a vu")),
+        ChampDuType::du_type::<_, Option<String>>("fichier", dit("Fichier", "le fichier de la page, quand elle le sait")),
+        ChampDuType::du_type::<_, Option<u64>>("ligne", dit("Ligne", "sa ligne, quand elle la sait")),
+        ChampDuType::du_type::<_, Option<u64>>("colonne", dit("Colonne", "sa colonne, quand elle la sait")),
+        ChampDuType::du_type::<_, Option<String>>("pile", dit("Pile", "la pile des appels ; une ressource absente n'en a pas")),
+        ChampDuType::du_type::<_, incidents::CanalDeLaPage>("canal", dit("Canal", "par où la page l'a vu casser")),
+        ChampDuType::du_type::<_, String>("ou_dans_la_page", dit("Écran", "l'écran de la page où c'est arrivé")),
+    ],
+};
 const DIAGNOSTIC_REND: &str = "envoi (vrai : actif), total, en_attente, groupes (ce qui part, mot pour mot), pastille";
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -40,7 +52,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementApercu,
         geste: "Montrer, mot pour mot, ce qu'un message au développeur emporterait.",
-        charge: &[TEXTE, OU, CAPTURES],
+        charge: &ChargeMessage::CHARGE,
         exemple: r#"{"texte":"La phrase de la DSN est coupée.","ecran":"Paie, novembre 2026"}"#,
         rend: "corps (ce qui part), caviarde, serveur, captures, incidents",
         refus: &[OPERATION, FORME],
@@ -52,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementEnvoyer,
         geste: "Écrire au développeur (un problème, une idée) ; le message part seul.",
-        charge: &[TEXTE, OU, CAPTURES],
+        charge: &ChargeMessage::CHARGE,
         exemple: r#"{"texte":"La phrase de la DSN est coupée.","ecran":"Paie, novembre 2026"}"#,
         rend: "signalements (chacun son état et son départ)",
         refus: &[OPERATION, FORME],
@@ -64,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Signalements,
         geste: "Dire les messages écrits au développeur, et ses réponses.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "signalements (chacun son état, sa pastille, ses réponses)",
         refus: &[OPERATION],
@@ -76,7 +88,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementsLus,
         geste: "Marquer lues les réponses du développeur.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "lues (le nombre marqué)",
         refus: &[OPERATION],
@@ -88,7 +100,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignalementsPartir,
         geste: "Faire partir chez le développeur les messages qui attendent.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "le bilan du passage (partis, reste, erreur, occupe), phrase ; ne refuse jamais",
         refus: &[OPERATION],
@@ -100,7 +112,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentNavigateur,
         geste: "Noter ce qui a cassé dans la page.",
-        charge: &[Champ { nom: "message", libelle: Affiche::new("Ce que la page a vu"), forme: Forme::Texte, sens: "ce que la page a vu (et genre, fichier, ligne, colonne, pile, canal, ou_dans_la_page)", avance: false }],
+        charge: &CHARGE_INCIDENT_NAVIGATEUR,
         exemple: r#"{"genre":"TypeError","message":"exemple","canal":"erreur","ou_dans_la_page":"paie"}"#,
         rend: "note (vrai : noté), empreinte",
         refus: &[OPERATION],
@@ -112,43 +124,43 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DiagnosticEtat,
         geste: "Dire ce qui est parti chez le développeur, et ce qui attend.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: DIAGNOSTIC_REND,
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Signaler),
+        ecran: Ecran::Auto(Place::Signaler, Affiche::new("Voir ce qui est parti")),
     },
     Fiche {
         route: Route::DiagnosticEnvoyer,
         geste: "Envoyer au développeur les incidents qui attendent.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "ce que diagnostic-etat rend, bilan et couleur",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Signaler),
+        ecran: Ecran::Auto(Place::Signaler, Affiche::new("Envoyer maintenant ce qui attend")),
     },
     Fiche {
         route: Route::DiagnosticRegler,
         geste: "Couper l'envoi des incidents au développeur, ou le rétablir.",
-        charge: &[Champ { nom: "actif", libelle: Affiche::new("Envoyer les incidents"), forme: Forme::OuiNon, sens: "vrai : les envoyer", avance: false }],
+        charge: &ChargeRegler::CHARGE,
         exemple: r#"{"actif":true}"#,
         rend: DIAGNOSTIC_REND,
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Signaler),
+        ecran: Ecran::Auto(Place::Signaler, Affiche::new("Régler l'envoi des incidents")),
     },
     Fiche {
         route: Route::IncidentsLire,
         geste: "Lire les incidents gardés sur le poste.",
-        charge: &[QUOI, Champ { nom: "en_attente", libelle: Affiche::new("Seulement ceux qui attendent"), forme: Forme::OuiNon, sens: "vrai : seulement ceux qui ne sont pas partis", avance: true }],
+        charge: &ChargeIncidents::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase, phrases (une par incident), lignes (les plus récentes en dernier)",
         refus: &[OPERATION],
@@ -160,7 +172,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentsRegrouper,
         geste: "Regrouper les incidents gardés, le plus fréquent en tête.",
-        charge: &[QUOI],
+        charge: &ChargeNature::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase, phrases (une par paquet), paquets",
         refus: &[OPERATION],
@@ -172,7 +184,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentsEnvoyer,
         geste: "Déposer chez le développeur les incidents qui attendent.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "envoyes, reste, erreur, occupe, phrase ; ne refuse jamais",
         refus: &[OPERATION],
@@ -184,7 +196,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::IncidentsOublier,
         geste: "Effacer les incidents gardés, tous ou d'une nature.",
-        charge: &[QUOI],
+        charge: &ChargeNature::CHARGE,
         exemple: r#"{"quoi":"logiciel"}"#,
         rend: "retires (le nombre), phrase",
         refus: &[OPERATION],
@@ -215,35 +227,39 @@ pub(crate) fn route_sans_compagnie(o: &super::enveloppe::Options, nom: Route, ch
 
 // ------------------------------------------------------------------ les charges
 
-/// La charge de `diagnostic-regler`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeRegler {
-    actif: bool,
+charge! {
+    /// La charge de `diagnostic-regler`.
+    #[derive(Debug)]
+    struct ChargeRegler {
+        actif: bool = dit("Envoyer les incidents", "vrai : les envoyer"),
+    }
 }
 
-/// La charge de `incidents-lire` : une seule nature, ou toutes ; ceux qui attendent seulement (absent : tous).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeIncidents {
-    quoi: Option<Nature>,
-    en_attente: Option<bool>,
+charge! {
+    /// La charge de `incidents-lire` : une seule nature, ou toutes ; ceux qui attendent seulement (absent : tous).
+    #[derive(Debug)]
+    struct ChargeIncidents {
+        quoi: Option<Nature> = QUOI,
+        en_attente: Option<bool> = dit("Seulement ceux qui attendent", "vrai : seulement ceux qui ne sont pas partis").avancee(),
+    }
 }
 
-/// La charge de `incidents-regrouper` et `incidents-oublier` : une seule nature, ou toutes.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeNature {
-    quoi: Option<Nature>,
+charge! {
+    /// La charge de `incidents-regrouper` et `incidents-oublier` : une seule nature, ou toutes.
+    #[derive(Debug)]
+    struct ChargeNature {
+        quoi: Option<Nature> = QUOI,
+    }
 }
 
-/// La charge d'un message au developpeur : son texte, ou l'on etait, ses captures.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeMessage {
-    texte: String,
-    ecran: Option<String>,
-    captures: Option<Vec<CaptureDeLaPage>>,
+charge! {
+    /// La charge d'un message au developpeur : son texte, ou l'on etait, ses captures.
+    #[derive(Debug)]
+    struct ChargeMessage {
+        texte: String = dit("Message", "le message, en mots"),
+        ecran: Option<String> = dit("Où l'on était", "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)"),
+        captures: Option<Vec<CaptureDeLaPage>> = dit("Captures", "[{type, donnees}] : des images en base64").avancee(),
+    }
 }
 
 impl ChargeMessage {
@@ -382,7 +398,6 @@ struct Diagnostic {
     paies_annuelles: Vec<AnneePartie>,
     groupes: Vec<Groupe>,
     pastille: Pastille,
-    ecran: EcranDuDiagnostic,
     #[serde(skip_serializing_if = "Option::is_none")]
     bilan: Option<BilanIncidents>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -624,7 +639,6 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let envoi = incidents::envoi(racine)?;
     let dernier_envoi = partis.into_iter().max();
     let total = lignes.len();
-    let ecran = ecran_du_diagnostic(envoi, &serveur, total, partis_total, dernier_envoi, annees.first());
     Ok(Diagnostic {
         phrase: socle::phrase!(
             "Signalement des dysfonctionnements : {} ; incidents gardés : {}, partis : {}, en attente : {}.",
@@ -642,7 +656,6 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
         dernier_envoi,
         paies_annuelles: annees,
         groupes: liste,
-        ecran,
         bilan: None,
         couleur: None,
     })
@@ -699,60 +712,6 @@ fn phrase_d_incident(l: &Ligne) -> String {
 /// Un paquet d'incidents semblables : combien, sa nature, ce qu'il dit, le dernier.
 fn phrase_de_paquet(p: &Paquet) -> String {
     format!("{} fois · {} · {} — le dernier le {}", p.combien, p.quoi.nom(), p.resume, p.derniere.dit())
-}
-
-/// La boite qui avertit avant de couper l'envoi.
-#[derive(Debug, Serialize)]
-struct Desactiver {
-    titre: &'static str,
-    phrase: &'static str,
-    note: &'static str,
-    question: &'static str,
-}
-
-/// CE QUE L'ECRAN DU FILET DIT (`ecran` des routes `diagnostic-*`) : la ligne de son etat, la boite qui avertit avant de
-/// couper l'envoi, et celle qui montre ce qui est parti.
-#[derive(Debug, Serialize)]
-struct EcranDuDiagnostic {
-    compte: Option<String>,
-    couper: &'static str,
-    desactiver: Desactiver,
-    parti: String,
-    rien: &'static str,
-}
-
-fn ecran_du_diagnostic(envoi: bool, serveur: &socle::garde_reseau::Url,total: usize, partis: u64, dernier_envoi: Option<Moment>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
-    let mut compte = match (envoi, dernier_envoi) {
-        (false, _) => Some("désactivé : les incidents restent sur cet ordinateur, rien ne part".to_string()),
-        (true, Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, d.dit())),
-        (true, None) if total > 0 => Some("rien n'est encore parti".to_string()),
-        (true, None) => None,
-    };
-    if let (true, Some(a)) = (envoi, annee) {
-        let mut paies = format!("nombre de paies de {}", a.annee);
-        if let Some(q) = a.parti_le {
-            paies.push_str(&format!(" parti le {}", q.dit()));
-        }
-        compte = Some(match compte {
-            Some(c) => format!("{} · {}", c, paies),
-            None => paies,
-        });
-    }
-    EcranDuDiagnostic {
-        compte,
-        couper: if envoi { "Désactiver" } else { "Réactiver" },
-        desactiver: Desactiver {
-            titre: "Désactiver le signalement des dysfonctionnements ?",
-            phrase: "Si vous le désactivez, l'éditeur ne verra plus les problèmes de votre logiciel, et risque de ne pas pouvoir les corriger avant qu'ils vous arrivent, ou qu'ils arrivent à d'autres compagnies. Il ne saura plus non plus combien de paies PuppetPaie fait chez vous : le logiciel est gratuit, c'est sa seule façon de savoir s'il sert.",
-            note: "Ce qui part : chaque dysfonctionnement avec de quoi le reproduire (ce que le logiciel faisait, ses données, les 3 minutes d'avant, cet ordinateur), et une fois par an, à partir du 16 janvier, le nombre de paies faites l'année précédente. Les noms, NIR, adresses, IBAN et coordonnées de vos salariés n'en partent pas : ils sont remplacés par leur forme. Les incidents resteront notés sur cet ordinateur, et vous pourrez réactiver l'envoi à tout moment.",
-            question: "Voulez-vous vraiment continuer ?",
-        },
-        parti: format!(
-            "Quand quelque chose casse, PuppetPaie le note et l'envoie au serveur de l'éditeur, pour qu'il le corrige. Une fois par an, à partir du 16 janvier, il envoie aussi le nombre de paies faites l'année précédente : le logiciel est gratuit, c'est la seule façon pour l'éditeur de savoir s'il sert. Ce qui part est affiché ici tel quel : ce que le logiciel faisait et ses données (montants, dates, codes, spectacles, lieux), ce que vous et le logiciel avez fait les 3 minutes d'avant, et cet ordinateur (système, version, mémoire, disque, écran). Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones des salariés sont remplacés par leur forme (« salarié n°2 », « NIR présent, clé valide ») ; la compagnie n'est pas nommée et le poste est désigné par un numéro tiré au hasard. Serveur : {}.",
-            serveur
-        ),
-        rien: "Rien n'a été noté.",
-    }
 }
 
 /// CE QUE LA BOITE « Un problème, une idée ? » DIT (`ecran` de `signalements` et `signalement-envoyer`) : la question, les

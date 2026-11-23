@@ -24,17 +24,20 @@ pub struct Mois {
 /// Les trois graphies d'un nom de mois que le moteur ecrit, chacune la ou elle s'ecrivait deja :
 /// - `Titre` (« Aout ») : noms de fichiers (`DSN_Aout2026.dsn`), titres et sections des etats ;
 /// - `Minuscule` (« aout ») : sans accent, dans une phrase (le libelle d'un mois d'engagement, d'un dossier) ;
-/// - `Accentuee` (« août ») : dans une phrase en francais (courriels, contrats, avenants, ecrans).
+/// - `Accentuee` (« août ») : dans une phrase en francais (courriels, contrats, avenants, ecrans) ;
+/// - `Abregee` (« janv. ») : sous les jours d'une carte de la page Paie (une carte importee).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Graphie {
     Titre,
     Minuscule,
     Accentuee,
+    Abregee,
 }
 
 const MOIS_TITRE: [&str; 12] = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"];
 const MOIS_MINUSCULE: [&str; 12] = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
 const MOIS_ACCENTUE: [&str; 12] = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const MOIS_ABREGE: [&str; 12] = ["janv.", "févr.", "mars", "avril", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
 
 /// UNE ANNEE OU UN MOIS QU'UN TEXTE DEPOSE FIXE, ecrit dans le code : `socle::annee!("2026")`, `socle::mois!("2026-03")`.
 /// Le texte est une constante (`TEXTE`), lue a la compilation : aucun texte lu a l'execution ne devient une annee ou un
@@ -304,6 +307,7 @@ impl MoisDeLAnnee {
             Graphie::Titre => &MOIS_TITRE,
             Graphie::Minuscule => &MOIS_MINUSCULE,
             Graphie::Accentuee => &MOIS_ACCENTUE,
+            Graphie::Abregee => &MOIS_ABREGE,
         };
         table[(self.0 - 1) as usize]
     }
@@ -459,6 +463,95 @@ impl<'de> serde::Deserialize<'de> for Annee {
             }
             false => Annee::nouvelle(<i64 as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom),
         }
+    }
+}
+
+/// LA PERIODE DEMANDEE : un mois, une annee, ou toutes les annees (ce qu'un etat exporte, ce que porte le dossier d'un
+/// salarie). Elle s'ecrit en un texte et se lit de lui, a sa porte : `AAAA-MM` (un mois), `AAAA` (une annee), `toutes` ;
+/// tout autre texte se refuse en le disant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeriodeDemandee {
+    Mois(Mois),
+    Annee(Annee),
+    Toutes,
+}
+
+/// Le texte de toutes les annees.
+const TOUTES: &str = "toutes";
+
+impl PeriodeDemandee {
+    /// La periode ecrite `AAAA-MM`, `AAAA` ou `toutes` ; toute autre forme se refuse.
+    pub(crate) fn lire(texte: &str) -> R<PeriodeDemandee> {
+        let b = texte.as_bytes();
+        if texte == TOUTES {
+            Ok(PeriodeDemandee::Toutes)
+        } else if b.len() == 4 && b.iter().all(u8::is_ascii_digit) {
+            Ok(PeriodeDemandee::Annee(Annee::nouvelle(texte.parse().map_err(|_| refus(crate::date::HORS_CALENDRIER))?)?))
+        } else if b.len() == 7 {
+            Ok(PeriodeDemandee::Mois(Mois::lire(texte)?))
+        } else {
+            Err(refus(format!("période illisible : {} (attendu : un mois AAAA-MM, une année AAAA, ou toutes)", repr_texte(texte))))
+        }
+    }
+
+    /// La periode que disent le mois, l'annee et « toutes les annees » d'une demande qui les porte a part : une seule des
+    /// trois, sinon le refus `phrase`.
+    pub fn des_trois(mois: Option<Mois>, annee: Option<Annee>, toutes: bool, phrase: &str) -> R<PeriodeDemandee> {
+        match (mois, annee, toutes) {
+            (Some(m), None, false) => Ok(PeriodeDemandee::Mois(m)),
+            (None, Some(a), false) => Ok(PeriodeDemandee::Annee(a)),
+            (None, None, true) => Ok(PeriodeDemandee::Toutes),
+            _ => Err(refus(phrase)),
+        }
+    }
+
+    /// Le mois, l'annee et « toutes les annees », tels qu'une demande qui les porte a part les prend.
+    pub fn en_trois(&self) -> (Option<Mois>, Option<Annee>, bool) {
+        match self {
+            PeriodeDemandee::Mois(m) => (Some(*m), None, false),
+            PeriodeDemandee::Annee(a) => (None, Some(*a), false),
+            PeriodeDemandee::Toutes => (None, None, true),
+        }
+    }
+
+    /// Le mois `m` est-il de la periode ?
+    pub fn contient(&self, m: Mois) -> bool {
+        match self {
+            PeriodeDemandee::Toutes => true,
+            PeriodeDemandee::Mois(u) => m == *u,
+            PeriodeDemandee::Annee(a) => Annee::du_mois(m) == *a,
+        }
+    }
+
+    /// Ce qui entre dans le nom d'un fichier d'export.
+    pub fn nom(&self) -> crate::fichiers::NomDeFichier {
+        match self {
+            PeriodeDemandee::Toutes => const { crate::fichiers::NomDeFichier::du_moteur("toutes-les-annees") },
+            PeriodeDemandee::Mois(m) => crate::fichiers::NomDeFichier::from(*m),
+            PeriodeDemandee::Annee(a) => crate::fichiers::NomDeFichier::from(*a),
+        }
+    }
+}
+
+impl std::fmt::Display for PeriodeDemandee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PeriodeDemandee::Mois(m) => write!(f, "{}", m),
+            PeriodeDemandee::Annee(a) => write!(f, "{}", a),
+            PeriodeDemandee::Toutes => f.write_str(TOUTES),
+        }
+    }
+}
+
+impl serde::Serialize for PeriodeDemandee {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PeriodeDemandee {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<PeriodeDemandee, D::Error> {
+        PeriodeDemandee::lire(&String::deserialize(d)?).map_err(serde::de::Error::custom)
     }
 }
 

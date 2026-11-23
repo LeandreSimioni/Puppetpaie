@@ -1,17 +1,15 @@
 /* Les dates en francais : les tables des mois, et tout ce qui ecrit un mois ou un jour. */
 "use strict";
 
-/* LES TABLES DES MOIS. Trois, et pas une : elles ne disent pas la meme chose.
+/* LES TABLES DES MOIS. Deux, et pas une : elles ne disent pas la meme chose.
    MOIS_FR, le nom entier (« juillet 2021 », le titre de la case du mois).
    MOIS_ABR, l'abreviation (« +1 nov. » du planning, la grille des mois, le
-   calendrier des exports). MOIS_COURTS, la carte d'un engagement valide, sous les
-   jours : elle ne differe de MOIS_ABR que par « avril », ecrit en entier. */
+   calendrier des exports). Le mois d'une carte fermee, la route le dit
+   (`quand`). */
 const MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
                  "août", "septembre", "octobre", "novembre", "décembre"];
 const MOIS_ABR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août",
                   "sept.", "oct.", "nov.", "déc."];
-const MOIS_COURTS = ["janv.", "févr.", "mars", "avril", "mai", "juin", "juil.",
-  "août", "sept.", "oct.", "nov.", "déc."];
 
 /* Les jours de la semaine, en tête des calendriers (le planning d'un bloc),
    du lundi au dimanche. */
@@ -68,7 +66,10 @@ function jjmmaaaa(iso) {
 }
 
 /** Les jours d'un mois, en clair et au plus court : « 6 », « 21–23 »,
- *  « 14 · 15 · 17 · 18 ». Des jours qui se suivent font une plage. */
+ *  « 14 · 15 · 17 · 18 ». Des jours qui se suivent font une plage. Seul le
+ *  bouton d'un calendrier où l'on coche les dit ainsi, au fil des clics
+ *  (`joursDits`) ; une carte fermée a les siens de sa route
+ *  (`socle::ecran::QuandDeLaCarte`). */
 function joursEnClair(isos) {
   const j = [...new Set(isos)].sort().map((x) => parseInt(x.slice(8, 10), 10));
   if (!j.length) return "";

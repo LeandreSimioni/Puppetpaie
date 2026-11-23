@@ -1199,11 +1199,11 @@
    "ecran": true
   },
   {
-   "note": "LE MODELE DU BULLETIN. Deux modeles : << simplifié >>, le bulletin clarifie du modele de l'arrete du 25/02/2016 (art. 1, I), et << complet >>, le meme bulletin suivi d'une page annexe qui detaille chaque cotisation (base, taux et montant des deux parts) sous la ligne du bulletin qui la regroupe : la FAQ du BOSS sur le bulletin, Q 10, n'admet pas plus de detail dans la rubrique des obligatoires et l'admet << au verso du bulletin de paie ou bien sur un document annexe >> (atelier/reference/sources/montant-net-social/boss-regles-generales-bulletin-de-paie-20250207-archive-web.txt). `bulletin::modele_du_bulletin`. La compagnie choisit pour tous, dans Configuration, a cote de l'apercu des deux modeles (`bulletin-modeles`, `bulletin-modele-choisir`) : la case ne se montre pas dans la fiche. Vide : le simplifie.",
+   "note": "LE MODELE DU BULLETIN. Deux modeles : << simplifié >>, le bulletin clarifie du modele de l'arrete du 25/02/2016 (art. 1, I), et << complet >>, le meme bulletin suivi d'une page annexe qui detaille chaque cotisation (base, taux et montant des deux parts) sous la ligne du bulletin qui la regroupe : la FAQ du BOSS sur le bulletin, Q 10, n'admet pas plus de detail dans la rubrique des obligatoires et l'admet << au verso du bulletin de paie ou bien sur un document annexe >> (atelier/reference/sources/montant-net-social/boss-regles-generales-bulletin-de-paie-20250207-archive-web.txt). `bulletin::modele_du_bulletin`. La compagnie choisit pour tous, ici : la route `fiche` rend les deux modeles en boutons, chacun avec son bulletin d'exemple (`bulletin-modele-apercu`), et sans choix ecrit montre le simplifie choisi sans l'ecrire (`routes::fiches::rendue`). Vide : le simplifie.",
    "cle": "modele_bulletin", "bloc": "La compagnie", "largeur": "pleine",
    "libelle": "Modèle du bulletin de paie",
    "forme": "choix",
-   "aide": "Le modèle de bulletin que la compagnie remet à tous ses salariés : « simplifié » (le bulletin clarifié du modèle réglementaire, cotisations regroupées) ou « complet » (le même, suivi d'une page annexe qui détaille chaque cotisation et contribution, avec le taux de la part de l'employeur). Il se choisit dans Configuration, à côté de l'aperçu des deux modèles.",
+   "aide": "Le modèle de bulletin que la compagnie remet à tous ses salariés : « simplifié » (le bulletin clarifié du modèle réglementaire, cotisations regroupées) ou « complet » (le même, suivi d'une page annexe qui détaille chaque cotisation et contribution, avec le taux de la part de l'employeur). « voir l'exemple » ouvre un bulletin d'exemple de chacun.",
    "choix": [
     "",
     "simplifié",
@@ -1217,7 +1217,7 @@
    "si": null,
    "si_etablissements": false,
    "si_entreprise": null,
-   "ecran": false
+   "ecran": true
   },
   {
    "note": "LES CONSEILS « LE SAVIEZ-VOUS ? » : une option, decochee par defaut ; sans elle, rien ne s'affiche nulle part. Cochee : un conseil general a l'accueil, un conseil sous la carte d'engagement quand un fait de la saisie l'appelle, ce que la compagnie a fait pour le salarie dans sa fiche. La banque : donnees/conseils.json ; les conditions : moteur/src/compagnie/conseils.rs.",
@@ -2353,7 +2353,7 @@
    "cle": "modele_bulletin", "bloc": "Cas particuliers", "largeur": "demie",   "avance": "cas_particulier",
    "libelle": "Modèle de bulletin demandé par le salarié",
    "forme": "choix",
-   "aide": "À laisser vide dans le cas ordinaire : le salarié reçoit le modèle de bulletin choisi par la compagnie (Configuration). Si ce salarié demande l'autre modèle, le choisir ici : « simplifié » (cotisations regroupées, le modèle réglementaire) ou « complet » (le même, suivi d'une page annexe qui détaille chaque cotisation et contribution, avec le taux de la part de l'employeur). Ses bulletins suivants le suivent ; ceux déjà remis ne changent pas.",
+   "aide": "À laisser vide dans le cas ordinaire : le salarié reçoit le modèle de bulletin choisi par la compagnie (fiche Entreprise). Si ce salarié demande l'autre modèle, le choisir ici : « simplifié » (cotisations regroupées, le modèle réglementaire) ou « complet » (le même, suivi d'une page annexe qui détaille chaque cotisation et contribution, avec le taux de la part de l'employeur). Ses bulletins suivants le suivent ; ceux déjà remis ne changent pas.",
    "choix": [
     "",
     "simplifié",

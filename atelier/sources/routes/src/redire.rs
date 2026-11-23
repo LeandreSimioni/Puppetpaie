@@ -26,7 +26,7 @@ use crate::fiches::CaseDeLaFiche;
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::ValeursIllisibles,
     geste: "Dire les valeurs des fiches qui ne se lisent plus, à saisir de nouveau.",
-    charge: &[],
+    charge: &crate::SansCharge::CHARGE,
     exemple: r#"{}"#,
     rend: "valeurs (chacune : la fiche, le libellé de la case, ce qui est écrit, depuis quand, la case à saisir telle que la fiche la dessine, et la charge d'enregistrer-fiche qui la redit, la case saisie ou null pour la dire vide) ; titre, vide, enregistrer, confirmer (les boutons) ; phrase",
     refus: &[OPERATION],
@@ -171,13 +171,25 @@ pub(crate) fn refus_de_la_demande(ctx: &Contexte) -> R<Option<socle::echec::Eche
     Ok(phrase_d_attente(ctx, &en_attente_toutes(ctx), "la saisir de nouveau, puis recommencer.")?.map(|phrase| erreur(Classe::ValeurARedire, phrase)))
 }
 
-/// LA CHARGE D'`enregistrer-fiche` QUI REDIT UNE VALEUR, sans ses `changements` (la case saisie, ou `null`) : la fiche et sa
-/// cle.
+/// LA CHARGE D'`enregistrer-fiche` SANS SES `changements` (les cases saisies, `[{case, valeur}]`) : la fiche et sa cle.
+/// Ce qui redit une valeur illisible, ce qui enregistre une case de « Pour démarrer » (`rappels::ManqueVu`).
 #[derive(Debug, serde::Serialize)]
-struct ChargeDeLaReponse {
+pub(crate) struct ChargeDUneFiche {
     nom: NomDeFiche,
     #[serde(skip_serializing_if = "Option::is_none")]
     cle: Option<String>,
+}
+
+impl ChargeDUneFiche {
+    /// La charge de la fiche `f`.
+    pub(crate) fn de(f: &FicheNommee) -> ChargeDUneFiche {
+        let cle = match f {
+            FicheNommee::Entreprise => None,
+            FicheNommee::Salarie(k) => Some(k.to_string()),
+            FicheNommee::Spectacle(k) => Some(k.to_string()),
+        };
+        ChargeDUneFiche { nom: f.nom(), cle }
+    }
 }
 
 /// UNE VALEUR A SAISIR DE NOUVEAU, telle que la demande la rend : sa phrase, sa fiche et le libelle de sa case en mots, ce
@@ -192,7 +204,7 @@ struct ValeurDemandee {
     ecrite: String,
     depuis: Option<Jour>,
     case: Option<CaseDeLaFiche>,
-    enregistrer: ChargeDeLaReponse,
+    enregistrer: ChargeDUneFiche,
 }
 
 /// CE QUE REND `valeurs-illisibles` : la phrase, chaque valeur (dans l'ordre des fichiers ; la page les demande une par
@@ -231,11 +243,6 @@ fn demande(ctx: &Contexte) -> R<ValeursIllisibles> {
             depuis_dit,
             ecrite
         );
-        let cle = match &a.fiche {
-            FicheNommee::Entreprise => None,
-            FicheNommee::Salarie(k) => Some(k.to_string()),
-            FicheNommee::Spectacle(k) => Some(k.to_string()),
-        };
         valeurs.push(ValeurDemandee {
             phrase,
             fiche: fiche_dite(ctx, &a.fiche),
@@ -244,7 +251,7 @@ fn demande(ctx: &Contexte) -> R<ValeursIllisibles> {
             ecrite,
             depuis: a.depuis,
             case: crate::fiches::case_a_redire(ctx, nom, a.case)?,
-            enregistrer: ChargeDeLaReponse { nom, cle },
+            enregistrer: ChargeDUneFiche::de(&a.fiche),
         });
     }
     let phrase = match valeurs.len() {

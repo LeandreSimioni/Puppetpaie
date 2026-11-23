@@ -148,12 +148,13 @@ pub fn question(racine: &Path) -> R<Suppression> {
     })
 }
 
-/// La charge de `compagnie-supprimer` : effacer (`confirme`), ou seulement dire ce qui sera efface. Le mot de passe du
-/// logiciel est celui de l'enveloppe (`Charge::mot_de_passe`).
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeSupprimer {
-    pub confirme: Option<bool>,
+crate::declaration::charge! {
+    motdepasse = crate::declaration::dit("Mot de passe du logiciel", "une compagnie réelle : le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain");
+    /// La charge de `compagnie-supprimer` : effacer (`confirme`), ou seulement dire ce qui sera efface.
+    #[derive(Debug)]
+    pub struct ChargeSupprimer {
+        pub confirme: Option<bool> = crate::declaration::dit("Effacer", "vrai : effacer ; sans lui, la route dit seulement ce qui sera effacé et ce qu'elle demande"),
+    }
 }
 
 /// La sauvegarde a proposer avant de supprimer une compagnie reelle : un Drive lie, la date du dernier passage, la phrase.
@@ -438,6 +439,13 @@ pub(crate) struct MentionDemo {
     gardee_le: socle::paris::Moment,
     mois: Vec<Mois>,
     phrase: String,
+}
+
+impl MentionDemo {
+    /// Sa phrase, quand `mois` a ete saisi en demo ; aucune sinon.
+    pub(crate) fn du_mois(&self, mois: Mois) -> Option<&str> {
+        self.mois.contains(&mois).then_some(self.phrase.as_str())
+    }
 }
 
 /// La mention de demo de la compagnie ; `None` : une compagnie qui n'a pas ete creee en demo.

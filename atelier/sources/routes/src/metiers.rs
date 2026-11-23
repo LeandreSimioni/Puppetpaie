@@ -7,8 +7,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalogue::{Acte, Affiche, Champ, Choix, Forme, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
 use crate::catalogue::Route;
+use crate::declaration::{charge, cle, dit, Legende};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::fiches::{creer_dossier, ecrire, refus};
 use crate::imprevus::GesteDeRoute;
@@ -27,7 +28,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::MetiersCatalogue,
         geste: "Dire les métiers du catalogue, ceux de la convention et les autres.",
-        charge: &[],
+        charge: &crate::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "metiers (le catalogue, chacun dit retenu ou non)",
         refus: &[OPERATION, FORME],
@@ -39,7 +40,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::MetierRetenu,
         geste: "Proposer un métier du catalogue dans les listes, ou ne plus le proposer.",
-        charge: &[Champ { nom: "code", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier au catalogue", avance: false }, Champ { nom: "retenu", libelle: Affiche::new("Le proposer"), forme: Forme::OuiNon, sens: "vrai : le proposer", avance: false }],
+        charge: &MetierARetenir::CHARGE,
         exemple: r#"{"code":"CHE350","retenu":true}"#,
         rend: METIERS_REND,
         refus: &[OPERATION, MANQUE, FORME],
@@ -51,7 +52,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::MetierCree,
         geste: "Créer un métier en copiant un métier : son nom, et s'il est cadre.",
-        charge: &[COPIE_DE, LIBELLE, CADRE_A_LA_CREATION],
+        charge: &MetierACreer::CHARGE,
         exemple: r#"{"copie_de":"MAR010","libelle":"Marionnettiste cadre","cadre":"cadre"}"#,
         rend: "code (celui du métier créé), emplois et emplois_autres",
         refus: &[OPERATION, MANQUE, FORME],
@@ -63,28 +64,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::MetierModifie,
         geste: "Modifier un métier créé ; une case absente ne change pas.",
-        charge: &[
-            Champ { nom: "code", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier créé (CIE-1…)", avance: false },
-            LIBELLE,
-            CADRE,
-            Champ { nom: "feminin", libelle: Affiche::new("Au féminin"), forme: Forme::Texte, sens: "son nom au féminin", avance: true },
-            Champ { nom: "emploi", libelle: Affiche::new("Emploi déclaré"), forme: Forme::Texte, sens: "le libellé de l'emploi que la DSN déclare (S21.G00.40.006)", avance: true },
-            Champ { nom: "pcs_ese", libelle: Affiche::new("PCS-ESE"), forme: Forme::Texte, sens: "le code PCS-ESE, quatre caractères (S21.G00.40.004)", avance: true },
-            Champ {
-                nom: "code_declare",
-                libelle: Affiche::new("Code France Travail"),
-                forme: Forme::Texte,
-                sens: "le code de la nomenclature des emplois du spectacle qu'il déclare (S21.G00.40.005) ; l'annexe et le statut le suivent",
-                avance: true,
-            },
-            Champ {
-                nom: "statut_conventionnel",
-                libelle: Affiche::new("Classement conventionnel"),
-                forme: Forme::ChoixRendu,
-                sens: "le classement que la DSN déclare quand il n'est pas cadre (S21.G00.40.002) : 05, 06 ou 07",
-                avance: true,
-            },
-        ],
+        charge: &MetierAModifier::CHARGE,
         exemple: r#"{"code":"CIE-1","feminin":"Marionnettiste principale"}"#,
         rend: "emplois et emplois_autres",
         refus: &[OPERATION, MANQUE, FORME],
@@ -95,20 +75,8 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-/// Le metier qu'on copie (`metier-cree`).
-const COPIE_DE: Champ = Champ { nom: "copie_de", libelle: Affiche::new("Copie de"), forme: Forme::ChoixRendu, sens: "le code du métier copié, du catalogue ou déjà créé (MAR010)", avance: false };
 /// Le nom d'un metier cree.
-const LIBELLE: Champ = Champ { nom: "libelle", libelle: Affiche::new("Nom"), forme: Forme::Texte, sens: "son nom, tel que la liste et le contrat le disent", avance: false };
-/// Cadre ou non, a la creation : la charge le dit (`emplois::Encadrement`).
-const CADRE_A_LA_CREATION: Champ = Champ {
-    nom: "cadre",
-    libelle: Affiche::new("Cadre"),
-    forme: Forme::Choix(&[Choix { code: "cadre", libelle: Affiche::new("Cadre") }, Choix { code: "non_cadre", libelle: Affiche::new("Non cadre") }]),
-    sens: "cadre, ou non_cadre",
-    avance: false,
-};
-/// Cadre ou non, pour un metier deja cree.
-const CADRE: Champ = Champ { nom: "cadre", libelle: Affiche::new("Cadre"), forme: Forme::OuiNon, sens: "vrai : cadre ; faux : non cadre ; absent : inchangé", avance: false };
+const LIBELLE: Legende = dit("Nom", "son nom, tel que la liste et le contrat le disent");
 
 /// LES CLASSEMENTS QU'UN METIER CREE OFFRE (S21.G00.40.002) : ceux d'un metier non cadre, les seuls que la DSN lit d'un
 /// metier (`StatutConventionnel::NON_CADRES`, `emplois::Metier::statut_non_cadre` ; un metier cadre se declare 04),
@@ -397,7 +365,7 @@ fn metiers_catalogue(ctx: &Contexte) -> R<MetiersDuCatalogue> {
         .collect::<R<_>>()?;
     metiers.sort_by_cached_key(|m| (ordre.get(&m.metier.famille).copied(), m.metier.libelle.to_lowercase()));
     let copiables = metiers.iter().map(|m| crate::ouverture::Choix::de(&m.metier.code, &m.metier.libelle).sous(Some(m.metier.famille.to_string()))).collect();
-    let creer = GesteDeRoute::avec_cases(Route::MetierCree, AucunMetier {}, CREER, vec![COPIE_DE.nom, LIBELLE.nom, CADRE_A_LA_CREATION.nom], ValeursDuMetier::default(), ChoixDuMetier { copie_de: Some(copiables), statut_conventionnel: None });
+    let creer = GesteDeRoute::avec_cases(Route::MetierCree, AucunMetier {}, CREER, MetierACreer::CHARGE.champs.iter().map(|c| c.champ.nom).collect(), ValeursDuMetier::default(), ChoixDuMetier { copie_de: Some(copiables), statut_conventionnel: None });
     let fautes: String = fautes.iter().map(|f| format!(" {}", f)).collect();
     let phrase = socle::phrase!(
         "Métiers : {}, dont {} créés par la compagnie. Ceux qui sont cochés se proposent dans la fiche d'un salarié et dans un engagement ; ceux de votre convention et ceux que vous créez le sont d'office. Un métier qui manque se crée en en copiant un.{}",
@@ -422,19 +390,21 @@ fn geste_qui_modifie(m: &emplois::MetierCree, classements: &[crate::ouverture::C
         // Un classement de cadre (la copie d'un metier cadre) n'est pas de ceux qui s'offrent : la case se montre vide.
         statut_conventionnel: Some(f.statut_conventionnel).filter(|s| !s.cadre()),
     };
-    let cases = vec!["libelle", "cadre", "feminin", "emploi", "pcs_ese", "code_declare", "statut_conventionnel"];
+    // Ses cases : tous les champs de sa charge, sauf le metier qu'elle designe.
+    let cases = MetierAModifier::CHARGE.champs.iter().map(|c| c.champ.nom).filter(|n| *n != cle!(MetierAModifier, code)).collect();
     let choix = ChoixDuMetier { copie_de: None, statut_conventionnel: Some(classements.to_vec()) };
     GesteDeRoute::avec_cases(Route::MetierModifie, MetierDesigne { code: m.code.clone() }, MODIFIER, cases, valeurs, choix)
 }
 
 // ---------------------------------------------------------------- les metiers
 
-/// La charge de `metier-retenu`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MetierARetenir {
-    code: emplois::CodeEmploi,
-    retenu: bool,
+charge! {
+    /// La charge de `metier-retenu`.
+    #[derive(Debug)]
+    struct MetierARetenir {
+        code: emplois::CodeEmploi = dit("Métier", "le code du métier au catalogue"),
+        retenu: bool = dit("Le proposer", "vrai : le proposer"),
+    }
 }
 
 /// Ce que rend `metier-retenu` : les metiers proposes et ceux des autres conventions.
@@ -476,14 +446,15 @@ fn metier_retenu(ctx: &Contexte, c: MetierARetenir) -> R<EmploisRendus> {
 
 // ---------------------------------------------------------------- les metiers crees
 
-/// La charge de `metier-cree` : le metier copie, le nom de la copie, et s'il est cadre (la charge le dit : rien ne se
-/// suppose).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MetierACreer {
-    copie_de: emplois::CodeEmploi,
-    libelle: socle::forme::TexteDit,
-    cadre: emplois::Encadrement,
+charge! {
+    /// La charge de `metier-cree` : le metier copie, le nom de la copie, et s'il est cadre (la charge le dit : rien ne se
+    /// suppose).
+    #[derive(Debug)]
+    struct MetierACreer {
+        copie_de: emplois::CodeEmploi = dit("Copie de", "le code du métier copié, du catalogue ou déjà créé (MAR010)").rendue(),
+        libelle: socle::forme::TexteDit = LIBELLE,
+        cadre: emplois::Encadrement = dit("Cadre", "le métier créé est-il un métier de cadre"),
+    }
 }
 
 /// Ce que rend `metier-cree` : le code du metier cree, et les metiers proposes.
@@ -523,20 +494,21 @@ fn metier_cree(ctx: &Contexte, c: MetierACreer) -> R<MetierCreeRendu> {
     Ok(MetierCreeRendu { code, emplois: EmploisRendus::de(ctx, phrase, emplois)? })
 }
 
-/// La charge de `metier-modifie` : le metier cree, et ce qui change ; une case absente ne change pas. Chaque valeur se lit
-/// dans sa forme, comme celle du catalogue : la PCS-ESE (`CodePcsEse`), le code de la nomenclature (`CodeEmploi`,
-/// `MetierCree::declarer`), le classement (`StatutConventionnel`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MetierAModifier {
-    code: emplois::CodeEmploi,
-    libelle: Option<socle::forme::TexteDit>,
-    cadre: Option<bool>,
-    feminin: Option<socle::forme::TexteDit>,
-    emploi: Option<socle::forme::TexteDit>,
-    pcs_ese: Option<droit::fiche::CodePcsEse>,
-    code_declare: Option<emplois::CodeEmploi>,
-    statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
+charge! {
+    /// La charge de `metier-modifie` : le metier cree, et ce qui change ; une case absente ne change pas. Chaque valeur se
+    /// lit dans sa forme, comme celle du catalogue : la PCS-ESE (`CodePcsEse`), le code de la nomenclature (`CodeEmploi`,
+    /// `MetierCree::declarer`), le classement (`StatutConventionnel`).
+    #[derive(Debug)]
+    struct MetierAModifier {
+        code: emplois::CodeEmploi = dit("Métier", "le code du métier créé (CIE-1…)"),
+        libelle: Option<socle::forme::TexteDit> = LIBELLE,
+        cadre: Option<bool> = dit("Cadre", "vrai : cadre ; faux : non cadre ; absent : inchangé"),
+        feminin: Option<socle::forme::TexteDit> = dit("Au féminin", "son nom au féminin").avancee(),
+        emploi: Option<socle::forme::TexteDit> = dit("Emploi déclaré", "le libellé de l'emploi que la DSN déclare (S21.G00.40.006)").avancee(),
+        pcs_ese: Option<droit::fiche::CodePcsEse> = dit("PCS-ESE", "le code PCS-ESE, quatre caractères (S21.G00.40.004)").avancee(),
+        code_declare: Option<emplois::CodeEmploi> = dit("Code France Travail", "le code de la nomenclature des emplois du spectacle qu'il déclare (S21.G00.40.005) ; l'annexe et le statut le suivent").avancee(),
+        statut_conventionnel: Option<droit::fiche::StatutConventionnel> = dit("Classement conventionnel", "le classement que la DSN déclare quand il n'est pas cadre (S21.G00.40.002) : 05, 06 ou 07").avancee(),
+    }
 }
 
 /// UN NOM QUE LA LISTE D'UNE CARTE NE MONTRE QU'UNE FOIS : le nom `libelle` d'un metier cree (`sauf` : celui qu'on

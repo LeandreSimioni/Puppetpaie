@@ -45,38 +45,29 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant, MontantUnitaire};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::catalogue::Route;
-use crate::engagement::SAISIE_INCOMPLETE;
+use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::engagement::{CHANGEMENTS, IDENTITE, SAISIE_INCOMPLETE};
 use crate::catalogue::{Ecran, Place};
 
-const MODIFICATIONS: Champ = Champ {
-    nom: "modifications", libelle: Affiche::new("Modifications en cours"), forme: Forme::Objet,
-    sens: "les engagements validés ouverts pour être modifiés, pas encore écrits : [{engagement (son identité), changements (comme modifier-engagement)}] ; [] sans aucun. Une carte en saisie se lit telle qu'elle est enregistrée",
-    avance: false,
-};
+const MODIFICATIONS: Legende = dit(
+    "Modifications en cours",
+    "les engagements validés ouverts pour être modifiés, pas encore écrits : [{engagement (son identité), changements (comme modifier-engagement)}] ; [] sans aucun. Une carte en saisie se lit telle qu'elle est enregistrée",
+);
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
 
-/// Ce qui se vise (`engagement::viser::Cible`) : le net et le cout, chacun avec ou sans les indemnites de frais, et le brut.
-/// Le premier, le net a payer, est celui sur lequel la liste s'ouvre.
-const CIBLES: &[crate::catalogue::Choix] = &[
-    crate::catalogue::Choix { code: "net", libelle: Affiche::new("Net, indemnités comprises") },
-    crate::catalogue::Choix { code: "net_sans_frais", libelle: Affiche::new("Net, sans les indemnités") },
-    crate::catalogue::Choix { code: "brut", libelle: Affiche::new("Brut") },
-    crate::catalogue::Choix { code: "cout", libelle: Affiche::new("Coût, sans les indemnités") },
-    crate::catalogue::Choix { code: "cout_avec_frais", libelle: Affiche::new("Coût, indemnités comprises") },
-];
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Saisie,
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
-        charge: &[MOIS],
+        charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes (chaque paie importée telle qu'elle se lit : son résumé et ses pastilles, ce que l'import n'a pas lu, ses cases en lecture, les lignes de son bulletin), ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie), vide_dit (ce que dit le mois quand l'aperçu n'a aucune paie d'ici), demo (la mention d'un mois saisi en démo)",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -86,9 +77,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Apercu,
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
-        charge: &[MOIS, MODIFICATIONS],
+        charge: &ChargeApercu::CHARGE,
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois, ses deux nombres (total_net, total_cout) et ce qu'ils disent (total_net_dit, total_cout_dit)",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -98,7 +89,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ContratsEnCours,
         geste: "Lire les contrats d'un mois passé qui courent encore ce mois.",
-        charge: &[MOIS],
+        charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "contrats : chacun avec l'engagement qui le reprend",
         refus: &[MANQUE, ILLISIBLE],
@@ -110,7 +101,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ContratsPasses,
         geste: "Lire les contrats déclarés d'un mois importé.",
-        charge: &[MOIS, Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé d'un salarié, pour ne lire que les siens ; null : tous", avance: true }],
+        charge: &ChargeContratsPasses::CHARGE,
         exemple: r#"{"mois":"2026-11","salarie":null}"#,
         rend: "contrats : ceux que les engagements importés attestent ; non_lus : les contrats repris qui ne se lisent pas",
         refus: &[MANQUE],
@@ -122,11 +113,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EnregistrerSaisie,
         geste: "Changer des cases du brouillon d'une carte, et l'écrire.",
-        charge: &[
-            MOIS,
-            Champ { nom: "carte", libelle: Affiche::new("Carte"), forme: Forme::Objet, sens: "{\"neuve\": sa nature (l'une des `nouvelle_carte.natures` de la route saisie)} pour une carte neuve, ou {\"ecrite\": son identité, celle que le moteur a rendue}", avance: false },
-            super::engagement::CHANGEMENTS,
-        ],
+        charge: &ChargeCase::CHARGE,
         exemple: r#"{"mois":"2026-11","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"FULLER"},{"case":"spectacle","valeur":"le-banc-des-menteurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":150,"lieu":null,"dates":["2026-11-20"],"planning":[]}]}]}"#,
         rend: "engagement (l'identité écrite, à passer à valider-engagement), brouillon (chacune des cases de sa nature, null tant qu'elle n'est pas remplie ; chaque grandeur écrite par elle-même), a_completer (ce qui lui manque pour être validé, ou null), enregistre_a",
         refus: &[OPERATION, FORME, MANQUE],
@@ -138,19 +125,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Ajuster,
         geste: "Trouver le taux qui donne un net, un brut ou un coût voulu.",
-        charge: &[
-            MOIS,
-            MODIFICATIONS,
-            super::engagement::IDENTITE,
-            Champ {
-                nom: "cible",
-                libelle: Affiche::new("Ce qui se vise"),
-                forme: Forme::Choix(CIBLES),
-                sens: "net (indemnités de frais comprises : repas, nuitées, défraiements), net_sans_frais, brut, cout (sans les indemnités) ou cout_avec_frais ; l'acompte reste retiré du net",
-                avance: false,
-            },
-            Champ { nom: "montant", libelle: Affiche::new("Montant voulu"), forme: Forme::Nombre, sens: "le montant voulu, en euros", avance: false },
-        ],
+        charge: &ChargeAjuster::CHARGE,
         exemple: r#"{"mois":"2026-11","modifications":[],"engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"cible":"brut","montant":200}"#,
         rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent), paies ; rien n'est écrit",
         refus: &[OPERATION, FORME, SAISIE_INCOMPLETE],
@@ -182,43 +157,55 @@ pub(crate) enum CarteVisee {
     Ecrite(Identite),
 }
 
-/// LA CHARGE DES CHANGEMENTS D'UNE CARTE (`enregistrer-saisie`) : le mois de l'ecran, la carte visee, et ses changements,
-/// dans l'ordre.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeCase {
-    pub(crate) mois: Mois,
-    pub(crate) carte: CarteVisee,
-    pub(crate) changements: Changements,
+/// Dans une charge, une modification en cours et la carte visee se disent d'un objet.
+impl ValeurDeLaCharge<ParSaForme> for ModificationEnCours {
+    const FORME: Forme = Forme::Objet;
+}
+impl ValeurDeLaCharge<ParSaForme> for CarteVisee {
+    const FORME: Forme = Forme::Objet;
 }
 
-/// La charge de l'apercu : le mois, et les modifications pas encore ecrites d'engagements valides (`mois_designe`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeApercu {
-    mois: Mois,
-    modifications: Vec<ModificationEnCours>,
+charge! {
+    /// LA CHARGE DES CHANGEMENTS D'UNE CARTE (`enregistrer-saisie`) : le mois de l'ecran, la carte visee, et ses
+    /// changements, dans l'ordre.
+    #[derive(Debug, Clone)]
+    pub(crate) struct ChargeCase {
+        pub(crate) mois: Mois = legendes::MOIS,
+        pub(crate) carte: CarteVisee = dit("Carte", "{\"neuve\": sa nature (l'une des `nouvelle_carte.natures` de la route saisie)} pour une carte neuve, ou {\"ecrite\": son identité, celle que le moteur a rendue}"),
+        pub(crate) changements: Changements = CHANGEMENTS,
+    }
 }
 
-/// La charge du montant vise : le mois et ses modifications pas encore ecrites, l'engagement a ajuster (son identite),
-/// ce qui se vise et combien.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeAjuster {
-    mois: Mois,
-    modifications: Vec<ModificationEnCours>,
-    engagement: Identite,
-    cible: Cible,
-    /// Le montant vise, un nombre, ou tel qu'il est tape (« 1 850,00 € »), converti a la porte (`Charge::lire`).
-    montant: Montant,
+charge! {
+    /// La charge de l'apercu : le mois, et les modifications pas encore ecrites d'engagements valides (`mois_designe`).
+    #[derive(Debug)]
+    struct ChargeApercu {
+        mois: Mois = legendes::MOIS,
+        modifications: Vec<ModificationEnCours> = MODIFICATIONS,
+    }
 }
 
-/// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeContratsPasses {
-    mois: Mois,
-    salarie: Option<IdSalarie>,
+charge! {
+    /// La charge du montant vise : le mois et ses modifications pas encore ecrites, l'engagement a ajuster (son
+    /// identite), ce qui se vise et combien.
+    #[derive(Debug)]
+    struct ChargeAjuster {
+        mois: Mois = legendes::MOIS,
+        modifications: Vec<ModificationEnCours> = MODIFICATIONS,
+        engagement: Identite = IDENTITE,
+        cible: Cible = dit("Ce qui se vise", "le montant que la paie atteint ; les indemnités de frais sont les repas, nuitées et défraiements, et l'acompte reste retiré du net"),
+        /// Le montant vise, un nombre, ou tel qu'il est tape (« 1 850,00 € »), converti a la porte (`Charge::lire`).
+        montant: Montant = dit("Montant voulu", "le montant voulu, en euros"),
+    }
+}
+
+charge! {
+    /// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
+    #[derive(Debug)]
+    struct ChargeContratsPasses {
+        mois: Mois = legendes::MOIS,
+        salarie: Option<IdSalarie> = dit("Salarié", "la clé d'un salarié, pour ne lire que les siens ; null : tous").avancee(),
+    }
 }
 
 // ------------------------------------------------------------------ les reponses
@@ -256,6 +243,12 @@ struct SaisieDuMois {
     importes_titre: &'static str,
     importes_dit: String,
     ferme_aux_neufs: Option<String>,
+    /// Ce que dit le mois quand l'apercu n'a aucune paie d'ici : que ses engagements viennent de l'ancien logiciel, ou
+    /// l'aide d'un mois vide (`NouvelleCarte::aide_vide`).
+    vide_dit: &'static str,
+    /// La mention d'un mois saisi en demo, dans une compagnie gardee (`accueil::suppression::mention`) ; aucune sinon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demo: Option<String>,
     nouvelle_carte: NouvelleCarte,
     /// La vue du mois (`engagement::stock::vue_du_mois`), les lignes des permanents calculees (`avec_les_lignes_calculees_des_permanents`).
     saisie: VueDuMois,
@@ -628,6 +621,8 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
+    let vide_dit = crate::ouverture::aide(if n_importes > 0 { "importes" } else { nouvelle_carte.aide_vide })?;
+    let demo = crate::accueil::suppression::mention(&ctx.racine)?.and_then(|m| m.du_mois(mois).map(str::to_string));
     let (saisie, a_completer) = avec_les_lignes_calculees_des_permanents(ctx, saisie)?;
     Ok(SaisieDuMois {
         mois,
@@ -636,6 +631,8 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         importes_dit: format!("{} de l'ancien logiciel", socle::ecran::compte(n_importes, "engagement", "engagements")),
         importes,
         ferme_aux_neufs: ferme,
+        vide_dit,
+        demo,
         nouvelle_carte,
         saisie,
         identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?),
@@ -1935,6 +1932,8 @@ pub(crate) struct VuePaie {
     bornes: PeriodeOuverte,
     contrat: ContratVu,
     dates_travail: Vec<Jour>,
+    /// Ce que dit sa carte validee, fermee : ses jours travailles du mois en clair, et le mois abrege.
+    quand: socle::ecran::QuandDeLaCarte,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
     cachets: Cachets,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que la carte ou son mois ecrit.
@@ -2103,6 +2102,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             rupture,
         },
         dates_travail: e.dates_travail.clone(),
+        quand: socle::ecran::QuandDeLaCarte::des_jours(&e.dates_travail, data.mois)?,
         cachets: e.cachets,
         taux_cachet,
         heures: e.heures,
@@ -2334,6 +2334,9 @@ struct Apercu {
     /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     total_net: Option<Montant>,
+    /// Ce que disent les deux nombres du mois : le net (ce qu'on vire), le cout employeur.
+    total_net_dit: &'static str,
+    total_cout_dit: &'static str,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
     avertissements: Vec<String>,
@@ -2379,6 +2382,8 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         paies,
         total_cout: r.total_cout,
         total_net: r.total_net,
+        total_net_dit: "Net à virer",
+        total_cout_dit: "Coût employeur",
         blocs: r.blocs,
         par_salarie: r.par_salarie,
         avertissements: r.avertissements,

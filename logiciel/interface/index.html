@@ -184,9 +184,6 @@
          des contrats de prévoyance et de santé, l'organisme quand la branche
          n'en désigne pas. Le moteur compose config/organismes.json. -->
     <button data-fiche="organismes" data-place="Configuration › Organismes et contrats">Organismes et contrats</button>
-    <!-- LE MODÈLE DU BULLETIN : simplifié ou complet,
-         chacun montré sur une paie fictive ; la compagnie choisit pour tous. -->
-    <button data-fiche="bulletin" data-place="Configuration › Modèle de bulletin">Modèle de bulletin</button>
     <button data-fiche="contrats" data-route="modeles-contrat" data-place="Configuration › Modèles de contrat">Modèles de contrat</button>
     <!-- AVANCÉ : ce que la fiche de sa route marque « avancé » (le catalogue, `rangerLAvance`), après le chemin simple. -->
     <span class="sous-onglets-avance" hidden><span class="discret">Avancé :</span></span>
@@ -240,7 +237,6 @@
   <h2>L'année</h2>
   <div id="exercices"></div>
 
-  <h2 id="titre-corrections">Les corrections</h2>
   <div id="regularisation"></div>
   <!-- Avancé : les routes de l'Historique sans écran dessiné, montrées depuis leur fiche (js/avance.js). -->
   <details class="avance-auto" hidden><summary>Avancé</summary><div data-auto="Historique"></div></details>
@@ -264,7 +260,7 @@
     <div id="exports-resultat"></div>
   </details>
   <!-- LE DOSSIER D'UN SALARIE : tous ses documents, on coche ce
-       qu'on sort. Les salaries, les categories et les periodes viennent du
+       qu'on sort. Les gestes, leurs cases et ce qu'elles offrent viennent du
        moteur (`dossier-formes`). -->
   <details class="carte-export" id="carte-dossier">
     <summary><h2>Les documents d'un salarié <span class="discret">— en PDF</span></h2></summary>
@@ -345,10 +341,7 @@
 <script src="/js/exports.js?v={{EMPREINTE}}"></script>
 <script src="/js/corrections.js?v={{EMPREINTE}}"></script>
 <script src="/js/veille.js?v={{EMPREINTE}}"></script>
-<script src="/js/coffre-compte.js?v={{EMPREINTE}}"></script>
 <script src="/js/filet.js?v={{EMPREINTE}}"></script>
-<script src="/js/identite.js?v={{EMPREINTE}}"></script>
-<script src="/js/modeles-bulletin.js?v={{EMPREINTE}}"></script>
 <script src="/js/modeles-contrat.js?v={{EMPREINTE}}"></script>
 <script src="/js/mise-a-jour.js?v={{EMPREINTE}}"></script>
 <script src="/js/auteur.js?v={{EMPREINTE}}"></script>

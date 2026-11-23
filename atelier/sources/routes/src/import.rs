@@ -24,7 +24,7 @@ use import::derniere_piece::DernierePiece;
 use import::dsn_aem::{self, SalarieDeclare};
 use import::proposee::{self, FicheProposee};
 use import::reponse::{n_mots, DitPar, Ecart, EtatFiche, FicheImportee, FicheVisee, Importation, Origine, Source};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
+use crate::catalogue::{Acte, Fiche, Refus, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{self, en_json, Charge, Dite, Phrase, Porte, Rendu};
@@ -42,7 +42,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ImportationEtat,
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
@@ -54,7 +54,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ImportationApercu,
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme" }, FORME],
@@ -67,7 +67,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Importer,
         geste: "Reprendre les pièces du dossier d'import : fiches, engagements importés.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
@@ -79,15 +79,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ImportationNature,
         geste: "Dire la nature des contrats repris qu'aucune pièce ne dit.",
-        charge: &[
-            SALARIE,
-            Champ { nom: "nature", libelle: Affiche::new("Nature du contrat"), forme: Forme::Texte, sens: "une nature que ses pièces permettent (cdi, cdd, cddu_spectacle…)", avance: false },
-            Champ { nom: "debut", libelle: Affiche::new("Début"), forme: Forme::Date, sens: "le contrat court encore : son début", avance: true },
-            Champ { nom: "fin", libelle: Affiche::new("Terme"), forme: Forme::Date, sens: "son terme, s'il en a un", avance: true },
-            Champ { nom: "numero", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "son numéro, tel que la DSN de l'ancien logiciel l'a déclaré", avance: true },
-            Champ { nom: "salaire", libelle: Affiche::new("Salaire mensuel"), forme: Forme::Nombre, sens: "son salaire mensuel", avance: true },
-            Champ { nom: "quotite", libelle: Affiche::new("Heures par mois"), forme: Forme::Nombre, sens: "sa durée du travail, en heures par mois", avance: true },
-        ],
+        charge: &crate::importation::nature::ChargeNature::CHARGE,
         exemple: r#"{"salarie":"TARTEMPION","nature":"cdi"}"#,
         rend: "ecrits, a_dire (ce qui reste à dire), permanents_declares ; ce que la charge tait se prend sur la DSN reprise",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }, FORME],
@@ -99,11 +91,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ImportationIdentite,
         geste: "Dire si la personne d'une DSN est le salarié d'une fiche sans numéro (NIR).",
-        charge: &[
-            Champ { nom: "nir", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "le numéro de sécurité sociale que la DSN déclare, sans sa clé", avance: false },
-            SALARIE,
-            Champ { nom: "reponse", libelle: Affiche::new("Réponse"), forme: Forme::Texte, sens: "meme : c'est le salarié de la fiche ; autre : une autre personne", avance: false },
-        ],
+        charge: &crate::importation::identite::ChargeIdentite::CHARGE,
         exemple: r#"{"nir":"2850799999124","salarie":"TARTEMPION","reponse":"autre"}"#,
         rend: "phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié ou la réponse que la phrase nomme ; rien n'est écrit" }, FORME],

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Forme;
 use crate::enveloppe::{Dite, Phrase};
-use crate::ouverture::Choix;
+use crate::ouverture::{Choix, DocumentMontre};
 use crate::temps::{CaseDatee, TempsDeLaCase};
 use declarations::champs::{self, Anomalie, Case, Champ, CheminDeFiche, FicheAJuger, Gravite, Largeur, Libelles};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
@@ -125,7 +125,7 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
                 crate::catalogue::Route::FicheDemander,
                 crate::SansCharge {},
                 crate::catalogue::Affiche::new("Envoyer la demande"),
-                vec!["adresse", "prenom"],
+                vec![crate::declaration::cle!(super::ChargeFicheDemander, adresse), crate::declaration::cle!(super::ChargeFicheDemander, prenom)],
                 crate::imprevus::ValeursDeDepart::default(),
                 crate::imprevus::ChoixDesCases::default(),
             )
@@ -153,12 +153,14 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
 /// UNE CASE OUVERTE D'UNE FICHE, telle que la page la dessine : sa cle, son bloc (le titre sous lequel elle se range,
 /// `""` : aucun) et sa largeur, son libelle, sa forme, sa place, son aide (la bulle au survol), l'exemple d'une case vide,
 /// sa valeur (celle de la fiche, ou ce que le moteur propose d'y ecrire : « Pour démarrer »), ce que le moteur prend pour
-/// elle vide (`prerempli`), les choix d'une case qui se choisit (code et libelle), ses parties (une case faite de cases,
+/// elle vide (`prerempli`), les choix d'une case qui se choisit (code et libelle), s'ils se montrent en boutons a cocher,
+/// chacun avec le document qui le montre quand il en a un (`boutons`, le modele du bulletin), ses parties (une case faite de cases,
 /// ou chaque rangee d'une liste), le bouton qui ajoute une rangee, ce que le moteur dit sous elle (`dit`) et ou elle
-/// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots) et sa faute.
+/// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots) et sa faute. Sa cle est celle d'une case
+/// de fiche, ou d'une case d'un ecran qu'une route rend (`EcranRendu` : un contrat de la DSN, par sa cle).
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct CaseDeLaFiche {
-    cle: CaseDeFiche,
+pub(crate) struct CaseDeLaFiche<K = CaseDeFiche> {
+    cle: K,
     bloc: String,
     largeur: Largeur,
     libelle: String,
@@ -172,6 +174,8 @@ pub(crate) struct CaseDeLaFiche {
     prerempli: Option<ValeurDeCase>,
     #[serde(skip_serializing_if = "Option::is_none")]
     choix: Option<Vec<Choix>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    boutons: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     parties: Option<Vec<PartieDeLaFiche>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -209,12 +213,133 @@ pub(crate) struct PartieDeLaFiche {
     ouverte: bool,
 }
 
-/// LES VALEURS D'UNE CASE DATEE, en mots, pour l'historique replie de la fiche : son libelle et ses temps.
+impl<K> CaseDeLaFiche<K> {
+    /// UNE CASE FAITE DE CASES QU'UN ECRAN OU UNE BOITE DE SAISIE REND HORS D'UNE FICHE (`EcranRendu` : un contrat de la
+    /// DSN ; `imprevus::SaisieDUnImprevu` : le jour et l'heure ou l'on a su l'accident) : sa cle, son libelle, sa valeur,
+    /// celles de ses parties qui se saisissent, ce que le moteur dit sous elle et ses temps en mots ; de base, sur toute
+    /// la ligne, sans bloc ni aide.
+    pub(crate) fn de_parties(cle: K, libelle: String, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>, dit: Vec<String>, temps: Option<TempsDeLaCase<String>>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche {
+            cle,
+            bloc: String::new(),
+            largeur: Largeur::Pleine,
+            libelle,
+            forme: Forme::Parties(&[]),
+            place: PlaceDeLaCase::Base,
+            aide: String::new(),
+            valeur,
+            exemple: None,
+            prerempli: None,
+            choix: None,
+            boutons: false,
+            parties: Some(parties),
+            ajouter: None,
+            dit,
+            renvoi: None,
+            temps,
+            anomalie: None,
+        }
+    }
+}
+
+impl<K> CaseDeLaFiche<K> {
+    /// UNE CASE QU'UNE BOITE DE SAISIE REND (`imprevus::SaisieDUnImprevu`) : sa cle (le champ de la charge du geste qui
+    /// l'enregistre), son libelle, sa forme, son aide (la bulle au survol, vide : aucune) et sa valeur (ce qui est deja
+    /// saisi) ; de base, sur sa demi-largeur, sans bloc.
+    pub(crate) fn de_la_boite(cle: K, libelle: crate::catalogue::Affiche, forme: Forme, aide: &str, valeur: Option<ValeurDeCase>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche {
+            cle,
+            bloc: String::new(),
+            largeur: Largeur::Demie,
+            libelle: libelle.texte().to_string(),
+            forme,
+            place: PlaceDeLaCase::Base,
+            aide: aide.to_string(),
+            valeur,
+            exemple: None,
+            prerempli: None,
+            choix: None,
+            boutons: false,
+            parties: None,
+            ajouter: None,
+            dit: Vec::new(),
+            renvoi: None,
+            temps: None,
+            anomalie: None,
+        }
+    }
+
+    /// UNE CASE D'UNE SEULE VALEUR QU'UN ECRAN REND HORS D'UNE FICHE (le titre d'un paragraphe d'un modele de contrat) : sa
+    /// cle, son libelle, sa forme et sa valeur ; de base, sur toute la ligne, sans bloc ni aide.
+    pub(crate) fn simple(cle: K, libelle: crate::catalogue::Affiche, forme: Forme, valeur: Option<ValeurDeCase>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { largeur: Largeur::Pleine, ..CaseDeLaFiche::de_la_boite(cle, libelle, forme, "", valeur) }
+    }
+
+    /// La meme case, offrant `choix` (une case qui se choisit).
+    pub(crate) fn offrant(self, choix: Vec<Choix>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { choix: Some(choix), ..self }
+    }
+
+    /// Les memes rangees, que le bouton `ajouter` allonge d'une rangee (et que chacune peut quitter).
+    pub(crate) fn ajoutant(self, ajouter: crate::catalogue::Affiche) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { ajouter: Some(ajouter.texte().to_string()), ..self }
+    }
+
+    /// La meme case, rangee sous « Avancé » (repliee tant qu'on ne l'ouvre pas).
+    pub(crate) fn avancee(self) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { place: PlaceDeLaCase::Avance, ..self }
+    }
+
+    /// La meme case, le moteur disant `dit` sous elle (une ligne chacune).
+    pub(crate) fn disant(self, dit: Vec<String>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { dit, ..self }
+    }
+
+    /// DES RANGEES QU'UN ECRAN REND HORS D'UNE FICHE : sa cle, son libelle, sa valeur (la liste de ses rangees) et les
+    /// parties de chaque rangee. Elles ne s'ajoutent ni ne se retirent (l'avenant que son envoi fait partir : seules leurs
+    /// parties se saisissent), sauf `ajoutant` (les alineas d'un paragraphe d'un modele de contrat).
+    pub(crate) fn de_rangees(cle: K, libelle: crate::catalogue::Affiche, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { parties: Some(parties), ..CaseDeLaFiche::simple(cle, libelle, Forme::Rangees, valeur) }
+    }
+}
+
+impl PartieDeLaFiche {
+    /// LA PARTIE QUE DECLARE UNE VALEUR FAITE DE PARTIES (`catalogue::Partie`, celles d'une charge) : son chemin, son
+    /// libelle et sa forme tels qu'elle les dit, ouverte quand elle est de toujours ; `choix` : ce qu'elle offre quand elle
+    /// se choisit dans ce que la route rend.
+    pub(crate) fn de(p: &crate::catalogue::Partie, choix: Option<Vec<Choix>>) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle: p.cle.to_string(), libelle: p.libelle.texte().to_string(), forme: p.forme, aide: None, exemple: None, prerempli: None, choix, boutons: false, ouverte: p.toujours }
+    }
+
+    /// UNE PARTIE OUVERTE QUE LA ROUTE COMPOSE, d'une case qu'une boite de saisie rend (`CaseDeLaFiche::de_parties`) ou
+    /// qu'un geste fait saisir (`imprevus::GesteDeRoute::en_parties`) : son chemin dans la valeur, son libelle (la suite du
+    /// libelle de sa case, « à » ; le jour du virement d'une annee de la CASC-SVP ; vide, rien), sa forme et ce que le
+    /// moteur prend pour elle vide (`prerempli` : il le propose, la case le montre sans l'ecrire).
+    pub(crate) fn ouverte(cle: String, libelle: String, forme: Forme, prerempli: Option<ValeurDeCase>) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle, libelle, forme, aide: None, exemple: None, prerempli, choix: None, boutons: false, ouverte: true }
+    }
+
+    /// Une partie texte ouverte d'une case qu'un ecran rend (`CaseDeLaFiche::de_parties`) : son chemin, son libelle, son
+    /// aide et l'exemple d'une partie vide.
+    pub(crate) fn texte(cle: &str, libelle: crate::catalogue::Affiche, aide: String, exemple: Option<String>) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle: cle.to_string(), libelle: libelle.texte().to_string(), forme: Forme::Texte, aide: Some(aide), exemple, prerempli: None, choix: None, boutons: false, ouverte: true }
+    }
+}
+
+/// LES VALEURS D'UNE CASE DATEE, en mots, pour l'historique replie de la fiche ou d'un ecran rendu : son libelle et ses
+/// temps.
 #[derive(Debug, Clone, Serialize)]
-struct HistoireDUneCase {
+pub(crate) struct HistoireDUneCase {
     libelle: String,
     #[serde(flatten)]
     temps: TempsDeLaCase<String>,
+}
+
+impl HistoireDUneCase {
+    /// Les valeurs de la case `libelle`, en mots.
+    pub(crate) fn de(libelle: String, temps: TempsDeLaCase<String>) -> HistoireDUneCase {
+        HistoireDUneCase { libelle, temps }
+    }
 }
 
 /// CE QUE REND `fiche` : la phrase de sa verification, son en-tete, l'encart de ses erreurs (son titre, aucun sans
@@ -480,6 +605,7 @@ fn case_du_champ(c: &Champ, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(&[&str
         exemple: Some(c.exemple.clone()).filter(|e| !e.is_empty()),
         prerempli: None,
         choix,
+        boutons: false,
         parties,
         ajouter: c.ligne.as_ref().map(|l| format!("+ Ajouter un {}", l)),
         dit: Vec::new(),
@@ -813,7 +939,9 @@ struct CaseTapee {
 /// les conventions qu'il sait servir (l'IDCC se choisit dans leur liste) ; les organismes Urssaf (le code se choisit, et
 /// le vide dit celui que le code postal tape donne) ; sous le taux AT/MP, ce que `taux-atmp` dit, et la date qu'une ligne
 /// neuve propose ; pour la taxe sur les salaires, les questions que sa conclusion ouvre, l'aide et les reponses de la
-/// franchise chiffrees au bareme de l'annee, et ce qui en decoule (`fiches::regime_de_la_taxe`, CGI art. 231, 1).
+/// franchise chiffrees au bareme de l'annee, et ce qui en decoule (`fiches::regime_de_la_taxe`, CGI art. 231, 1) ; les
+/// deux modeles du bulletin en boutons, chacun avec son bulletin d'exemple, et sans choix ecrit celui que le moteur
+/// applique.
 fn completer_l_entreprise(ctx: &Contexte, e: &ChampsEntreprise, case: &mut CaseDeLaFiche) -> R<()> {
     let est = |k: CaseEntreprise| case.cle == CaseDeFiche::from(k);
     if est(CaseEntreprise::Idcc) {
@@ -850,6 +978,19 @@ fn completer_l_entreprise(ctx: &Contexte, e: &ChampsEntreprise, case: &mut CaseD
             }
         }
         case.dit = vec![r.consequence.to_string()];
+    } else if est(CaseEntreprise::ModeleBulletin) {
+        // Les deux modeles en boutons, chacun avec son bulletin d'exemple ; sans choix ecrit, celui que le moteur applique
+        // (`documents::bulletin::modele_de_la_compagnie`) se montre choisi, et rien ne s'ecrit tant qu'on n'en change pas.
+        case.boutons = true;
+        case.choix = Some(
+            droit::fiche::ModeleBulletin::TOUS
+                .iter()
+                .map(|m| Choix::de(m, m.nom()).montre_par(DocumentMontre::du_modele("voir l'exemple", *m)))
+                .collect(),
+        );
+        if e.modele_bulletin.dite().is_none() {
+            case.prerempli = Some(ValeurDeCase::texte(documents::bulletin::modele_de_la_compagnie(e).to_string()));
+        }
     }
     Ok(())
 }

@@ -12,14 +12,11 @@ use documents::plan_comptable::FormatDExport;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Echec, R};
 
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OPERATION};
+use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OPERATION};
+use crate::declaration::{charge, dit, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
-const FORMAT: Champ = Champ {
-    nom: "format", libelle: Affiche::new("Format"), forme: Forme::Texte,
-    sens: "le format des écritures (ximport, oxygene, sage, quadra, ebp) ; absent : celui du logiciel du comptable retenu (exports-periodes, compta)",
-    avance: true,
-};
+const FORMAT: Legende = dit("Format", "le format des écritures, celui d'un logiciel du comptable ; absent : celui du logiciel retenu (exports-periodes, compta)").avancee();
 
 const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 
@@ -28,9 +25,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::LibellesCourts,
         geste: "Dire les libellés trop longs pour le format du comptable, et leur valeur courte.",
-        charge: &[FORMAT],
+        charge: &ChargeLire::CHARGE,
         exemple: r#"{}"#,
-        rend: "format, nom, libelles [quoi (libelle, compte ou compagnie), cle, zone, long, largeur, propose (la proposition du moteur), court (la valeur validée, si elle tient)], phrase ; aucun format à zone bornée : libelles vide",
+        rend: "format, nom, libelles [quoi (libelle, compte ou compagnie), cle, zone, long, largeur, propose (la proposition du moteur), court (la valeur validée, si elle tient), valeur (ce que sa case montre : la validée, sinon la proposition)], phrase, ecran (titre de la boîte, son bouton raccourcir, ses colonnes et ses boutons) ; aucun format à zone bornée : libelles vide",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -40,14 +37,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::LibellesCourtsEnregistrer,
         geste: "Valider la valeur courte de libellés trop longs pour le format du comptable.",
-        charge: &[
-            FORMAT,
-            Champ {
-                nom: "libelles", libelle: Affiche::new("Libellés courts"), forme: Forme::Objet,
-                sens: "[{quoi, cle, court}] : quoi et cle tels que libelles-courts les rend, court la valeur validée (la proposition, ou une autre), de largeur caractères au plus",
-                avance: false,
-            },
-        ],
+        charge: &ChargeEnregistrer::CHARGE,
         exemple: r#"{"format":"ximport","libelles":[]}"#,
         rend: "ce que rend libelles-courts, après l'enregistrement, et sa phrase ; une liste vide : rien n'est écrit, libelles vide",
         refus: &[
@@ -76,21 +66,23 @@ impl Dite for Libelles {
     }
 }
 
-/// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il n'est pas dit.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeLire {
-    #[serde(default, deserialize_with = "format_ou_aucun")]
-    format: Option<FormatDExport>,
+charge! {
+    /// La charge de « libelles-courts » : le format, celui du logiciel retenu s'il n'est pas dit.
+    #[derive(Debug)]
+    struct ChargeLire {
+        #[serde(default, deserialize_with = "format_ou_aucun")]
+        format: Option<FormatDExport> = FORMAT,
+    }
 }
 
-/// La charge de « libelles-courts-enregistrer » : le format, et les valeurs courtes validees.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeEnregistrer {
-    #[serde(default, deserialize_with = "format_ou_aucun")]
-    format: Option<FormatDExport>,
-    libelles: Vec<Valide>,
+charge! {
+    /// La charge de « libelles-courts-enregistrer » : le format, et les valeurs courtes validees.
+    #[derive(Debug)]
+    struct ChargeEnregistrer {
+        #[serde(default, deserialize_with = "format_ou_aucun")]
+        format: Option<FormatDExport> = FORMAT,
+        libelles: Vec<Valide> = dit("Libellés courts", "[{quoi, cle, court}] : quoi et cle tels que libelles-courts les rend, court la valeur validée (la proposition, ou une autre), de largeur caractères au plus"),
+    }
 }
 
 /// Le format d'une charge : absent, `null` ou vide (la page n'a pas de format choisi : son menu est vide), aucun ;
@@ -112,17 +104,47 @@ struct Valide {
     court: String,
 }
 
-/// Ce que rend la page des libelles courts.
+impl ValeurDeLaCharge<ParSaForme> for Valide {
+    const FORME: Forme = Forme::Objet;
+}
+
+/// Ce que rend la page des libelles courts, et ce que l'ecran en dit (`ecran`).
 #[derive(Debug, Serialize)]
 struct Libelles {
     format: Option<FormatDExport>,
     nom: Option<&'static str>,
     libelles: Vec<Ligne>,
     phrase: Phrase,
+    ecran: EcranDesLibelles,
+}
+
+impl Libelles {
+    fn de(format: Option<FormatDExport>, nom: Option<&'static str>, libelles: Vec<Ligne>, phrase: Phrase) -> Libelles {
+        let titre = match nom {
+            Some(n) => format!("{} — {}", LIBELLES_COURTS, n),
+            None => LIBELLES_COURTS.to_string(),
+        };
+        let ecran = EcranDesLibelles { titre, raccourcir: "Les raccourcir", colonnes: ["Zone", "Libellé", "Valeur courte"], fermer: "Fermer", enregistrer: "Enregistrer" };
+        Libelles { format, nom, libelles, phrase, ecran }
+    }
+}
+
+const LIBELLES_COURTS: &str = "Libellés courts";
+
+/// Ce que l'ecran des libelles courts dit : le titre de sa boite, le bouton qui l'ouvre (`raccourcir`), ses colonnes
+/// (la zone, le libelle long, la valeur courte), et ses boutons.
+#[derive(Debug, Serialize)]
+struct EcranDesLibelles {
+    titre: String,
+    raccourcir: &'static str,
+    colonnes: [&'static str; 3],
+    fermer: &'static str,
+    enregistrer: &'static str,
 }
 
 /// Une valeur trop longue : ce qu'elle est et sa cle, la zone en mots, son texte long, la place qu'elle a, la
-/// proposition du moteur, et la valeur validee si elle tient.
+/// proposition du moteur, la valeur validee si elle tient, et ce que sa case montre (`valeur` : la validee, sinon la
+/// proposition).
 #[derive(Debug, Serialize)]
 struct Ligne {
     quoi: Quoi,
@@ -132,6 +154,7 @@ struct Ligne {
     largeur: usize,
     propose: String,
     court: Option<String>,
+    valeur: String,
 }
 
 /// Le format de la charge, ou celui du logiciel retenu ; `None` s'il n'y en a pas.
@@ -159,18 +182,26 @@ fn zone(d: &Depasse) -> String {
 /// LIRE : ce qui depasse, sa proposition, sa valeur validee.
 fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
     let (format, borne) = match format_de(ctx, c.format)? {
-        None => return Ok(Libelles { format: None, nom: None, libelles: Vec::new(), phrase: Phrase::fixe("Aucun logiciel du comptable retenu : rien à raccourcir.") }),
+        None => return Ok(Libelles::de(None, None, Vec::new(), Phrase::fixe("Aucun logiciel du comptable retenu : rien à raccourcir."))),
         Some(f) => match FormatBorne::de(f) {
             Some(b) => (f, b),
             None => {
                 let phrase = socle::phrase!("Le format « {} » ne borne pas ses libellés : rien à raccourcir.", f);
-                return Ok(Libelles { format: Some(f), nom: None, libelles: Vec::new(), phrase });
+                return Ok(Libelles::de(Some(f), None, Vec::new(), phrase));
             }
         },
     };
     let libelles: Vec<Ligne> = depasses(ctx, format)?
         .into_iter()
-        .map(|d| Ligne { quoi: d.quoi, zone: zone(&d), propose: lc::proposer(&d.long, d.largeur), cle: d.cle, long: d.long, largeur: d.largeur, court: d.court })
+        .map(|d| {
+            let propose = lc::proposer(&d.long, d.largeur);
+            // Ce que la case montre : le court que la compagnie a ecrit, ou ce que le logiciel propose.
+            let valeur = match &d.court {
+                Some(court) => court.clone(),
+                None => propose.clone(),
+            };
+            Ligne { quoi: d.quoi, zone: zone(&d), propose, cle: d.cle, long: d.long, largeur: d.largeur, court: d.court, valeur }
+        })
         .collect();
     let reste = libelles.iter().filter(|l| l.court.is_none()).count();
     let phrase = if libelles.is_empty() {
@@ -180,7 +211,7 @@ fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
     } else {
         socle::phrase!("{} : {} libellés trop longs, {} sans valeur courte. Garder ou changer chaque proposition, puis enregistrer.", borne.nom(), libelles.len(), reste)
     };
-    Ok(Libelles { format: Some(format), nom: Some(borne.nom()), libelles, phrase })
+    Ok(Libelles::de(Some(format), Some(borne.nom()), libelles, phrase))
 }
 
 /// Le refus d'une valeur : sa phrase, et sa cle a part (il se dit seul, sans ce qui manque pour demarrer).
@@ -200,7 +231,7 @@ fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
     };
     if c.libelles.is_empty() {
         let phrase = socle::phrase!("Aucun libellé court à enregistrer pour {} : rien n'est écrit.", borne.nom());
-        return Ok(Libelles { format: Some(format), nom: Some(borne.nom()), libelles: Vec::new(), phrase });
+        return Ok(Libelles::de(Some(format), Some(borne.nom()), Vec::new(), phrase));
     }
     let trop: Vec<Depasse> = depasses(ctx, format)?;
     let mut fichier = lc::lire(&ctx.racine)?;

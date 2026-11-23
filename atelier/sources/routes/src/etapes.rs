@@ -23,7 +23,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
@@ -44,6 +44,7 @@ use crate::catalogue::{Acte, Fiche};
 use crate::catalogue::Route;
 use crate::catalogue::Ecran;
 use crate::SansCharge;
+use crate::declaration::{charge, legendes};
 use socle::ecran::couleur_de_l_etat;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::depots::{Designation, EmbaucheDesignee, Quoi};
@@ -56,7 +57,7 @@ const ECRAN: Ecran = Ecran::Lecture;
 pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::MoisAOuvrir,
     geste: "Dire quel mois ouvrir : le plus ancien dont une étape reste à faire.",
-    charge: &[],
+    charge: &SansCharge::CHARGE,
     exemple: "{}",
     rend: "mois (celui à ouvrir), courant, reste (les étapes qui restent)",
     refus: &[crate::catalogue::ILLISIBLE],
@@ -70,11 +71,12 @@ pub(crate) type Paire = (IdSalarie, NumeroContrat);
 
 // ------------------------------------------------------------------ les charges
 
-/// La charge des etats d'un mois (`etat-par-engagement`, `etat-du-mois`, `mois` : `etat_garde`) : le mois.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeMois {
-    pub(crate) mois: Mois,
+charge! {
+    /// La charge des etats d'un mois (`etat-par-engagement`, `etat-du-mois`, `mois` : `etat_garde`) : le mois.
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeMois {
+        pub(crate) mois: Mois = legendes::MOIS,
+    }
 }
 
 // ------------------------------------------------------------------ les reponses
@@ -147,26 +149,84 @@ impl EtatCase {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Action {
     route: Route,
-    charge: ChargeDuGeste,
+    charge: ChargeDeLAction,
     puis: Option<Route>,
     libelle: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     tester: bool,
+    /// La vue qu'il ouvre, quand sa route en a deux (`VueDuGeste`) ; aucune pour une route qui n'en a qu'une.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vue: Option<VueDuGeste>,
 }
 
-/// LA CHARGE D'UN GESTE : celle de la route qu'il ouvre, en sa forme, telle que la route la lit.
+/// LA VUE QU'OUVRE UN GESTE DONT LA ROUTE EN A DEUX : l'apercu du depot (`depot-apercu`) se montre pour choisir les
+/// embauches dont la DPAE s'ecrit, ou pour deposer ce qu'il designe ; celui des contrats (`signature-apercu`), pour
+/// faire partir les contrats a envoyer, ou pour suivre ceux qui attendent leur signature. Chacune nomme sa route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum VueDuGeste {
+    EmbauchesAChoisir,
+    Depot,
+    ContratsAEnvoyer,
+    ContratsEnAttente,
+}
+
+impl VueDuGeste {
+    /// La route dont elle est une vue.
+    fn route(self) -> Route {
+        match self {
+            VueDuGeste::EmbauchesAChoisir | VueDuGeste::Depot => Route::DepotApercu,
+            VueDuGeste::ContratsAEnvoyer | VueDuGeste::ContratsEnAttente => Route::SignatureApercu,
+        }
+    }
+}
+
+/// LA CHARGE D'UNE ACTION : celle d'une route qui n'a qu'une vue, ou celle d'une route a deux vues, que seul `vers` donne.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum ChargeDeLAction {
+    Route(ChargeDuGeste),
+    Vue(ChargeDUneVue),
+}
+
+/// LA CHARGE D'UNE ROUTE A DEUX VUES (`VueDuGeste`) : l'apercu du depot, celui des contrats. Elle n'entre dans une
+/// `Action` que par `vers`, qui dit la vue ; `action` ne la prend pas.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub(crate) enum ChargeDUneVue {
+    Signature(crate::contrats::ChargeApercuSignature),
+    Depot(Designation),
+}
+
+impl From<crate::contrats::ChargeApercuSignature> for ChargeDUneVue {
+    fn from(c: crate::contrats::ChargeApercuSignature) -> ChargeDUneVue {
+        ChargeDUneVue::Signature(c)
+    }
+}
+
+impl From<Designation> for ChargeDUneVue {
+    fn from(c: Designation) -> ChargeDUneVue {
+        ChargeDUneVue::Depot(c)
+    }
+}
+
+/// LA CHARGE D'UN GESTE : celle de la route qu'il ouvre, en sa forme, telle que la route la lit ; celle d'une route a deux
+/// vues n'en est pas (`ChargeDUneVue`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub(crate) enum ChargeDuGeste {
     Mois(ChargeMois),
-    Depot(Designation),
     Recu(crate::contrats::ChargeRecu),
     Avenant(crate::contrats::ChargeAvenant),
     FinContrat(crate::imprevus::ChargeFinContratSignaler),
     Arret(crate::imprevus::ChargeArretSignaler),
     ObligationDArret(ChargeObligationDArret),
+    Connaissance(crate::obligations::ChargeConnaissance),
+    Papiers(crate::imprevus::ChargeFinContratDocuments),
     Annee(ChargeAnnee),
     Revue(crate::rappels::ChargeRevue),
+    Faite(crate::rappels::ChargeFaite),
+    Piece(crate::documents::ChargePiecePartie),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -195,19 +255,28 @@ macro_rules! charge_du_geste {
 
 charge_du_geste! {
     ChargeMois => Mois,
-    Designation => Depot,
     crate::contrats::ChargeRecu => Recu,
     crate::contrats::ChargeAvenant => Avenant,
     crate::imprevus::ChargeFinContratSignaler => FinContrat,
     crate::imprevus::ChargeArretSignaler => Arret,
     ChargeObligationDArret => ObligationDArret,
+    crate::obligations::ChargeConnaissance => Connaissance,
+    crate::imprevus::ChargeFinContratDocuments => Papiers,
     ChargeAnnee => Annee,
     crate::rappels::ChargeRevue => Revue,
+    crate::rappels::ChargeFaite => Faite,
+    crate::documents::ChargePiecePartie => Piece,
 }
 
-/// L'`Action` de `route` sur `charge`, la charge de la route en sa forme.
+/// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
+/// (`ChargeDUneVue`) : son action se fait par `vers`.
 pub(crate) fn action(route: Route, charge: impl Into<ChargeDuGeste>, puis: Option<Route>, libelle: String) -> Action {
-    Action { route, charge: charge.into(), puis, libelle, tester: false }
+    Action { route, charge: ChargeDeLAction::Route(charge.into()), puis, libelle, tester: false, vue: None }
+}
+
+/// L'`Action` qui ouvre la vue `vue` de sa route, sur `charge`.
+pub(crate) fn vers(vue: VueDuGeste, charge: impl Into<ChargeDUneVue>, puis: Option<Route>, libelle: String) -> Action {
+    Action { route: vue.route(), charge: ChargeDeLAction::Vue(charge.into()), puis, libelle, tester: false, vue: Some(vue) }
 }
 
 /// Le compte d'une case : un nombre, ou ce qui est revenu sur ce qui est parti.
@@ -298,7 +367,10 @@ struct MoisAOuvrir {
 }
 
 /// `etat-par-engagement` : la phrase du mois, celle de chaque engagement (ses carres et sa frise), les lignes que la page
-/// lit, et les engagements non actifs du mois.
+/// lit, et les engagements non actifs du mois. LA BOITE DES DPAE : son titre, ses deux notes (`dpae_notes` : ce qui est
+/// coche d'avance ; l'heure, et le test avant le reel), le geste qui envoie les embauches cochees (`dpae_envoyer` :
+/// l'apercu du depot, dont le test part tout de suite ; sa case `engagements` prend la `part` de chaque engagement coche),
+/// aucun quand rien ne se coche, et ce que son bouton dit quand rien n'est coche (`dpae_rien`).
 #[derive(Debug, Serialize)]
 pub(crate) struct EtatParEngagement<'a> {
     phrase: Phrase,
@@ -306,6 +378,11 @@ pub(crate) struct EtatParEngagement<'a> {
     mois: Mois,
     engagements: Vec<LigneDePage<'a>>,
     non_actifs: &'a [NonActif],
+    dpae_titre: &'static str,
+    dpae_notes: [&'static str; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dpae_envoyer: Option<Action>,
+    dpae_rien: &'static str,
 }
 
 impl Dite for EtatParEngagement<'_> {
@@ -342,6 +419,8 @@ struct NonActif {
     contrat: PeriodeOuverte,
     non_actif: String,
     non_actif_dit: String,
+    /// Le mot que sa carte porte (`non_actif_dit` en dit le jour).
+    mot: &'static str,
     dit: String,
     a_faire: Vec<String>,
 }
@@ -357,14 +436,15 @@ fn echeance_dsn(limite: Moment, source: &str) -> Echeance {
     Echeance { quand: InstantOuJour::Instant(limite), mots: droit::echeances::Tournure::AvantLe, source: source.into() }
 }
 
-/// Faire signer les contrats du mois : l'apercu, puis la demande.
-fn faire_signer(mois: Mois) -> Action {
-    action(Route::SignatureApercu, ChargeMois { mois }, Some(Route::DemanderSignature), "Demander la signature…".into())
+/// Faire signer les contrats du mois : l'apercu, puis la demande. `salaries` : ceux dont les contrats se cochent d'abord
+/// (le detail d'un engagement) ; aucun, tous ceux a envoyer.
+fn faire_signer(mois: Mois, salaries: Option<Vec<IdSalarie>>) -> Action {
+    vers(VueDuGeste::ContratsAEnvoyer, crate::contrats::ChargeApercuSignature { mois, salaries }, Some(Route::DemanderSignature), "Demander la signature…".into())
 }
 
 /// Les contrats partis du mois, recus ou a relancer : l'apercu, puis noter chacun recu.
 fn contrats_en_attente(mois: Mois) -> Action {
-    action(Route::SignatureApercu, ChargeMois { mois }, Some(Route::ContratRecu), "Reçus ou à relancer…".into())
+    vers(VueDuGeste::ContratsEnAttente, crate::contrats::ChargeApercuSignature { mois, salaries: None }, Some(Route::ContratRecu), "Reçus ou à relancer…".into())
 }
 
 /// Les documents du mois : l'apercu, puis l'envoi.
@@ -379,7 +459,7 @@ fn historique(mois: Mois) -> Action {
 
 /// Les DPAE du mois a ecrire : l'apercu du depot (qui les ecrit), puis le depot.
 fn declarer_embauches(mois: Mois) -> Action {
-    action(Route::DepotApercu, Designation::du_mois(Quoi::Dpae, mois), Some(Route::Deposer), "Envoyer les DPAE…".into())
+    vers(VueDuGeste::EmbauchesAChoisir, Designation::du_mois(Quoi::Dpae, mois), Some(Route::Deposer), "Envoyer les DPAE…".into())
 }
 
 /// La DSN du mois a ecrire, ou a reecrire : l'apercu du depot (qui l'ecrit), puis le depot, dont le test part des
@@ -387,7 +467,7 @@ fn declarer_embauches(mois: Mois) -> Action {
 pub(crate) fn deposer_dsn(mois: Mois, nic: Option<&Nic>, libelle: String) -> Action {
     let mut charge = Designation::du_mois(Quoi::Dsn, mois);
     charge.etablissement = nic.cloned();
-    Action { tester: true, ..action(Route::DepotApercu, charge, Some(Route::Deposer), libelle) }
+    Action { tester: true, ..vers(VueDuGeste::Depot, charge, Some(Route::Deposer), libelle) }
 }
 
 /// Le geste d'un carre Contrat en attente : noter revenu signe (`recu`) le contrat de l'engagement `p`, ou l'avenant
@@ -1357,7 +1437,8 @@ struct GesteDePiece {
     principal: bool,
 }
 
-/// CE QUE LA BOITE DES DPAE DIT D'UN ENGAGEMENT (`choix_dpae`).
+/// CE QUE LA BOITE DES DPAE DIT D'UN ENGAGEMENT (`choix_dpae`) ; `part` : l'embauche qu'il ajoute, coche, a la case
+/// `engagements` du geste de la boite (`EtatParEngagement::dpae_envoyer`), quand il se coche.
 #[derive(Debug, Clone, Serialize)]
 struct Choix {
     cochable: bool,
@@ -1365,6 +1446,8 @@ struct Choix {
     etat: EtatCase,
     couleur: &'static str,
     phrase: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part: Option<EmbaucheDesignee>,
 }
 
 /// UNE DPAE A FAIRE (`embauches_a_declarer`) : le mois, le contrat, qui, pour quoi, ses bornes, l'empreinte de ce qu'elle
@@ -2086,7 +2169,7 @@ impl<'a> Moteur<'a> {
             charge.engagements = Some(a.embauches.into_iter().map(designee).collect::<R<Vec<_>>>()?);
         }
         let nom = if quoi == DSN { "la DSN" } else { "la DPAE" };
-        let deposer = |libelle: String| action(Route::DepotApercu, charge.clone(), Some(Route::Deposer), libelle);
+        let deposer = |libelle: String| vers(VueDuGeste::Depot, charge.clone(), Some(Route::Deposer), libelle);
         let action = match etape {
             // Le fichier ecrit ne declare plus la paie : la DSN se refait depuis les engagements valides, et repasse par
             // le test.
@@ -2225,8 +2308,8 @@ impl<'a> Moteur<'a> {
                 }
                 // L'AVENANT n'a pas d'echeance : L. 1242-13 date la remise du contrat a l'embauche, aucun texte depose ne
                 // date celle d'un avenant (regle 1 : rien ne se devine).
-                PointContrat::ARefaire => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois))),
-                PointContrat::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois))),
+                PointContrat::ARefaire => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois, None))),
+                PointContrat::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois, None))),
                 PointContrat::ACompleter => a_completer(n),
                 PointContrat::AValider => a_valider(n),
                 PointContrat::RienASigner => rien_ici("rien à signer"),
@@ -2615,9 +2698,9 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     };
     let par_dit = etats::mot_de_la_remise(s.par, etats::PlaceDeLaRemise::Phrase);
     let (etat, phrase, geste) = match (pt.contrat, debut_du_contrat) {
-        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
-        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
-        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois))),
+        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois, None))),
+        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois, None))),
+        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois, None))),
         // Un avenant parti, imprime ou par courriel, se note signe d'un clic, comme le contrat ; la relance est dans la
         // boite des contrats en attente. `par` est celui du dernier depart, l'avenant attendu.
         (PointContrat::EnAttente, _) if s.avenant_attendu => (
@@ -2718,7 +2801,9 @@ fn pieces_du_contrat(p: &Vue, mois: Mois, s: &Signature, dossier: Option<&Contra
         gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat parti : l'ancien texte et le nouveau, article par article"), action: avenant(p, mois).and_then(&route), principal: caduc });
     }
     if !fait {
-        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois)), principal: true });
+        // Depuis le detail de l'engagement, seul son contrat se coche d'abord.
+        let siens = p.salarie.clone().map(|s| vec![s]);
+        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois, siens)), principal: true });
     }
     Pieces { vide, encart, gestes }
 }
@@ -2744,7 +2829,15 @@ fn majuscule_initiale(t: &str) -> String {
 /// (`fait`, `a_faire`, `en_attente`, `refuse`) avec sa phrase.
 fn choix_dpae(p: &Vue) -> R<Choix> {
     let d = &p.etats.dpae;
-    let choix = |cochable: bool, cochee: bool, etat: EtatCase, phrase: String| -> R<Choix> { Ok(Choix { cochable, cochee, etat, couleur: etat.couleur(), phrase }) };
+    // Ce qui se coche est valide : sa fiche et son contrat sont dits.
+    let choix = |cochable: bool, cochee: bool, etat: EtatCase, phrase: String| -> R<Choix> {
+        let part = match (cochable, p.salarie.clone(), p.numero.clone()) {
+            (false, _, _) => None,
+            (true, Some(salarie), Some(numero)) => Some(EmbaucheDesignee { salarie, numero }),
+            (true, _, _) => return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une embauche à cocher n'a pas sa fiche ou son contrat.")),
+        };
+        Ok(Choix { cochable, cochee, etat, couleur: etat.couleur(), phrase, part })
+    };
     // Il lui manque un fait : sa DPAE attend qu'il soit complet.
     if let Some(manque) = &p.a_completer {
         return choix(false, false, EtatCase::AFaire, format!("à compléter avant de valider : {}", manque));
@@ -2935,6 +3028,7 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             contrat,
             non_actif: socle::paris::ecrit::seconde::texte(n.le()),
             non_actif_dit: format!("non actif depuis le {}", n.le().dit()),
+            mot: "non actif",
             a_faire: crate::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),
         });
     }
@@ -2970,14 +3064,30 @@ pub(crate) struct LesDeuxEtats {
 
 impl LesDeuxEtats {
     /// `etat-par-engagement` : la phrase du mois, et ce que la page lit de chaque engagement.
-    pub(crate) fn par_engagement(&self) -> EtatParEngagement<'_> {
+    pub(crate) fn par_engagement(&self) -> R<EtatParEngagement<'_>> {
         let engagements: Vec<LigneDePage> = self.lignes.iter().map(LigneDePage::de).collect();
         let phrase = match engagements.len() {
             0 => socle::phrase!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
             n => socle::phrase!("Engagements du mois : {}.", n),
         };
         let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
-        EtatParEngagement { phrase, phrases, mois: self.mois, engagements, non_actifs: &self.non_actifs }
+        // Les embauches cochees partent par l'apercu du depot, qui ecrit leur DPAE ; son test part tout de suite.
+        let dpae_envoyer = self.lignes.iter().any(|l| l.dpae_choix.cochable).then(|| {
+            let mut charge = Designation::du_mois(Quoi::Dpae, self.mois);
+            charge.engagements = Some(Vec::new());
+            Action { tester: true, ..vers(VueDuGeste::Depot, charge, Some(Route::Deposer), "Envoyer le test".into()) }
+        });
+        Ok(EtatParEngagement {
+            phrase,
+            phrases,
+            mois: self.mois,
+            engagements,
+            non_actifs: &self.non_actifs,
+            dpae_titre: "Envoyer les DPAE",
+            dpae_notes: [crate::ouverture::aide("dpae_cochees")?, crate::ouverture::aide("dpae_heure")?],
+            dpae_envoyer,
+            dpae_rien: "Rien de coché",
+        })
     }
 }
 

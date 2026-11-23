@@ -8,10 +8,10 @@
 //! sienne.
 //!
 //! UN MODULE PAR PLACE DE L'ECRAN (`catalogue::Place`) : la Paie (`mois`, `etapes`, `engagement`, `contrats`,
-//! `documents`, `depots`, `imprevus`, `rappels`), la Configuration (`fiches`, `metiers`, `identite`, `bulletin`,
+//! `documents`, `depots`, `imprevus`, `rappels`), la Configuration (`fiches`, `metiers`, `identite`,
 //! `modeles_contrat`, `coffre`, `import`), l'Historique (`historique`), les Exports (`archives`, `dossier_salarie`),
 //! « Un probleme, une idee ? » (`filet`), l'accueil des compagnies (`accueil` : les routes de l'installation), et les
-//! lectures que les ecrans partagent (`ouverture`). Chacun dit ses routes et leurs fiches (`ROUTES`, `catalogue::FICHES`) ;
+//! lectures que les ecrans partagent (`ouverture`, et `bulletin` : le bulletin d'exemple d'un modele). Chacun dit ses routes et leurs fiches (`ROUTES`, `catalogue::FICHES`) ;
 //! l'aiguillage (`servir`) ne fait rien d'autre que les servir.
 //!
 //! BRANCHER UN MODULE SUR L'ENVELOPPE :
@@ -67,7 +67,7 @@ mod engagement;
 mod contrats;
 mod modeles_contrat;
 pub mod fiches;
-mod identite;
+pub mod identite;
 mod metiers;
 mod convention_du_metier;
 pub mod bulletin;
@@ -82,7 +82,9 @@ pub mod rappels;
 mod mois;
 pub mod accueil;
 pub mod catalogue;
+pub mod declaration;
 pub mod affiche;
+mod ecran;
 
 mod apercu_dsn;
 pub mod etat_garde;
@@ -236,7 +238,7 @@ pub fn case_nommee(route: Route, e: Echec) -> Echec {
 fn libelle_de_la_case(route: Route, case: &socle::echec::CaseDeLaSaisie) -> String {
     use socle::echec::CaseDeLaSaisie;
     let libelle = match case {
-        CaseDeLaSaisie::Cle(cle) => catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.iter().find(|c| c.nom == cle)).map(|c| c.libelle.texte()),
+        CaseDeLaSaisie::Cle(cle) => catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.champs.iter().find(|c| c.champ.nom == cle)).map(|c| c.champ.libelle.texte()),
         CaseDeLaSaisie::DUnChangement(cle) => ::engagement::carte::libelle_de_la_case(cle),
     };
     match (libelle, case) {
@@ -420,10 +422,11 @@ pub fn est_une_ecriture(route: Route) -> bool {
     catalogue::FICHES.iter().any(|l| catalogue::dans(l, route).is_some_and(|f| f.acte != catalogue::Acte::Lit))
 }
 
-/// La charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge : `{}`.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SansCharge {}
+declaration::charge! {
+    /// La charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge : `{}`.
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub(crate) struct SansCharge {}
+}
 
 /// UN ENCART, tel que la page le dessine (`encart` de js/tuyau.js) : un titre en gras, sa phrase, la couleur de l'etat.
 /// La page n'ecrit aucune phrase : ce qu'une boite dit d'un cas, la route le rend ainsi.

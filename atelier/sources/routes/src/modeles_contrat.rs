@@ -23,8 +23,14 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Route;
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Forme, Place, Refus, MANQUE, OPERATION};
+use crate::fiches::{CaseDeLaFiche, PartieDeLaFiche};
+use crate::ouverture::Choix;
+use droit::fiche::ValeurDeCase;
+use crate::declaration::{charge, cle, dit, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
+use crate::imprevus::GesteDeRoute;
+use crate::SansCharge;
 use documents::contrat_ecrit::{ChampDeModele, ModeleDuContrat};
 use documents::marqueurs::ModeleLu;
 use droit::contexte::{Contexte, IdSalarie};
@@ -37,30 +43,31 @@ use socle::ecran::Pastille;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
 
-const fn champ(nom: &'static str, libelle: &'static str, forme: Forme, sens: &'static str) -> Champ {
-    Champ { nom, libelle: Affiche::new(libelle), forme, sens, avance: false }
-}
-
-const NATURE: Champ = champ("nature", "Nature du contrat", Forme::Texte, "la nature du contrat : cddu_spectacle, cdd, cdi…");
-const ID: Champ = champ("id", "Modèle", Forme::Texte, "l'id d'un modèle spécial (`modeles` de modeles-contrat)");
-const ID_OU_BASE: Champ = champ("id", "Modèle", Forme::Texte, "l'id d'un modèle spécial ; absent ou null : le modèle de base de la nature");
-const PARTIE: Champ = champ("partie", "Partie", Forme::Texte, "« contrat » ou « avenant » : le texte du modèle que le geste lit ou écrit");
-const NOM: Champ = champ("nom", "Nom", Forme::Texte, "le nom du modèle spécial");
-const NUMERO: Champ = champ("numero", "Paragraphe", Forme::Nombre, "le numéro du paragraphe (`articles[].numero` de modele-contrat), à partir de 1");
-const TITRE: Champ = champ("titre", "Titre", Forme::Texte, "le titre du paragraphe");
+const NATURE: Legende = dit("Nature du contrat", "la nature du contrat : cddu_spectacle, cdd, cdi…");
+const ID: Legende = dit("Modèle", "l'id d'un modèle spécial (`modeles` de modeles-contrat)");
+const ID_OU_BASE: Legende = dit("Modèle", "l'id d'un modèle spécial ; absent ou null : le modèle de base de la nature");
+const PARTIE: Legende = dit("Partie", "le texte du modèle que le geste lit ou écrit");
+const NOM: Legende = dit("Nom", "le nom du modèle spécial");
+const NUMERO: Legende = dit("Paragraphe", "le numéro du paragraphe (`articles[].numero` de modele-contrat), à partir de 1");
+const TITRE: Legende = dit("Titre", "le titre du paragraphe");
 const MODELE_REFUSE: Refus = Refus { classe: Classe::Refuse, corriger: "le modèle : ce que la phrase nomme, paragraphe par paragraphe ; rien n'est écrit" };
 
 /// Ce que la ligne d'un modele special dit quand une base dont il est copie a change depuis (une mise a jour).
 const BASE_CHANGEE: &str = "Le modèle de base a changé depuis la copie : ouvrir ce modèle pour voir quels paragraphes.";
 
-/// Une fiche de ce module (elles se voient toutes sur l'ecran des modeles de contrat, sous « Avance »).
-const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str, rend: &'static str, refus: &'static [Refus], acte: Acte) -> Fiche {
-    Fiche { route, geste, charge, exemple, rend, refus, acte, phrase: 0, ecran: Ecran::DessineAvance(Place::ModelesContrat), pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
+/// Ou se voient les deux lectures de ce module : l'ecran des modeles de contrat les appelle, sous « Avance ».
+const DESSINE: Ecran = Ecran::DessineAvance(Place::ModelesContrat);
+/// Ou se voient ses gestes : les deux lectures les rendent (`GesteDuModele`), sous « Avance ».
+const GESTE: Ecran = Ecran::GesteAvance(Place::ModelesContrat);
+
+/// Une fiche de ce module.
+const fn fiche(route: Route, geste: &'static str, charge: &'static ChargeDuType, exemple: &'static str, rend: &'static str, refus: &'static [Refus], acte: Acte, ecran: Ecran) -> Fiche {
+    Fiche { route, geste, charge, exemple, rend, refus, acte, phrase: 0, ecran, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
 /// Une fiche d'un geste qui ecrit un modele et rend la liste, comme modeles-contrat.
-const fn geste(route: Route, geste: &'static str, charge: &'static [Champ], exemple: &'static str) -> Fiche {
-    fiche(route, geste, charge, exemple, "les modèles, comme modeles-contrat", &[MODELE_REFUSE, MANQUE], Acte::Ecrit)
+const fn geste(route: Route, geste: &'static str, charge: &'static ChargeDuType, exemple: &'static str) -> Fiche {
+    fiche(route, geste, charge, exemple, "les modèles, comme modeles-contrat", &[MODELE_REFUSE, MANQUE], Acte::Ecrit, GESTE)
 }
 
 /// Les routes de ce module, et leurs fiches, dans l'ordre ou leurs exemples se jouent : la copie fait `m1`, que les
@@ -69,71 +76,69 @@ pub const ROUTES: &[Fiche] = &[
     fiche(
         Route::ModelesContrat,
         "Lister les modèles de contrat de chaque nature, la base et les spéciaux.",
-        &[],
+        &super::SansCharge::CHARGE,
         r#"{}"#,
-        "natures (chacune : ses modèles, la base d'abord, le défaut marqué, ce qui manque à chacun, à son contrat ou à son avenant)",
+        "natures (chacune : son titre, ses gestes (copier sa base), ses modèles, la base d'abord, le défaut marqué, ce qui manque à chacun, à son contrat ou à son avenant, ouvrir (le geste qui lit le modèle) et ses gestes) : chaque geste a sa route, sa charge, son libellé, les cases que sa boîte fait saisir et ce qu'elles montrent d'abord",
         &[OPERATION],
         Acte::Lit,
+        DESSINE,
     ),
-    geste(Route::CopierModeleContrat, "Copier en modèle spécial le modèle de base d'une nature, contrat et avenant.", &[NATURE, NOM], r#"{"nature":"cddu_spectacle","nom":"Tournée"}"#),
+    geste(Route::CopierModeleContrat, "Copier en modèle spécial le modèle de base d'une nature, contrat et avenant.", &ChargeCopier::CHARGE, r#"{"nature":"cddu_spectacle","nom":"Tournée"}"#),
     fiche(
         Route::ModeleContrat,
         "Lire le contrat ou l'avenant d'un modèle, par paragraphe, et ses manques.",
-        &[NATURE, ID_OU_BASE, PARTIE],
+        &ChargeLire::CHARGE,
         r#"{"nature":"cddu_spectacle","id":"m1","partie":"contrat"}"#,
-        "articles (numero, titre, alinéas et leur condition), manques, en_francais, champs (ceux qu'un alinéa insère ou pose en condition, avec leur libellé), base_changee (ce qui a changé dans la base depuis la copie ; null pour la base), engagements (ceux de l'aperçu, le plus récent d'abord)",
+        "articles (numero, titre, alinéas et leur condition ; ecrire, le geste qui l'enregistre, que les alinéas tapés complètent ; gestes, ceux qu'on peut y faire ; un article sans geste se lit seulement), manques, en_francais, champs (ceux qu'un alinéa insère ou pose en condition, avec leur libellé), base_changee (ce qui a changé dans la base depuis la copie ; null pour la base), engagements (ceux de l'aperçu, le plus récent d'abord), parties (le geste qui lit le contrat, celui qui lit l'avenant), gestes (ceux qu'on peut faire sur le modèle), apercu (le geste qui fait l'aperçu, que l'engagement choisi complète) : chaque geste a sa route, sa charge, son libellé, les cases que sa boîte fait saisir et ce qu'elles montrent d'abord",
         &[OPERATION, MANQUE],
         Acte::Lit,
+        DESSINE,
     ),
-    geste(Route::RenommerModeleContrat, "Renommer un modèle spécial.", &[ID, NOM], r#"{"id":"m1","nom":"Tournée d'été"}"#),
+    geste(Route::RenommerModeleContrat, "Renommer un modèle spécial.", &ChargeRenommer::CHARGE, r#"{"id":"m1","nom":"Tournée d'été"}"#),
     geste(
         Route::EcrireParagrapheContrat,
         "Écrire un paragraphe d'un modèle spécial : titre, alinéas et leur condition.",
-        &[
-            ID,
-            PARTIE,
-            NUMERO,
-            TITRE,
-            champ("alineas", "Alinéas", Forme::Objet, "[{si, texte}, …] dans l'ordre : texte, l'alinéa (une donnée s'y insère par {{son.champ}}, un des `champs` de modele-contrat) ; si, le champ qui doit avoir une valeur pour qu'il s'écrive, null : toujours"),
-        ],
+        &ChargeEcrireParagraphe::CHARGE,
         r#"{"id":"m1","partie":"contrat","numero":3,"titre":"Lieu de travail","alineas":[{"si":null,"texte":"Le travail a lieu {{contrat.lieu}}."}]}"#,
     ),
     geste(
         Route::AjouterParagrapheContrat,
         "Ajouter un paragraphe à un modèle spécial, à une place.",
-        &[ID, PARTIE, champ("numero", "Place", Forme::Nombre, "sa place : 1 en tête, le nombre de paragraphes plus 1 à la fin"), TITRE],
+        &ChargeAjouter::CHARGE,
         r#"{"id":"m1","partie":"contrat","numero":4,"titre":"Déplacements"}"#,
     ),
     geste(
         Route::DeplacerParagrapheContrat,
         "Monter ou descendre un paragraphe d'un modèle spécial.",
-        &[ID, PARTIE, NUMERO, champ("sens", "Sens", Forme::Texte, "« monter » ou « descendre »")],
+        &ChargeDeplacer::CHARGE,
         r#"{"id":"m1","partie":"contrat","numero":4,"sens":"monter"}"#,
     ),
     geste(
         Route::SupprimerParagrapheContrat,
         "Supprimer un paragraphe d'un modèle spécial, sauf une mention exigée seule.",
-        &[ID, PARTIE, NUMERO],
+        &ChargeParagraphe::CHARGE,
         r#"{"id":"m1","partie":"contrat","numero":3}"#,
     ),
     fiche(
         Route::ApercuModeleContrat,
         "Faire le PDF du contrat ou de l'avenant d'un modèle, rempli d'un engagement.",
-        &[NATURE, ID_OU_BASE, PARTIE, champ("engagement", "Engagement", Forme::Objet, "{mois, salarie, debut}, un des `engagements` de modele-contrat ; absent ou null : le plus récent")],
+        &ChargeApercu::CHARGE,
         r#"{"nature":"cddu_spectacle","id":"m1","partie":"avenant","engagement":null}"#,
         "phrase, chemin (le PDF de l'aperçu)",
         &[MODELE_REFUSE, MANQUE],
         Acte::Lit,
+        GESTE,
     ),
-    fiche(Route::ModeleContratParDefaut, "Choisir le modèle par défaut d'une nature.", &[NATURE, ID_OU_BASE], r#"{"nature":"cddu_spectacle","id":"m1"}"#, "les modèles, comme modeles-contrat", &[OPERATION, MANQUE], Acte::Ecrit),
+    fiche(Route::ModeleContratParDefaut, "Choisir le modèle par défaut d'une nature.", &ChargeDefaut::CHARGE, r#"{"nature":"cddu_spectacle","id":"m1"}"#, "les modèles, comme modeles-contrat", &[OPERATION, MANQUE], Acte::Ecrit, GESTE),
     fiche(
         Route::SupprimerModeleContrat,
         "Supprimer un modèle spécial ; ses engagements suivent le défaut.",
-        &[ID],
+        &ChargeId::CHARGE,
         r#"{"id":"m1"}"#,
         "les modèles, comme modeles-contrat ; la phrase nomme les engagements qui l'avaient choisi",
         &[OPERATION, MANQUE],
         Acte::Ecrit,
+        GESTE,
     ),
 ];
 
@@ -202,6 +207,28 @@ enum Partie {
     Avenant,
 }
 
+impl socle::liste::ListeFermee for Partie {
+    const TOUTES: &'static [Partie] = &[Partie::Contrat, Partie::Avenant];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(self.bouton().texte())
+    }
+}
+
+impl Partie {
+    /// Le libelle de la partie, celui du geste qui la lit (une constante : un texte fautif ne compile pas).
+    const fn bouton(self) -> Affiche {
+        match self {
+            Partie::Contrat => const { Affiche::new("Contrat") },
+            Partie::Avenant => const { Affiche::new("Avenant") },
+        }
+    }
+}
+
 impl Special {
     fn partie(&self, p: Partie) -> &Texte {
         match p {
@@ -263,6 +290,13 @@ fn texte_de_base(nat: &Nature, partie: Partie) -> R<String> {
     };
     let nom = nom.ok_or_else(|| refus(format!("La nature {} n'a pas de contrat écrit.", nat.libelle)))?;
     lire_texte(&socle::fichiers::dossier_du_code().join("modeles").join(nom))
+}
+
+/// Un nom en tete de ligne : sa premiere lettre en capitale, le reste tel quel (« Contrat de travail à durée
+/// déterminée »).
+fn capitale(t: &str) -> String {
+    let mut c = t.chars();
+    c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect()
 }
 
 fn nom_de_base(nat: &Nature) -> String {
@@ -416,13 +450,13 @@ impl Decoupe {
     }
 }
 
-/// Un alinea : sa condition (le champ qui doit avoir une valeur ; `None` : toujours) et son texte. Un geste l'ecrit,
-/// `modele-contrat` le rend.
+/// Un alinea : sa condition (le champ qui doit avoir une valeur ; `None` : toujours) et son texte (`None` : la rangee
+/// ne dit rien, elle ne s'ecrit pas). Un geste l'ecrit, `modele-contrat` le rend.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Alinea {
     si: Option<String>,
-    texte: String,
+    texte: Option<String>,
 }
 
 /// Un texte sur une ligne : un paragraphe du modele ne garde que ses mots.
@@ -440,14 +474,18 @@ fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Paragraphe> {
     }
     let mut lignes = vec![format!("ARTICLE: {}", titre), String::new()];
     for (n, a) in alineas.iter().enumerate() {
-        let t = une_ligne(&a.texte);
-        if t.is_empty() {
+        let si = a.si.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let Some(t) = a.texte.as_deref().map(une_ligne).filter(|t| !t.is_empty()) else {
+            // Une condition sans texte ne dirait rien : on ne la jette pas sans le dire.
+            if si.is_some() {
+                return Err(erreur(Classe::Manque, format!("L'alinéa {} de « {} » a une condition et pas de texte : écrire son texte, ou retirer la ligne. Rien n'est écrit.", n + 1, titre)));
+            }
             continue;
-        }
+        };
         if t.starts_with('#') || t.starts_with('[') || fabrique_pdf::modele::CLES.iter().any(|k| t.starts_with(k)) {
             return Err(refus(format!("L'alinéa {} de « {} » commence par un signe que le modèle lit autrement (#, [ ou une clé comme ARTICLE:) : le reformuler ; sa condition se choisit à côté. Rien n'est écrit.", n + 1, titre)));
         }
-        lignes.push(match a.si.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        lignes.push(match si {
             Some(si) => format!("[si {}] {}", si, t),
             None => t,
         });
@@ -479,34 +517,51 @@ fn sur_les_paragraphes(ctx: &Contexte, id: &IdDeModele, partie: Partie, faire: i
     modeles(ctx, &devant)
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeEcrireParagraphe {
-    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
-    id: IdDeModele,
-    partie: Partie,
-    numero: usize,
-    titre: String,
-    alineas: Vec<Alinea>,
+/// LES PARTIES D'UN ALINEA : sa condition, au choix parmi les champs que `modele-contrat` rend (`champs`), vide :
+/// toujours ; son texte, sur plusieurs lignes.
+const PARTIES_D_UN_ALINEA: &[crate::catalogue::Partie] = &[
+    crate::catalogue::Partie { cle: "si", libelle: Affiche::new("Condition"), forme: Forme::ChoixRendu, toujours: true },
+    crate::catalogue::Partie { cle: "texte", libelle: Affiche::new("Texte"), forme: Forme::TexteLong, toujours: true },
+];
+
+/// Dans une charge, un alinea est une valeur faite de parties (`{si, texte}`) : les alineas d'un paragraphe, des rangees.
+impl ValeurDeLaCharge<ParSaForme> for Alinea {
+    const FORME: Forme = Forme::Parties(PARTIES_D_UN_ALINEA);
+}
+
+charge! {
+    #[derive(Debug)]
+    struct ChargeEcrireParagraphe {
+        #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
+        id: IdDeModele = ID,
+        partie: Partie = PARTIE,
+        numero: usize = NUMERO,
+        titre: String = TITRE,
+        alineas: Option<Vec<Alinea>> = dit("Alinéas", "[{si, texte}, …] dans l'ordre : texte, l'alinéa (une donnée s'y insère par {{son.champ}}, un des `champs` de modele-contrat) ; si, le champ qui doit avoir une valeur pour qu'il s'écrive, null : toujours ; sans alinéa, le paragraphe n'a que son titre"),
+    }
 }
 
 /// ECRIRE UN PARAGRAPHE : `{id, partie, numero, titre, alineas}` remplace le paragraphe `numero` (sa condition comprise).
 fn ecrire_paragraphe(ctx: &Contexte, c: ChargeEcrireParagraphe) -> R<Modeles> {
     sur_les_paragraphes(ctx, &c.id, c.partie, |d| {
         let i = d.indice(c.numero)?;
-        d.articles[i] = paragraphe(&c.titre, &c.alineas)?;
+        d.articles[i] = match &c.alineas {
+            Some(alineas) => paragraphe(&c.titre, alineas)?,
+            None => paragraphe(&c.titre, &[])?,
+        };
         Ok(format!("paragraphe {} « {} » écrit.", c.numero, d.titre(i)))
     })
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeAjouter {
-    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
-    id: IdDeModele,
-    partie: Partie,
-    numero: usize,
-    titre: String,
+charge! {
+    #[derive(Debug)]
+    struct ChargeAjouter {
+        #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
+        id: IdDeModele = ID,
+        partie: Partie = PARTIE,
+        numero: usize = dit("Place", "sa place : 1 en tête, le nombre de paragraphes plus 1 à la fin"),
+        titre: String = TITRE,
+    }
 }
 
 /// AJOUTER UN PARAGRAPHE : `{id, partie, numero, titre}`, un paragraphe sans alinea a la place `numero` (1 en tete,
@@ -523,21 +578,44 @@ fn ajouter_paragraphe(ctx: &Contexte, c: ChargeAjouter) -> R<Modeles> {
 }
 
 /// Le sens d'un deplacement.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Sens {
     Monter,
     Descendre,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDeplacer {
-    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
-    id: IdDeModele,
-    partie: Partie,
-    numero: usize,
-    sens: Sens,
+impl socle::liste::ListeFermee for Sens {
+    const TOUTES: &'static [Sens] = &[Sens::Monter, Sens::Descendre];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(self.bouton().texte())
+    }
+}
+
+impl Sens {
+    /// Le libelle du sens, celui du geste qui deplace un paragraphe (une constante : un texte fautif ne compile pas).
+    const fn bouton(self) -> Affiche {
+        match self {
+            Sens::Monter => const { Affiche::new("Monter") },
+            Sens::Descendre => const { Affiche::new("Descendre") },
+        }
+    }
+}
+
+charge! {
+    #[derive(Debug)]
+    struct ChargeDeplacer {
+        #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
+        id: IdDeModele = ID,
+        partie: Partie = PARTIE,
+        numero: usize = NUMERO,
+        sens: Sens = dit("Sens", "où le paragraphe se déplace"),
+    }
 }
 
 /// DEPLACER UN PARAGRAPHE : `{id, partie, numero, sens}`, d'une place vers le haut ou vers le bas.
@@ -555,13 +633,14 @@ fn deplacer_paragraphe(ctx: &Contexte, c: ChargeDeplacer) -> R<Modeles> {
     })
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeParagraphe {
-    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
-    id: IdDeModele,
-    partie: Partie,
-    numero: usize,
+charge! {
+    #[derive(Debug)]
+    struct ChargeParagraphe {
+        #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
+        id: IdDeModele = ID,
+        partie: Partie = PARTIE,
+        numero: usize = NUMERO,
+    }
 }
 
 /// SUPPRIMER UN PARAGRAPHE : `{id, partie, numero}`. Celui qui porte une mention exigee ne se supprime pas tant qu'elle
@@ -577,43 +656,48 @@ fn supprimer_paragraphe(ctx: &Contexte, c: ChargeParagraphe) -> R<Modeles> {
 
 // ------------------------------------------------------------------ les charges et les reponses
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeLire {
-    nature: NatureDeContrat,
-    #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
-    id: Option<IdDeModele>,
-    partie: Partie,
+charge! {
+    #[derive(Debug)]
+    struct ChargeLire {
+        nature: NatureDeContrat = NATURE,
+        #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
+        id: Option<IdDeModele> = ID_OU_BASE,
+        partie: Partie = PARTIE,
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeDefaut {
-    nature: NatureDeContrat,
-    #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
-    id: Option<IdDeModele>,
+charge! {
+    #[derive(Debug)]
+    struct ChargeDefaut {
+        nature: NatureDeContrat = NATURE,
+        #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
+        id: Option<IdDeModele> = ID_OU_BASE,
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCopier {
-    nature: NatureDeContrat,
-    nom: String,
+charge! {
+    #[derive(Debug)]
+    struct ChargeCopier {
+        nature: NatureDeContrat = NATURE,
+        nom: String = NOM,
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeRenommer {
-    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
-    id: IdDeModele,
-    nom: String,
+charge! {
+    #[derive(Debug)]
+    struct ChargeRenommer {
+        #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
+        id: IdDeModele = ID,
+        nom: String = NOM,
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeId {
-    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
-    id: IdDeModele,
+charge! {
+    #[derive(Debug)]
+    struct ChargeId {
+        #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
+        id: IdDeModele = ID,
+    }
 }
 
 /// L'engagement d'un apercu : le mois de sa carte, la cle de son salarie, son debut.
@@ -625,14 +709,20 @@ struct EngagementVise {
     debut: Jour,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeApercu {
-    nature: NatureDeContrat,
-    #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
-    id: Option<IdDeModele>,
-    partie: Partie,
-    engagement: Option<EngagementVise>,
+/// Dans une charge, l'engagement d'un apercu se dit d'un objet (`{mois, salarie, debut}`).
+impl ValeurDeLaCharge<ParSaForme> for EngagementVise {
+    const FORME: Forme = Forme::Objet;
+}
+
+charge! {
+    #[derive(Debug)]
+    struct ChargeApercu {
+        nature: NatureDeContrat = NATURE,
+        #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
+        id: Option<IdDeModele> = ID_OU_BASE,
+        partie: Partie = PARTIE,
+        engagement: Option<EngagementVise> = dit("Engagement", "{mois, salarie, debut}, un des `engagements` de modele-contrat ; absent ou null : le plus récent"),
+    }
 }
 
 /// Un modele de contrat d'une nature, tel que la liste le dit : la base (sans id) ou un special.
@@ -647,15 +737,69 @@ struct ModeleDit {
     /// Ce qui manque a son contrat, puis a son avenant.
     manques: Vec<String>,
     pastille: Pastille,
+    /// Le geste qui l'ouvre : la lecture de son contrat (`modele-contrat`).
+    ouvrir: GesteDuModele,
+    /// Ce qu'on peut faire sur lui : le choisir par defaut (sauf s'il l'est), le supprimer (un special).
+    gestes: Vec<GesteDuModele>,
 }
 
-/// Une nature et ses modeles de contrat.
+/// Une nature et ses modeles de contrat : son titre (le nom de son contrat, en tete de ligne), ce qu'on peut y faire
+/// (copier sa base).
 #[derive(Debug, Serialize)]
 struct NatureDite {
     nature: NatureDeContrat,
+    titre: String,
     libelle: String,
     nom: String,
+    gestes: Vec<GesteDuModele>,
     modeles: Vec<ModeleDit>,
+}
+
+/// UN GESTE DE L'ECRAN DES MODELES DE CONTRAT (`imprevus::GesteDeRoute`) : sa charge designe le modele, sa partie ou son
+/// paragraphe (`SurLeModele`) ; ses cases montrent d'abord le nom du modele (`ValeursDuModele`) et n'offrent aucun choix.
+type GesteDuModele = GesteDeRoute<SurLeModele, ValeursDuModele, SansCharge>;
+
+/// CE QUI DESIGNE, AUX GESTES DE L'ECRAN DES MODELES DE CONTRAT, la chose sur laquelle ils se font : la nature (copier sa
+/// base, choisir le defaut), le modele special (aucun : la base), sa partie, un paragraphe et le sens ou il se deplace.
+/// Ce qui ne la designe pas ne s'ecrit pas : chaque geste a les champs de la charge de sa route, rien d'autre.
+#[derive(Debug, Clone, Default, Serialize)]
+struct SurLeModele {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nature: Option<NatureDeContrat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<IdDeModele>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partie: Option<Partie>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    numero: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sens: Option<Sens>,
+}
+
+/// Ce que montrent d'abord les cases d'un geste de l'ecran des modeles : le nom du special qu'on renomme.
+#[derive(Debug, Clone, Default, Serialize)]
+struct ValeursDuModele {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nom: Option<String>,
+}
+
+// Les mots de l'ecran, en constantes : un texte fautif ne compile pas (`Affiche::new`).
+const OUVRIR: Affiche = Affiche::new("Ouvrir");
+const PAR_DEFAUT: Affiche = Affiche::new("Choisir par défaut");
+const SUPPRIMER: Affiche = Affiche::new("Supprimer");
+const COPIER: Affiche = Affiche::new("Copier la base…");
+const RENOMMER: Affiche = Affiche::new("Renommer…");
+const AJOUTER: Affiche = Affiche::new("Ajouter un paragraphe…");
+const ENREGISTRER: Affiche = Affiche::new("Enregistrer");
+const APERCU: Affiche = Affiche::new("Aperçu PDF");
+const TITRE_DU_PARAGRAPHE: Affiche = Affiche::new("Titre");
+const ALINEAS: Affiche = Affiche::new("Alinéas");
+const AJOUTER_UN_ALINEA: Affiche = Affiche::new("Ajouter un alinéa");
+const TOUJOURS: Affiche = Affiche::new("Toujours");
+
+/// Un geste de l'ecran sans case : il part avec sa charge.
+fn sans_case(route: Route, sur: SurLeModele, libelle: Affiche) -> GesteDuModele {
+    GesteDeRoute::avec_cases(route, sur, libelle, Vec::new(), ValeursDuModele::default(), SansCharge {})
 }
 
 /// Ce que l'ecran des modeles de contrat dit (`ecran` de `modeles-contrat`).
@@ -675,12 +819,26 @@ struct Modeles {
     ecran: Option<EcranDesModeles>,
 }
 
-/// Un article d'un modele : son numero, son titre, ses alineas.
+/// Un article d'un modele : son numero, son titre, ce qu'il est (lu ou a ecrire : `CorpsDeLArticle`) et ce qu'on peut y
+/// faire (le monter, sauf le premier ; le descendre, sauf le dernier ; le supprimer).
 #[derive(Debug, Serialize)]
 struct ArticleRendu {
     numero: usize,
     titre: String,
-    alineas: Vec<Alinea>,
+    #[serde(flatten)]
+    corps: CorpsDeLArticle,
+    gestes: Vec<GesteDuModele>,
+}
+
+/// CE QU'EST UN ARTICLE : d'un modele de base, ses alineas, qui se lisent seulement ; d'un special, ses cases (son titre,
+/// ses alineas en rangees : chacun sa condition, au choix parmi les champs, et son texte), dessinees comme celles d'une
+/// fiche, et le geste qui les enregistre (sa charge designe l'article, ce que disent les cases la complete, chacune sous
+/// sa cle).
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum CorpsDeLArticle {
+    Lu { alineas: Vec<Alinea> },
+    AEcrire { cases: Vec<CaseDeLaFiche<&'static str>>, ecrire: GesteDuModele },
 }
 
 /// Un engagement que l'apercu peut remplir : ce qui le designe (`engagement` de apercu-modele-contrat) et son nom.
@@ -705,6 +863,13 @@ struct ModeleRendu {
     champs: Vec<ChampDeModele>,
     base_changee: Option<Vec<String>>,
     engagements: Vec<EngagementAuChoix>,
+    /// Les gestes qui lisent l'une et l'autre partie du modele : son contrat, son avenant.
+    parties: Vec<GesteDuModele>,
+    /// Ce qu'on peut faire sur un special : le renommer, lui ajouter un paragraphe a la fin.
+    gestes: Vec<GesteDuModele>,
+    /// Le geste qui fait l'apercu de cette partie ; l'engagement choisi parmi `engagements` le complete (aucun : le plus
+    /// recent).
+    apercu: GesteDuModele,
 }
 
 /// Ce que rend `apercu-modele-contrat`.
@@ -752,7 +917,7 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
     for nat in natures_de(ctx)? {
         let (contrat, avenant) = (texte_de_base(&nat, Partie::Contrat)?, texte_de_base(&nat, Partie::Avenant)?);
         let defaut = m.defauts.get(&nat.cle);
-        let dit = |id: Option<&IdDeModele>, nom: String, manques: Vec<String>, base_changee: bool| {
+        let dit = |id: Option<&IdDeModele>, nom: String, manques: Vec<String>, base_changee: bool| -> R<ModeleDit> {
             let est_defaut = defaut == id;
             let pastille = match (manques.is_empty(), est_defaut) {
                 (false, _) => Pastille::de(socle::ecran::EtatDEcran::Refuse, "incomplet"),
@@ -760,14 +925,26 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
                 (true, false) if id.is_none() => Pastille::de(socle::ecran::EtatDEcran::Information, "le modèle du logiciel"),
                 (true, false) => Pastille::de(socle::ecran::EtatDEcran::Information, "modèle spécial"),
             };
-            ModeleDit { id: id.cloned(), nom, base: id.is_none(), defaut: est_defaut, base_changee: base_changee.then_some(BASE_CHANGEE), manques, pastille }
+            let du_modele = || SurLeModele { nature: Some(nat.cle.clone()), id: id.cloned(), ..SurLeModele::default() };
+            let ouvrir = sans_case(Route::ModeleContrat, SurLeModele { partie: Some(Partie::Contrat), ..du_modele() }, OUVRIR);
+            let mut gestes = Vec::new();
+            if !est_defaut {
+                gestes.push(sans_case(Route::ModeleContratParDefaut, du_modele(), PAR_DEFAUT));
+            }
+            if let Some(id) = id {
+                let disparait = ce_que_supprimer_dit(ctx, &nom, id, est_defaut)?;
+                gestes.push(sans_case(Route::SupprimerModeleContrat, SurLeModele { id: Some(id.clone()), ..SurLeModele::default() }, SUPPRIMER).disant(disparait));
+            }
+            Ok(ModeleDit { id: id.cloned(), nom, base: id.is_none(), defaut: est_defaut, base_changee: base_changee.then_some(BASE_CHANGEE), manques, pastille, ouvrir, gestes })
         };
-        let mut pieces = vec![dit(None, nom_de_base(&nat), manques_des_deux(&nat, &contrat, &avenant)?, false)];
+        let mut pieces = vec![dit(None, nom_de_base(&nat), manques_des_deux(&nat, &contrat, &avenant)?, false)?];
         for s in m.speciaux.iter().filter(|s| s.nature == nat.cle) {
             let change = s.contrat.base != contrat || s.avenant.base != avenant;
-            pieces.push(dit(Some(&s.id), s.nom.clone(), manques_des_deux(&nat, &s.contrat.texte, &s.avenant.texte)?, change));
+            pieces.push(dit(Some(&s.id), s.nom.clone(), manques_des_deux(&nat, &s.contrat.texte, &s.avenant.texte)?, change)?);
         }
-        sortie.push(NatureDite { nature: nat.cle.clone(), libelle: nat.libelle.clone(), nom: nat.nom_du_contrat().to_string(), modeles: pieces });
+        let nom = nat.nom_du_contrat();
+        let copier = GesteDeRoute::avec_cases(Route::CopierModeleContrat, SurLeModele { nature: Some(nat.cle.clone()), ..SurLeModele::default() }, COPIER, vec![cle!(ChargeCopier, nom)], ValeursDuModele::default(), SansCharge {});
+        sortie.push(NatureDite { nature: nat.cle.clone(), titre: capitale(&nom), libelle: nat.libelle.clone(), nom, gestes: vec![copier], modeles: pieces });
     }
     Ok(Modeles { phrase: socle::phrase!("{}Modèles de contrat spéciaux de la compagnie : {}.", devant, m.speciaux.len()), natures: sortie, ecran: None })
 }
@@ -831,28 +1008,66 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     // Un texte sans paragraphe ne se lit pas : aucun geste n'en laisse (chacun verifie le modele), il ne vient que d'un
     // fichier ecrit a la main, et se refuse.
     let lu = fabrique_pdf::modele::lire_modele(&texte, &nom).map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("{} : le supprimer et copier la base à nouveau.", p)))?;
+    // Ce qui designe le modele lu, et cette partie de lui, a ses gestes.
+    let du_modele = || SurLeModele { nature: Some(nat.cle.clone()), id: c.id.clone(), ..SurLeModele::default() };
+    let de_la_partie = || SurLeModele { partie: Some(c.partie), ..du_modele() };
+    // Ce qui designe cette partie d'un special a un geste qui l'ecrit ; la base ne s'ecrit pas.
+    let ecrite = |numero: Option<usize>, sens: Option<Sens>| s.map(|s| SurLeModele { id: Some(s.id.clone()), partie: Some(c.partie), numero, sens, ..SurLeModele::default() });
+    let dernier = lu.articles.len();
+    let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| m.reclasser(Classe::Illisible))?;
+    // La condition d'un alinea se choisit parmi les champs ; vide, il s'ecrit toujours.
+    let conditions: Vec<Choix> = std::iter::once(Choix::de("", TOUJOURS.texte())).chain(champs.iter().map(|ch| Choix::de(&ch.marqueur, ch.quoi))).collect();
     let articles = lu
         .articles
         .iter()
         .enumerate()
-        .map(|(n, (titre, alineas))| ArticleRendu {
-            numero: n + 1,
-            titre: titre.clone(),
-            alineas: alineas
+        .map(|(n, (titre, alineas))| {
+            let numero = n + 1;
+            let alineas: Vec<Alinea> = alineas
                 .iter()
                 .map(|a| match fabrique_pdf::modele::condition(a) {
-                    Some((si, t)) => Alinea { si: Some(si.to_string()), texte: t.to_string() },
-                    None => Alinea { si: None, texte: a.clone() },
+                    Some((si, t)) => Alinea { si: Some(si.to_string()), texte: Some(t.to_string()) },
+                    None => Alinea { si: None, texte: Some(a.clone()) },
                 })
-                .collect(),
+                .collect();
+            let corps = match ecrite(Some(numero), None) {
+                None => CorpsDeLArticle::Lu { alineas },
+                Some(sur) => CorpsDeLArticle::AEcrire {
+                    cases: vec![
+                        CaseDeLaFiche::simple(cle!(ChargeEcrireParagraphe, titre), TITRE_DU_PARAGRAPHE, Forme::Texte, ValeurDeCase::de(titre)),
+                        CaseDeLaFiche::de_rangees(
+                            cle!(ChargeEcrireParagraphe, alineas),
+                            ALINEAS,
+                            ValeurDeCase::de(&alineas),
+                            PARTIES_D_UN_ALINEA.iter().map(|p| PartieDeLaFiche::de(p, (p.forme == Forme::ChoixRendu).then(|| conditions.clone()))).collect(),
+                        )
+                        .ajoutant(AJOUTER_UN_ALINEA),
+                    ],
+                    ecrire: GesteDeRoute::avec_cases(Route::EcrireParagrapheContrat, sur, ENREGISTRER, vec![cle!(ChargeEcrireParagraphe, titre), cle!(ChargeEcrireParagraphe, alineas)], ValeursDuModele::default(), SansCharge {}),
+                },
+            };
+            let monter = ecrite(Some(numero), Some(Sens::Monter)).filter(|_| numero > 1).map(|sur| sans_case(Route::DeplacerParagrapheContrat, sur, Sens::Monter.bouton()));
+            let descendre = ecrite(Some(numero), Some(Sens::Descendre)).filter(|_| numero < dernier).map(|sur| sans_case(Route::DeplacerParagrapheContrat, sur, Sens::Descendre.bouton()));
+            let supprimer = ecrite(Some(numero), None).map(|sur| sans_case(Route::SupprimerParagrapheContrat, sur, SUPPRIMER));
+            ArticleRendu { numero, titre: titre.clone(), corps, gestes: [monter, descendre, supprimer].into_iter().flatten().collect() }
         })
         .collect();
+    let parties = <Partie as socle::liste::ListeFermee>::TOUTES.iter().map(|p| sans_case(Route::ModeleContrat, SurLeModele { partie: Some(*p), ..du_modele() }, p.bouton())).collect();
+    let mut gestes = Vec::new();
+    if let Some(s) = s {
+        let renommer = SurLeModele { id: Some(s.id.clone()), ..SurLeModele::default() };
+        gestes.push(GesteDeRoute::avec_cases(Route::RenommerModeleContrat, renommer, RENOMMER, vec![cle!(ChargeRenommer, nom)], ValeursDuModele { nom: Some(s.nom.clone()) }, SansCharge {}));
+    }
+    // Un paragraphe s'ajoute a la fin ; il se deplace ensuite.
+    if let Some(sur) = ecrite(Some(dernier + 1), None) {
+        gestes.push(GesteDeRoute::avec_cases(Route::AjouterParagrapheContrat, sur, AJOUTER, vec![cle!(ChargeAjouter, titre)], ValeursDuModele::default(), SansCharge {}));
+    }
+    let apercu = sans_case(Route::ApercuModeleContrat, de_la_partie(), APERCU);
     let dits = manques(&nat, c.partie, &texte)?;
     let quoi = if c.partie == Partie::Avenant { format!("{}, son avenant", nom) } else { nom };
     let phrase = if dits.is_empty() { socle::phrase!("{} : complet.", quoi) } else { socle::phrase!("{} : {}", quoi, dits.join(" ")) };
     // La base n'est copiee de rien : rien ne se compare, `None`.
     let base_changee = s.map(|s| texte_de_base(&nat, c.partie).map(|b| ce_qui_a_change(&s.partie(c.partie).base, &b))).transpose()?;
-    let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| m.reclasser(Classe::Illisible))?;
     let engagements = engagements_de(ctx, nat.cle)?;
     Ok(ModeleRendu {
         phrase,
@@ -871,6 +1086,9 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
         champs,
         base_changee,
         engagements,
+        parties,
+        gestes,
+        apercu,
     })
 }
 
@@ -968,6 +1186,20 @@ fn choisi_par(ctx: &Contexte, id: &IdDeModele) -> R<Vec<String>> {
         .filter(|o| o.carte().modele_contrat.as_ref() == Some(id) || o.avenants().iter().any(|a| a.termes.modele_contrat.as_ref() == Some(id)))
         .map(|o| engagement::etats::qui_de(ctx, o))
         .collect())
+}
+
+/// CE QUE LA BOITE DE `supprimer-modele-contrat` DIT avant qu'on supprime le special `id` (`nom`) : ce qui disparait, ce
+/// que devient le defaut de sa nature s'il l'est (`est_defaut`), et les engagements qui l'ont choisi (`choisi_par`).
+fn ce_que_supprimer_dit(ctx: &Contexte, nom: &str, id: &IdDeModele, est_defaut: bool) -> R<Vec<String>> {
+    let mut dit = vec![format!("Le modèle « {} » disparaît, son contrat et son avenant.", nom)];
+    if est_defaut {
+        dit.push("C'est le modèle par défaut de sa nature : le modèle du logiciel le redevient.".to_string());
+    }
+    let qui = choisi_par(ctx, id)?;
+    if !qui.is_empty() {
+        dit.push(format!("{} engagement(s) l'ont choisi ({}) : leur contrat suit alors le modèle par défaut de sa nature ; un contrat déjà parti garde son texte.", qui.len(), qui.join(", ")));
+    }
+    Ok(dit)
 }
 
 /// SUPPRIMER UN MODELE SPECIAL : `{id}` ; s'il etait le defaut de sa nature, la base le redevient ; les engagements qui

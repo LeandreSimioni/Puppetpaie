@@ -718,7 +718,7 @@ déclarations le disent, et ce ne sont pas la même :
 ```bash
 route arrets                      ce qui est saisi, et ce qui attend
 route imprevus                    les motifs de la norme
-route arret-contrats              ce qu'un arrêt suspendrait
+route arret-obligations           la boîte d'un arrêt : ses cases, le contrat, ce qu'il fera naître
 route arret-enregistrer {"salarie": "Celi", "dernier_jour": "2026-10-07", "debut": "2026-10-08", \
                                   "fin": "2026-10-20", "motif": "01"}
 route arret-signaler {"salarie": "Celi", "dernier_jour": "2026-10-07"}
@@ -1502,11 +1502,12 @@ toute la période, en une fois. Dans l'onglet **Exports**, « Le dossier d'un
 salarié » : on coche ce qu'on sort.
 
 ```
-route dossier-salarie Celi --toutes-les-annees        # un ZIP
-route dossier-salarie --annee 2025 --seulement bulletins  # un PDF par salarié
-route dossier-salarie --mois 2026-08 --ensemble         # tous dans un fichier
-route dossier-salarie Celi --annee 2026 --envoyer     # et l'envoyer (mot de passe)
-route dossier-salarie --toutes-les-annees --apercu      # compter les pages
+route dossier-formes                                                     # les gestes, les salariés et les périodes offertes
+route dossier-salarie {"salaries":["CELI"],"periode":"toutes"}           # un ZIP
+route dossier-salarie {"periode":"2025","categories":["bulletins"]}      # un PDF par salarié
+route dossier-salarie {"periode":"2026-08","ensemble":true}              # tous dans un fichier
+route dossier-envoyer {"salaries":["CELI"],"periode":"2026"}             # et l'envoyer (mot de passe)
+route dossier-salarie {"periode":"toutes","apercu":true}                 # compter les pages
 ```
 
 | catégorie | d'où |

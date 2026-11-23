@@ -9,7 +9,8 @@ use droit::fiche::Lue as _;
 use std::path::Path;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, ChampDuType, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::documents::client_courriel;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
@@ -37,12 +38,41 @@ use socle::texte::{capitaliser, strip};
 
 mod ecriture;
 mod rendue;
-pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, ListesDuSalarie};
+pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, HistoireDUneCase, ListesDuSalarie, PartieDeLaFiche};
 pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, Forcer, SorteDeFiche};
 
-const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
-const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
-const CHANGEMENTS: Champ = Champ { nom: "changements", libelle: Affiche::new("Cases qui changent"), forme: Forme::Objet, sens: "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur", avance: false };
+const NOM_FICHE: Legende = dit("Fiche", "la fiche ; seuls un salarié et un spectacle s'archivent");
+const CLE_FICHE: Legende = dit("Clé", "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise");
+
+// Les charges de `fiche`, `enregistrer-fiche` et `activer-fiche`, champ par champ : chacune est une enumeration etiquetee
+// par `nom` (`FicheARendre`, `ecriture::ChargeEnregistrer`, `ChargeActiver`), que `charge!` ne declare pas. La cle d'un
+// salarie et celle d'un spectacle ont la meme forme : `IdSalarie` les dit.
+const CHARGE_FICHE: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
+        ChampDuType::du_type::<_, Option<IdSalarie>>("cle", dit("Clé", "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise")),
+        ChampDuType::du_type::<_, Option<socle::forme::Liste>>("changements", dit("Cases saisies", "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée")),
+        ChampDuType::du_type::<_, Option<Vec<CaseDeFiche>>>("changees", dit("Cases qui viennent de changer", "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune").avancee()),
+    ],
+};
+const CHARGE_ENREGISTRER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
+        ChampDuType::du_type::<_, Option<IdSalarie>>("cle", CLE_FICHE),
+        ChampDuType::du_type::<_, socle::forme::Liste>("changements", dit("Cases qui changent", "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur")),
+        ChampDuType::du_type::<_, Option<bool>>("confirme", dit("Avertissement lu", "vrai : l'avertissement rendu (ce qui change) a été lu ; la fiche s'écrit")),
+        ChampDuType::du_type::<_, Option<Jour>>("depuis", dit("Depuis le", "la date d'effet de ce qui change, AAAA-MM-JJ ; la date proposée sinon")),
+        ChampDuType::du_type::<_, Option<String>>("note", dit("Pourquoi", "pourquoi cela change (correction, déménagement…)").avancee()),
+        ChampDuType::du_type::<_, Option<bool>>("forcer", dit("Écrire malgré une erreur de forme", "vrai : écrire malgré une erreur de forme").avancee()),
+    ],
+};
+const CHARGE_ACTIVER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, NomDeFiche>("nom", NOM_FICHE),
+        ChampDuType::du_type::<_, IdSalarie>("cle", CLE_FICHE),
+        ChampDuType::du_type::<_, bool>("actif", dit("Active", "vrai : réactiver ; faux : archiver")),
+    ],
+};
 pub(crate) const REFUSEE: Refus = Refus { classe: Classe::FicheRefusee, corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est envoyé" };
 const BOITE: Refus = Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe)" };
@@ -56,12 +86,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Fiche,
         geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes et leurs fautes.",
-        charge: &[
-            NOM_FICHE,
-            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
-            Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
-            Champ { nom: "changees", libelle: Affiche::new("Cases qui viennent de changer"), forme: Forme::Objet, sens: "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune", avance: true },
-        ],
+        charge: &CHARGE_FICHE,
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}],"changees":["titre"]}"#,
         rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
@@ -73,10 +98,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::TaxeSurLesSalairesRegime,
         geste: "Dire le régime de la taxe sur les salaires d'après les réponses de la fiche.",
-        charge: &[
-            Champ { nom: "taxe_sur_les_salaires", libelle: Affiche::new("Réponses"), forme: Forme::Objet, sens: "les réponses en cours de saisie ; sans elles, celles de la compagnie", avance: false },
-            Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année des salaires (ses plafonds) ; l'année en cours sinon", avance: true },
-        ],
+        charge: &ChargeTaxeSurLesSalaires::CHARGE,
         exemple: r#"{}"#,
         rend: "franchise (la question et ses plafonds), champs à montrer, consequence en clair, complet, due, part_taxee",
         refus: &[FORME, ILLISIBLE],
@@ -88,15 +110,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::EnregistrerFiche,
         geste: "Écrire une fiche (entreprise, salarié, spectacle) ; ce qui change se date.",
-        charge: &[
-            NOM_FICHE,
-            CLE_FICHE,
-            CHANGEMENTS,
-            Champ { nom: "confirme", libelle: Affiche::new("Avertissement lu"), forme: Forme::OuiNon, sens: "vrai : l'avertissement rendu (ce qui change) a été lu ; la fiche s'écrit", avance: false },
-            Champ { nom: "depuis", libelle: Affiche::new("Depuis le"), forme: Forme::Date, sens: "la date d'effet de ce qui change, AAAA-MM-JJ ; la date proposée sinon", avance: false },
-            Champ { nom: "note", libelle: Affiche::new("Pourquoi"), forme: Forme::Texte, sens: "pourquoi cela change (correction, déménagement…)", avance: true },
-            Champ { nom: "forcer", libelle: Affiche::new("Écrire malgré une erreur de forme"), forme: Forme::OuiNon, sens: "vrai : écrire malgré une erreur de forme", avance: true },
-        ],
+        charge: &CHARGE_ENREGISTRER,
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"},{"case":"numero_objet","valeur":"266Z00952012"}]}"#,
         rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, metier : une case que le métier décide ; depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
         refus: &[REFUSEE, OPERATION, MANQUE, FORME, ILLISIBLE],
@@ -109,7 +123,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ActiverFiche,
         geste: "Archiver une fiche de salarié ou de spectacle, ou la réactiver.",
-        charge: &[NOM_FICHE, CLE_FICHE, Champ { nom: "actif", libelle: Affiche::new("Active"), forme: Forme::OuiNon, sens: "vrai : réactiver ; faux : archiver", avance: false }],
+        charge: &CHARGE_ACTIVER,
         exemple: r#"{"nom":"spectacle","cle":"le-banc-des-menteurs","actif":true}"#,
         rend: ETAT_REND,
         refus: &[OPERATION, MANQUE],
@@ -121,11 +135,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::FicheDemander,
         geste: "Demander à une personne, par courriel, de remplir sa fiche.",
-        charge: &[
-            Champ { nom: "adresse", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "son courriel", avance: false },
-            Champ { nom: "prenom", libelle: Affiche::new("Prénom, pour dire bonjour"), forme: Forme::Texte, sens: "son prénom, pour lui dire bonjour dans le courriel ; absent : « Bonjour, »", avance: false },
-            Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, s'il est posé ; sans lui, le moteur le demande à un humain", avance: false },
-        ],
+        charge: &ChargeFicheDemander::CHARGE,
         exemple: r#"{"adresse":"isadora@exemple.invalid","prenom":"Isadora"}"#,
         rend: "code (celui de la demande), adresse",
         refus: &[PREUVE, BOITE, OPERATION],
@@ -137,7 +147,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::FichesRelever,
         geste: "Relever dans la boîte les fiches que les personnes ont remplies.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "attendues, recues (les fiches écrites), incidents",
         refus: &[BOITE, OPERATION],
@@ -149,7 +159,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::FicheOublierDemande,
         geste: "Renoncer aux demandes de fiche restées sans réponse d'une personne.",
-        charge: &[Champ { nom: "adresse", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "le courriel à qui la fiche a été demandée", avance: false }],
+        charge: &ChargeOublier::CHARGE,
         exemple: r#"{"adresse":"isadora@exemple.invalid"}"#,
         rend: "adresse",
         refus: &[OPERATION],
@@ -161,7 +171,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::TauxAtmp,
         geste: "Dire le taux AT/MP d'avant, en vigueur et à venir, et d'où ils viennent.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase et explication du taux de l'année, avant, maintenant et a_venir (code, taux, date, provenance, phrase), le risque tel que l'arrêté l'écrit, la date proposée pour une ligne neuve, les codes que le socle connaît, les mêmes choses pour chaque autre établissement",
         refus: &[FORME, ILLISIBLE],
@@ -173,10 +183,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Effectif,
         geste: "Dire l'effectif d'une année ; le poser quand l'Urssaf ne l'a pas renvoyé.",
-        charge: &[
-            Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année civile mesurée, AAAA ; absente : celles qui manquent pour payer cette année", avance: false },
-            Champ { nom: "valeur", libelle: Affiche::new("Effectif annuel moyen"), forme: Forme::Nombre, sens: "son effectif annuel moyen, tel que l'Urssaf l'a calculé (au centième)", avance: false },
-        ],
+        charge: &ChargeEffectif::CHARGE,
         exemple: r#"{"annee":2024,"valeur":6.5}"#,
         rend: "annee, valeur et d'où elle vient (l'Urssaf, la compagnie, la première embauche), a_dire (les années qui manquent pour payer cette année), phrase",
         refus: &[OPERATION, FORME, ILLISIBLE],
@@ -191,7 +198,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Couts,
         geste: "Dire le coût de l'année, spectacle par spectacle.",
-        charge: &[Champ { nom: "annee", libelle: Affiche::new("Année"), forme: Forme::Nombre, sens: "l'année, AAAA", avance: false }],
+        charge: &ChargeCouts::CHARGE,
         exemple: r#"{"annee":2026}"#,
         rend: "le coût de l'année par spectacle",
         refus: &[MANQUE, OPERATION],
@@ -203,7 +210,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SauvegardeMaintenant,
         geste: "Sauvegarder maintenant le dossier de la compagnie dans le Drive.",
-        charge: &[],
+        charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "sauvegarde (la dernière : quand, ce qui est parti), erreur (ce qui l'a empêchée) ; ne refuse jamais",
         refus: &[OPERATION],
@@ -215,10 +222,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CompagnieSupprimer,
         geste: "Supprimer la compagnie de ce poste : avertir, puis effacer tout son dossier.",
-        charge: &[
-            Champ { nom: "confirme", libelle: Affiche::new("Effacer"), forme: Forme::OuiNon, sens: "vrai : effacer ; sans lui, la route dit seulement ce qui sera effacé et ce qu'elle demande", avance: false },
-            Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "une compagnie réelle : le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain", avance: false },
-        ],
+        charge: &crate::accueil::suppression::ChargeSupprimer::CHARGE,
         exemple: r#"{"confirme": true}"#,
         rend: "sans confirme : nom, genre (ajoutee ou reelle), avertissement, conservation et sauvegarde à proposer, ou la phrase qui dit pourquoi elle ne se supprime pas ; avec : supprimee, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (une fictive livrée se remet à zéro, le mot de passe du logiciel refusé, un dossier tenu ouvert) ; rien n'est effacé" }],
@@ -406,15 +410,21 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
     Ok(EffectifDit { phrase, annee: Some(an), valeur, source, a_dire: a_dire(ctx)? })
 }
 
-/// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
-/// « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa case la fait saisir.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeEffectif {
-    #[serde(default)]
-    pub(crate) annee: Option<Annee>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    pub(crate) valeur: Option<Effectif>,
+/// Un effectif, dans une charge : un nombre (au centieme).
+impl ValeurDeLaCharge<ParSaForme> for Effectif {
+    const FORME: Forme = Forme::Nombre;
+}
+
+charge! {
+    /// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
+    /// « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa case la fait saisir.
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub(crate) struct ChargeEffectif {
+        #[serde(default)]
+        pub(crate) annee: Option<Annee> = dit("Année", "l'année civile mesurée, AAAA ; absente : celles qui manquent pour payer cette année"),
+        #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub(crate) valeur: Option<Effectif> = dit("Effectif annuel moyen", "son effectif annuel moyen, tel que l'Urssaf l'a calculé (au centième)"),
+    }
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les
@@ -585,14 +595,20 @@ fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
 
 // ------------------------------------------------------- taxe-sur-les-salaires-regime
 
-/// La charge de `taxe-sur-les-salaires-regime` : les reponses en cours de saisie (absentes ou nulles : celles de la
-/// compagnie ; `{}` : aucune), et l'annee des salaires (absente : l'annee en cours).
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeTaxeSurLesSalaires {
-    taxe_sur_les_salaires: Option<droit::fiche::AssujettissementALaTaxe>,
-    #[serde(default)]
-    annee: Option<Annee>,
+/// Les reponses de la taxe sur les salaires, dans une charge : un objet, tel que la fiche Entreprise l'ecrit.
+impl ValeurDeLaCharge<ParSaForme> for droit::fiche::AssujettissementALaTaxe {
+    const FORME: Forme = Forme::Objet;
+}
+
+charge! {
+    /// La charge de `taxe-sur-les-salaires-regime` : les reponses en cours de saisie (absentes ou nulles : celles de la
+    /// compagnie ; `{}` : aucune), et l'annee des salaires (absente : l'annee en cours).
+    #[derive(Debug, Default)]
+    pub(crate) struct ChargeTaxeSurLesSalaires {
+        taxe_sur_les_salaires: Option<droit::fiche::AssujettissementALaTaxe> = dit("Réponses", "les réponses en cours de saisie ; sans elles, celles de la compagnie"),
+        #[serde(default)]
+        annee: Option<Annee> = dit("Année", "l'année des salaires (ses plafonds) ; l'année en cours sinon").avancee(),
+    }
 }
 
 /// Les plafonds de la franchise en base de TVA, au bareme de l'annee.
@@ -826,11 +842,12 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
     Ok(DemandeOubliee { phrase: socle::phrase!("Demande à {} abandonnée.", adresse), adresse })
 }
 
-/// La charge de `fiche-oublier-demande` : le courriel a qui la fiche a ete demandee.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeOublier {
-    adresse: String,
+charge! {
+    /// La charge de `fiche-oublier-demande` : le courriel a qui la fiche a ete demandee.
+    #[derive(Debug)]
+    struct ChargeOublier {
+        adresse: String = dit("Courriel", "le courriel à qui la fiche a été demandée"),
+    }
 }
 
 /// Ce que rend `fiche-oublier-demande` : l'adresse, en minuscules.
@@ -1079,13 +1096,16 @@ pub fn exemple_dfs() -> R<Option<fq::ExempleDfs>> {
     }))
 }
 
-/// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire), et le mot de passe du logiciel tape pour l'envoi.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeFicheDemander {
-    /// Lue a la porte dans son type (sans blancs de bord, de 6 a 100 caracteres).
-    adresse: droit::fiche::Courriel,
-    prenom: Option<socle::forme::TexteDit>,
+charge! {
+    motdepasse = dit("Mot de passe du logiciel", "le mot de passe du logiciel, s'il est posé ; sans lui, le moteur le demande à un humain");
+    /// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire) ; le mot de passe du logiciel tape pour
+    /// l'envoi, l'enveloppe le prend (`Charge::mot_de_passe`).
+    #[derive(Debug)]
+    struct ChargeFicheDemander {
+        /// Lue a la porte dans son type (sans blancs de bord, de 6 a 100 caracteres).
+        adresse: droit::fiche::Courriel = dit("Courriel", "son courriel"),
+        prenom: Option<socle::forme::TexteDit> = dit("Prénom, pour dire bonjour", "son prénom, pour lui dire bonjour dans le courriel ; absent : « Bonjour, »"),
+    }
 }
 
 /// Ce que rend `fiche-demander`.
@@ -1565,11 +1585,12 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: st
     Ok(boite)
 }
 
-/// La charge de `couts` : l'annee.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeCouts {
-    annee: Annee,
+charge! {
+    /// La charge de `couts` : l'annee.
+    #[derive(Debug)]
+    struct ChargeCouts {
+        annee: Annee = dit("Année", "l'année, AAAA"),
+    }
 }
 
 /// Le cout d'un spectacle ou d'un salarie (`documents::fiche_recapitulative::Cout`), et sa ligne telle que sa fiche la
@@ -1599,7 +1620,7 @@ dites!(EffectifDit, CoutsDits, DemandeOubliee);
 /// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     use socle::texte::euros;
-    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, socle::mois::PeriodeDemandee::Annee(c.annee), envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee()?;
     let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.

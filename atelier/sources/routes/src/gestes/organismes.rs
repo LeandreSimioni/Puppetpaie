@@ -1,88 +1,113 @@
 //! L'ECRAN DES ORGANISMES ET DES CONTRATS DE LA DSN (Configuration › Organismes et contrats) : ses deux routes, qui
-//! lisent et ecrivent par `compagnie::organismes`, et ce que l'ecran en lit.
+//! lisent et ecrivent par `compagnie::organismes`. La lecture rend l'ecran tel qu'on le saisit (`ecran::EcranRendu`) :
+//! un contrat par case, ses parties que la compagnie saisit, et le geste qui l'enregistre.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use socle::date::Jour;
 use socle::echec::R;
 use socle::mois::Mois;
 use compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
+use droit::organismes::{CleDeContrat, IdentifiantDOrganisme};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
+use crate::ecran::{EcranRendu, EnregistrerLEcran};
+use crate::fiches::{CaseDeLaFiche, HistoireDUneCase, PartieDeLaFiche};
 use crate::temps::TempsDeLaCase;
+use crate::declaration::{charge, dit, ChampDuType, ChargeDuType};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Fiche, Refus, ILLISIBLE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 
-/// Ou ces routes se voient a l'ecran (une place par module).
-const ECRAN: Ecran = Ecran::Dessine(Place::Organismes);
+/// Le champ de la charge d'`organismes-enregistrer` ou vont les cases de l'ecran, un contrat par cle.
+const CONTRATS: &str = "contrats";
+
+// La charge de `organismes-enregistrer`, champ par champ : sa structure est celle de `compagnie::organismes`
+// (`ChargeEnregistrer`), d'une autre crate que `charge!`.
+const CHARGE_ENREGISTRER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, Option<droit::organismes::Saisies>>(CONTRATS, dit("Contrats", "{clé du contrat: {libelle, organisme}}, ce qui est saisi ; un contrat nul ne dit rien")),
+        ChampDuType::du_type::<_, Option<Mois>>("mois", dit("À partir de", "le mois à partir duquel ils valent, AAAA-MM ; le mois en cours sinon")),
+    ],
+};
+
+/// Les parties d'un contrat que la compagnie saisit, et le bouton qui les enregistre.
+const ORGANISME: Affiche = Affiche::new("Organisme");
+const REFERENCE: Affiche = Affiche::new("Référence du contrat");
+const ENREGISTRER: Affiche = Affiche::new("Enregistrer");
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::OrganismesContrats,
-        geste: "Dire les contrats de la DSN (prévoyance, santé…) d'un mois, et ce qui manque.",
-        charge: &[Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois regardé, AAAA-MM ; le mois en cours sinon", avance: false }],
+        geste: "Rendre l'écran des contrats de la DSN (prévoyance, santé…) d'un mois.",
+        charge: &ChargeOrganismes::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "idcc, a_saisir, mois, contrats (une ligne par contrat attendu : libellé, organisme, periode, et les temps de ce qui en est saisi : avant, à venir, toutes ses valeurs datées), encarts",
+        rend: "mois, encarts, cases (un contrat par case, sa clé : ses parties à saisir, organisme et libelle ; dessous, sa période, ses bénéficiaires et ce que les textes en donnent ; ses temps), historique (les valeurs datées de chaque contrat saisi), enregistrer, quand une partie au moins se saisit (la route, la charge, le champ où vont les cases : chacune sous sa clé)",
         refus: &[OPERATION, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::Rendu(Place::Organismes),
     },
     Fiche {
         route: Route::OrganismesEnregistrer,
         geste: "Écrire, à partir d'un mois, les contrats de la DSN que la compagnie dit.",
-        charge: &[
-            Champ { nom: "contrats", libelle: Affiche::new("Contrats"), forme: Forme::Objet, sens: "{clé du contrat: {libelle, organisme}}, ce qui est saisi", avance: false },
-            Champ { nom: "mois", libelle: Affiche::new("À partir de"), forme: Forme::Mois, sens: "le mois à partir duquel ils valent, AAAA-MM ; le mois en cours sinon", avance: false },
-        ],
+        charge: &CHARGE_ENREGISTRER,
         exemple: r#"{"mois":"2026-11","contrats":{"prevoyance_permanents":{"libelle":"PREVOYANCE","organisme":"P0983"},"sante_permanents":{"libelle":"SANTE","organisme":"P0983"}}}"#,
         rend: "ce que organismes-contrats rend",
         refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "la référence du contrat que la phrase nomme ; rien n'est écrit" }, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::Geste(Place::Organismes),
     },
 ];
 
-/// La charge de `organismes-contrats` : le mois regarde (le mois en cours sans lui).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeOrganismes {
-    mois: Option<Mois>,
+charge! {
+    /// La charge de `organismes-contrats` : le mois regarde (le mois en cours sans lui) ; celle que l'ecran rend pour
+    /// l'enregistrer, le mois qu'il regarde.
+    #[derive(Debug, Serialize)]
+    pub(crate) struct ChargeOrganismes {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mois: Option<Mois> = dit("Mois", "le mois regardé, AAAA-MM ; le mois en cours sinon"),
+    }
 }
 
-/// CE QUE RENDENT `organismes-contrats` ET `organismes-enregistrer` : la phrase, la convention, s'il reste a saisir, le mois
-/// regarde, une ligne par contrat (et sa periode en clair), et ce que l'ecran en dit.
+/// CE QUE RENDENT `organismes-contrats` ET `organismes-enregistrer` : la phrase, le mois regarde, et l'ecran tel qu'on le
+/// saisit.
 #[derive(Debug, Serialize)]
 pub(crate) struct OrganismesDits {
     phrase: Phrase,
-    idcc: Option<droit::fiche::Idcc>,
-    a_saisir: bool,
     mois: Mois,
-    contrats: Vec<ContratDit>,
-    encarts: Vec<crate::Encart>,
-}
-
-/// Une ligne de contrat, sa periode en clair (vide : elle vaut de tout temps), et les temps de ce que la compagnie en a
-/// saisi (`temps_des_contrats`).
-#[derive(Debug, Serialize)]
-pub(crate) struct ContratDit {
     #[serde(flatten)]
-    ligne: droit::organismes::Ligne,
-    periode: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temps: Option<TempsDeLaCase<ContratSaisi>>,
+    ecran: EcranRendu<ChargeOrganismes, CleDeContrat>,
 }
 
-/// Ce que la compagnie a saisi d'un contrat, a une date : sa reference et son organisme.
+/// Ce que la compagnie a saisi d'un contrat, a une date : sa reference et son organisme (vide : non saisi, ou donne par
+/// les textes).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct ContratSaisi {
-    libelle: String,
-    organisme: droit::organismes::IdentifiantDOrganisme,
+    libelle: Option<String>,
+    organisme: Option<IdentifiantDOrganisme>,
+}
+
+impl ContratSaisi {
+    /// En mots, par les libelles des parties de l'ecran ; vide, un tiret.
+    fn en_mots(v: Option<ContratSaisi>) -> String {
+        let Some(v) = v else { return "—".to_string() };
+        let mut dits = Vec::new();
+        if let Some(l) = &v.libelle {
+            dits.push(format!("{} : {}", REFERENCE.texte(), l));
+        }
+        if let Some(o) = &v.organisme {
+            dits.push(format!("{} : {}", ORGANISME.texte(), o.as_str()));
+        }
+        if dits.is_empty() {
+            return "—".to_string();
+        }
+        dits.join(" · ")
+    }
 }
 
 /// LES TEMPS DE CHAQUE CONTRAT SAISI a la date du jour (`crate::temps::d_une_case`), par sa cle : la case datee
@@ -90,7 +115,7 @@ pub(crate) struct ContratSaisi {
 /// qu'elle ne change pas ; absent d'une version, il n'y est pas saisi).
 fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<ContratSaisi>>> {
     let fichier = droit::organismes::fichier_organismes(ctx)?;
-    let mut par_cle: Vec<(droit::organismes::CleDeContrat, Vec<droit::fiche::Datee<ContratSaisi>>)> = Vec::new();
+    let mut par_cle: Vec<(CleDeContrat, Vec<droit::fiche::Datee<ContratSaisi>>)> = Vec::new();
     // Aucune adhesion saisie : aucun contrat.
     let versions = fichier.adhesions_prevoyance.as_deref().map(droit::fiche::valeurs_datees);
     for version in versions.into_iter().flatten() {
@@ -100,7 +125,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
             }
         }
         for (cle, datees) in par_cle.iter_mut() {
-            let valeur = version.valeur.iter().flatten().find(|a| a.cle == *cle).map(|a| ContratSaisi { libelle: a.libelle.as_str().trim().to_string(), organisme: a.delegataire.clone() });
+            let valeur = version.valeur.iter().flatten().find(|a| a.cle == *cle).map(|a| ContratSaisi { libelle: Some(a.libelle.as_str().trim().to_string()), organisme: Some(a.delegataire.clone()) });
             if datees.last().is_some_and(|d| d.valeur == valeur) {
                 continue;
             }
@@ -139,8 +164,11 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     }
 }
 
-/// Ce que l'ecran lit des contrats : sa phrase (ce qui reste a dire a la compagnie, sinon combien de contrats la DSN
-/// declare), d'ou viennent les valeurs, les contrats de quel mois, ce qui manque ; la periode de chaque contrat.
+/// L'ecran des contrats tel qu'on le saisit : sa phrase (ce qui reste a dire a la compagnie, sinon combien de contrats la
+/// DSN declare), d'ou viennent les valeurs, les contrats de quel mois, ce qui manque ; un contrat par case, ses parties
+/// que la compagnie saisit (ce que les textes donnent se dit dessous et ne se saisit pas), sa periode, ses beneficiaires,
+/// ses temps ; l'historique de chaque contrat saisi ; et, quand une partie au moins se saisit, le geste qui enregistre, a
+/// partir du mois regarde.
 fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) -> R<OrganismesDits> {
     let n = lu.lignes.len();
     let reste = if lu.a_saisir { "il en reste à saisir" } else { "rien à saisir" };
@@ -151,17 +179,53 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
     if lu.a_saisir {
         encarts.push(crate::Encart::de(socle::ecran::EtatDEcran::AFaire, "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
     }
-    let en_clair = |j: &Option<Jour>| -> R<Option<String>> { Ok(j.map(|j| j.jj_mm_aaaa())) };
-    let mut contrats = Vec::new();
+    let en_clair = |j: &Option<Jour>| -> Option<String> { j.map(|j| j.jj_mm_aaaa()) };
+    let mut cases = Vec::new();
+    let mut se_saisit = false;
+    let mut historique = Vec::new();
     for ligne in lu.lignes {
-        let periode = match (en_clair(&ligne.depuis)?, en_clair(&ligne.jusqu_a)?) {
-            (Some(de), Some(a)) => format!("Du {} au {}.", de, a),
-            (Some(de), None) => format!("Depuis le {}.", de),
-            (None, Some(a)) => format!("Jusqu'au {}.", a),
-            (None, None) => String::new(),
+        let mut dit = Vec::new();
+        match (en_clair(&ligne.depuis), en_clair(&ligne.jusqu_a)) {
+            (Some(de), Some(a)) => dit.push(format!("Du {} au {}.", de, a)),
+            (Some(de), None) => dit.push(format!("Depuis le {}.", de)),
+            (None, Some(a)) => dit.push(format!("Jusqu'au {}.", a)),
+            (None, None) => {}
+        }
+        if let Some(note) = &ligne.note {
+            dit.push(note.clone());
+        }
+        dit.push(format!("Bénéficiaires : {}.", ligne.beneficiaires));
+        // Ce que les textes donnent se dit sous le contrat, et ne se saisit pas ; le reste est une partie a saisir.
+        let mut parties = Vec::new();
+        if ligne.organisme_fixe {
+            if let Some(o) = &ligne.organisme {
+                dit.push(format!("{} : {}, donné par les textes.", ORGANISME.texte(), o.as_str()));
+            }
+        } else {
+            parties.push(PartieDeLaFiche::texte("organisme", ORGANISME, "De 5 à 9 caractères, sans espace : sur le certificat d'adhésion et la fiche de paramétrage DSN.".to_string(), Some("P0983".to_string())));
+        }
+        if ligne.libelle_fixe {
+            if let Some(l) = &ligne.libelle {
+                dit.push(format!("{} : {}, donnée par les textes.", REFERENCE.texte(), l));
+            }
+        } else {
+            parties.push(PartieDeLaFiche::texte("libelle", REFERENCE, "De 1 à 30 caractères : sur la fiche de paramétrage DSN de l'organisme.".to_string(), None));
+        }
+        // La valeur de la case : ce qui se saisit, seul ; ce que les textes donnent ne repart pas.
+        let saisi = ContratSaisi {
+            libelle: if ligne.libelle_fixe { None } else { ligne.libelle.clone() },
+            organisme: if ligne.organisme_fixe { None } else { ligne.organisme.clone() },
         };
-        let temps = temps.iter().position(|t| matches!(&t.champ, crate::temps::CaseDatee::Contrat(c) if *c == ligne.cle)).map(|i| temps.swap_remove(i));
-        contrats.push(ContratDit { ligne, periode, temps });
+        let valeur = socle::ecriture::ValeurDeCase::de(&saisi);
+        let siens = temps.iter().position(|t| matches!(&t.champ, crate::temps::CaseDatee::Contrat(c) if *c == ligne.cle)).map(|i| temps.swap_remove(i));
+        let siens = siens.map(|t| t.dits(&|v| Some(ContratSaisi::en_mots(v))));
+        if let Some(t) = &siens {
+            historique.push(HistoireDUneCase::de(ligne.quoi.clone(), t.clone()));
+        }
+        se_saisit |= !parties.is_empty();
+        cases.push(CaseDeLaFiche::de_parties(ligne.cle, ligne.quoi, valeur, parties, dit, siens));
     }
-    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois, contrats, encarts })
+    // Un ecran dont les textes donnent tout n'a rien a enregistrer : il n'a pas de geste.
+    let enregistrer = se_saisit.then(|| EnregistrerLEcran::de(Route::OrganismesEnregistrer, ChargeOrganismes { mois: Some(mois) }, CONTRATS, ENREGISTRER));
+    Ok(OrganismesDits { phrase, mois, ecran: EcranRendu { encarts, rangs: Vec::new(), cases, historique, enregistrer } })
 }

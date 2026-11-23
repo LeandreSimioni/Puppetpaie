@@ -20,10 +20,15 @@ use serde::{Deserialize, Serialize};
 
 use compagnie::coffre::Coffre;
 use crate::gestes::administrateur::Poste;
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
+use crate::catalogue::{Acte, Affiche, Fiche, Refus, OPERATION};
+use crate::declaration::{charge, cle, dit, ChampDuType, ChargeDuType, Legende};
+use crate::enveloppe::MotDePasseTape;
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::SansCharge;
+use crate::ecran::{EcranRendu, RangDeLEcran};
+use crate::imprevus::GesteDeRoute;
+use droit::fiche::CaseDeFiche;
 use socle::ecran::Pastille;
 use droit::contexte::Contexte;
 use envois::google::{jeton_par_rafraichissement, Application, DELAI, PERMISSIONS};
@@ -31,145 +36,154 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::MARQUEUR_COPIE;
 use crate::catalogue::{Ecran, Place};
 
-const SERVICE: Champ = Champ { nom: "service", libelle: Affiche::new("Service"), forme: Forme::Texte, sens: "net-entreprises, urssaf ou courriel", avance: false };
-const MOT_DE_PASSE: Champ = Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain", avance: false };
-const ADMINISTRATEUR: Champ = Champ { nom: "administrateur", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur, tapé dans la page ; par moteur route, le moteur le demande à un humain", avance: false };
+const SERVICE: Legende = dit("Service", "le service du coffre");
+const MOT_DE_PASSE: Legende = dit("Mot de passe du logiciel", "le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain");
+const ADMINISTRATEUR: Legende = dit("Mot de passe de l'administrateur", "le mot de passe de l'administrateur, tapé dans la page ; par moteur route, le moteur le demande à un humain");
+const CONFIRMATION: Legende = dit("Confirmation", "le même, retapé dans la page");
+
+// Deux charges que `charge!` ne peut pas dire : leur structure sert aussi une route qui ne prend pas le mot de passe tape
+// (`coffre-verifier`, `administrateur-detacher`) ; leurs noms sont ecrits ici.
+const CHARGE_OUBLIER: ChargeDuType = ChargeDuType {
+    champs: &[ChampDuType::du_type::<_, &'static compagnie::coffre::Service>("service", SERVICE), ChampDuType::du_type::<_, MotDePasseTape>(crate::enveloppe::MOT_DE_PASSE, MOT_DE_PASSE)],
+};
+const CHARGE_RATTACHER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, Option<socle::secret::Secret>>("administrateur", ADMINISTRATEUR),
+        ChampDuType::du_type::<_, MotDePasseTape>(crate::enveloppe::MOT_DE_PASSE, dit("Mot de passe actuel", "le mot de passe actuel de cette compagnie, s'il est posé ; par moteur route, le moteur le demande à un humain")),
+    ],
+};
+/// Un service du coffre, nomme par une charge : la liste de ses services.
+impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for &'static compagnie::coffre::Service {
+    const FORME: crate::catalogue::Forme = crate::catalogue::Forme::Choix(crate::catalogue::ListeDeChoix::de::<compagnie::coffre::Service>());
+}
+
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est modifié" };
-const ETAT: &str = "l'état du coffre : ce qui est posé, depuis quand, jamais les valeurs ; la demande du mot de passe avant chaque geste";
+const ETAT: &str = "l'état du coffre : ce qui est posé, depuis quand, jamais les valeurs";
+const ECRAN_REND: &str = "phrase, encarts, rangs : le mot de passe du logiciel, l'administrateur, chaque service du coffre et le compte Google, chacun son titre, ce qu'il dit, sa pastille et son état, et ses gestes (leurs cases, ce que leur boîte dit, la demande du mot de passe du logiciel quand il est posé) ; jamais une valeur";
 
 /// Les secrets qu'une charge de ce module peut porter, retires de celle qui arrive par `moteur route` (le mot de passe
 /// du logiciel, `motdepasse`, l'est de toutes).
 pub(crate) const SECRETS: [&str; 4] = ["valeur", "nouveau", "confirmation", "administrateur"];
 
 
-/// Ou ces routes se voient a l'ecran (une place par module).
-const ECRAN: Ecran = Ecran::Dessine(Place::Coffre);
+/// Ou ces routes se voient a l'ecran (une place par module) : `coffre-etat` le rend, ses rangs les rendent en gestes.
+const GESTE: Ecran = Ecran::Geste(Place::Coffre);
+const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Coffre);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::CoffreEtat,
         geste: "Dire quels mots de passe sont posés, et depuis quand ; jamais leur valeur.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: ETAT,
+        rend: ECRAN_REND,
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: Ecran::Rendu(Place::Coffre),
     },
     Fiche {
         route: Route::GoogleEtat,
-        geste: "Dire si le compte Google de la sauvegarde est lié.",
-        charge: &[],
+        geste: "Essayer une fois le compte Google de la sauvegarde.",
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "lie, compte, et ce que la page en montre",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::CoffrePoser,
         geste: "Poser le mot de passe d'un organisme ; pour l'Urssaf, avec le compte des DPAE.",
-        charge: &[
-            SERVICE,
-            Champ { nom: "valeur", libelle: Affiche::new("Mot de passe"), forme: Forme::Texte, sens: "le mot de passe à poser, tapé dans la page ; par moteur route, le moteur le fait taper deux fois à un humain", avance: false },
-            Champ { nom: "compte", libelle: Affiche::new("Identifiant du compte"), forme: Forme::Texte, sens: "l'identifiant du compte (l'adresse, pour la boîte courriel)", avance: false },
-            Champ { nom: "nom", libelle: Affiche::new("Nom"), forme: Forme::Texte, sens: "Urssaf : le nom du compte qui dépose les DPAE ; s'il change, la route ne pose que le compte quand `valeur` manque", avance: false },
-            Champ { nom: "prenom", libelle: Affiche::new("Prénom"), forme: Forme::Texte, sens: "Urssaf : son prénom", avance: false },
-            MOT_DE_PASSE,
-        ],
+        charge: &ChargePoser::CHARGE,
         exemple: r#"{"service":"urssaf"}"#,
         rend: "l'état du coffre, et ce qu'une tentative de connexion en dit : phrase, couleur",
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 400,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::CoffreVerifier,
         geste: "Essayer une fois le mot de passe posé d'un organisme.",
-        charge: &[SERVICE],
+        charge: &ChargeService::CHARGE,
         exemple: r#"{"service":"urssaf"}"#,
         rend: "service, ok, message (la première ligne de l'erreur), conseil, pastille",
         refus: &[Refus { classe: Classe::Refuse, corriger: "poser d'abord le mot de passe de ce service" }],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::CoffreOublier,
         geste: "Retirer du coffre le mot de passe d'un organisme.",
-        charge: &[SERVICE, MOT_DE_PASSE],
+        charge: &CHARGE_OUBLIER,
         exemple: r#"{"service":"urssaf"}"#,
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::MotDePasseChanger,
         geste: "Poser ou changer le mot de passe du logiciel.",
-        charge: &[
-            MOT_DE_PASSE,
-            Champ { nom: "nouveau", libelle: Affiche::new("Nouveau mot de passe"), forme: Forme::Texte, sens: "le nouveau mot de passe, tapé dans la page ; par moteur route, le moteur le fait taper deux fois à un humain", avance: false },
-            Champ { nom: "confirmation", libelle: Affiche::new("Confirmation"), forme: Forme::Texte, sens: "le même, retapé dans la page", avance: false },
-        ],
+        charge: &ChargeChanger::CHARGE,
         exemple: r#"{}"#,
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::MotDePasseRetirer,
         geste: "Retirer le mot de passe du logiciel.",
-        charge: &[MOT_DE_PASSE],
+        charge: &SeulLeMotDePasse::CHARGE,
         exemple: r#"{}"#,
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Coffre),
+        ecran: GESTE_AVANCE,
     },
     Fiche {
         route: Route::GoogleAutoriser,
         geste: "Lier le compte Google de la sauvegarde : Google s'ouvre, la personne accepte.",
-        charge: &[MOT_DE_PASSE],
+        charge: &SeulLeMotDePasse::CHARGE,
         exemple: r#"{}"#,
         rend: "compte : l'adresse du compte Google lié ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
         refus: &[PREUVE, Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::GoogleOublier,
         geste: "Délier le compte Google de la sauvegarde : le jeton du poste s'efface.",
-        charge: &[MOT_DE_PASSE],
+        charge: &SeulLeMotDePasse::CHARGE,
         exemple: r#"{}"#,
         rend: "l'état du compte Google",
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Coffre),
+        ecran: GESTE_AVANCE,
     },
     Fiche {
         route: Route::AdministrateurEtat,
         geste: "Dire ce que l'administrateur est pour cette compagnie.",
-        charge: &[],
+        charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "compagnies (celles de l'administrateur), rattachee, autres, peut_rattacher, question (« même administrateur ? »), mot_de_passe_pose, pastille",
         refus: &[OPERATION],
@@ -181,83 +195,83 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::AdministrateurRattacher,
         geste: "Rattacher cette compagnie à l'administrateur : son mot de passe l'ouvre aussi.",
-        charge: &[
-            ADMINISTRATEUR,
-            Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe actuel"), forme: Forme::Texte, sens: "le mot de passe actuel de cette compagnie, s'il est posé ; par moteur route, le moteur le demande à un humain", avance: false },
-        ],
+        charge: &CHARGE_RATTACHER,
         exemple: r#"{}"#,
         rend: "compagnies (celles de l'administrateur), etat, phrase",
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 200,
-        ecran: Ecran::DessineAvance(Place::Coffre),
+        ecran: GESTE_AVANCE,
     },
     Fiche {
         route: Route::AdministrateurDetacher,
         geste: "Détacher cette compagnie : elle reçoit son propre mot de passe.",
-        charge: &[
-            ADMINISTRATEUR,
-            Champ { nom: "nouveau", libelle: Affiche::new("Nouveau mot de passe"), forme: Forme::Texte, sens: "son propre mot de passe, tapé dans la page ; par moteur route, le moteur le fait taper deux fois à un humain", avance: false },
-            Champ { nom: "confirmation", libelle: Affiche::new("Confirmation"), forme: Forme::Texte, sens: "le même, retapé dans la page", avance: false },
-        ],
+        charge: &ChargeAdministrateur::CHARGE,
         exemple: r#"{}"#,
         rend: "etat, phrase",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 120,
-        ecran: Ecran::DessineAvance(Place::Coffre),
+        ecran: GESTE_AVANCE,
     },
 ];
 
 // ------------------------------------------------------------------ les charges
 
-/// La charge qui nomme un service du coffre.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeService {
-    service: String,
+charge! {
+    /// La charge qui nomme un service du coffre.
+    #[derive(Debug)]
+    struct ChargeService {
+        service: &'static compagnie::coffre::Service = SERVICE,
+    }
 }
 
-/// La charge de `coffre-poser` : le service, le secret (absent : un humain le tape), l'adresse de la boite courriel, et
-/// pour l'Urssaf le nom et le prenom du compte qui depose les DPAE.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargePoser {
-    service: String,
-    valeur: Option<socle::secret::Secret>,
-    compte: Option<String>,
-    nom: Option<String>,
-    prenom: Option<String>,
+charge! {
+    motdepasse = MOT_DE_PASSE;
+    /// La charge de `coffre-poser` : le service, le secret (absent : un humain le tape), l'adresse de la boite courriel, et
+    /// pour l'Urssaf le nom et le prenom du compte qui depose les DPAE.
+    #[derive(Debug)]
+    struct ChargePoser {
+        service: &'static compagnie::coffre::Service = SERVICE,
+        valeur: Option<socle::secret::Secret> = dit("Mot de passe", "le mot de passe à poser, tapé dans la page ; par moteur route, le moteur le fait taper deux fois à un humain"),
+        compte: Option<String> = dit("Identifiant du compte", "l'identifiant du compte (l'adresse, pour la boîte courriel)"),
+        nom: Option<String> = dit("Nom", "Urssaf : le nom du compte qui dépose les DPAE ; s'il change, la route ne pose que le compte quand `valeur` manque"),
+        prenom: Option<String> = dit("Prénom", "Urssaf : son prénom"),
+    }
 }
 
-/// La charge de `mot-de-passe-changer` : le nouveau mot de passe et sa confirmation (absents : un humain le tape deux
-/// fois).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeChanger {
-    nouveau: Option<socle::secret::Secret>,
-    confirmation: Option<socle::secret::Secret>,
+charge! {
+    motdepasse = MOT_DE_PASSE;
+    /// La charge de `mot-de-passe-changer` : le nouveau mot de passe et sa confirmation (absents : un humain le tape deux
+    /// fois).
+    #[derive(Debug)]
+    struct ChargeChanger {
+        nouveau: Option<socle::secret::Secret> = dit("Nouveau mot de passe", "le nouveau mot de passe, tapé dans la page ; par moteur route, le moteur le fait taper deux fois à un humain"),
+        confirmation: Option<socle::secret::Secret> = CONFIRMATION,
+    }
 }
 
-/// LA CHARGE DE `administrateur-rattacher` ET `administrateur-detacher` : le mot de passe de l'administrateur (absent : un
-/// humain le tape) ; pour se detacher, le nouveau mot de passe de la compagnie et sa confirmation.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeAdministrateur {
-    pub administrateur: Option<socle::secret::Secret>,
-    pub nouveau: Option<socle::secret::Secret>,
-    pub confirmation: Option<socle::secret::Secret>,
+charge! {
+    motdepasse = MOT_DE_PASSE;
+    /// La charge d'une route qui ne prend que le mot de passe du logiciel.
+    #[derive(Debug)]
+    struct SeulLeMotDePasse {}
+}
+
+charge! {
+    /// LA CHARGE DE `administrateur-rattacher` ET `administrateur-detacher` : le mot de passe de l'administrateur (absent : un
+    /// humain le tape) ; pour se detacher, le nouveau mot de passe de la compagnie et sa confirmation.
+    #[derive(Debug)]
+    pub struct ChargeAdministrateur {
+        pub administrateur: Option<socle::secret::Secret> = ADMINISTRATEUR,
+        pub nouveau: Option<socle::secret::Secret> = dit("Nouveau mot de passe", "son propre mot de passe, tapé dans la page ; par moteur route, le moteur le fait taper deux fois à un humain"),
+        pub confirmation: Option<socle::secret::Secret> = CONFIRMATION,
+    }
 }
 
 // ------------------------------------------------------------------ ce que les routes rendent
-
-/// Ce que la page lit d'une compagnie fictive, ou rien ne se branche.
-#[derive(Debug, Serialize)]
-struct Fictive {
-    google: Pastille,
-}
 
 /// LE COMPTE QU'UN MOT DE PASSE OUVRE (`identifiant_du_compte`) : en clair, ce qui en manque, et s'il se saisit sur cette
 /// ligne (`ici`).
@@ -278,8 +292,7 @@ pub(crate) struct Identifiant {
     prenom: Option<String>,
 }
 
-/// Un service du coffre, tel que l'ecran le montre : ce que `compagnie::coffre` en dit (jamais la valeur), le compte qu'il
-/// ouvre, son bouton et sa pastille.
+/// Un service du coffre : ce que `compagnie::coffre` en dit (jamais la valeur), le compte qu'il ouvre et sa pastille.
 #[derive(Debug, Serialize)]
 pub(crate) struct ServiceDit {
     pub(crate) service: &'static str,
@@ -292,13 +305,7 @@ pub(crate) struct ServiceDit {
     compte: Option<String>,
     avec_compte: bool,
     pub(crate) identifiant: Identifiant,
-    bouton: &'static str,
     pastille: Pastille,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    oublier: Option<String>,
-    /// Ce que la demande du mot de passe du logiciel dit avant « Poser » et avant « Oublier ».
-    demande_poser: compagnie::demande::DemandeDuMotDePasse,
-    demande_oublier: compagnie::demande::DemandeDuMotDePasse,
 }
 
 /// L'ETAT DU COFFRE : ce qui est pose, pour quel usage, depuis quand ; jamais les valeurs.
@@ -307,15 +314,11 @@ pub(crate) struct EtatDuCoffre {
     phrase: Phrase,
     pub(crate) services: Vec<ServiceDit>,
     mot_de_passe_pose: bool,
-    bouton_mot_de_passe: &'static str,
     cle_poste: bool,
     chemin_cle: String,
-    fictive: Fictive,
     pastille_mot_de_passe: Pastille,
     #[serde(skip_serializing_if = "Option::is_none")]
     couleur: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ecran: Option<EcranDuCoffre>,
 }
 
 impl EtatDuCoffre {
@@ -391,7 +394,7 @@ macro_rules! dites {
         })*
     };
 }
-dites!(EtatDuCoffre, EtatGoogle, Verifie, GoogleLie, EtatAdministrateurDit, Rattachement);
+dites!(EtatDuCoffre, EtatGoogle, Verifie, GoogleLie, EtatAdministrateurDit, Rattachement, CoffreDit);
 
 impl Dite for GoogleOublie {
     fn phrase(&self) -> &Phrase {
@@ -408,10 +411,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         Route::CoffreEtat => {
             let SansCharge {} = charge.lire()?;
-            let mut e = coffre_etat(ctx)?;
-            e.ecran = Some(ecran_du_coffre(ctx, &mut e)?);
-            let etat: EtatDuCoffre = e.dit("");
-            en_json(etat)
+            let etat: EtatDuCoffre = coffre_etat(ctx)?.dit("");
+            let ecran = ecran_du_coffre(ctx, &etat)?;
+            en_json(CoffreDit { phrase: etat.phrase, ecran })
         }
         Route::GoogleEtat => {
             let SansCharge {} = charge.lire()?;
@@ -420,14 +422,15 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::CoffrePoser => en_json(coffre_poser(ctx, charge.lire()?, mdp)?),
         Route::CoffreVerifier => {
             let c: ChargeService = charge.lire()?;
-            let verdict = compagnie::coffre_verifier::route(ctx, &c.service)?;
+            let c = c.service.nom;
+            let verdict = compagnie::coffre_verifier::route(ctx, c)?;
             let mots = &verdict.pastille.mots;
             // Un compte incomplet se dit avec ce qui lui manque et ou le donner (`identifiant_du_compte`).
-            let manque = manque_du_compte(&identifiant_du_compte(&ctx.entreprise, &c.service)?);
+            let manque = manque_du_compte(&identifiant_du_compte(&ctx.entreprise, c)?);
             let conseil: String = verdict.conseil.iter().map(|c| format!(" {}", c)).collect();
             let phrase = match manque {
-                Some(m) if !verdict.ok => socle::phrase!("{} : {}, {}.", libelle_du_service(&c.service), mots, m),
-                _ => socle::phrase!("{}", format!("{} : {}. {}{}", libelle_du_service(&c.service), mots, verdict.message, conseil).trim()),
+                Some(m) if !verdict.ok => socle::phrase!("{} : {}, {}.", libelle_du_service(c), mots, m),
+                _ => socle::phrase!("{}", format!("{} : {}. {}{}", libelle_du_service(c), mots, verdict.message, conseil).trim()),
             };
             en_json(Verifie { phrase, verdict })
         }
@@ -440,16 +443,16 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             en_json(etat)
         }
         Route::MotDePasseRetirer => {
-            let SansCharge {} = charge.lire()?;
+            let SeulLeMotDePasse {} = charge.lire()?;
             let etat: EtatDuCoffre = mot_de_passe_retirer(ctx, mdp)?.dit("Mot de passe du logiciel retiré. ");
             en_json(etat)
         }
         Route::GoogleOublier => {
-            let SansCharge {} = charge.lire()?;
+            let SeulLeMotDePasse {} = charge.lire()?;
             en_json(google_oublier(ctx, mdp)?)
         }
         Route::GoogleAutoriser => {
-            let SansCharge {} = charge.lire()?;
+            let SeulLeMotDePasse {} = charge.lire()?;
             let compte = google_autoriser(ctx, mdp)?;
             en_json(GoogleLie { phrase: socle::phrase!("Drive lié : {}. La prochaine ouverture sauvegarde.", compte), compte })
         }
@@ -647,7 +650,7 @@ fn manque_du_compte(identifiant: &Identifiant) -> Option<String> {
 /// seul geste, une seule preuve : tout se verifie avant d'ecrire. Rend l'etat du coffre, sans valeur. Rien a poser se
 /// refuse avant la porte du mot de passe du logiciel : il n'y a rien a autoriser.
 fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
-    let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
+    let service = c.service;
     let compte = if c.nom.is_some() || c.prenom.is_some() { compte_dpae_change(ctx, c.nom.as_deref(), c.prenom.as_deref())? } else { None };
     // Sans `valeur` (`moteur route`) : le compte seul s'il change, sinon le secret, tape par un humain apres la porte.
     let donne = c.valeur.as_ref().is_some_and(|v| !socle::texte::strip(v.devoiler()).is_empty());
@@ -688,7 +691,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secr
 
 /// `coffre-oublier` : retire un secret du coffre.
 fn coffre_oublier(ctx: &Contexte, c: ChargeService, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
-    let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
+    let service = c.service;
     exiger_mot_de_passe(&ctx.racine, mdp, &geste_oublier(service.libelle))?;
     coffre(ctx).oublier(service.nom).map_err(en_operation)?;
     coffre_etat(ctx)
@@ -1054,7 +1057,10 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
             (Some(c), false, None) => (Some(format!("{} : l'autorisation ne répond pas", c)), Pastille::de(socle::ecran::EtatDEcran::AFaire, "lié, mais")),
         };
         EtatGoogle {
-            phrase: socle::phrase!("Google Drive : {}.", pastille.mots),
+            phrase: match &compte_dit {
+                Some(c) => socle::phrase!("Google Drive : {} ({}).", pastille.mots, c),
+                None => socle::phrase!("Google Drive : {}.", pastille.mots),
+            },
             application: origine.clone(),
             permissions: permissions.clone(),
             accordees,
@@ -1142,7 +1148,6 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
     let secrets = coffre.services()?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
     let simule = compagnie::bridage::branchement(racine)?.joue();
-    let qui = qui_ouvre(racine)?;
     let mut services = Vec::new();
     for s in secrets {
         // Sa pastille : simule, une information ; fourni par l'environnement (il passe devant le coffre), a voir ; pose,
@@ -1169,12 +1174,8 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
             environnement: s.dans_environnement,
             compte: s.compte,
             avec_compte: s.avec_compte,
-            bouton: if identifiant.ici { "Enregistrer" } else { "Poser" },
-            demande_poser: compagnie::demande::DemandeDuMotDePasse::de(&qui, &geste_poser(s.libelle, identifiant.ici)),
-            demande_oublier: compagnie::demande::DemandeDuMotDePasse::de(&qui, &geste_oublier(s.libelle)),
             identifiant,
             pastille,
-            oublier: None,
         });
     }
     let mot_de_passe_pose = coffre.ouverture_exigee()?;
@@ -1183,12 +1184,9 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
         phrase: Phrase::fixe(""),
         services,
         mot_de_passe_pose,
-        bouton_mot_de_passe: if mot_de_passe_pose { "Enregistrer" } else { "Poser" },
         cle_poste,
         chemin_cle: coffre.chemin_cle().to_string_lossy().into_owned(),
-        // Ce que montrent le filet et le compte Google d'une compagnie fictive, ou rien ne se branche : une information.
-        fictive: Fictive { google: Pastille::de(socle::ecran::EtatDEcran::Information, "non lié") },
-        // La pastille du mot de passe du logiciel (rattache a l'administrateur, la page dit a combien de compagnies).
+        // La pastille du mot de passe du logiciel (rattache a l'administrateur, son rang dit a combien de compagnies).
         pastille_mot_de_passe: if simule {
             Pastille::de(socle::ecran::EtatDEcran::Information, "simulé")
         } else if mot_de_passe_pose {
@@ -1197,97 +1195,191 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
             Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun")
         },
         couleur: None,
-        ecran: None,
     })
 }
 
-/// La ligne du mot de passe du logiciel, telle que l'ecran la dit.
-#[derive(Debug, Serialize)]
-struct LigneDuLogiciel {
-    nom: &'static str,
-    dit: String,
-    nouveau: &'static str,
-    retirer: &'static str,
+// ------------------------------------------------------------------ l'ecran des mots de passe
+
+/// Ce qui designe la chose d'un rang de l'ecran des mots de passe aux gestes de ce rang : le service du coffre ; aucun
+/// pour le mot de passe du logiciel, l'administrateur et le compte Google.
+#[derive(Debug, Clone, Serialize)]
+struct ServiceDuRang {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    service: Option<&'static str>,
 }
 
-/// La ligne de l'administrateur, quand la compagnie lui est rattachee ou peut l'etre.
-#[derive(Debug, Serialize)]
-struct LigneDeLAdministrateur {
-    dit: String,
-    note: &'static str,
+/// Ce que montrent d'abord les cases du geste qui pose un mot de passe d'organisme : le compte Urssaf que la fiche
+/// Entreprise dit (son prenom, son nom), l'adresse de la boite courriel posee.
+#[derive(Debug, Clone, Default, Serialize)]
+struct CompteMontre {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prenom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compte: Option<String>,
 }
 
-/// CE QUE L'ECRAN DES MOTS DE PASSE DIT (`ecran` de `coffre-etat`).
+/// L'ecran des mots de passe : un rang par chose, que designe son service (`ServiceDuRang`), sans case ; les cases du
+/// geste qui pose un mot de passe d'organisme montrent d'abord son compte (`CompteMontre`) et n'offrent aucun choix.
+type EcranDuCoffre = EcranRendu<ServiceDuRang, CaseDeFiche, CompteMontre>;
+type GesteDuCoffre = GesteDeRoute<ServiceDuRang, CompteMontre, SansCharge>;
+
+/// Ce que rend `coffre-etat` : la phrase de l'etat du coffre, et l'ecran des mots de passe.
 #[derive(Debug, Serialize)]
-struct EcranDuCoffre {
-    intro: &'static str,
-    encart: Option<super::Encart>,
-    logiciel: LigneDuLogiciel,
-    administrateur: Option<LigneDeLAdministrateur>,
-    urssaf: &'static str,
-    courriel: &'static str,
-    verifier: &'static str,
-    google: &'static str,
-    google_ouvert: &'static str,
-    google_oublier: &'static str,
-    /// Ce que la demande du mot de passe du logiciel dit avant de lier ou d'oublier le compte Google.
-    demande_google_lier: compagnie::demande::DemandeDuMotDePasse,
-    demande_google_oublier: compagnie::demande::DemandeDuMotDePasse,
-    diagnostic: &'static str,
+struct CoffreDit {
+    phrase: Phrase,
+    #[serde(flatten)]
+    ecran: EcranDuCoffre,
 }
 
-/// CE QUE L'ECRAN DES MOTS DE PASSE DIT (`ecran` de `coffre-etat`) : son introduction, l'encart d'une compagnie fictive ou
-/// d'un poste sans cle, la ligne du mot de passe du logiciel et celle de l'administrateur, les notes des comptes Urssaf
-/// et courriel, a quoi servent le compte Google et le filet, et ce que demandent les confirmations. La page n'en ecrit
-/// rien ; chaque service porte aussi ce que sa confirmation d'oubli demande (`oublier`).
-fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
+// Les mots de l'ecran, en constantes : un texte fautif ne compile pas (`Affiche::new`).
+const POSER: Affiche = Affiche::new("Poser…");
+const CHANGER: Affiche = Affiche::new("Changer…");
+const RETIRER: Affiche = Affiche::new("Retirer…");
+const VERIFIER: Affiche = Affiche::new("Vérifier");
+const OUBLIER: Affiche = Affiche::new("Oublier…");
+const RATTACHER: Affiche = Affiche::new("Rattacher…");
+const DETACHER: Affiche = Affiche::new("Détacher…");
+const LIER: Affiche = Affiche::new("Lier le Drive");
+const RELIER: Affiche = Affiche::new("Relier le Drive");
+
+/// L'ECRAN DES MOTS DE PASSE (`coffre-etat`), dans l'ordre : le mot de passe du logiciel, l'administrateur (quand la
+/// compagnie lui est rattachee ou peut l'etre), chaque service du coffre, le compte Google. Pour chacun son titre, ce
+/// qu'il dit, sa pastille et ce qui la suit, et les gestes que le moteur ouvre, chacun ses cases, ce que sa boite dit et
+/// la demande du mot de passe du logiciel quand il est pose. En tete : ce que l'ecran est, et l'encart d'une compagnie
+/// fictive (rien ne s'y pose : aucun geste) ou d'un poste sans cle. Le compte Google se dit sans reseau (`compte_autorise`) ;
+/// « Vérifier » l'essaie (`google-etat`).
+fn ecran_du_coffre(ctx: &Contexte, e: &EtatDuCoffre) -> R<EcranDuCoffre> {
     let fictive = compagnie::bridage::branchement(&ctx.racine)?.joue();
     let adm = if fictive { None } else { Some(administrateur_etat(&ctx.racine)?) };
     let (en_liste, rattachee, peut_rattacher) = match &adm {
         Some(a) => (a.autres_dit.clone(), a.rattachee, a.peut_rattacher),
         None => (String::new(), false, false),
     };
-    for s in e.services.iter_mut() {
-        s.oublier = Some(format!("Oublier le mot de passe {} ? Les retours et les dépôts ne seront plus possibles jusqu'à ce qu'il soit reposé.", s.libelle));
-    }
+    let pose = e.mot_de_passe_pose;
+    // La demande du mot de passe du logiciel avant un geste qui l'exige, quand il est pose.
+    let exigee = |geste: &str| -> R<Option<compagnie::demande::DemandeDuMotDePasse>> { if pose { Ok(Some(demande(&ctx.racine, geste)?)) } else { Ok(None) } };
+    let geste = |route: Route, service: Option<&'static str>, libelle: Affiche, cases: Vec<&'static str>| -> GesteDuCoffre {
+        GesteDeRoute::avec_cases(route, ServiceDuRang { service }, libelle, cases, CompteMontre::default(), SansCharge {})
+    };
     let encart = if fictive {
-        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Compagnie fictive : les champs sont grisés", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
+        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Compagnie fictive : rien ne se pose ici", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
     } else if !e.cle_poste {
         Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Cet ordinateur n'a pas encore sa clé du coffre", "Rien n'est perdu : elle se refait toute seule la prochaine fois que le mot de passe du logiciel est tapé (ou posé, ci-dessous). Elle vit à part des données, pour qu'une sauvegarde n'emporte jamais de quoi ouvrir le coffre."))
     } else {
         None
     };
+    let mut encarts = vec![super::Encart::de(socle::ecran::EtatDEcran::Information, "", "Les mots de passe dont le logiciel a besoin pour déposer, relever et envoyer. Un mot de passe posé ne se relit plus : l'écran dit seulement s'il est posé.")];
+    encarts.extend(encart);
+    let mut rangs = Vec::new();
+
+    // LE MOT DE PASSE DU LOGICIEL : le poser, le changer (l'actuel se tape dans la boite, au-dessus du nouveau : il est ce
+    // que le geste remplace, pas sa preuve), le retirer (pas d'une compagnie rattachee : le moteur le refuse).
     let quand = "demandé à l'ouverture et à chaque dépôt réel, envoi ou signature";
-    Ok(EcranDuCoffre {
-        intro: "Les mots de passe dont le logiciel a besoin pour déposer, relever et envoyer. La page ne voit jamais un mot de passe, seulement s'il est posé.",
-        encart,
-        logiciel: LigneDuLogiciel {
-            nom: if rattachee { "Le mot de passe de l'administrateur" } else { "Le mot de passe du logiciel" },
-            dit: if rattachee {
-                format!("il ouvre aussi {} ; {}", en_liste, quand)
-            } else if e.mot_de_passe_pose || fictive {
-                quand.to_string()
-            } else {
-                "rien ne peut partir en réel tant qu'il n'est pas posé".to_string()
-            },
-            nouveau: if rattachee { "six caractères au moins ; il remplacera l'actuel dans toutes ses compagnies" } else { "six caractères au moins" },
-            retirer: "Retirer le mot de passe du logiciel ? La fenêtre s'ouvrira sans rien demander et le coffre ne sera plus protégé.",
-        },
-        administrateur: if rattachee {
-            Some(LigneDeLAdministrateur { dit: format!("cette compagnie s'ouvre avec {}, d'un seul mot de passe", en_liste), note: "Détachée, elle a son propre mot de passe : celui de l'administrateur ne l'ouvre plus, et elle dépose seule." })
-        } else if peut_rattacher {
-            Some(LigneDeLAdministrateur { dit: format!("le mot de passe de {} peut ouvrir aussi cette compagnie", en_liste), note: "Rattachée, elle s'ouvre avec le mot de passe de l'administrateur, et ses déclarations prêtes partent avec celles des autres compagnies, d'un seul mot de passe." })
+    let dit = if rattachee {
+        format!("Il ouvre aussi {} ; {}.", en_liste, quand)
+    } else if pose || fictive {
+        format!("Il est {}.", quand)
+    } else {
+        "Rien ne peut partir en réel tant qu'il n'est pas posé.".to_string()
+    };
+    let mut gestes = Vec::new();
+    if !fictive {
+        let nouveau = if rattachee { "Le nouveau : six caractères au moins ; il remplacera l'actuel dans toutes ses compagnies." } else { "Le nouveau : six caractères au moins." };
+        let (neuf, confirmation) = (cle!(ChargeChanger, nouveau), cle!(ChargeChanger, confirmation));
+        let cases = if pose { vec![crate::enveloppe::MOT_DE_PASSE, neuf, confirmation] } else { vec![neuf, confirmation] };
+        gestes.push(geste(Route::MotDePasseChanger, None, if pose { CHANGER } else { POSER }, cases).disant(vec![nouveau.to_string()]));
+        if pose && !rattachee {
+            let retirer = "Retirer le mot de passe du logiciel ? La fenêtre s'ouvrira sans rien demander et le coffre ne sera plus protégé.";
+            gestes.push(geste(Route::MotDePasseRetirer, None, RETIRER, vec![crate::enveloppe::MOT_DE_PASSE]).disant(vec![retirer.to_string()]));
+        }
+    }
+    let titre = if rattachee { "Le mot de passe de l'administrateur" } else { "Le mot de passe du logiciel" };
+    rangs.push(RangDeLEcran { titre: titre.to_string(), dit: vec![dit], pastille: e.pastille_mot_de_passe.clone(), etat: None, montre: None, gestes });
+
+    // L'ADMINISTRATEUR, quand la compagnie lui est rattachee ou peut l'etre : s'en detacher, ou s'y rattacher.
+    if let Some(a) = adm.as_ref().filter(|_| rattachee || peut_rattacher) {
+        let (dit, note, g) = if rattachee {
+            (
+                format!("Cette compagnie s'ouvre avec {}, d'un seul mot de passe.", en_liste),
+                "Détachée, elle a son propre mot de passe : celui de l'administrateur ne l'ouvre plus, et elle dépose seule.",
+                geste(Route::AdministrateurDetacher, None, DETACHER, vec![cle!(ChargeAdministrateur, administrateur), cle!(ChargeAdministrateur, nouveau), cle!(ChargeAdministrateur, confirmation)]),
+            )
         } else {
-            None
-        },
-        urssaf: "Le compte ouvert sur urssaf.fr pour la DPAE (service « DPAE Service plus ») : ce n'est pas celui de net-entreprises. Les accents sont retirés, la DPAE les refuse. Un mot de passe vide garde celui qui est posé.",
-        courriel: "Pour Gmail : validation en deux étapes activée, puis myaccount.google.com › Sécurité › Mots de passe des applications. C'est ce mot de passe-là, pas celui du compte.",
-        verifier: "Une tentative de connexion chez l'organisme, une seule.",
-        google: "la sauvegarde du dossier privé et l'archivage des mois, dans son Drive ; rien d'autre",
-        google_ouvert: "La fenêtre Google est ouverte dans votre navigateur : choisissez le compte, acceptez, puis revenez ici ; cette ligne se met à jour toute seule. Si Google dit que l'application n'est pas validée : Paramètres avancés › Accéder à PuppetPaie.",
-        google_oublier: "Oublier le compte Google ? Le jeton local est effacé : plus de sauvegarde ni d'archivage jusqu'à ce qu'un Drive soit relié. L'accès accordé côté Google, lui, se retire sur myaccount.google.com › Sécurité › Vos connexions à des applications tierces.",
-        demande_google_lier: demande(&ctx.racine, GESTE_GOOGLE_LIER)?,
-        demande_google_oublier: demande(&ctx.racine, GESTE_GOOGLE_OUBLIER)?,
-        diagnostic: "ce qui casse part chez l'éditeur, avec de quoi le reproduire (ses données, les 3 minutes d'avant, cet ordinateur), et une fois par an le nombre de paies faites ; les noms, NIR, adresses et coordonnées des salariés n'en partent pas",
-    })
+            let administrateur = cle!(ChargeAdministrateur, administrateur);
+            let cases = if pose { vec![administrateur, crate::enveloppe::MOT_DE_PASSE] } else { vec![administrateur] };
+            (
+                format!("Le mot de passe de {} peut ouvrir aussi cette compagnie.", en_liste),
+                "Rattachée, elle s'ouvre avec le mot de passe de l'administrateur, et ses déclarations prêtes partent avec celles des autres compagnies, d'un seul mot de passe.",
+                geste(Route::AdministrateurRattacher, None, RATTACHER, cases),
+            )
+        };
+        rangs.push(RangDeLEcran { titre: "L'administrateur".to_string(), dit: vec![dit], pastille: a.pastille.clone(), etat: None, montre: None, gestes: vec![g.disant(vec![note.to_string()])] });
+    }
+
+    // CHAQUE SERVICE DU COFFRE : a quoi il sert, le compte qu'il ouvre, l'adresse posee ; le verifier (une tentative, une
+    // seule), le poser ou le changer (pour l'Urssaf avec le compte des DPAE, pour la boite avec son adresse), l'oublier.
+    for s in &e.services {
+        // Ce qu'il sert a faire, puis le compte qu'il ouvre : sans lui, un mot de passe juste sur un identifiant faux
+        // echoue pareil. Ce qui manque au compte se dit, et ou le donner.
+        let mut dit = vec![s.sert_a.to_string()];
+        if !fictive {
+            let id = &s.identifiant;
+            let compte = match (&id.texte, &id.manque_dit, &id.incomplet_dit, id.ou) {
+                (Some(t), ..) => Some(t.clone()),
+                (None, Some(m), ..) => Some(m.clone()),
+                (None, None, Some(i), Some(ou)) => Some(format!("{} : à compléter dans la {}", i, ou)),
+                (None, None, Some(i), None) => Some(i.clone()),
+                (None, None, None, _) => None,
+            };
+            dit.extend(compte);
+        }
+        let etat = if !fictive && !s.environnement && s.pose { s.compte.clone() } else { None };
+        let mut gestes = Vec::new();
+        if !fictive {
+            let id = &s.identifiant;
+            if s.pose || s.environnement {
+                gestes.push(geste(Route::CoffreVerifier, Some(s.service), VERIFIER, Vec::new()));
+            }
+            let (cases, note) = if id.ici {
+                (vec![cle!(ChargePoser, valeur), cle!(ChargePoser, nom), cle!(ChargePoser, prenom)], Some("Le compte ouvert sur urssaf.fr pour la DPAE (service « DPAE Service plus ») : ce n'est pas celui de net-entreprises. Les accents sont retirés, la DPAE les refuse."))
+            } else if s.avec_compte {
+                (vec![cle!(ChargePoser, valeur), cle!(ChargePoser, compte)], Some("Pour Gmail : validation en deux étapes activée, puis myaccount.google.com › Sécurité › Mots de passe des applications. C'est ce mot de passe-là, pas celui du compte."))
+            } else {
+                (vec![cle!(ChargePoser, valeur)], None)
+            };
+            let montre = CompteMontre { prenom: id.prenom.clone(), nom: id.nom.clone(), compte: if s.avec_compte { s.compte.clone() } else { None } };
+            let poser = GesteDeRoute::avec_cases(Route::CoffrePoser, ServiceDuRang { service: Some(s.service) }, if s.pose { CHANGER } else { POSER }, cases, montre, SansCharge {});
+            gestes.push(poser.disant(note.into_iter().map(String::from).collect()).exigeant(exigee(&geste_poser(s.libelle, id.ici))?));
+            if s.pose {
+                let oublier = format!("Oublier le mot de passe {} ? Les retours et les dépôts ne seront plus possibles jusqu'à ce qu'il soit reposé.", s.libelle);
+                gestes.push(geste(Route::CoffreOublier, Some(s.service), OUBLIER, Vec::new()).disant(vec![oublier]).exigeant(exigee(&geste_oublier(s.libelle))?));
+            }
+        }
+        rangs.push(RangDeLEcran { titre: s.libelle.to_string(), dit, pastille: s.pastille.clone(), etat, montre: None, gestes });
+    }
+
+    // LE COMPTE GOOGLE, dit sans reseau : le lier (le moteur ouvre Google dans le navigateur et attend qu'on y accepte),
+    // le verifier (une tentative), l'oublier.
+    let dit = vec!["La sauvegarde du dossier privé et l'archivage des mois, dans son Drive ; rien d'autre.".to_string()];
+    let lie = if fictive { None } else { compte_autorise(&ctx.racine) };
+    let pastille = match (fictive, &lie) {
+        (true, _) => Pastille::de(socle::ecran::EtatDEcran::Information, "non lié"),
+        (false, Some(_)) => Pastille::de(socle::ecran::EtatDEcran::Fait, "lié"),
+        (false, None) => Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun Drive lié"),
+    };
+    let mut gestes = Vec::new();
+    if !fictive {
+        let ouvrir = "Le logiciel ouvre la fenêtre de Google dans votre navigateur : choisissez le compte, acceptez, puis revenez ici. Si Google dit que l'application n'est pas validée : Paramètres avancés › Accéder à PuppetPaie.";
+        gestes.push(geste(Route::GoogleAutoriser, None, if lie.is_some() { RELIER } else { LIER }, Vec::new()).disant(vec![ouvrir.to_string()]).exigeant(exigee(GESTE_GOOGLE_LIER)?));
+        if lie.is_some() {
+            gestes.push(geste(Route::GoogleEtat, None, VERIFIER, Vec::new()));
+            let oublier = "Oublier le compte Google ? Le jeton local est effacé : plus de sauvegarde ni d'archivage jusqu'à ce qu'un Drive soit relié. L'accès accordé côté Google, lui, se retire sur myaccount.google.com › Sécurité › Vos connexions à des applications tierces.";
+            gestes.push(geste(Route::GoogleOublier, None, OUBLIER, Vec::new()).disant(vec![oublier.to_string()]).exigeant(exigee(GESTE_GOOGLE_OUBLIER)?));
+        }
+    }
+    rangs.push(RangDeLEcran { titre: "Compte Google".to_string(), dit, pastille, etat: lie, montre: None, gestes });
+
+    Ok(EcranRendu { encarts, rangs, cases: Vec::new(), historique: Vec::new(), enregistrer: None })
 }

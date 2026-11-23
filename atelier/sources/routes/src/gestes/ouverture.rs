@@ -37,7 +37,8 @@ use socle::paris::{ecrit, Moment};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
 use crate::gestes::releve_signatures::{self, ReleveSignatures};
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, OPERATION};
+use crate::declaration::{charge, dit, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::fiches::{FicheRecue, ReleveFiches};
@@ -51,12 +52,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Ouverture,
         geste: "Ouvrir la compagnie : sauvegarder, relever retours, signatures et fiches.",
-        charge: &[
-            Champ { nom: "sauvegarder", libelle: Affiche::new("Sauvegarder"), forme: Forme::OuiNon, sens: "faux : ne pas sauvegarder dans le Drive", avance: true },
-            Champ { nom: "retours", libelle: Affiche::new("Relever les retours"), forme: Forme::OuiNon, sens: "faux : ne pas relever les retours des organismes", avance: true },
-            Champ { nom: "signatures", libelle: Affiche::new("Relever les signatures"), forme: Forme::OuiNon, sens: "faux : ne pas relever les signatures", avance: true },
-            Champ { nom: "veille", libelle: Affiche::new("Un tour de veille"), forme: Forme::OuiNon, sens: "vrai : un tour de veille", avance: true },
-        ],
+        charge: &ChargeOuverture::CHARGE,
         exemple: r#"{}"#,
         rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet), et les incidents en phrases ; ne refuse jamais",
         refus: &[OPERATION],
@@ -133,33 +129,39 @@ impl Options {
     }
 }
 
-/// LA CHARGE DE LA ROUTE `ouverture` : chaque option dite, ou absente. Les interrupteurs disent `false` pour ne pas faire
-/// (sauvegarder, retours, signatures, filet, incidents_editeur) et `true` pour faire autrement (veille, sauvegarde_seule) ;
-/// `jours` (en jours), `pas_avant` (en minutes) et `racine_drive` remplacent ce que fait un passage ordinaire
-/// (`Options::entiere`).
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChargeOuverture {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sauvegarder: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retours: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signatures: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filet: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub veille: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub incidents_editeur: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sauvegarde_seule: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::jours_opt")]
-    pub jours: Option<Duration>,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::minutes_opt")]
-    pub pas_avant: Option<Duration>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub racine_drive: Option<String>,
+/// Une duree mesuree, dans une charge : un nombre, dans l'unite que son attribut serde dit (`socle::temps::ecrit`).
+impl ValeurDeLaCharge<ParSaForme> for Duration {
+    const FORME: Forme = Forme::Nombre;
+}
+
+charge! {
+    /// LA CHARGE DE LA ROUTE `ouverture` : chaque option dite, ou absente. Les interrupteurs disent `false` pour ne pas
+    /// faire (sauvegarder, retours, signatures, filet, incidents_editeur) et `true` pour faire autrement (veille,
+    /// sauvegarde_seule) ; `jours` (en jours), `pas_avant` (en minutes) et `racine_drive` remplacent ce que fait un passage
+    /// ordinaire (`Options::entiere`).
+    #[derive(Debug, Default, Serialize)]
+    pub struct ChargeOuverture {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub sauvegarder: Option<bool> = dit("Sauvegarder", "faux : ne pas sauvegarder dans le Drive").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub retours: Option<bool> = dit("Relever les retours", "faux : ne pas relever les retours des organismes").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub signatures: Option<bool> = dit("Relever les signatures", "faux : ne pas relever les signatures").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub filet: Option<bool> = dit("Envoyer à l'éditeur", "faux : rien ne part chez l'éditeur (incidents, réponses aux signalements)").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub veille: Option<bool> = dit("Un tour de veille", "vrai : un tour de veille").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub incidents_editeur: Option<bool> = dit("Incidents à l'éditeur", "faux : ne pas envoyer chez l'éditeur les incidents notés, ni relever ses réponses").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub sauvegarde_seule: Option<bool> = dit("Sauvegarde seule", "vrai : seulement la sauvegarde, après un premier passage qui a relevé sans elle").avancee(),
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::jours_opt")]
+        pub jours: Option<Duration> = dit("Jours de retours", "jusqu'où chercher les retours, en jours avant maintenant ; 90 sinon").avancee(),
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::minutes_opt")]
+        pub pas_avant: Option<Duration> = dit("Pas avant", "en minutes : rien ne se refait si la dernière ouverture est plus récente ; zéro sinon").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub racine_drive: Option<String> = dit("Dossier du Drive", "le dossier racine de la sauvegarde dans le Drive").avancee(),
+    }
 }
 
 impl Options {

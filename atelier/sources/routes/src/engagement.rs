@@ -10,22 +10,23 @@ use engagement::stock::Identite;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusDit, FORME, MOIS};
+use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusDit, FORME};
+use crate::declaration::{charge, dit, legendes, ChampDuType, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
-pub(crate) const IDENTITE: Champ = Champ {
-    nom: "engagement", libelle: Affiche::new("Carte"), forme: Forme::Objet,
-    sens: "l'identité de la carte, telle que le moteur l'a rendue : {salarie, debut, rang}",
-    avance: false,
-};
+/// Dans une charge, l'identite d'une carte se dit d'un objet (`{salarie, debut, rang}`).
+impl ValeurDeLaCharge<ParSaForme> for Identite {
+    const FORME: Forme = Forme::Objet;
+}
+
+pub(crate) const IDENTITE: Legende = dit("Carte", "l'identité de la carte, telle que le moteur l'a rendue : {salarie, debut, rang}");
 /// Les changements des cases du brouillon d'une carte, dans l'ordre.
-pub(crate) const CHANGEMENTS: Champ = Champ {
-    nom: "changements", libelle: Affiche::new("Cases qui changent"), forme: Forme::Objet,
-    sens: "[{case, valeur}, …], au moins un, appliqués dans l'ordre, tout ou rien (un refus nomme sa case et rien n'est écrit) : chacun une case de la nature de la carte (`natures` de cette fiche : chacune obligatoire ou facultative à la validation, et les motifs d'un CDD ; une case qu'elle n'a pas se refuse), valeur null pour la vider ; {\"case\": \"nature\", \"valeur\": \"cdi\"} change sa nature (les cases des deux natures gardent ce qu'elles disent, les autres naissent vides). Les cases : salarie (la clé de sa fiche), spectacle, debut, fin, motif_recours (un CDD), lignes [{rubrique, et exactement les clés que sa rubrique demande, `rubriques[].cles[].cle` de la route etat, null pour une case vide : quantite (dans l'unité de sa rubrique, {\"cachets\": 2} : la clé `rubriques[].quantite` de la route etat), taux, heures (par unité : 4 pour des services de 4 h), lieu, dates (tous ses jours : le moteur range ceux des mois suivants au planning), planning (facultatifs : absents, ils sont vides) ; base et taux_majoration (un pourcentage) ; montant, genre ; territoire et cases (un repas, une nuitée ; facultatifs ; une autre ligne ne les a pas) ; une ligne dont seuls les jours changent garde un cachet, une journée ou un service par jour}] ; les cases que la carte ouvre, et leur place (dont celles de la fin, celles que son contrat écrit appelle, et numero, le numéro déjà déclaré en DSN d'un contrat commencé avant PuppetPaie) : `carte.cases` de sa paie dans la route apercu (leur sens : `aides` de la route etat) ; le préavis : {type, debut, fin}, ses parties `parties.preavis` de la route etat, son type parmi `choix.preavis`",
-    avance: false,
-};
+pub(crate) const CHANGEMENTS: Legende = dit(
+    "Cases qui changent",
+    "[{case, valeur}, …], au moins un, appliqués dans l'ordre, tout ou rien (un refus nomme sa case et rien n'est écrit) : chacun une case de la nature de la carte (`natures` de cette fiche : chacune obligatoire ou facultative à la validation, et les motifs d'un CDD ; une case qu'elle n'a pas se refuse), valeur null pour la vider ; {\"case\": \"nature\", \"valeur\": \"cdi\"} change sa nature (les cases des deux natures gardent ce qu'elles disent, les autres naissent vides). Les cases : salarie (la clé de sa fiche), spectacle, debut, fin, motif_recours (un CDD), lignes [{rubrique, et exactement les clés que sa rubrique demande, `rubriques[].cles[].cle` de la route etat, null pour une case vide : quantite (dans l'unité de sa rubrique, {\"cachets\": 2} : la clé `rubriques[].quantite` de la route etat), taux, heures (par unité : 4 pour des services de 4 h), lieu, dates (tous ses jours : le moteur range ceux des mois suivants au planning), planning (facultatifs : absents, ils sont vides) ; base et taux_majoration (un pourcentage) ; montant, genre ; territoire et cases (un repas, une nuitée ; facultatifs ; une autre ligne ne les a pas) ; une ligne dont seuls les jours changent garde un cachet, une journée ou un service par jour}] ; les cases que la carte ouvre, et leur place (dont celles de la fin, celles que son contrat écrit appelle, et numero, le numéro déjà déclaré en DSN d'un contrat commencé avant PuppetPaie) : `carte.cases` de sa paie dans la route apercu (leur sens : `aides` de la route etat) ; le préavis : {type, debut, fin}, ses parties `parties.preavis` de la route etat, son type parmi `choix.preavis`",
+);
 pub(crate) const SAISIE_INCOMPLETE: RefusDit = RefusDit { classe: Classe::SaisieIncomplete, corriger: "le fait que la phrase nomme, sur la carte ou la fiche du salarié" };
 const OPERATION: RefusDit = RefusDit {
     classe: Classe::Refuse,
@@ -40,7 +41,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ValiderEngagement,
         geste: "Valider l'engagement d'une carte, tel qu'il est écrit : calculer ses paies.",
-        charge: &[MOIS, IDENTITE],
+        charge: &ChargeValider::CHARGE,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0}}"#,
         rend: "engagement (l'identité de la carte), phrase",
         refus: &[SAISIE_INCOMPLETE, OPERATION, FORME],
@@ -52,15 +53,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ModifierEngagement,
         geste: "Modifier un engagement validé : changer des cases de sa carte, et le revalider.",
-        charge: &[
-            MOIS,
-            IDENTITE,
-            CHANGEMENTS,
-            Champ { nom: "confirme", libelle: Affiche::new("Avertissement lu"), forme: Forme::OuiNon, sens: "vrai : l'avertissement rendu a été lu et accepté", avance: false },
-            Champ { nom: "jour", libelle: Affiche::new("Jour d'effet"), forme: Forme::Nombre, sens: "le jour du mois (un nombre, de 1 à 31) où un terme changé prend effet, quand ce n'est pas le 1er", avance: true },
-        ],
+        charge: &CHARGE_MODIFIER,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":160,"lieu":null,"dates":["2026-11-27"],"planning":[]}]}],"confirme":false,"jour":null}"#,
-        rend: "rien n'a changé : change faux ; ce qui est parti le demande : avertissement (à montrer, puis renvoyer avec confirme), rien n'est écrit ; écrit : change, phrase (un terme vaut à partir du mois de la carte)",
+        rend: "rien n'a changé : change faux ; ce qui est parti le demande : avertissement (à montrer, puis renvoyer avec confirme : son titre, annuler, confirmer, et la case du jour, jour_libelle et jour_propose, quand un terme vaut d'un autre jour), rien n'est écrit ; écrit : change, phrase (un terme vaut à partir du mois de la carte)",
         refus: &[
             SAISIE_INCOMPLETE,
             OPERATION,
@@ -75,9 +70,9 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::RetirerEngagement,
         geste: "Retirer l'engagement d'une carte, ou le rendre non actif si un envoi est parti.",
-        charge: &[MOIS, IDENTITE, Champ { nom: "confirme", libelle: Affiche::new("Avertissement lu"), forme: Forme::OuiNon, sens: "faux d'abord ; vrai : l'avertissement rendu a été lu, et l'engagement devient non actif", avance: false }],
+        charge: &ChargeRetirer::CHARGE,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"confirme":true}"#,
-        rend: "phrase : retiré, ou non actif et ce que cela rend à faire ; un envoi est parti : avertissement (à montrer, puis renvoyer avec confirme), rien n'est écrit",
+        rend: "phrase : retiré, ou non actif et ce que cela rend à faire ; un envoi est parti : avertissement (sa phrase, son titre, garder, confirmer : à montrer, puis renvoyer avec confirme), rien n'est écrit",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -130,13 +125,25 @@ struct ChargeModifier {
     confirme: bool,
 }
 
-/// La charge de « Retirer cet engagement » : le mois de la carte, son identite, l'avertissement lu (`confirme`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeRetirer {
-    mois: Mois,
-    engagement: Identite,
-    confirme: bool,
+// Sa charge, champ par champ : `jour` se lit hors de la structure (`Charge::lire_avec_le_jour`), ce que `charge!` ne dit pas.
+const CHARGE_MODIFIER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, Mois>("mois", legendes::MOIS),
+        ChampDuType::du_type::<_, Identite>("engagement", IDENTITE),
+        ChampDuType::du_type::<_, Changements>("changements", CHANGEMENTS),
+        ChampDuType::du_type::<_, bool>("confirme", dit("Avertissement lu", "vrai : l'avertissement rendu a été lu et accepté")),
+        ChampDuType::du_type::<_, Option<u32>>("jour", dit("Jour d'effet", "le jour du mois (un nombre, de 1 à 31) où un terme changé prend effet, quand ce n'est pas le 1er").avancee()),
+    ],
+};
+
+charge! {
+    /// La charge de « Retirer cet engagement » : le mois de la carte, son identite, l'avertissement lu (`confirme`).
+    #[derive(Debug)]
+    struct ChargeRetirer {
+        mois: Mois = legendes::MOIS,
+        engagement: Identite = IDENTITE,
+        confirme: bool = dit("Avertissement lu", "faux d'abord ; vrai : l'avertissement rendu a été lu, et l'engagement devient non actif"),
+    }
 }
 
 /// Ce que rend « Valider l'engagement » : l'identite de la carte ecrite, et la phrase.
@@ -157,12 +164,47 @@ enum Modification {
 
 /// L'avertissement d'une modification : chaque engagement touche, ce que le changement entraine pour lui, et d'ou vaut
 /// un terme change (`jour`, `null` quand il vaut du debut).
+/// La boite qui le montre : son titre, ses deux boutons (`annuler`, `confirmer` : renvoyer avec `confirme`) ; quand un
+/// terme vaut d'un autre jour que le 1er, la case du jour (`jour_libelle`) et ce qu'elle montre d'abord (`jour_propose`,
+/// le jour d'ou il vaut, `jour_dit`).
 #[derive(Debug, Serialize)]
 struct Avertissement {
     engagements: Vec<Touche>,
     /// D'ou vaut ce qui change, en une phrase.
     #[serde(rename = "jour")]
     jour_dit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jour_libelle: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jour_propose: Option<String>,
+    titre: &'static str,
+    annuler: &'static str,
+    confirmer: &'static str,
+}
+
+impl Avertissement {
+    /// L'avertissement de `engagements`, dont un terme change vaut du jour `depuis`, quand il en a un.
+    fn de(engagements: Vec<Touche>, depuis: Option<socle::date::Jour>) -> Avertissement {
+        Avertissement {
+            engagements,
+            jour_dit: depuis.map(|j| vaut_a_partir_du(&j)),
+            jour_libelle: depuis.map(|_| "le"),
+            jour_propose: depuis.map(|j| j.quantieme_ecrit()),
+            titre: "Modifier l'engagement",
+            annuler: "Annuler",
+            confirmer: "Modifier l'engagement",
+        }
+    }
+}
+
+/// L'AVERTISSEMENT D'UN RETRAIT (`retirer-engagement`, un envoi parti) : ce qui est parti (`phrase`), et la boite qui le
+/// montre : son titre, garder l'engagement (`garder`), ou le rendre non actif (`confirmer` : renvoyer avec `confirme`).
+#[derive(Debug, Serialize)]
+struct AvertissementDuRetrait {
+    phrase: String,
+    titre: &'static str,
+    garder: &'static str,
+    confirmer: &'static str,
 }
 
 /// Un engagement que la modification touche : nomme (`qui`), une ligne par consequence.
@@ -177,7 +219,7 @@ struct Touche {
 struct Retrait {
     phrase: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
-    avertissement: Option<String>,
+    avertissement: Option<AvertissementDuRetrait>,
 }
 
 // ------------------------------------------------------------------ outils
@@ -197,13 +239,14 @@ fn designe(ctx: &Contexte, mois: Mois, id: &Identite) -> R<(RangDansLeMois, enga
 // ------------------------------------------------------------------ valider-engagement
 
 
-/// La charge de « Valider l'engagement » : le mois de la carte, et son identite (son brouillon est ecrit, case par case,
-/// par `enregistrer-saisie`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeValider {
-    pub(crate) mois: Mois,
-    pub(crate) engagement: Identite,
+charge! {
+    /// La charge de « Valider l'engagement » : le mois de la carte, et son identite (son brouillon est ecrit, case par
+    /// case, par `enregistrer-saisie`).
+    #[derive(Debug)]
+    pub(crate) struct ChargeValider {
+        pub(crate) mois: Mois = legendes::MOIS,
+        pub(crate) engagement: Identite = IDENTITE,
+    }
 }
 
 /// « VALIDER L'ENGAGEMENT » : le brouillon ecrit de la carte (`engagement`, son identite) se valide : il se lit en carte
@@ -366,7 +409,7 @@ fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: RangDansLeMois, o: &enga
     let lignes = ce_que_le_changement_entraine(ctx, &v, &departs)?;
     if !confirme && !lignes.is_empty() {
         let touche = Touche { qui: engagement::etats::qui_de(ctx, v.objet()), consequences: lignes };
-        return Ok(Issue::Avertir(Avertissement { engagements: vec![touche], jour_dit: depuis.map(|j| vaut_a_partir_du(&j)) }));
+        return Ok(Issue::Avertir(Avertissement::de(vec![touche], depuis)));
     }
     Ok(Issue::Ecrite(depuis))
 }
@@ -455,7 +498,15 @@ fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
         let parti = !engagement::etats::ce_qui_est_parti(&o, &departs).is_empty();
         return match engagement::etats::supprimer(ctx, &o, &departs) {
             Ok(()) => Ok(Retrait { phrase: Phrase::fixe("Engagement retiré."), avertissement: None }),
-            Err(m) if parti => Ok(Retrait { phrase: socle::phrase!("{}", m.phrase), avertissement: Some(m.phrase) }),
+            Err(m) if parti => Ok(Retrait {
+                phrase: socle::phrase!("{}", m.phrase),
+                avertissement: Some(AvertissementDuRetrait {
+                    phrase: m.phrase,
+                    titre: "Retirer cet engagement ?",
+                    garder: "Garder l'engagement",
+                    confirmer: "Le rendre non actif",
+                }),
+            }),
             Err(m) => Err(m),
         };
     }

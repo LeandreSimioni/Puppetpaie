@@ -29,10 +29,9 @@ async function montrerRappels(lu = api) {
   try { manques = await lireDemarrage(lu); } catch (e) { dire(e.message, "erreur"); }
   const liste = r.rappels;
   // L'ÉCHÉANCIER : « un pop-up au démarrage : on est le…,
-  // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle s'ouvrait
-  // aussi une fois par jour quand rien n'attendait : elle n'apparaît
-  // que s'il y a quelque chose à faire.
-  if (!liste.length && !(ech && ech.a_faire) && !manques.length && !DEMARRAGE.dsn) return;
+  // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle n'apparaît que s'il y a quelque chose à montrer, et
+  // ce sont les rappels qui le disent (`ouvrir_a_l_ouverture`).
+  if (!r.ouvrir_a_l_ouverture) return;
   // Ce qu'une DSN pourrait donner compte dans ce que la boîte a montré : qu'il change, et elle se rouvre.
   RAPPELS_MONTRES = { liste, ech, manques, dsn: DEMARRAGE.dsn };
   if (dejaMontres(RAPPELS_MONTRES)) return;
@@ -63,9 +62,9 @@ let POSES_DEMARRAGE = [];
 /** La case où mène un lien de manque, quand la ligne en nomme une. */
 const attributChamp = (champ) => (champ ? ` data-manque-champ="${echapper(champ)}"` : "");
 function htmlPoses() {
-  if (!POSES_DEMARRAGE.length) return "";
+  if (!DEMARRAGE.poses_titre) return "";
   return `<div class="rappel demarrage-poses">
-    <h3>Posé pour vous</h3>
+    <h3>${echapper(DEMARRAGE.poses_titre)}</h3>
     <ul class="rappel-liste">${POSES_DEMARRAGE.map((p) => `
       <li>${pastilleDeLEtat(p.pastille)}
         <button type="button" class="lien"${attributChamp(p.champ)}
@@ -83,30 +82,13 @@ function htmlPoses() {
  * écriture par fiche) et joue les gestes que le moteur lui donne
  * (`a_enregistrer`), et la liste se relit. La page ne fait que la mise en
  * page. */
-const DEMARRAGE_VIDE = { titre: "", note: "", manques: [], dsn: null };
+const DEMARRAGE_VIDE = { titre: "", note: "", manques: [], dsn: null, poses_titre: null, trouver_dit: "", enregistrer: null, configuration_dit: "" };
 let DEMARRAGE = DEMARRAGE_VIDE;
 
-/* La case qu'une ligne propose, telle que sa fiche la décrit : `{nom, fiche,
- * c}`, ou null quand elle ne se remplit pas ici (un organisme, le barème, le
- * taux AT/MP, un accès : la ligne mène à sa place). Une case de structure se
- * dessine seule, dans sa structure. */
-function caseDuManque(m) {
-  const conf = ETAT.configuration;
-  const nom = ["salarie", "spectacle", "entreprise"].includes(m.onglet) ? m.onglet : null;
-  if (!nom || !m.case) return null;
-  const fiche = nom === "entreprise" ? conf.entreprise
-    : (nom === "salarie" ? conf.salaries : conf.spectacles).find((f) => f.cle === (m.salarie || m.spectacle));
-  if (!fiche) return null;
-  const [racine] = m.case.split(".");
-  // LA CASE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose) : le dessinateur commun la dessine,
-  // comme dans sa fiche (`caseDeRoute`, `modifiable`). Sans elle, la ligne mène à sa place.
-  return m.case_rendue ? { nom, fiche, rendue: m.case_rendue, racine } : null;
-}
-
-/* Le dessin de la case : celui de la fiche. */
-function caseDemarrageHtml(k) {
-  return caseDeRoute(modifiable(k.rendue));
-}
+/* LA CASE D'UNE LIGNE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose, sinon celle de la fiche)
+ * avec ce qui l'enregistre (`enregistrer`) : le dessinateur commun la dessine, comme dans sa fiche (`caseDeRoute`,
+ * `modifiable`). Sans elle (un organisme, le barème, le taux AT/MP, un accès), la ligne mène à sa place. */
+const seRemplitIci = (m) => !!(m.case_rendue && m.enregistrer);
 
 function htmlDemarrage(manques) {
   if (!manques.length && !DEMARRAGE.dsn) return htmlPoses();
@@ -124,17 +106,16 @@ function htmlDemarrage(manques) {
       ${casesDuGeste(g)}</div>`).join("");
   const ligne = (m) => {
     const i = manques.indexOf(m);
-    const k = caseDuManque(m);
-    if (!k) {
+    if (!seRemplitIci(m)) {
       return `<li class="demarrage-ligne">
         <b>${echapper(m.libelle)}</b> ${lien(m)}
         ${pour(m)}
         ${aEnregistrer(m, i)}
-        ${m.trouver ? `<details><summary>Où le trouver</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
+        ${m.trouver ? `<details><summary>${echapper(DEMARRAGE.trouver_dit)}</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
       </li>`;
     }
     return `<li class="demarrage-ligne" data-demarrage="${i}">
-      <div class="demarrage-case">${caseDemarrageHtml(k)}</div>
+      <div class="demarrage-case">${caseDeRoute(modifiable(m.case_rendue))}</div>
       ${pour(m)}
       ${aEnregistrer(m, i)}
       <div class="actions">${lien(m)}</div>
@@ -142,7 +123,6 @@ function htmlDemarrage(manques) {
   };
   const entreprise = manques.filter((m) => !m.qui);
   const lesQui = [...new Set(manques.filter((m) => m.qui).map((m) => m.qui))];
-  const aRemplir = manques.some((m) => caseDuManque(m) || (m.a_enregistrer || []).length);
   // CE QU'UNE DSN DONNERAIT (`dsn`, du moteur) : sa phrase, et chaque ligne, qui mène à sa place.
   const dsn = DEMARRAGE.dsn ? `<div class="encart attention"><p>${echapper(DEMARRAGE.dsn.phrase)}</p>
       <ul class="rappel-liste">${DEMARRAGE.dsn.manques.map((m) => `<li class="demarrage-ligne">
@@ -158,16 +138,25 @@ function htmlDemarrage(manques) {
         <ul class="rappel-liste">${manques.filter((m) => m.qui === q).map(ligne).join("")}</ul>`).join("")}
       <div class="anomalie" data-demarrage-dit hidden></div>
       <div class="actions">
-        ${aRemplir ? `<button class="primaire" data-demarrage-enregistrer>Enregistrer</button>` : ""}
-        <button class="petit" data-aller-configuration>Ouvrir la configuration</button>
+        ${DEMARRAGE.enregistrer ? `<button class="primaire" data-demarrage-enregistrer>${echapper(DEMARRAGE.enregistrer)}</button>` : ""}
+        <button class="petit" data-aller-configuration>${echapper(DEMARRAGE.configuration_dit)}</button>
       </div>
     </div>${htmlPoses()}`;
 }
 let DEMARRAGE_LISTES = 0;   // chaque liste peinte a son numéro : ses cases se lisent chez elle
+const DEPART_DES_LIGNES = new WeakMap();   // ce que dit chaque ligne à l'ouverture de sa liste (`casesDuBloc`)
 
-/* Les cases dessinées d'une liste : ce qu'une case de route fait seule (un calendrier, une rangée). */
+/* Les cases dessinées d'une liste : ce qu'une case de route fait seule (un calendrier, une rangée). Chaque liste est un
+ * écran retenu (`retenirLEcran`) : la quitter avec une saisie non enregistrée se demande ; une valeur que le moteur
+ * propose remplit sa case dès l'ouverture, elle n'est donc pas un changement. Jeter relit la liste. */
 function brancherDemarrage(conteneur) {
-  conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => brancherLesCases(li));
+  conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => {
+    brancherLesCases(li);
+    DEPART_DES_LIGNES.set(li, casesDuBloc(li));
+  });
+  conteneur.querySelectorAll(".demarrage-liste").forEach((liste) => {
+    retenirLEcran(liste, { enregistrer: () => enregistrerDemarrage(liste), jeter: repeindreDemarrage });
+  });
 }
 
 /* LES GESTES QUE « ENREGISTRER » JOUE (`a_enregistrer`, du moteur), tels que leurs cases les disent : `{route,
@@ -181,54 +170,29 @@ function gestesDemarrage(liste) {
   });
 }
 
-/* CE QUE LA LISTE PORTE ET QUI N'EST PAS ENREGISTRÉ : par fiche (l'entreprise,
- * chaque salarié, chaque spectacle), les cases remplies qui disent autre chose que la fiche.
- * Une case de structure part dans sa structure entière, celle de la fiche
- * complétée : le moteur remplace la structure (`enregistrer-fiche`). */
+/* CE QUE LA LISTE PORTE, ÉCRITURE PAR ÉCRITURE : les lignes que la même route enregistre avec la même charge (une
+ * fiche : l'entreprise, un salarié, un spectacle) partent ensemble, chacune sa case dans les `changements` de la charge
+ * (`casesDeLaCharge`, comme la fiche), telle qu'elle la dit ; la route garde ce qui ne change pas. Deux lignes des
+ * parties d'une même case (une structure) en font une : la seconde pose ses parties sur ce que la première a dit. */
 function changementsDemarrage(liste) {
-  const parFiche = new Map();
-  const memes = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  // Une case de structure dont aucune sous-case n'est remplie (`signataire`, `banque`) est vide, comme une case seule.
-  const vide = (v) => v === null || v === undefined || v === "" || (typeof v === "object" && Object.values(v).every(vide));
-  const fondre = (a, b) => {
-    if (!a || typeof a !== "object" || !b || typeof b !== "object") return b;
-    const o = { ...a };
-    Object.entries(b).forEach(([x, v]) => { o[x] = fondre(o[x], v); });
-    return o;
-  };
+  const parEcriture = new Map();
   liste.querySelectorAll("[data-demarrage]").forEach((li) => {
     const m = DEMARRAGE.manques[+li.dataset.demarrage];
-    const k = m && caseDuManque(m);
-    if (!k) return;
-    const sel = `[data-demarrage-liste="${liste.dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"] .demarrage-case`;
-    const lu = lireLesCases(document.querySelector(sel));
-    const v = lu[k.racine];
-    const avant = k.fiche.donnees[k.racine];
-    if (vide(v) || (v === false && !avant) || memes(v, avant)) return;
-    const cle = k.nom + "|" + (k.nom === "entreprise" ? "" : k.fiche.cle);
-    const f = parFiche.get(cle) || { nom: k.nom, ...(k.nom === "entreprise" ? {} : { cle: k.fiche.cle }), donnees: {} };
-    f.donnees[k.racine] = fondre(f.donnees[k.racine] ?? avant, v);
-    parFiche.set(cle, f);
+    if (!m || !seRemplitIci(m)) return;
+    // NE PART QUE CE QUI A CHANGÉ depuis l'ouverture de la liste, et ce que le moteur propose (`propose` : la fiche ne
+    // l'a pas encore, « Enregistrer » le valide).
+    if (m.propose == null && casesDuBloc(li) === DEPART_DES_LIGNES.get(li)) return;
+    const cle = JSON.stringify(m.enregistrer);
+    const e = parEcriture.get(cle) || { route: m.enregistrer.route, charge: m.enregistrer.charge, donnees: {} };
+    lesCasesLues(li.querySelector(".demarrage-case")).forEach(([c, v]) => {
+      const x = li.querySelector(`.demarrage-case .case[data-cle="${CSS.escape(c)}"] > [data-case]`);
+      const deja = e.donnees[c];
+      e.donnees[c] = deja != null && x.dataset.forme === "parties" ? lireLesParties(x, deja) : v;
+    });
+    parEcriture.set(cle, e);
   });
-  return [...parFiche.values()].map(({ donnees, ...f }) => ({ ...f, ...casesDeLaCharge(donnees) }));
+  return [...parEcriture.values()].map((e) => ({ route: e.route, charge: { ...e.charge, ...casesDeLaCharge(e.donnees) } }));
 }
-/* UNE LISTE OÙ L'ON A TAPÉ : une valeur que le moteur propose remplit sa case sans que personne n'y touche ; elle part
- * avec « Enregistrer », mais ce n'est pas un changement qu'on perdrait en quittant. Seule une liste où l'on a tapé
- * (`touchee`, posé à la première frappe, perdu quand la liste se relit) fait demander avant de partir. */
-document.addEventListener("input", (e) => {
-  const l = e.target.closest && e.target.closest(".demarrage-liste");
-  if (l) l.dataset.touchee = "1";
-});
-document.addEventListener("change", (e) => {
-  const l = e.target.closest && e.target.closest(".demarrage-liste");
-  if (l) l.dataset.touchee = "1";
-});
-const listeDemarrageModifiee = () => [...document.querySelectorAll(".demarrage-liste")]
-  .find((l) => l.dataset.touchee && (changementsDemarrage(l).length || gestesDemarrage(l).length));
-function demarrageModifie() {
-  return !!listeDemarrageModifiee();
-}
-
 /* ENREGISTRER « POUR DÉMARRER » : tout ce que la liste porte, une écriture
  * par fiche (`enregistrer-fiche`), puis chaque geste que le moteur dit de
  * jouer (`a_enregistrer`), puis la liste se relit. Le premier refus arrête
@@ -243,16 +207,17 @@ async function enregistrerDemarrage(liste) {
   dit.hidden = true;
   let phrase = "";
   try {
-    for (const charge of fiches) {
-      let r = await api("enregistrer-fiche", charge);
+    for (const { route, charge } of fiches) {
+      let r = await api(route, charge);
       if (r.avertissement) {
         const rendre = mettreDeCote();
         const reponse = await demanderDateDEffet(r.avertissement);
         if (rendre) rendre();
         if (!reponse) { if (bouton) bouton.disabled = false; return false; }
-        r = await api("enregistrer-fiche", { ...charge, ...reponse, confirme: true });
+        r = await api(route, { ...charge, ...reponse, confirme: true });
       }
-      phrase = r.phrase;
+      // La phrase dite à la fin : celle de la dernière réponse qui a écrit (une fiche dit ses cases écrites, `ecrits`).
+      if (r.ecrits.length) phrase = r.phrase;
     }
     for (const g of gestes) phrase = (await api(g.route, g.charge)).phrase;
   } catch (e) {
@@ -266,7 +231,7 @@ async function enregistrerDemarrage(liste) {
     return false;
   }
   await relireEtat();
-  dire(phrase);
+  if (phrase) dire(phrase);
   await repeindreDemarrage();
   return true;
 }
@@ -275,17 +240,6 @@ document.addEventListener("click", (e) => {
   if (b) enregistrerDemarrage(b.closest(".demarrage-liste"));
 });
 
-/* QUITTER « POUR DÉMARRER » avec des cases remplies et pas enregistrées : la
- * même boîte que la fiche (`demanderSiEnregistrer`). Rend vrai si l'on peut
- * partir. */
-async function quitterDemarrage() {
-  const liste = listeDemarrageModifiee();
-  if (!liste) return true;
-  const choix = await demanderSiEnregistrer();
-  if (choix === "rester") return false;
-  if (choix === "jeter") { await repeindreDemarrage(); return true; }
-  return enregistrerDemarrage(liste);
-}
 /* La liste relue, partout où elle est peinte ; la fiche Entreprise, si elle
  * est ouverte et qu'on n'y a rien tapé, montre ce qui vient de s'écrire. */
 async function repeindreDemarrage() {
@@ -301,7 +255,7 @@ async function repeindreDemarrage() {
     if (b.closest("#config-liste, #import-demarrage")) b.remove();
   });
   brancherDemarrage(document);
-  if (FICHE_ACTIVE === "entreprise" && !FICHE_MODIFIEE
+  if (FICHE_ACTIVE === "entreprise" && !ecranModifie(casesDeLaFicheOuverte())
       && !document.getElementById("vue-configuration").classList.contains("cachee")) {
     dessinerFormulaire(fichesDe("entreprise")[0]);
   }
@@ -311,7 +265,7 @@ async function repeindreDemarrage() {
 document.addEventListener("click", async (e) => {
   const b = e.target.closest && e.target.closest("[data-aller-configuration]");
   if (!b) return;
-  if (!(await quitterDemarrage())) return;
+  if (!(await quitterLEcran(document.getElementById("boite")))) return;
   fermerBoite();
   document.querySelector('.onglets button[data-vue="configuration"]').click();
   const sous = document.querySelector('.sous-onglets button[data-fiche="entreprise"]');
@@ -323,7 +277,8 @@ document.addEventListener("click", async (e) => {
  * à l'écran reste celle dont on lit les changements. */
 async function lireDemarrage(lu) {
   const pd = await lu("pour-demarrer");
-  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn || null };
+  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn || null, poses_titre: pd.poses_titre || null,
+    trouver_dit: pd.trouver_dit, enregistrer: pd.enregistrer || null, configuration_dit: pd.configuration_dit };
   POSES_DEMARRAGE = pd.poses;
   return DEMARRAGE.manques;
 }
@@ -334,7 +289,7 @@ async function lireDemarrage(lu) {
  *  ouvre sa fiche. */
 async function allerAuManque(champ, onglet, nom, cle) {
   if (!document.getElementById("voile").classList.contains("cachee")) {
-    if (!(await quitterDemarrage())) return;
+    if (!(await quitterLEcran(document.getElementById("boite")))) return;
     fermerBoite();
   }
   // Déjà dans la configuration : on n'y retourne pas. Recliquer l'onglet
@@ -388,62 +343,71 @@ async function peindreDemarrageDans(conteneur) {
   brancherDemarrage(conteneur);
 }
 
-/* L'en-tête de la boîte : la date, la bienvenue, ce qui est à faire ce
- * mois-ci, et l'année qui vient repliée. Tout vient du moteur
- * : la page ne sait pas ce qu'est une échéance. */
+/* L'en-tête de la boîte : la date, la bienvenue, puis ce que la route `echeancier` en montre, tel qu'elle le rend :
+ * « Ce mois-ci » (`ce_mois_titre`) et ses rangs, ou ce qu'il dit sans eux (`ce_mois_vide`) ; l'année qui vient repliée
+ * (`annee_titre`, ses rangs). Chaque rang : sa pastille, son titre, ce qu'il dit, ses gestes. */
 function htmlEcheancier(ech) {
   if (!ech) return "";
-  const pastille = (x) => pastilleDeLEtat(x.pastille);
-  const avant = (x) => x.quand && x.etat !== "fait"
-    ? ` <span class="discret">— ${echapper(x.quand)}</span>` : "";
-  const ligne = (x) => `
-    <li class="echeance ${echapper(x.etat)}">
-      <div class="echeance-titre">${pastille(x)} ${echapper(x.titre)}${avant(x)}</div>
-      ${x.etat === "fait" ? "" : `<div class="note">${echapper(x.detail)}</div>`}
-      ${x.cochable ? `<button class="secondaire petit" data-echeance="${echapper(x.cle)}"
-        data-fait="${x.etat === "fait" ? "non" : "oui"}">${echapper(x.bouton_coche)}</button>` : ""}
-    </li>`;
-  const parMois = {};
-  ech.a_venir.forEach((x) => { (parMois[x.tombe] ||= []).push(x); });
-  const annee = Object.keys(parMois).map((m) => `
-    <li><b>${echapper(moisEnClair(m))}</b>
-      <ul>${parMois[m].map((x) => `<li>${echapper(x.titre)}${x.etat === "fait" ? " ✓" : ""}</li>`).join("")}</ul>
+  const rangs = (liste, ou) => liste.map((x, i) => `
+    <li class="echeance" data-rang-echeance="${ou}" data-i="${i}">
+      <div class="echeance-titre">${pastilleDeLEtat(x.pastille)} ${echapper(x.titre)}</div>
+      ${x.dit.map((l) => `<div class="note">${echapper(l)}</div>`).join("")}
+      ${x.gestes.length ? `<div class="actions">${boutonsDesGestes(x.gestes)}</div>` : ""}
     </li>`).join("");
-  // CE QUI EST FAIT NE SE RAPPELLE PAS : la DSN de septembre,
-  // déposée, ne s'affiche plus « fait ». Une échéance cochable reste, pour
-  // pouvoir la décocher ; les autres faites se taisent.
-  // UNE CHOSE SE DIT UNE FOIS : la DSN qu'un rappel réclame
-  // (`rappel`, le moteur le dit) se dit dans ce rappel, sous l'en-tête, avec
-  // sa date et son geste ; ici elle se dirait en double.
-  const ceMois = ech.ce_mois.filter((x) => (x.etat !== "fait" || x.cochable) && !x.rappel);
-  const ditAilleurs = ech.ce_mois.some((x) => x.rappel);
   return `
     <div class="accueil">
       <p class="accueil-date">${echapper(ech.date_dit)}</p>
       <h2 class="accueil-titre">${echapper(ech.bienvenue)}</h2>
-      ${ceMois.length
-        ? `<h3>Ce mois-ci</h3><ul class="echeances">${ceMois.map(ligne).join("")}</ul>`
-        : ditAilleurs ? "" : `<h3>Ce mois-ci</h3><p class="discret">Rien à faire</p>`}
-      ${annee ? `<details class="accueil-annee"><summary>L'année qui vient</summary>
-        <ul class="echeances-annee">${annee}</ul></details>` : ""}
+      ${ech.ce_mois_titre ? `<h3>${echapper(ech.ce_mois_titre)}</h3>` : ""}
+      ${ech.ce_mois_rangs.length ? `<ul class="echeances">${rangs(ech.ce_mois_rangs, "ce_mois_rangs")}</ul>` : ""}
+      ${ech.ce_mois_vide ? `<p class="discret">${echapper(ech.ce_mois_vide)}</p>` : ""}
+      ${ech.annee_titre ? `<details class="accueil-annee"><summary>${echapper(ech.annee_titre)}</summary>
+        <ul class="echeances-annee">${ech.annee_mois.map((m) => `<li>${m.mois ? `<b>${echapper(m.mois)}</b>` : ""}
+          <ul>${m.echeances.map((t) => `<li>${echapper(t)}</li>`).join("")}</ul></li>`).join("")}</ul></details>` : ""}
     </div>`;
 }
 
-function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
-  const html = htmlDemarrage(manques) + htmlEcheancier(ech) + liste.map((r, i) => `
-    <div class="rappel ${r.en_retard ? "retard" : ""}">
+/* L'ÉCHÉANCIER ET LES RAPPELS, dans la boîte : chacun ses gestes, tels que la route les rend (`brancherLesGestes`, leur
+ * boîte par-dessus celle-ci) ; après un geste, ils se relisent, et « Pour démarrer », au-dessus d'eux, garde ce qu'on y a
+ * tapé. */
+function poserLesRappels(liste, ech, fermerDit) {
+  const cible = document.querySelector("#boite [data-rappels-du-jour]");
+  if (!cible) return;
+  cible.innerHTML = htmlEcheancier(ech) + liste.map((r, i) => `
+    <div class="rappel ${r.en_retard ? "retard" : ""}" data-rappel="${i}">
       <h3>${echapper(r.titre)}${r.pastille ? ` ${pastilleDeLEtat(r.pastille)}` : ""}${r.quand
         ? ` <span class="discret">— ${echapper(r.quand)}</span>` : ""}</h3>
       ${r.question ? `<p class="rappel-question">${echapper(r.question)}</p>` : ""}
       ${r.detail ? `<p class="note">${echapper(r.detail)}</p>` : ""}
-      ${r.spectacles.length ? `<ul class="rappel-liste">${r.spectacles.map((s) =>
-        `<li>${echapper(s.titre)} <span class="discret">— ${echapper(s.numero_objet || "aucun numéro")}</span></li>`).join("")}</ul>` : ""}
+      ${r.spectacles.length ? `<ul class="rappel-liste">${r.spectacles.map((s) => `<li>${echapper(s.dit)}</li>`).join("")}</ul>` : ""}
       <div class="actions">${boutonRappel(r, i)}</div>
     </div>`).join("");
+  document.getElementById("rappels-fermer").textContent = fermerDit;
+  const relire = async () => {
+    await relireEtat();
+    let r2, ech2 = null;
+    try { r2 = await api("rappels"); } catch (e) { dire(e.message, "erreur"); return; }
+    try { ech2 = await api("echeancier"); } catch (e) { dire(e.message, "erreur"); }
+    poserLesRappels(r2.rappels, ech2, r2.fermer_dit);
+  };
+  cible.querySelectorAll("[data-rang-echeance]").forEach((li) => {
+    const x = ech[li.dataset.rangEcheance][+li.dataset.i];
+    brancherLesGestes(li, x.gestes, { titre: x.titre, pardessus: true }, relire);
+  });
+  cible.querySelectorAll("[data-rappel]").forEach((bloc) => {
+    const r = liste[+bloc.dataset.rappel];
+    const b = document.getElementById("rappel-" + bloc.dataset.rappel);
+    if (b) b.onclick = () => agirSurRappel(r);
+    brancherLesGestes(bloc, r.gestes, { titre: r.titre, pardessus: true }, relire);
+  });
+}
+
+function boiteRappels(liste, ech, manques, fermerDit) {
   ouvrirBoite(`
-    <div class="boite-rappels"></div>${html}
+    <div class="boite-rappels"></div>${htmlDemarrage(manques)}
+    <div data-rappels-du-jour></div>
     <div class="actions">
-      <button class="secondaire" id="rappels-fermer">${echapper(fermerDit)}</button>
+      <button class="secondaire" id="rappels-fermer"></button>
     </div>`, () => {
     // FERMÉE, ELLE SORT DE LA PAGE : cachée sous le voile, elle gardait
     // ses boutons `[data-manque-champ]`, périmés dès que la fiche change, et
@@ -451,39 +415,26 @@ function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
     const boite = document.getElementById("boite");
     if (boite.querySelector(".boite-rappels")) boite.innerHTML = "";
   });
-  // FERMER AVEC DES CASES REMPLIES ET PAS ENREGISTRÉES demande, comme partout (`quitterDemarrage`).
-  const fermer = async () => { if (await quitterDemarrage()) fermerBoite(); };
+  // FERMER AVEC DES CASES REMPLIES ET PAS ENREGISTRÉES demande, comme partout (`quitterLEcran`).
+  const fermer = async () => { if (await quitterLEcran(document.getElementById("boite"))) fermerBoite(); };
   document.getElementById("rappels-fermer").onclick = fermer;
   CLIC_DEHORS = fermer;
-  liste.forEach((r, i) => {
-    const b = document.getElementById("rappel-" + i);
-    if (b) b.onclick = () => agirSurRappel(r);
-  });
+  poserLesRappels(liste, ech, fermerDit);
   brancherDemarrage(document.getElementById("boite"));
-  document.querySelectorAll("[data-echeance]").forEach((b) => {
-    b.onclick = async () => {
-      try {
-        await api("echeance-faite", { cle: b.dataset.echeance, fait: b.dataset.fait === "oui" });
-        const ech2 = await api("echeancier");
-        const r2 = await api("rappels");
-        boiteRappels(r2.rappels, ech2, manques, r2.fermer_dit);
-      } catch (e) { dire(e.message, "erreur"); }
-    };
-  });
 }
 
-/* CE QUI EST DÛ, ET SON GESTE : le moteur rend l'`action` de chaque rappel, une route du catalogue (sa `charge`, la
+/* CE QUI EST DÛ, ET SES GESTES : le moteur rend l'`action` de chaque rappel, une route du catalogue (sa `charge`, la
    route de l'acte qui suit, `puis`, et le mot du bouton, `libelle`) ; la boîte s'ouvre d'après la route
-   (`ouvrirGeste`), comme une case du mois. */
+   (`ouvrirGeste`), comme une case du mois. Ses `gestes` (« C'est fait »…) sont ceux d'un écran rendu. */
 function boutonRappel(r, i) {
   const libelle = r.action && r.action.libelle;
-  // UNE ÉCHÉANCE QUE SEULE LA COMPAGNIE PEUT DIRE FAITE (`cochable`) : « C'est fait », comme dans l'échéancier.
-  const coche = r.cochable ? `<button class="secondaire" data-echeance="${echapper(r.cle)}" data-fait="oui">${echapper(r.bouton_coche)}</button>` : "";
-  return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + coche;
+  return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + boutonsDesGestes(r.gestes, undefined, "secondaire");
 }
 
+/* Le geste d'un rappel mène ailleurs : tout écran qui porte une saisie non enregistrée se quitte d'abord (la boîte, et
+ * ce qui est dessous), avant d'ouvrir l'onglet Paie, dont le gestionnaire ne redemande alors rien. */
 async function agirSurRappel(r) {
-  if (!(await quitterDemarrage())) return;
+  if (!(await quitterLEcran())) return;
   fermerBoite();
   const mois = r.action && r.action.charge.mois;
   // Un geste qui porte sur un mois l'ouvre d'abord : la boîte s'ouvre sur lui.
@@ -491,41 +442,7 @@ async function agirSurRappel(r) {
     document.querySelector('.onglets button[data-vue="paie"]').click();
     await chargerMois(mois);
   }
-  return ouvrirGeste(r.action, mois || r.mois, null, r);
-}
-
-/* ---- La revue des spectacles, en début d'année. Un numéro d'objet vaut
- * tant que le spectacle se joue : on
- * demande seulement lesquels continuent. Tout est coché ; décocher archive,
- * et une fiche archivée se réactive d'un clic dans Configuration. */
-function boiteRevueSpectacles(r, charge) {
-  const lignes = r.spectacles.map((s, i) => `
-    <label class="coche"><input type="checkbox" class="rv-garde" data-cle="${echapper(s.cle)}" checked>
-      ${echapper(s.nomme)}${s.numero_objet ? ` <span class="discret">${echapper(s.numero_objet)}</span>` : ""}</label>`).join("");
-  ouvrirBoite(`
-    <h3>${echapper(r.titre_boite)}</h3>
-    <p>${echapper(r.question)}</p>
-    ${lignes}
-    <p class="note">${aideDe("revue_spectacles")}</p>
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Plus tard</button>
-      <button class="primaire" id="rv-valider">Enregistrer</button>
-    </div>`);
-  document.getElementById("rv-valider").onclick = async () => {
-    const bouton = document.getElementById("rv-valider");
-    bouton.disabled = true;
-    const continuent = [...document.querySelectorAll(".rv-garde")]
-      .filter((c) => c.checked).map((c) => c.dataset.cle);
-    try {
-      const res = await api("revue-spectacles", { ...charge, continuent });
-      await relireEtat();
-      fermerBoite();
-      dire(res.phrase);
-    } catch (e) {
-      bouton.disabled = false;
-      dire(e.message, "erreur");
-    }
-  };
+  return ouvrirGeste(r.action, mois || r.mois, r);
 }
 
 /* ---- L'exercice, dans l'Historique : par année, ce qui est fait, ce qui
@@ -536,36 +453,25 @@ async function dessinerExercices() {
   let r;
   try { r = await api("exercices"); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-  if (!r.exercices.length) { cible.innerHTML = `<p class="discret">Aucune année</p>`; return; }
-  cible.innerHTML = r.exercices.map((x) => {
-    const clos = x.clos;
-    return `
-    <div class="rang exercice">
+  if (!r.exercices.length) { cible.innerHTML = `<p class="discret">${echapper(r.exercices_dit)}</p>`; return; }
+  // Chaque année, ses actions (la boîte de leur route, `ouvrirGeste`) puis ses gestes (clore, rouvrir : chacun sa boîte,
+  // `brancherLesGestes`), tels que la route les rend.
+  cible.innerHTML = r.exercices.map((x, i) => `
+    <div class="rang exercice" data-exercice="${i}">
       <span class="rang-nom">${echapper(x.annee)}</span>
       ${pastilleDeLEtat(x.pastille)}
       <span class="rang-infos">
         ${echapper(x.infos_dit)}
       </span>
-      <button class="secondaire" data-export="${echapper(x.annee)}">Export compta</button>
-      ${clos
-        ? `<button class="secondaire" data-rouvrir="${echapper(x.annee)}">Rouvrir</button>`
-        : `<button class="secondaire" data-cloturer="${echapper(x.annee)}">Clôturer…</button>`}
-    </div>`;
-  }).join("") + `<p class="note"><button class="lien" id="ouvrir-exercices">Dossier des archives</button></p>`;
-  cible.querySelectorAll("[data-export]").forEach((b) => {
-    b.onclick = () => lancerExportCompta(Number(b.dataset.export));
-  });
-  cible.querySelectorAll("[data-cloturer]").forEach((b) => {
-    b.onclick = () => boiteCloture(Number(b.dataset.cloturer));
-  });
-  cible.querySelectorAll("[data-rouvrir]").forEach((b) => {
-    b.onclick = async () => {
-      try {
-        const x = await api("cloture", { annee: Number(b.dataset.rouvrir), rouvrir: true });
-        dire(x.phrase);
-        await dessinerExercices();
-      } catch (e) { dire(e.message, "erreur"); }
-    };
+      ${x.actions.map((a, k) => `<button class="secondaire" data-action="${k}">${echapper(a.libelle)}</button>`).join("")}
+      ${boutonsRanges(x.gestes)}
+    </div>`).join("") + `<p class="note"><button class="lien" id="ouvrir-exercices">${echapper(r.dossier_dit)}</button></p>`;
+  cible.querySelectorAll("[data-exercice]").forEach((rang) => {
+    const x = r.exercices[+rang.dataset.exercice];
+    rang.querySelectorAll("[data-action]").forEach((b) => {
+      b.onclick = () => ouvrirGeste(x.actions[+b.dataset.action]);
+    });
+    brancherLesGestes(rang, x.gestes, { titre: String(x.annee) }, dessinerExercices);
   });
   const o = document.getElementById("ouvrir-exercices");
   if (o) o.onclick = async () => {

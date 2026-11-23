@@ -102,6 +102,23 @@ soient droits.
 
 ## Un seul logiciel, qui que soit la main
 
+**Pourquoi, d'abord : le logiciel a deux écrans** (Léandre, 23/11/2026 : « on fait un logiciel pour deux écrans
+différents »). Une personne clique dans la page ; un LLM lit la réponse des routes en ligne de commande. Ce sont deux
+façons de voir le même logiciel, et aucune des deux n'est la vraie. Ce que la page décide toute seule (cacher un
+bouton, proposer une liste, dire comment remplir une case), le LLM ne le sait pas : il tente ce que l'écran interdit,
+ou rate ce que l'écran propose, et il y a deux logiciels à tenir. Donc **tout ce qui se décide se dit dans la route**,
+et chaque écran ne fait que le montrer. Trois questions jugent un écran, et rien d'autre :
+
+1. Qui lit la réponse de la route voit-il **les mêmes cases, les mêmes choix, les mêmes phrases** que la personne ?
+2. Y voit-il **les gestes qu'il a le droit de faire ici** (le bouton, son libellé, sa route, sa charge), ou est-ce la
+   page qui les écrit et les cache ?
+3. La page **décide-t-elle** encore quelque chose (une condition, une valeur, un texte) ?
+
+Passer un écran, c'est rendre les trois réponses bonnes : c'est un travail sur la route, pas sur le dessin. Les types
+ont raison, la page les suit (« La consigne, c'est que la page respecte les chemins des types »). Ce qui n'est que le
+confort de la main (le curseur, un calendrier où l'on coche) reste dans la page : il ne décide rien. On ne demande
+jamais à Léandre s'il faut passer un écran ; on ne lui remonte que ce que la personne y perdrait.
+
 **Le logiciel, c'est le moteur et ses routes.** Cliquer dans la page ou appeler `moteur route` en ligne de commande,
 c'est le même geste : la même route, la même réponse, les mêmes phrases, les mêmes refus. **Il n'y a ni « côté écran »,
 ni « côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket, une consigne, un plan ou un commit : une
@@ -129,6 +146,30 @@ perd rien ») : chaque case, bouton, phrase, condition d'affichage et geste, ave
 la route en dit déjà. Ce que le passage ferait perdre ne se retire ni ne se garde d'office : c'est une question à
 Léandre, une par chose (« on la garde ou pas, et si oui, comment »).
 
+**Les routes priment, la page ne fait que montrer** (Léandre, 23/11/2026 : « c'est les routes qui priment partout »,
+« la page, elle ne fait que montrer ce qu'on a décidé avec les routes », « le LLM, il a besoin de voir la même chose
+que l'humain », « j'ai pas à faire deux mises en page »). Il n'y a qu'une mise en page, celle que les routes rendent :
+qui lit la réponse d'une route en ligne de commande voit ce que la personne voit à l'écran, les mêmes cases, les mêmes
+choix, les mêmes phrases, et ce qui se regarde (un aperçu, un exemple) est un fichier que la route nomme. Passer un
+écran se fait donc dans ce sens, et jamais dans l'autre : **on enlève la page faite main**, le dessinateur montre ce
+que les routes rendent, **on regarde ce qu'on a perdu**, et pour chaque chose perdue Léandre décide si elle entre dans
+la route (alors tout le monde la voit) ou si l'on s'en passe. On ne recopie jamais d'office une page dans une route :
+ce serait faire primer la page. Une chose qui manque à l'écran est un manque de la route.
+
+**C'est le type qui décide de l'affichage** (Léandre, 23/11/2026 : « il y a un typage, et le typage, il est affiché
+d'une certaine façon », « si le typage, c'est une liste fermée, c'est pas qu'on écrit dans les consignes comment
+écrire », « les choix qu'on a, c'est vraiment une liste déroulante », pour le LLM « ça doit être le même principe »).
+Chaque case d'une route, celles de sa charge comme celles qu'elle rend, porte la forme de son type, et chaque forme
+n'a qu'un dessin : une liste fermée (un type à choix) se déclare `choix`, avec ses codes et leurs libellés, se dessine
+en liste déroulante, et se lit telle quelle en ligne de commande ; jamais en texte libre dont une phrase dirait les
+valeurs admises. Ni une consigne, ni une phrase, ni la page ne dit comment une case se saisit : son type le dit.
+
+**Quitter sans enregistrer se demande, partout** (Léandre, 23/11/2026 : « ça doit être une règle générale »). Dès
+qu'une case d'un écran porte une saisie qui n'est pas enregistrée, quitter cet écran ouvre la même boîte
+(`demanderSiEnregistrer` : enregistrer, jeter, ou rester) ; rien si l'on n'a rien changé, ou si l'on est revenu à ce
+qui était. C'est le dessinateur qui le tient, depuis les cases qu'il a dessinées et leur valeur à l'ouverture : un
+écran ne l'écrit pas pour lui-même, et un écran qui passe au dessinateur l'a sans rien faire.
+
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
 catalogue joue l'exemple de sa fiche par `moteur route` (`moteur/tests/fichiers/structure.rs`), la relecture du diff à
@@ -136,7 +177,9 @@ l'arrivée tient la page, et c'est prouvé en jouant (tout cliquer ; une compagn
 
 **Le moteur rend, la page lit la réponse** et n'a que ses règles d'affichage. **Où chaque route
 se voit, c'est sa fiche qui le dit** (`Fiche::ecran`, obligatoire, `routes/src/catalogue.rs`) : `Dessine(place)` (un écran
-fait main de cette place l'appelle), `Auto(place, bouton)` (sous « Avancé » de sa place, `js/avance.js` la dessine
+fait main de cette place l'appelle), `Rendu(place)` (la lecture qui rend l'écran de cette place, ce qu'il dit, ses
+rangs, ses cases et le geste qui les enregistre : `js/avance.js` le pose depuis sa réponse, `poserLEcranRendu`),
+`Auto(place, bouton)` (sous « Avancé » de sa place, `js/avance.js` la dessine
 depuis sa fiche : son nom n'est écrit dans aucun JS), `Geste(place)` (une route de cette place la rend en geste : route,
 charge, libellé, cases ; `js/avance.js` en dessine le bouton et la boîte depuis sa fiche), `Lecture` (elle nourrit un
 écran, n'écrit rien) ; `DessineAvance(place)`, `GesteAvance(place)` et `LectureAvancee` : les mêmes, hors du chemin

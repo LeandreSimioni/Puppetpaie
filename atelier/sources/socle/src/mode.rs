@@ -21,6 +21,21 @@ impl Mode {
     }
 }
 
+impl crate::liste::ListeFermee for Mode {
+    const TOUTES: &'static [Mode] = &[Mode::Test, Mode::Reel];
+
+    fn code(&self) -> crate::echec::R<String> {
+        crate::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> crate::echec::R<&'static str> {
+        Ok(match self {
+            Mode::Test => "Test",
+            Mode::Reel => "Réel",
+        })
+    }
+}
+
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.pad(self.nom())

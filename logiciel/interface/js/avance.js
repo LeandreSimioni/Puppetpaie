@@ -44,7 +44,7 @@ function objetEnClair(v) {
 }
 
 /** Les formes qui se tapent ou se choisissent d'une valeur simple : une valeur composée ne s'y écrit pas. */
-const FORMES_SIMPLES = new Set(["texte", "nombre", "montant", "oui_non", "mois", "date", "choix", "choix_rendu"]);
+const FORMES_SIMPLES = new Set(["texte", "texte_long", "nombre", "montant", "oui_non", "mois", "date", "choix", "choix_rendu"]);
 
 /** Ce que le moteur prend pour une case vide (`o.prerempli`), montré dans la case sans y être écrit ; sans lui, l'exemple
  *  que la route donne d'une case vide (`o.exemple`), grisé. */
@@ -86,9 +86,11 @@ function partiesDe(val, o) {
 
 /** CE QUE DISENT LES PARTIES de `x` (un élément qui porte `data-valeur`, la valeur telle qu'elle était, et `data-parties`,
  *  les chemins des parties que la route décrit) : la valeur d'avant, chaque partie montrée par-dessus, une partie décrite
- *  mais fermée vidée (elle n'a pas de sens pour ce qu'on saisit) ; une clé que la route ne décrit pas se garde. */
-function lireLesParties(x) {
-  const lu = JSON.parse(x.dataset.valeur || "null") || {};
+ *  mais fermée vidée (elle n'a pas de sens pour ce qu'on saisit) ; une clé que la route ne décrit pas se garde. `sur` :
+ *  la valeur que d'autres cases de la même clé ont déjà dite dans l'écran (« Pour démarrer » pose une ligne par partie
+ *  qui manque), sur laquelle ses parties se posent à la place de la valeur d'avant. */
+function lireLesParties(x, sur) {
+  const lu = sur != null ? JSON.parse(JSON.stringify(sur)) : JSON.parse(x.dataset.valeur || "null") || {};
   const montrees = new Map([...x.querySelectorAll(":scope > [data-partie]")].map((p) => [p.dataset.partie, p]));
   (x.dataset.parties ? x.dataset.parties.split(" ") : []).forEach((k) => {
     const p = montrees.get(k);
@@ -105,12 +107,20 @@ const attributsDesParties = (v, o) => ` data-valeur="${echapper(JSON.stringify(v
  *  après lui) ; il se tape avec une virgule ou un point, et le moteur le lit. */
 const montantEcrit = (v) => (v == null || v === "" ? null : enEuros(v));
 
+/** Des cases à cocher, une par choix (`choix` : code, libellé, aide), cochées pour les codes de `v`. */
+function casesACocher(v, choix) {
+  return `<span data-case data-liste="coches">${choix.map((c) => `<label class="coche"${c.aide ? ` title="${echapper(c.aide)}"` : ""}>
+          <input type="checkbox" value="${echapper(c.code)}"${(v || []).includes(c.code) ? " checked" : ""}> ${echapper(c.libelle)}</label>`).join("")}</span>`;
+}
+
 /** LA TABLE : à chaque forme, sa case (`html`, ce qu'elle montre de `v` ; `o.choix` : ce qu'un choix offre, `o.unite` :
  *  l'unité d'une quantité, `o.prerempli` : ce que le moteur prend pour elle vide, `o.parties` : les parties d'une valeur
  *  faite de parties) et sa lecture (`lire`, la valeur que la route lit ; `null` : une case vide). Chaque case porte
  *  `data-case`. Un jour et des jours s'ouvrent dans le calendrier (`js/calendrier.js`, `poserLesCalendriers`). */
 const CASES = {
   texte: { html: (v, o) => `<input type="text" data-case${valeurDeDepart(v)}${prerempliDe(o)}>`, lire: tape },
+  // UN TEXTE LONG, sur plusieurs lignes : une zone de texte, lue comme un texte.
+  texte_long: { html: (v, o) => `<textarea rows="3" data-case${prerempliDe(o)}>${v == null ? "" : echapper(String(v))}</textarea>`, lire: tape },
   nombre: { html: (v, o) => `<input type="text" inputmode="decimal" data-case${valeurDeDepart(v)}${prerempliDe(o)}>`, lire: tape },
   // Un montant montré tel qu'il s'écrit (`montantEcrit`) ; laissé tel quel, il repart tel que le moteur l'a écrit.
   montant: {
@@ -125,11 +135,12 @@ const CASES = {
   },
   // UN OUI-NON PRÉ-REMPLI (`o.prerempli` : ce que le moteur prend sans lui) se montre tel que le moteur le prend, et se
   // change dans les deux sens : ce qui diffère du pré-rempli s'écrit, y revenir n'écrit rien. Sans pré-rempli, coché
-  // s'écrit oui, décoché n'écrit rien.
+  // s'écrit oui, décoché n'écrit rien. Un oui-non que la route exige (`o.obligatoire`) s'écrit toujours, oui ou non.
   oui_non: {
     html: (v, o) => `<input type="checkbox" data-case${(v == null ? o.prerempli : v) ? " checked" : ""}${
-      o.prerempli == null ? "" : ` data-prerempli="${o.prerempli ? "oui" : "non"}"`}>`,
-    lire: (x) => (x.dataset.prerempli == null ? (x.checked ? true : null)
+      o.prerempli == null ? "" : ` data-prerempli="${o.prerempli ? "oui" : "non"}"`}${o.obligatoire ? " data-obligatoire" : ""}>`,
+    lire: (x) => (x.dataset.obligatoire != null ? x.checked
+      : x.dataset.prerempli == null ? (x.checked ? true : null)
       : x.checked === (x.dataset.prerempli === "oui") ? null : x.checked),
   },
   mois: { html: (v) => `<input type="month" data-case${valeurDeDepart(v)}>`, lire: tape },
@@ -155,13 +166,24 @@ const CASES = {
   },
   liste: {
     html: (v, o) => (o.choix
-      ? `<span data-case data-liste="coches">${o.choix.map((c) => `<label class="coche"${c.aide ? ` title="${echapper(c.aide)}"` : ""}>
-          <input type="checkbox" value="${echapper(c.code)}"${(v || []).includes(c.code) ? " checked" : ""}> ${echapper(c.libelle)}</label>`).join("")}</span>`
+      ? casesACocher(v, o.choix)
       : `<span data-case data-liste="textes">${[...(v || []), ""].map((t) => `<input type="text"${valeurDeDepart(t)}>`).join("")}
           <button type="button" class="lien" data-plus>+</button></span>`),
     lire: (x) => [...x.querySelectorAll(x.dataset.liste === "coches" ? "input:checked" : "input")]
       .map((c) => c.value.trim()).filter(Boolean),
   },
+  // Plusieurs valeurs d'une liste fermée : une case à cocher par choix, son libellé à côté ; les codes cochés, dans
+  // l'ordre de la liste.
+  plusieurs_choix: {
+    html: (v, o) => casesACocher(v, o.choix || []).replace(/<\/span>$/,
+      `<button type="button" class="lien" data-tout-cocher>${aideDe("tout_cocher")}</button></span>`),
+    lire: (x) => [...x.querySelectorAll("input:checked")].map((c) => c.value),
+  },
+  // Plusieurs valeurs d'une liste que la route rend à côté (`choix` du geste, sous la clé de la case) : la même case.
+  get plusieurs_choix_rendus() { return CASES.plusieurs_choix; },
+  // Une période (un mois, une année, toutes les années) : une liste déroulante des périodes que la route offre, les
+  // mois sous leur année.
+  periode: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
   // Un choix vide que le moteur pré-remplit (`o.prerempli` : le métier que la paie applique) montre ce qu'il prend dans
   // sa case vide ; choisir une valeur de la liste l'écrit, celle qui est montrée comprise ; le vide n'écrit aucune valeur : la carte n'en dit pas, et le pré-rempli se montre.
   choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix, o.prerempli)}</select>`, lire: (x) => x.value || null },
@@ -174,8 +196,10 @@ const CASES = {
     lire: (x) => { const lu = lireLesParties(x); return rienDit(lu) ? null : lu; },
   },
   // DES RANGÉES (les autres établissements) : chacune ses parties (`o.parties`), une croix qui la retire, et sous elle
-  // ses temps (`o.temps.lignes`, par la clé de la rangée) ; « + » en ajoute une (`o.ajouter`). Une rangée qui ne dit rien
-  // ne part pas ; plus aucune rangée, la valeur est vide.
+  // ses temps (`o.temps.lignes`, par la clé de la rangée) ; le bouton que la route nomme en ajoute une (`o.ajouter`). Des
+  // rangées que la route ne fait pas ajouter (aucun `ajouter` : l'avenant qu'un envoi fait partir) ne se retirent pas
+  // non plus : seules leurs parties se saisissent. Une rangée qui ne dit rien ne part pas ; plus aucune rangée, la valeur
+  // est vide.
   rangees: {
     html: (v, o) => {
       const tempsDe = (l) => {
@@ -183,27 +207,34 @@ const CASES = {
         return t ? t.cases.flatMap((c) => [c.avant, c.a_venir]).filter(Boolean)
           .map((x) => `<small class="case-dit">${echapper(x.valeur)} · ${echapper(x.dit)}</small>`).join("") : "";
       };
+      const retirer = o.ajouter ? `<button type="button" class="lien retirer-rangee" title="retirer" aria-label="retirer">&times;</button>` : "";
       const rangee = (l) => `<div class="rangee"><span class="case-parties" data-rangee${attributsDesParties(l, o)}>${partiesDe(l || {}, o)}</span>
-        <button type="button" class="lien retirer-rangee" title="retirer" aria-label="retirer">&times;</button>${tempsDe(l)}</div>`;
-      return `<div class="case-rangees" data-case>${(Array.isArray(v) ? v : []).map(rangee).join("")}
-        <template>${rangee(null)}</template><button type="button" class="secondaire" data-rangee-plus>${echapper(o.ajouter || "+")}</button></div>`;
+        ${retirer}${tempsDe(l)}</div>`;
+      return `<div class="case-rangees" data-case>${(Array.isArray(v) ? v : []).map(rangee).join("")}${o.ajouter
+        ? `<template>${rangee(null)}</template><button type="button" class="secondaire" data-rangee-plus>${echapper(o.ajouter)}</button>` : ""}</div>`;
     },
     lire: (x) => {
       const l = [...x.querySelectorAll(":scope > .rangee > [data-rangee]")].map(lireLesParties).filter((r) => !rienDit(r));
       return l.length ? l : null;
     },
   },
-  // DES BOUTONS À COCHER (les choix d'une partie, chacun une phrase entière) ; un oui-non y écrit vrai ou faux.
+  // DES BOUTONS À COCHER (les choix d'une partie ou d'une case, chacun une phrase entière) ; un oui-non y écrit vrai ou
+  // faux. Une case vide que le moteur pré-remplit (`o.prerempli`) montre coché ce qu'il prend : le garder n'écrit rien,
+  // en cocher un autre l'écrit. Un choix qui a son exemple (`exemple` : le document que la route nomme) l'ouvre à côté.
   boutons: {
     html: (v, o) => {
       const nom = `boutons-${++NUMERO_DES_BOUTONS}`;
-      return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}>${(o.choix || []).filter((c) => c.code !== "")
-        .map((c) => `<label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${v != null && String(v) === c.code ? " checked" : ""}> ${
-          echapper(c.libelle)}</label>`).join("")}</span>`;
+      const coche = v != null ? String(v) : o.prerempli != null ? String(o.prerempli) : null;
+      const exemple = (c) => (c.exemple ? ` <a class="lien" href="${echapper(adresseDuDocument(c.exemple))}" target="_blank" rel="noopener">${
+        echapper(c.exemple.libelle)}</a>` : "");
+      return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}${
+        v == null && o.prerempli != null ? ` data-prerempli="${echapper(String(o.prerempli))}"` : ""}>${(o.choix || []).filter((c) => c.code !== "")
+        .map((c) => `<span class="choix-et-exemple"><label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${coche === c.code ? " checked" : ""}> ${
+          echapper(c.libelle)}</label>${exemple(c)}</span>`).join("")}</span>`;
     },
     lire: (x) => {
       const c = x.querySelector("input:checked");
-      if (!c) return null;
+      if (!c || c.value === x.dataset.prerempli) return null;
       return x.dataset.booleen != null ? c.value === "true" : c.value;
     },
   },
@@ -223,7 +254,21 @@ const CASES = {
       return x.textContent.trim() || x.querySelector("img") ? x.innerHTML.trim() : null;
     },
   },
+  // UN FICHIER QUE LA PERSONNE CHOISIT SUR SON POSTE, des types que la fiche admet (`o.admis`) : ses octets partent en
+  // base64, lus dès qu'il est choisi (`brancherLesCases`) ; rien de choisi, la case est vide.
+  fichier: {
+    html: (v, o) => `<input type="file" data-case${o.admis ? ` accept="${echapper(o.admis.join(","))}"` : ""}>`,
+    lire: (x) => (x.dataset.contenu == null ? null : x.dataset.contenu),
+  },
+  // UN MOT DE PASSE QU'UN HUMAIN TAPE : masqué, jamais pré-rempli, que le navigateur ne propose ni ne génère (la forme ne
+  // dit pas si c'est l'actuel ou un neuf : `off`, comme la boîte du mot de passe) ; le journal des gestes de la page ne
+  // dit que qu'il a été tapé (`js/tuyau.js`). Il part tel qu'il est tapé, blancs compris.
+  mot_de_passe: { html: () => `<input type="password" autocomplete="off" data-case>`, lire: (x) => (x.value === "" ? null : x.value) },
 };
+
+/** L'ADRESSE OÙ LA FENÊTRE SERT UN DOCUMENT QUE LA ROUTE NOMME (`adresse`, `routes::ouverture::DocumentMontre`), refaite à
+ *  chaque fois : le document a pu changer depuis. */
+const adresseDuDocument = (d) => `${d.adresse}${d.adresse.includes("?") ? "&" : "?"}jeton=${encodeURIComponent(JETON)}&t=${Date.now()}`;
 
 /** Les jours qui disent leur propre lieu (`{jour, lieu}`) : une case chacun, le lieu du jour. */
 function lieuxDesJours(jours) {
@@ -275,6 +320,28 @@ function brancherLesCases(bloc, o = {}) {
     };
   });
   bloc.querySelectorAll(".case-html").forEach((x) => { if (x.dataset.rendu == null) x.dataset.rendu = x.innerHTML; });
+  // Tout cocher d'une case à plusieurs choix, ou tout décocher quand tout l'est déjà.
+  bloc.querySelectorAll("[data-tout-cocher]").forEach((b) => {
+    b.onclick = () => {
+      const cases = [...b.parentElement.querySelectorAll('input[type="checkbox"]')];
+      const cocher = cases.some((c) => !c.checked);
+      cases.forEach((c) => { c.checked = cocher; });
+      b.parentElement.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+  });
+  // Un fichier choisi se lit en base64 (sans l'en-tête de l'adresse data:) ; le moteur reconnaît son format à ses
+  // premiers octets, pas à son extension.
+  bloc.querySelectorAll('input[type="file"][data-case]').forEach((x) => {
+    x.onchange = () => {
+      delete x.dataset.contenu;
+      const f = x.files && x.files[0];
+      if (!f) return;
+      const l = new FileReader();
+      l.onload = () => { x.dataset.contenu = String(l.result).split(",").pop(); };
+      l.onerror = () => dire(String(l.error), "erreur");
+      l.readAsDataURL(f);
+    };
+  });
   // Les rangées : « + » en ajoute une (le modèle vide), la croix retire la sienne ; la case le dit comme une saisie.
   const dire = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
   bloc.querySelectorAll("[data-rangee-plus]").forEach((b) => {
@@ -448,17 +515,19 @@ function lireLesLignes(bloc) {
 
 /** UNE CASE QU'UNE ROUTE DÉCRIT, et la seule façon d'en dessiner une (la carte d'un engagement, une fiche, la boîte d'un
  *  geste, les champs d'une route) : `c.cle`, `c.libelle`, `c.forme`, `c.aide` (la bulle au survol), `c.valeur`,
- *  `c.prerempli` (ce que le moteur prend pour elle vide), `c.choix`, `c.parties` (`caseDeForme`), `c.temps` (la valeur
+ *  `c.prerempli` (ce que le moteur prend pour elle vide), `c.choix` (en boutons à cocher quand `c.boutons`), `c.parties` (`caseDeForme`), `c.temps` (la valeur
  *  d'avant et celle à venir, en mots). Sous la case : ce que la valeur choisie dit d'elle-même (`dit` d'un choix : un
  *  motif de rupture), puis ses temps ; sa faute se pose à part (`fautesDesCases`), à chaque réponse. */
 function caseDeRoute(c) {
   const choisi = (c.choix || []).find((o) => o.code !== "" && o.code === String(c.valeur));
   const temps = c.temps ? [c.temps.avant, c.temps.a_venir].filter(Boolean).map((l) => `<small class="case-dit">${
     echapper(l.valeur)} · ${echapper(l.dit)}${l.note ? ` · ${echapper(l.note)}` : ""}</small>`).join("") : "";
+  // Des choix que la route dit en boutons à cocher (`boutons`) se cochent.
+  const forme = c.boutons && c.choix ? "boutons" : c.forme;
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
-  const balise = ["parties", "rangees", "html"].includes(c.forme) ? "div" : "label";
+  const balise = ["parties", "rangees", "html", "boutons", "plusieurs_choix", "plusieurs_choix_rendus"].includes(forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
-    ${caseDeForme(c.forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps })}${
+    ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis, obligatoire: c.obligatoire })}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${
     c.renvoi ? `<button type="button" class="lien case-renvoi" data-renvoi="${echapper(JSON.stringify(c.renvoi))}">${echapper(c.renvoi.libelle)}</button>` : ""}</${balise}>`;
 }
@@ -483,14 +552,18 @@ function grilleDesCases(base, avancees, ouvert, classe = "") {
  *  ne dit rien de plus que ce qu'elle montrait ne se nomme pas, et la route garde sa valeur : un oui-non qu'on n'a pas
  *  changé (`modifiable`), une valeur composée qui ne se saisit pas. */
 function lireLesCases(bloc) {
-  const lu = {};
-  bloc.querySelectorAll(".case[data-cle]").forEach((c) => {
+  return Object.fromEntries(lesCasesLues(bloc));
+}
+
+/** Chaque case de `bloc` qui dit quelque chose, dans l'ordre de l'écran : `[clé, valeur]`, une paire par case, même
+ *  quand deux cases ont la même clé (« Pour démarrer » en pose une par fiche). */
+function lesCasesLues(bloc) {
+  return [...bloc.querySelectorAll(".case[data-cle]")].flatMap((c) => {
     const x = c.querySelector(":scope > [data-case]");
     const v = lireLaCase(x);
-    if (v === undefined || (v === null && x.dataset.prerempli != null)) return;
-    lu[c.dataset.cle] = v;
+    if (v === undefined || (v === null && x.dataset.prerempli != null)) return [];
+    return [[c.dataset.cle, v]];
   });
-  return lu;
 }
 
 /** LES FAUTES DES CASES de `cible`, telles que la route les rend (`anomalie` de chaque case de `cases`) : la case marquée,
@@ -514,7 +587,8 @@ function fautesDesCases(cible, cases) {
 /* ------------------------------------------------ les champs d'une fiche de route */
 
 /** Les cases de `champs` (des champs d'une fiche) : chacune sa case (`caseDeRoute`), ce que `valeurs` en dit d'abord, ses
- *  `choix` (ceux que le geste rend, sinon ceux de la fiche), et pour une case vide l'exemple que la fiche de la route
+ *  `choix` (ceux que le geste rend, sinon ceux de la fiche), ses parties quand le geste les rend (`o.parties`, sous la clé
+ *  de la case), et pour une case vide l'exemple que la fiche de la route
  *  donne de ce champ (`o.exemple`, l'exemple de la fiche : une valeur simple). `o.modifie` : la boîte modifie une chose
  *  qui existe (`modifiable`), et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
 function casesDesChamps(champs, valeurs, choix, o = {}) {
@@ -524,7 +598,7 @@ function casesDesChamps(champs, valeurs, choix, o = {}) {
   };
   const une = (c) => {
     const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix,
-      exemple: exemple(c.nom) };
+      exemple: exemple(c.nom), admis: c.admis, obligatoire: c.obligatoire, parties: o.parties ? o.parties[c.nom] : undefined };
     return caseDeRoute(o.modifie ? modifiable(d) : d);
   };
   const avance = (c) => !!o.modifie && !!c.avance;
@@ -536,6 +610,14 @@ function lireLesChamps(bloc, champs) {
   const lu = lireLesCases(bloc);
   return Object.fromEntries(champs.filter((c) => lu[c.nom] != null && !(Array.isArray(lu[c.nom]) && !lu[c.nom].length))
     .map((c) => [c.nom, lu[c.nom]]));
+}
+
+/** LES CASES QUE LA ROUTE EXIGE ET QUE `charge` NE DIT PAS (`obligatoire` de chaque champ de sa fiche) : chacune marquée
+ *  dans `bloc`, son tiroir « Avancé » ouvert ; les autres, démarquées. Vrai s'il en manque : la charge ne part pas. */
+function marquerLesManquantes(bloc, champs, charge) {
+  const manque = (c) => c.obligatoire && charge[c.nom] == null;
+  fautesDesCases(bloc, champs.map((c) => ({ cle: c.nom, anomalie: manque(c) ? { gravite: "erreur", message: "À remplir." } : null })));
+  return champs.some(manque);
 }
 
 /** Ce que la réponse dit à lire : sa phrase, puis ses lignes (chaque route automatique rend sa phrase). */
@@ -565,8 +647,10 @@ function dessinerAvance(cible) {
     brancherLesCases(bloc);
     bloc.querySelector("[data-faire]").onclick = async () => {
       const rendu = bloc.querySelector("[data-rendu]");
+      const charge = lireLesChamps(bloc, f.charge);
+      if (marquerLesManquantes(bloc, f.charge, charge)) return;
       try {
-        const r = await api(f.nom, lireLesChamps(bloc, f.charge));
+        const r = await api(f.nom, charge);
         rendu.innerHTML = phrasesDe(r).map((p) => `<p>${echapper(p)}</p>`).join("");
       } catch (e) {
         rendu.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
@@ -582,9 +666,18 @@ function dessinerLesAvances() {
 
 /* ------------------------------------------------ les gestes qu'une route rend */
 
-/** Les boutons des gestes, chacun son libellé. */
-function boutonsDesGestes(gestes) {
-  return gestes.map((g, k) => `<button class="lien" data-geste="${k}">${echapper(g.libelle)}</button>`).join("");
+/** Les boutons des gestes, chacun son libellé ; `garde` : ceux-là seulement (chacun garde son rang dans `gestes`). */
+function boutonsDesGestes(gestes, garde = () => true, classe = "lien") {
+  return gestes.map((g, k) => (garde(g) ? `<button class="${classe}" data-geste="${k}">${echapper(g.libelle)}</button>` : "")).join("");
+}
+
+/** Un geste dont la route est avancée (sa fiche : `avance`) se range sous « Avancé ». */
+const gesteAvance = (g) => !!CATALOGUE[g.route].avance;
+
+/** Les boutons des gestes, ceux dont la route est avancée rangés sous « Avancé ». */
+function boutonsRanges(gestes) {
+  return `${boutonsDesGestes(gestes, (x) => !gesteAvance(x))}${gestes.some(gesteAvance)
+    ? `<details class="e-avance"><summary>Avancé</summary>${boutonsDesGestes(gestes, gesteAvance)}</details>` : ""}`;
 }
 
 /** Les champs de la fiche de la route du geste que sa boîte fait saisir (`cases`), dans l'ordre de la fiche. */
@@ -595,7 +688,7 @@ function champsDuGeste(g) {
 /** Ce que la boîte d'un geste dit (`phrases`), puis ses cases ; `o.modifie` : voir `casesDesChamps`. */
 function casesDuGeste(g, o = {}) {
   return `${g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
-    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple })}`;
+    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple, parties: g.parties })}`;
 }
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */
@@ -604,26 +697,51 @@ function chargeDuGeste(bloc, g) {
   return Object.keys(lu).length ? { ...g.charge, ...lu } : null;
 }
 
-/** Branche les boutons des gestes de `cible` : un geste sans case part avec sa charge ; un autre ouvre sa boîte.
+/** Branche les boutons des gestes de `cible` : un geste qui n'a ni case ni phrase part avec sa charge ; un autre ouvre sa
+ *  boîte (sans case, elle dit ses phrases et part par le bouton du geste : une confirmation). Un geste qui exige le mot
+ *  de passe du logiciel (`demande`, rendue par la route) le fait taper dans la boîte du mot de passe avant de partir ; il
+ *  part dans la charge, et la page ne le garde pas.
  *  `entete` : ce que la boîte dit de quoi il s'agit (`titre`, à la suite du libellé ; `dit`, dessous) ; `pardessus` :
  *  la boîte s'ouvre par-dessus celle qui est ouverte, qui revient quand elle se ferme ; `modifie` : la boîte modifie une
- *  chose qui existe (`casesDesChamps`). `apres` : après la réponse. */
+ *  chose qui existe (`casesDesChamps`) ; `quitter` : le bloc dont les écrans retenus se quittent avant le geste, qui
+ *  les redessinera (`quitterLEcran` : enregistrer, jeter ou rester). `apres` : après la réponse. */
 function brancherLesGestes(cible, gestes, entete, apres) {
   cible.querySelectorAll("[data-geste]").forEach((b) => {
     const g = gestes[+b.dataset.geste];
-    b.onclick = () => faireLeGeste(g, entete, apres);
+    b.onclick = async () => {
+      if (entete.quitter && !(await quitterLEcran(entete.quitter))) return;
+      await faireLeGeste(g, entete, apres, b);
+    };
   });
 }
 
-async function faireLeGeste(g, entete, apres) {
+/** `bouton` : celui du geste, éteint le temps de la réponse quand le geste part sans boîte. `apres` reçoit la réponse.
+ *  Un geste dont la route engage (sa fiche : `acte`) est un envoi : la boîte du mot de passe le sait (`envoi`), et le
+ *  bouton de sa boîte le porte. */
+async function faireLeGeste(g, entete, apres, bouton) {
+  const envoi = CATALOGUE[g.route].acte === "engage";
   const partir = async (charge, boite) => {
+    const motdepasse = g.demande ? await demanderMotDePasse(g.demande, { envoi }) : null;
+    if (g.demande && !motdepasse) return;
+    // Le bouton qui fait partir le geste s'éteint le temps de la réponse (lier le Drive attend qu'on accepte chez
+    // Google) : on ne clique pas deux fois.
+    // Un acte en cours se voit : le bouton dit son geste suivi de « … » le temps de la réponse.
+    const rallumer = occupe(boite ? document.getElementById("geste-ok") : bouton, `${g.libelle.replace(/…$/, "")}…`);
     let r;
-    try { r = await api(g.route, charge); } catch (e) { dire(e.message, "erreur"); return; }
+    try { r = await api(g.route, motdepasse ? { ...charge, motdepasse } : charge); } catch (e) {
+      rallumer();
+      // Un refus que l'écran sait reprendre (`entete.refus` rend vrai) ne se dit pas deux fois.
+      if (!(entete.refus && entete.refus(e, g))) dire(e.message, "erreur");
+      return;
+    }
     if (boite) fermerBoite();
-    dire(r.phrase);
-    await apres();
+    dire(r.phrase, r.couleur);
+    await apres(r);
+    rallumer();
+    // Ce que la route dit qui suit (`suite` : le dépôt d'un signalement écrit) s'ouvre ensuite.
+    if (r.suite) ouvrirGeste(r.suite);
   };
-  if (!g.cases.length) { await partir(g.charge, false); return; }
+  if (!g.cases.length && !g.phrases.length) { await partir(g.charge, false); return; }
   const rendre = entete.pardessus ? mettreDeCote() : null;
   ouvrirBoite(`
     <h3>${echapper(g.libelle)}${entete.titre ? ` — ${echapper(entete.titre)}` : ""}</h3>
@@ -631,12 +749,172 @@ async function faireLeGeste(g, entete, apres) {
     <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="geste-ok">Enregistrer</button>
+      <button class="primaire${envoi ? " envoi" : ""}" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
-  // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface).
-  document.getElementById("geste-ok").onclick = () => partir(chargeDuGeste(bloc, g) || g.charge, true);
+  // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface) ; une case que
+  // la route exige, vide, retient le geste et le dit sur elle.
+  document.getElementById("geste-ok").onclick = () => {
+    const charge = chargeDuGeste(bloc, g) || g.charge;
+    if (marquerLesManquantes(bloc, champsDuGeste(g), charge)) return;
+    partir(charge, true);
+  };
+}
+
+/* ------------------------------------------------ quitter un écran posé */
+
+/** LES ÉCRANS QUI SE SAISISSENT, tels qu'ils sont posés (une fiche, « Pour démarrer », un écran rendu) : chacun le bloc
+ *  de ses cases, ce qu'elles disaient à l'ouverture (`lesCasesLues`), ce qui l'enregistre (`enregistrer` : vrai quand
+ *  c'est écrit), ce qui le reprend tel qu'il est enregistré quand on jette (`jeter`, s'il en a), et ce qui montre, à
+ *  chaque frappe, s'il a changé (`quandChange`, s'il en a). Plusieurs peuvent être à l'écran ensemble : la fiche
+ *  Entreprise et « Pour démarrer » au-dessus d'elle. */
+let ECRANS_RETENUS = [];
+
+/** Ce que disent les cases d'un bloc, tel qu'on le compare. */
+const casesDuBloc = (bloc) => JSON.stringify(lesCasesLues(bloc));
+
+/** Un écran retenu a changé : il est à l'écran et ses cases ne disent plus ce qu'elles disaient à l'ouverture. */
+const aChange = (e) => e.bloc.isConnected && casesDuBloc(e.bloc) !== e.depart;
+
+/** Retient l'écran dont les cases sont dans `bloc`, tel qu'il s'ouvre (`o` : `enregistrer`, `jeter`, `quandChange`). */
+function retenirLEcran(bloc, o) {
+  ECRANS_RETENUS = ECRANS_RETENUS.filter((e) => e.bloc !== bloc && e.bloc.isConnected);
+  ECRANS_RETENUS.push({ bloc, depart: casesDuBloc(bloc), enregistrer: o.enregistrer, jeter: o.jeter || null, quandChange: o.quandChange || null });
+}
+
+/** Oublie l'écran de `bloc` : ce qu'il porte vient d'être écrit, ou abandonné d'un geste (« Annuler »). */
+function oublierLEcran(bloc) {
+  ECRANS_RETENUS = ECRANS_RETENUS.filter((e) => e.bloc !== bloc);
+}
+
+/** L'écran de `bloc` porte une saisie qui n'est pas enregistrée. */
+function ecranModifie(bloc) {
+  const e = ECRANS_RETENUS.find((x) => x.bloc === bloc);
+  return !!e && aChange(e);
+}
+
+// Chaque frappe dans un écran retenu lui dit s'il a changé (la mention « modifié » d'une fiche, son « Annuler »).
+["input", "change"].forEach((type) => document.addEventListener(type, (ev) => {
+  ECRANS_RETENUS.filter((e) => e.quandChange && e.bloc.contains(ev.target)).forEach((e) => e.quandChange(aChange(e)));
+}));
+
+/** LA BOÎTE DES CHANGEMENTS NON ENREGISTRÉS, la même pour tout écran retenu : « enregistrer », « jeter », ou « rester »
+ *  quand on la ferme d'un clic à côté. La boîte ouverte dessous (celle de l'ouverture) est mise de côté, et revient sauf
+ *  si l'on jette. */
+async function demanderSiEnregistrer() {
+  const rendre = mettreDeCote();
+  const choix = await new Promise((resoudre) => {
+    let repondu = false;
+    const repondre = (v) => { if (!repondu) { repondu = true; resoudre(v); } };
+    ouvrirBoite(`<h3>${aideDe("non_enregistres_titre")}</h3>
+      <p>${aideDe("non_enregistres")}</p>
+      <div class="actions">
+        <button class="primaire" id="q-enregistrer">${aideDe("garder_changements")}</button>
+        <button class="secondaire" id="q-jeter">${aideDe("jeter_changements")}</button>
+      </div>`, () => repondre("rester"));
+    // Répondre d'abord, fermer ensuite : dans l'autre ordre, `fermerBoite` appellerait le rappel de fermeture
+    // (« rester ») avant le bouton.
+    document.getElementById("q-enregistrer").onclick = () => { repondre("enregistrer"); fermerBoite(); };
+    document.getElementById("q-jeter").onclick = () => { repondre("jeter"); fermerBoite(); };
+  });
+  if (rendre && choix !== "jeter") rendre();
+  return choix;
+}
+
+/** QUITTER LES ÉCRANS RETENUS (ceux de `dans` : la page entière, ou une boîte qui se ferme) : rien à demander pour un
+ *  écran qui n'est plus à l'écran, où l'on n'a rien changé ou où l'on est revenu à ce qui était ; pour chacun des autres,
+ *  la boîte des changements non enregistrés (`demanderSiEnregistrer`) : enregistrer, jeter (l'écran se reprend tel
+ *  qu'il est enregistré), ou rester. Rend `true` si l'on peut partir. */
+async function quitterLEcran(dans = document) {
+  ECRANS_RETENUS = ECRANS_RETENUS.filter((e) => e.bloc.isConnected);
+  for (const e of ECRANS_RETENUS.filter((x) => dans.contains(x.bloc))) {
+    if (!aChange(e)) continue;
+    const choix = await demanderSiEnregistrer();
+    if (choix === "rester") return false;
+    if (choix === "jeter") {
+      oublierLEcran(e.bloc);
+      if (e.jeter) await e.jeter();
+      continue;
+    }
+    const fait = await e.enregistrer();
+    if (!fait) return false;
+    oublierLEcran(e.bloc);
+    // L'enregistrement a ouvert la page qui le suit : on reste sur elle.
+    if (fait === ENREGISTRE_PUIS_SUITE) return false;
+  }
+  return true;
+}
+/** Ce que rend l'`enregistrer` d'un écran retenu quand il a écrit et ouvert la page qui suit (les indemnités d'un arrêt,
+ *  les jours payés) : la sortie ne la referme pas. Sinon il rend vrai (écrit) ou faux (refusé). */
+const ENREGISTRE_PUIS_SUITE = "suite";
+
+/* ------------------------------------------------ un écran que la route rend */
+
+/** La route qui rend l'écran de la place `place` (sa fiche : `affichage: "rendu"`), s'il en est une. */
+function routeQuiRend(place) {
+  return Object.values(CATALOGUE).find((f) => f.affichage === "rendu" && f.ecran === place);
+}
+
+/** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (`routeQuiRend`). Sa charge : le mois de l'écran quand sa fiche le
+ *  prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
+async function dessinerLEcranRendu(cible, f) {
+  const mois = f.charge.some((c) => c.nom === "mois" && c.forme === "mois") && typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE
+    ? { mois: MOIS_AFFICHE } : {};
+  let r;
+  try { r = await api(f.nom, mois); }
+  catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
+  poserLEcranRendu(cible, r, () => dessinerLEcranRendu(cible, f));
+}
+
+/** POSE DANS `cible` L'ÉCRAN RENDU `r` (`routes::ecran::EcranRendu`) ; ce qu'il n'a pas, la route ne l'écrit pas.
+ *  - Ce qu'il dit en tête : ses encarts.
+ *  - Ses rangs : chacun ce qui s'y regarde (`montre`, le document que la route nomme : à gauche, la place gardée sur
+ *    tous les rangs dès qu'un rang en a un), son titre, ce qu'il dit, sa pastille et son état, et ses gestes
+ *    (`brancherLesGestes`, la boîte titrée du titre du rang ; ceux dont la route est avancée, sous « Avancé ») ; après
+ *    un geste, `relire`.
+ *  - Ses cases, dessinées comme celles d'une fiche (`casesDeLaFiche`, l'historique de ses cases datées compris), et le
+ *    bouton de son geste (`enregistrer` : sa route, sa charge, le champ de la charge où vont les cases, `dans`, et son
+ *    libellé). Enregistrer envoie ce que les cases disent et pose l'écran que la route rend en réponse ; un refus se
+ *    dit, et les saisies restent. Quitter avec une saisie non enregistrée se demande (`retenirLEcran`). */
+function poserLEcranRendu(cible, r, relire) {
+  const rangs = r.rangs || [];
+  const images = rangs.some((g) => g.montre);
+  const apercu = (g) => (!images ? "" : `<div class="rang-apercu">${g.montre
+    ? `<img src="${echapper(adresseDuDocument(g.montre))}" alt="${echapper(g.montre.libelle)}">` : ""}</div>`);
+  const dessinRangs = !rangs.length ? "" : `<div class="rangs">${rangs.map((g, i) => `
+      <div class="rang${images ? " rang-image" : ""}" data-rang="${i}">
+        ${apercu(g)}
+        <div class="rang-infos">
+          <b class="rang-nom">${echapper(g.titre)}</b>
+          ${g.dit.map((l) => `<span class="discret">${echapper(l)}</span>`).join("")}
+          <div>${pastilleDeLEtat(g.pastille)}${g.etat ? ` <span class="discret">${echapper(g.etat)}</span>` : ""}</div>
+        </div>
+        <div class="rang-actions">${boutonsRanges(g.gestes)}</div>
+      </div>`).join("")}</div>`;
+  const g = r.enregistrer;
+  const cases = !r.cases ? "" : `<div data-ecran-cases>${casesDeLaFiche({ cases: r.cases, historique: r.historique || [] })}</div>
+    ${g ? `<div class="actions"><button class="primaire" data-enregistrer>${echapper(g.libelle)}</button></div>` : ""}`;
+  const dedans = `${encarts(r.encarts || [])}${dessinRangs}${cases}`;
+  cible.innerHTML = r.cases ? `<div class="carte">${dedans}</div>` : dedans;
+  cible.querySelectorAll("[data-rang]").forEach((b) => {
+    const x = rangs[+b.dataset.rang];
+    brancherLesGestes(b, x.gestes, { titre: x.titre }, relire);
+  });
+  if (!r.cases) return;
+  const bloc = cible.querySelector("[data-ecran-cases]");
+  brancherLesCases(bloc);
+  if (!g) return;
+  const enregistrer = async () => {
+    let x;
+    try { x = await api(g.route, { ...g.charge, [g.dans]: lireLesCases(bloc) }); }
+    catch (e) { dire(e.message, "erreur"); return false; }
+    dire(x.phrase);
+    poserLEcranRendu(cible, x, relire);
+    return true;
+  };
+  cible.querySelector("[data-enregistrer]").onclick = enregistrer;
+  retenirLEcran(bloc, { enregistrer });
 }
 
 /* ------------------------------------------------ une fiche que la route rend */
@@ -706,7 +984,7 @@ function poserLaFiche(cible, f) {
       if (!t || reecrites.has(k.split("|")[0])) return;
       if (x.isContentEditable) x.innerHTML = t.innerHTML;
       else if (x.type === "checkbox") x.checked = t.checked;
-      else if (x.tagName === "INPUT" || x.tagName === "SELECT") x.value = t.value;
+      else if (x.tagName === "INPUT" || x.tagName === "SELECT" || x.tagName === "TEXTAREA") x.value = t.value;
     });
     brancherLesCases(cible);
     const garde = actif ? controles().find(([k]) => k === actif[0]) : null;

@@ -123,11 +123,7 @@ impl<'de> Deserialize<'de> for LieuHorsDsn {
         let mot = String::deserialize(d)?;
         match LieuHorsDsn::TOUS.into_iter().find(|l| l.texte() == mot) {
             Some(l) => Ok(l),
-            None => Err(serde::de::Error::custom(format!(
-                "Lieu inconnu : {}. Les lieux sont {}.",
-                socle::fichiers::repr(&mot),
-                LieuHorsDsn::TOUS.map(LieuHorsDsn::texte).join(", ")
-            ))),
+            None => Err(serde::de::Error::custom(socle::liste::pas_de_la_liste("Lieu", &mot, &LieuHorsDsn::TOUS.map(LieuHorsDsn::texte)))),
         }
     }
 }
