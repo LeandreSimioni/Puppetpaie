@@ -65,7 +65,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &ChargeApercuSignature::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; contrats (chacun : son état, part (ce qu'il ajoute à la charge d'un départ, coché), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe) ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), les mêmes ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
+        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -441,8 +441,12 @@ pub(crate) struct ContratASigner {
     /// Un courriel a deja demande de signer ce contrat (le journal le dit) : le redemander est un rappel.
     #[serde(skip)]
     pub(crate) demande_par_courriel: bool,
+    /// Dans la liste `a_envoyer` de la reponse : il ne se rend pas en plus.
+    #[serde(skip)]
     pub(crate) a_envoyer: bool,
     pub(crate) en_avenant: bool,
+    /// Dans la liste `en_attente` de la reponse : il ne se rend pas en plus.
+    #[serde(skip)]
     pub(crate) en_attente: bool,
     recu: Option<GesteRecu>,
     relancer: Option<GesteRelancer>,
@@ -479,9 +483,11 @@ pub(crate) struct ApercuSignature {
     principal: Option<GesteDesContrats>,
     autres: Vec<GesteDesContrats>,
     mois: Mois,
+    /// Tous les contrats du mois, que le moteur lit (l'horloge) ; la reponse ne les rend que dans leur liste.
+    #[serde(skip)]
     pub(crate) contrats: Vec<ContratASigner>,
     /// Ce que montre la boite qui fait partir les contrats : ceux a envoyer, chacun une case a cocher ; et celle des
-    /// contrats en attente : ceux qui attendent leur signature.
+    /// contrats en attente : ceux qui attendent leur signature. Un contrat est dans l'une, l'autre, ou aucune.
     a_envoyer: Vec<ContratASigner>,
     en_attente: Vec<ContratASigner>,
     boite_liee: bool,

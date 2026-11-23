@@ -97,10 +97,12 @@ fn la_date_de_debut_changee_se_fait_signer_en_avenant() {
     let r = crate::outils::modifier(&c, "2026-12", &id, &json!({"debut": "2026-11-19"}), true, None, jour);
     assert_eq!(reussi(&r)["change"], json!(true), "{}", r);
 
-    let contrat = |c: &PathBuf| -> Value {
+    // Le contrat de FULLER, dans la liste ou la boite le montre (`a_envoyer`, `en_attente`) ; dans aucune, il est a jour.
+    let dans_une_liste = |c: &PathBuf| -> Option<Value> {
         let a = reussi(&route(c, "signature-apercu", json!({"mois": "2026-11"}), jour)).clone();
-        a["contrats"].as_array().and_then(|l| l.iter().find(|x| x["salarie"] == "FULLER")).cloned().unwrap_or(a)
+        ["a_envoyer", "en_attente"].iter().find_map(|l| a[*l].as_array().and_then(|v| v.iter().find(|x| x["salarie"] == "FULLER")).cloned())
     };
+    let contrat = |c: &PathBuf| -> Value { dans_une_liste(c).expect("le contrat de FULLER n'est dans aucune liste") };
     let x = contrat(&c);
     assert!(x["recu_le"].is_string() && x["en_avenant"] == json!(true), "le contrat signe passe pour jamais parti : {}", x);
 
@@ -115,8 +117,8 @@ fn la_date_de_debut_changee_se_fait_signer_en_avenant() {
     let mut recu = x["recu"]["charge"].clone();
     recu["recu"] = json!(true);
     reussi(&route(&c, "contrat-recu", recu, jour));
-    let x = contrat(&c);
-    assert!(x["caduc"] != json!(true) && x["en_attente"] != json!(true) && x["a_envoyer"] != json!(true), "{}", x);
+    let x = dans_une_liste(&c);
+    assert!(x.is_none(), "{:?}", x);
 }
 
 /// LA RUPTURE SE NOTIFIE PENDANT LE CONTRAT (CCH-11 de S21.G00.62.003, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` :
