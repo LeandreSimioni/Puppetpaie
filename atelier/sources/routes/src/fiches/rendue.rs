@@ -241,7 +241,47 @@ impl<K> CaseDeLaFiche<K> {
     }
 }
 
+impl<K> CaseDeLaFiche<K> {
+    /// UNE CASE D'UNE SEULE VALEUR QU'UN ECRAN REND HORS D'UNE FICHE (le titre d'un paragraphe d'un modele de contrat) : sa
+    /// cle, son libelle, sa forme et sa valeur ; de base, sur toute la ligne, sans bloc ni aide.
+    pub(crate) fn simple(cle: K, libelle: crate::catalogue::Affiche, forme: Forme, valeur: Option<ValeurDeCase>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche {
+            cle,
+            bloc: String::new(),
+            largeur: Largeur::Pleine,
+            libelle: libelle.texte().to_string(),
+            forme,
+            place: PlaceDeLaCase::Base,
+            aide: String::new(),
+            valeur,
+            exemple: None,
+            prerempli: None,
+            choix: None,
+            boutons: false,
+            parties: None,
+            ajouter: None,
+            dit: Vec::new(),
+            renvoi: None,
+            temps: None,
+            anomalie: None,
+        }
+    }
+
+    /// DES RANGEES QU'UN ECRAN REND HORS D'UNE FICHE (les alineas d'un paragraphe d'un modele de contrat) : sa cle, son
+    /// libelle, sa valeur (la liste de ses rangees), les parties de chaque rangee et le bouton qui en ajoute une.
+    pub(crate) fn de_rangees(cle: K, libelle: crate::catalogue::Affiche, valeur: Option<ValeurDeCase>, parties: Vec<PartieDeLaFiche>, ajouter: crate::catalogue::Affiche) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { forme: Forme::Rangees, parties: Some(parties), ajouter: Some(ajouter.texte().to_string()), ..CaseDeLaFiche::simple(cle, libelle, Forme::Rangees, valeur) }
+    }
+}
+
 impl PartieDeLaFiche {
+    /// LA PARTIE QUE DECLARE UNE VALEUR FAITE DE PARTIES (`catalogue::Partie`, celles d'une charge) : son chemin, son
+    /// libelle et sa forme tels qu'elle les dit, ouverte quand elle est de toujours ; `choix` : ce qu'elle offre quand elle
+    /// se choisit dans ce que la route rend.
+    pub(crate) fn de(p: &crate::catalogue::Partie, choix: Option<Vec<Choix>>) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle: p.cle.to_string(), libelle: p.libelle.texte().to_string(), forme: p.forme, aide: None, exemple: None, prerempli: None, choix, boutons: false, ouverte: p.toujours }
+    }
+
     /// Une partie texte ouverte d'une case qu'un ecran rend (`CaseDeLaFiche::de_parties`) : son chemin, son libelle, son
     /// aide et l'exemple d'une partie vide.
     pub(crate) fn texte(cle: &str, libelle: crate::catalogue::Affiche, aide: String, exemple: Option<String>) -> PartieDeLaFiche {

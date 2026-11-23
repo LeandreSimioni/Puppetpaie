@@ -695,11 +695,15 @@ function chargeDuGeste(bloc, g) {
  *  part dans la charge, et la page ne le garde pas.
  *  `entete` : ce que la boîte dit de quoi il s'agit (`titre`, à la suite du libellé ; `dit`, dessous) ; `pardessus` :
  *  la boîte s'ouvre par-dessus celle qui est ouverte, qui revient quand elle se ferme ; `modifie` : la boîte modifie une
- *  chose qui existe (`casesDesChamps`). `apres` : après la réponse. */
+ *  chose qui existe (`casesDesChamps`) ; `quitter` : le bloc dont les écrans retenus se quittent avant le geste, qui
+ *  les redessinera (`quitterLEcran` : enregistrer, jeter ou rester). `apres` : après la réponse. */
 function brancherLesGestes(cible, gestes, entete, apres) {
   cible.querySelectorAll("[data-geste]").forEach((b) => {
     const g = gestes[+b.dataset.geste];
-    b.onclick = () => faireLeGeste(g, entete, apres, b);
+    b.onclick = async () => {
+      if (entete.quitter && !(await quitterLEcran(entete.quitter))) return;
+      await faireLeGeste(g, entete, apres, b);
+    };
   });
 }
 

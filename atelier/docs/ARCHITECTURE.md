@@ -2161,7 +2161,10 @@ ce qui le reprend quand on jette), et chaque sortie de la page (un onglet, un so
 « Les compagnies », le geste d'un rappel, la boîte de l'ouverture qui se ferme) passe par `quitterLEcran`, qui ne
 demande (`demanderSiEnregistrer` : enregistrer, jeter, ou rester) que pour un écran dont les cases ne disent plus ce
 qu'elles disaient. Sont retenus : un écran rendu qui a un geste qui enregistre, les trois fiches (où la frappe montre
-aussi « modifié » et « Annuler », `quandChange`) et chaque liste de « Pour démarrer ». La boîte d'un geste ne l'est
+aussi « modifié » et « Annuler », `quandChange`), chaque liste de « Pour démarrer » et chaque paragraphe d'un modèle de
+contrat qui s'écrit (`modele-contrat` rend ses cases, son titre et ses alinéas en rangées, chacun sa condition et son
+texte long, et le geste qui les enregistre ; un geste qui redessine l'écran quitte d'abord ses écrans retenus :
+`quitter` de `brancherLesGestes`). La boîte d'un geste ne l'est
 pas : elle a son « Annuler ». Fermer la fenêtre par son bouton, revenir aux compagnies et redémarrer pour la mise à
 jour y passent aussi (`avantDeQuitter`, `js/demarrage.js`) ; une fenêtre que le système ferme n'arrive pas à la page.
 
@@ -2717,7 +2720,9 @@ jour de la copie, d'où la route dit quels paragraphes de la base ont changé de
 nature, et un engagement en choisit un (sa case `modele_contrat`). Un spécial s'écrit **paragraphe par paragraphe**,
 contrat ou avenant (`partie`), une route par geste (écrire, ajouter, déplacer, supprimer un paragraphe ; renommer),
 que les lectures de l'écran rendent sur la chose où ils se font (`GesteDuModele` : chaque modèle de `modeles-contrat`,
-chaque paragraphe et chaque partie de `modele-contrat`), la page les posant sans rien décider ;
+chaque paragraphe et chaque partie de `modele-contrat`), la page les posant sans rien décider ; chaque paragraphe d'un
+spécial rend ses cases (son titre ; ses alinéas en rangées, chacun sa condition, au choix parmi les champs, et son texte
+long), que le dessinateur pose, avec le geste qui les enregistre ; un paragraphe de la base se lit (ses `alineas`) ;
 chaque geste passe par le vérificateur de sa partie (`documents::contrat_ecrit::manques`, `manques_de_l_avenant`), qui
 dit, article par article, le champ inconnu, la condition fausse ou la mention exigée qui manque : un geste qui
 laisserait le modèle faux n'écrit rien. Un spécial supprimé garde son id dans `supprimes` : un id ne sert qu'une fois,

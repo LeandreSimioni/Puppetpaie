@@ -59,12 +59,14 @@ impl<S, T: ValeurDeLaCharge<S>> ValeurDeLaCharge<EnListe<S>> for Vec<T> {
 }
 
 /// La forme d'une liste dont chaque valeur a la forme `f` : des textes, des jours, des objets, plusieurs valeurs d'une
-/// liste fermee. Une autre n'a pas encore de case qui la saisisse en liste : elle ne compile pas.
+/// liste fermee, des rangees (chacune une valeur faite des memes parties). Une autre n'a pas encore de case qui la
+/// saisisse en liste : elle ne compile pas.
 const fn en_liste(f: Forme) -> Forme {
     match f {
         Forme::Texte => Forme::Liste,
         Forme::Date => Forme::Jours,
         Forme::Objet => Forme::Objet,
+        Forme::Parties(_) => Forme::Rangees,
         Forme::Choix(l) => Forme::PlusieursChoix(l),
         _ => panic!("une liste de cette forme n'a pas de case : la dire au développeur"),
     }

@@ -24,6 +24,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Route;
 use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Forme, Place, Refus, MANQUE, OPERATION};
+use crate::fiches::{CaseDeLaFiche, PartieDeLaFiche};
+use crate::ouverture::Choix;
+use droit::fiche::ValeurDeCase;
 use crate::declaration::{charge, cle, dit, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::imprevus::GesteDeRoute;
@@ -510,9 +513,16 @@ fn sur_les_paragraphes(ctx: &Contexte, id: &IdDeModele, partie: Partie, faire: i
     modeles(ctx, &devant)
 }
 
-/// Dans une charge, un alinea se dit d'un objet (`{si, texte}`).
+/// LES PARTIES D'UN ALINEA : sa condition, au choix parmi les champs que `modele-contrat` rend (`champs`), vide :
+/// toujours ; son texte, sur plusieurs lignes.
+const PARTIES_D_UN_ALINEA: &[crate::catalogue::Partie] = &[
+    crate::catalogue::Partie { cle: "si", libelle: Affiche::new("Condition"), forme: Forme::ChoixRendu, toujours: true },
+    crate::catalogue::Partie { cle: "texte", libelle: Affiche::new("Texte"), forme: Forme::TexteLong, toujours: true },
+];
+
+/// Dans une charge, un alinea est une valeur faite de parties (`{si, texte}`) : les alineas d'un paragraphe, des rangees.
 impl ValeurDeLaCharge<ParSaForme> for Alinea {
-    const FORME: Forme = Forme::Objet;
+    const FORME: Forme = Forme::Parties(PARTIES_D_UN_ALINEA);
 }
 
 charge! {
@@ -775,6 +785,10 @@ const RENOMMER: Affiche = Affiche::new("Renommer…");
 const AJOUTER: Affiche = Affiche::new("Ajouter un paragraphe…");
 const ENREGISTRER: Affiche = Affiche::new("Enregistrer");
 const APERCU: Affiche = Affiche::new("Aperçu PDF");
+const TITRE_DU_PARAGRAPHE: Affiche = Affiche::new("Titre");
+const ALINEAS: Affiche = Affiche::new("Alinéas");
+const AJOUTER_UN_ALINEA: Affiche = Affiche::new("Ajouter un alinéa");
+const TOUJOURS: Affiche = Affiche::new("Toujours");
 
 /// Un geste de l'ecran sans case : il part avec sa charge.
 fn sans_case(route: Route, sur: SurLeModele, libelle: Affiche) -> GesteDuModele {
@@ -798,17 +812,26 @@ struct Modeles {
     ecran: Option<EcranDesModeles>,
 }
 
-/// Un article d'un modele : son numero, son titre, ses alineas ; d'un special, le geste qui l'enregistre (sa charge le
-/// designe, le titre et les alineas tapes la completent) et ceux qu'on peut y faire (le monter, sauf le premier ; le
-/// descendre, sauf le dernier ; le supprimer). Un article sans geste se lit seulement (la base).
+/// Un article d'un modele : son numero, son titre, ce qu'il est (lu ou a ecrire : `CorpsDeLArticle`) et ce qu'on peut y
+/// faire (le monter, sauf le premier ; le descendre, sauf le dernier ; le supprimer).
 #[derive(Debug, Serialize)]
 struct ArticleRendu {
     numero: usize,
     titre: String,
-    alineas: Vec<Alinea>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ecrire: Option<GesteDuModele>,
+    #[serde(flatten)]
+    corps: CorpsDeLArticle,
     gestes: Vec<GesteDuModele>,
+}
+
+/// CE QU'EST UN ARTICLE : d'un modele de base, ses alineas, qui se lisent seulement ; d'un special, ses cases (son titre,
+/// ses alineas en rangees : chacun sa condition, au choix parmi les champs, et son texte), dessinees comme celles d'une
+/// fiche, et le geste qui les enregistre (sa charge designe l'article, ce que disent les cases la complete, chacune sous
+/// sa cle).
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum CorpsDeLArticle {
+    Lu { alineas: Vec<Alinea> },
+    AEcrire { cases: Vec<CaseDeLaFiche<&'static str>>, ecrire: GesteDuModele },
 }
 
 /// Un engagement que l'apercu peut remplir : ce qui le designe (`engagement` de apercu-modele-contrat) et son nom.
@@ -984,29 +1007,42 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     // Ce qui designe cette partie d'un special a un geste qui l'ecrit ; la base ne s'ecrit pas.
     let ecrite = |numero: Option<usize>, sens: Option<Sens>| s.map(|s| SurLeModele { id: Some(s.id.clone()), partie: Some(c.partie), numero, sens, ..SurLeModele::default() });
     let dernier = lu.articles.len();
+    let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| m.reclasser(Classe::Illisible))?;
+    // La condition d'un alinea se choisit parmi les champs ; vide, il s'ecrit toujours.
+    let conditions: Vec<Choix> = std::iter::once(Choix::de("", TOUJOURS.texte())).chain(champs.iter().map(|ch| Choix::de(&ch.marqueur, ch.quoi))).collect();
     let articles = lu
         .articles
         .iter()
         .enumerate()
         .map(|(n, (titre, alineas))| {
             let numero = n + 1;
-            let ecrire = ecrite(Some(numero), None).map(|sur| GesteDeRoute::avec_cases(Route::EcrireParagrapheContrat, sur, ENREGISTRER, vec![cle!(ChargeEcrireParagraphe, titre), cle!(ChargeEcrireParagraphe, alineas)], ValeursDuModele::default(), SansCharge {}));
+            let alineas: Vec<Alinea> = alineas
+                .iter()
+                .map(|a| match fabrique_pdf::modele::condition(a) {
+                    Some((si, t)) => Alinea { si: Some(si.to_string()), texte: t.to_string() },
+                    None => Alinea { si: None, texte: a.clone() },
+                })
+                .collect();
+            let corps = match ecrite(Some(numero), None) {
+                None => CorpsDeLArticle::Lu { alineas },
+                Some(sur) => CorpsDeLArticle::AEcrire {
+                    cases: vec![
+                        CaseDeLaFiche::simple(cle!(ChargeEcrireParagraphe, titre), TITRE_DU_PARAGRAPHE, Forme::Texte, ValeurDeCase::de(titre)),
+                        CaseDeLaFiche::de_rangees(
+                            cle!(ChargeEcrireParagraphe, alineas),
+                            ALINEAS,
+                            ValeurDeCase::de(&alineas),
+                            PARTIES_D_UN_ALINEA.iter().map(|p| PartieDeLaFiche::de(p, (p.forme == Forme::ChoixRendu).then(|| conditions.clone()))).collect(),
+                            AJOUTER_UN_ALINEA,
+                        ),
+                    ],
+                    ecrire: GesteDeRoute::avec_cases(Route::EcrireParagrapheContrat, sur, ENREGISTRER, vec![cle!(ChargeEcrireParagraphe, titre), cle!(ChargeEcrireParagraphe, alineas)], ValeursDuModele::default(), SansCharge {}),
+                },
+            };
             let monter = ecrite(Some(numero), Some(Sens::Monter)).filter(|_| numero > 1).map(|sur| sans_case(Route::DeplacerParagrapheContrat, sur, Sens::Monter.bouton()));
             let descendre = ecrite(Some(numero), Some(Sens::Descendre)).filter(|_| numero < dernier).map(|sur| sans_case(Route::DeplacerParagrapheContrat, sur, Sens::Descendre.bouton()));
             let supprimer = ecrite(Some(numero), None).map(|sur| sans_case(Route::SupprimerParagrapheContrat, sur, SUPPRIMER));
-            ArticleRendu {
-                numero,
-                titre: titre.clone(),
-                alineas: alineas
-                    .iter()
-                    .map(|a| match fabrique_pdf::modele::condition(a) {
-                        Some((si, t)) => Alinea { si: Some(si.to_string()), texte: t.to_string() },
-                        None => Alinea { si: None, texte: a.clone() },
-                    })
-                    .collect(),
-                ecrire,
-                gestes: [monter, descendre, supprimer].into_iter().flatten().collect(),
-            }
+            ArticleRendu { numero, titre: titre.clone(), corps, gestes: [monter, descendre, supprimer].into_iter().flatten().collect() }
         })
         .collect();
     let parties = <Partie as socle::liste::ListeFermee>::TOUTES.iter().map(|p| sans_case(Route::ModeleContrat, SurLeModele { partie: Some(*p), ..du_modele() }, p.bouton())).collect();
@@ -1025,7 +1061,6 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     let phrase = if dits.is_empty() { socle::phrase!("{} : complet.", quoi) } else { socle::phrase!("{} : {}", quoi, dits.join(" ")) };
     // La base n'est copiee de rien : rien ne se compare, `None`.
     let base_changee = s.map(|s| texte_de_base(&nat, c.partie).map(|b| ce_qui_a_change(&s.partie(c.partie).base, &b))).transpose()?;
-    let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| m.reclasser(Classe::Illisible))?;
     let engagements = engagements_de(ctx, nat.cle)?;
     Ok(ModeleRendu {
         phrase,
