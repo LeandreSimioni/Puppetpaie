@@ -160,8 +160,8 @@ fn spectacle_de(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<(IdSpec
 /// LA PERIODE D'UN CONTRAT IMPORTE DANS `mois`, en clair, quand le bulletin ne dit pas ses jours : « 20–27 » pour un
 /// contrat qui commence et finit dans le mois (le 1er quand il a commence avant), « 20/11 – 03/12 » pour un contrat a
 /// cheval sur un autre mois (« 01/09/2022 – 31/12 » quand il a commence une autre annee), « … » pour une borne que
-/// l'import n'a pas lue.
-fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
+/// l'import n'a pas lue. Vrai avec elle : la periode est a cheval sur un autre mois (elle se dit eparse).
+fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> (String, bool) {
     let dans = |j: &Jour| mois.contient(j);
     let dehors = d.as_ref().is_some_and(|j| !dans(j)) || f.as_ref().is_some_and(|j| !dans(j));
     let borne = |j: Option<&Jour>, inconnue: &str| match j {
@@ -172,9 +172,9 @@ fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
     };
     let (a, b) = (borne(d.as_ref(), if dehors { "…" } else { "1" }), borne(f.as_ref(), "…"));
     match (a == b, dehors) {
-        (true, _) => a,
-        (false, true) => format!("{} – {}", a, b),
-        (false, false) => format!("{}–{}", a, b),
+        (true, _) => (a, false),
+        (false, true) => (format!("{} – {}", a, b), true),
+        (false, false) => (format!("{}–{}", a, b), false),
     }
 }
 
@@ -339,16 +339,22 @@ const POURQUOI_NON_LU: &str = "Un clic sur la carte montre ses cases, et sous ch
 /// Des jours d'un mois, en clair et au plus court : « 6 », « 21–23 », « 14 · 15 · 17 · 18 » ; des jours qui se suivent
 /// font une plage.
 fn jours_en_clair(jours: &[Jour]) -> R<String> {
-    let mut suivis = true;
-    for w in jours.windows(2) {
-        suivis &= w[0].apres(socle::date::Duree::jours(1))? == w[1];
-    }
+    let suivis = jours_suivis(jours)?;
     Ok(match (jours.first(), jours.last()) {
         (None, _) | (_, None) => String::new(),
         (Some(a), Some(b)) if jours.len() == 1 || a == b => a.quantieme_ecrit(),
         (Some(a), Some(b)) if suivis => format!("{}–{}", a.quantieme_ecrit(), b.quantieme_ecrit()),
         _ => jours.iter().map(Jour::quantieme_ecrit).collect::<Vec<_>>().join(" · "),
     })
+}
+
+/// Des jours ranges se suivent-ils, chacun le lendemain du precedent ? Sinon, ils sont epars.
+fn jours_suivis(jours: &[Jour]) -> R<bool> {
+    let mut suivis = true;
+    for w in jours.windows(2) {
+        suivis &= w[0].apres(socle::date::Duree::jours(1))? == w[1];
+    }
+    Ok(suivis)
 }
 
 /// Ce qu'une cellule de la carte montre d'une valeur : son texte ; rien (une cellule vide) quand la piece ne la dit pas.
@@ -542,9 +548,13 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     };
 
     // QUAND : les jours travailles que le bulletin imprime ; sans eux, la periode du contrat.
-    let (quand, quand_titre) = match dates.is_empty() {
-        false => (jours_en_clair(&dates)?, dates.iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", ")),
-        true => (periode_en_clair(debut, fin, mois), DATES_NON_LUES.to_string()),
+    // EPARS : des jours qui ne se suivent pas, ou une periode a cheval sur un autre mois.
+    let (quand, quand_titre, epars) = match dates.is_empty() {
+        false => (jours_en_clair(&dates)?, dates.iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", "), !jours_suivis(&dates)?),
+        true => {
+            let (quand, a_cheval) = periode_en_clair(debut, fin, mois);
+            (quand, DATES_NON_LUES.to_string(), a_cheval)
+        }
     };
     // LE MONTANT : le net a payer ; sans lui (une DSN seule ne le declare pas), le brut, et la carte le dit.
     let (montant_dit, montant_mot) = match (montant("net_a_payer"), montant("brut")) {
@@ -553,7 +563,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         (None, None) => (None, None),
     };
     let resume = ResumeDeLaCarte {
-        epars: quand.contains(" · ") || quand.contains(" – "),
+        epars,
         quand,
         quand_titre,
         mois: mois.nom(Graphie::Abregee),
