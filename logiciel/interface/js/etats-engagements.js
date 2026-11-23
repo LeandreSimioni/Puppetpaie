@@ -56,11 +56,11 @@ async function noterRecu(mois, charge) {
   await dessinerEtatsDesEngagements(mois);
   await rafraichirActions();
   dire(r.phrase);
-  if (!charge.recu || !r.annuler) return;
+  if (!r.annuler) return;
   const el = document.getElementById("message");
   const annuler = document.createElement("button");
   annuler.className = "lien message-annuler";
-  annuler.textContent = "Annuler";
+  annuler.textContent = r.annuler.libelle;
   annuler.onclick = () => { el.classList.add("cachee"); noterRecu(mois, r.annuler.charge); };
   el.append(" — ", annuler);
 }
@@ -81,11 +81,12 @@ async function boitePieces(ligne, acte) {
   const montre = carre.pieces;
   const titre = carre.titre;
   const pieces = acte === "dpae" ? r.dpae : r.contrat;
+  // Chaque pièce : son geste quand son fichier est là (`ouvrir`), la phrase qui dit qu'il n'y est plus sinon.
   const liste = pieces.length
     ? `<ul class="liste-pieces">${pieces.map((p, i) => `<li>
         <span><b>${echapper(p.quoi)}</b> — ${echapper(p.quand_dit)}
-          ${p.existe ? "" : `<br><span class="discret">${aideDe("piece_absente")}</span>`}</span>
-        <button class="secondaire p-ouvrir" data-i="${i}" ${p.existe ? "" : "disabled"}>Ouvrir</button>
+          ${p.absente ? `<br><span class="discret">${echapper(p.absente)}</span>` : ""}</span>
+        ${p.ouvrir ? `<button class="secondaire p-ouvrir" data-i="${i}">${echapper(p.ouvrir.libelle)}</button>` : ""}
       </li>`).join("")}</ul>`
     : montre.vide ? `<p class="discret">${echapper(montre.vide)}</p>` : "";
   ouvrirBoite(`
@@ -108,12 +109,8 @@ async function boitePieces(ligne, acte) {
     };
   });
   document.querySelectorAll(".p-ouvrir").forEach((b) => {
-    b.onclick = async () => {
-      // La pièce partie, refaite à l'identique si elle manque : le moteur rend son chemin, la fenêtre l'ouvre.
-      const p = pieces[+b.dataset.i];
-      try { await ouvrirEtDire((await api("piece-partie", { mois: p.mois, fichier: p.fichier })).chemin); }
-      catch (err) { dire(err.message, "erreur"); }
-    };
+    // La pièce partie : le moteur rend son chemin, la fenêtre l'ouvre.
+    b.onclick = () => ouvrirGeste(pieces[+b.dataset.i].ouvrir, mois);
   });
 }
 
@@ -157,7 +154,7 @@ function boiteFrise(ligne) {
         <b>${echapper(v.titre_dit)}</b> <span class="discret">— ${echapper(v.jour_dit)}</span>
         ${v.changements.length ? `<ul class="frise-changements">${v.changements.map((c) =>
           `<li>${echapper(c)}</li>`).join("")}</ul>` : ""}
-        ${v.partis.length ? `<p class="frise-partis">Parti : ${v.partis.map(echapper).join(" ; ")}</p>` : ""}
+        ${v.partis_dit ? `<p class="frise-partis">${echapper(v.partis_dit)}</p>` : ""}
       </li>`).join("")}
     </ol>
     <div class="actions"><button class="secondaire" onclick="fermerBoite()">Fermer</button></div>`);

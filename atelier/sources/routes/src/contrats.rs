@@ -130,7 +130,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Noter qu'un contrat (ou un avenant) est revenu signé, ou retirer la note.",
         charge: &ChargeRecu::CHARGE,
         exemple: r#"{"mois":"2026-11","salarie":"FULLER","debut":"2026-11-27","recu":true}"#,
-        rend: "phrase, recu (quand), annuler (la route et la charge qui défont la note)",
+        rend: "phrase, recu (quand), annuler (une note posée : son libellé, la route et la charge qui la défont)",
         refus: &[OPERATION, MANQUE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -458,7 +458,9 @@ pub(crate) struct NoteRecue {
     debut: Jour,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     recu: Option<Moment>,
-    annuler: GesteRecu,
+    /// Le geste qui defait une note posee ; aucun quand la note vient d'etre retiree.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annuler: Option<GesteRecu>,
 }
 
 /// Ce que rend `contrats-imprimer` : sa phrase, et ce que l'impression a ecrit.
@@ -538,7 +540,8 @@ pub(crate) struct ApercuAvenant {
     phrases: Vec<String>,
 }
 
-/// Une piece partie pour un contrat : ce qu'elle est, quand, le mois et le fichier ou elle se range, si le fichier existe.
+/// Une piece partie pour un contrat : ce qu'elle est, quand, le mois et le fichier ou elle se range ; le geste qui
+/// l'ouvre (`piece-partie`) quand son fichier est la, et sinon la phrase qui le dit (`absente`).
 #[derive(Debug, Serialize)]
 struct PiecePartie {
     quoi: String,
@@ -546,7 +549,10 @@ struct PiecePartie {
     quand_dit: String,
     mois: Option<Mois>,
     fichier: NomDeFichier,
-    existe: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ouvrir: Option<crate::etapes::Action>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    absente: Option<&'static str>,
 }
 
 /// Ce que rend `pieces-parties`.
@@ -693,7 +699,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let phrase = socle::phrase!("{} de {} {}.", socle::texte::capitaliser(&ce), nom, if recu { "noté reçu signé" } else { "de nouveau en attente" });
     // De quoi revenir sur la note : la meme route, le mot contraire.
     let annuler = ChargeRecu { mois: c.mois, salarie: c.salarie.clone(), debut: c.debut, numero: numero_note, avenant, recu: !recu };
-    Ok(NoteRecue { phrase, salarie: c.salarie.clone(), debut: c.debut, recu: recu.then_some(quand_note), annuler: GesteRecu { route: Route::ContratRecu, libelle: "Annuler", charge: annuler } })
+    Ok(NoteRecue { phrase, salarie: c.salarie.clone(), debut: c.debut, recu: recu.then_some(quand_note), annuler: recu.then_some(GesteRecu { route: Route::ContratRecu, libelle: "Annuler", charge: annuler }) })
 }
 
 // ------------------------------------------------------------------ contrats-imprimer et demander-signature
@@ -1505,8 +1511,19 @@ fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &NomDeFichier) -> bo
     mois.is_some_and(|mois| etats::chemin_piece(racine, mois, fichier).is_some())
 }
 
-fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &NomDeFichier) -> PiecePartie {
-    PiecePartie { quoi, quand, quand_dit: quand.dit(), mois, fichier: fichier.clone(), existe: piece_existe(racine, mois, fichier) }
+fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &NomDeFichier) -> R<PiecePartie> {
+    let ouvrir = match mois {
+        Some(mois) if piece_existe(racine, Some(mois), fichier) => {
+            let charge = crate::documents::ChargePiecePartie { mois, fichier: fichier.clone() };
+            Some(crate::etapes::action(Route::PiecePartie, charge, None, "Ouvrir".into()))
+        }
+        _ => None,
+    };
+    let absente = match ouvrir {
+        Some(_) => None,
+        None => Some(crate::ouverture::aide("piece_absente")?),
+    };
+    Ok(PiecePartie { quoi, quand, quand_dit: quand.dit(), mois, fichier: fichier.clone(), ouvrir, absente })
 }
 
 /// `pieces-parties` : les FICHIERS partis pour le contrat n° `numero` -- la DPAE deposee, le contrat envoye a la
@@ -1532,7 +1549,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         }
         if let Some(x) = e.detail.embauches.iter().find(|x| ce_contrat(&x.salarie, x.numero.as_ref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
-            dpae.push(piece(racine, "DPAE déposée".into(), e.quand(), e.mois, fichier));
+            dpae.push(piece(racine, "DPAE déposée".into(), e.quand(), e.mois, fichier)?);
         }
     }
 
@@ -1547,7 +1564,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
                 Some(journal::ActeDuContrat::Remplace) => format!("Contrat qui annule et remplace le {}, {}", contrat_dit(x.remplace.as_ref()), parti),
                 None => format!("Contrat {}", parti),
             };
-            contrat.push(piece(racine, quoi, e.quand(), Some(x.mois), &x.fichier));
+            contrat.push(piece(racine, quoi, e.quand(), Some(x.mois), &x.fichier)?);
         }
         // CE QUI EN EST REVENU, sur la ligne de chaque envoi.
         for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero.as_ref())) {
@@ -1556,10 +1573,10 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
                     Some(a) if d.acte == Some(journal::ActeDuContrat::Avenant) => format!("Avenant n° {} signé, contresigné", a),
                     _ => "Contrat signé, contresigné".to_string(),
                 };
-                contrat.push(piece(racine, quoi, d.quand.into(), l.mois(), f));
+                contrat.push(piece(racine, quoi, d.quand.into(), l.mois(), f)?);
             }
             if let Some(p) = d.preuve.as_deref().filter(|p| !p.is_empty()) {
-                contrat.push(piece(racine, "Réponse « Je signe » du salarié (preuve)".into(), d.quand.into(), l.mois(), &NomDeFichier::lire(p)?));
+                contrat.push(piece(racine, "Réponse « Je signe » du salarié (preuve)".into(), d.quand.into(), l.mois(), &NomDeFichier::lire(p)?)?);
             }
         }
     }

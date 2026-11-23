@@ -368,6 +368,9 @@ pub struct VersionDeLaFrise {
     pub jour_dit: String,
     pub changements: Vec<String>,
     pub partis: Vec<String>,
+    /// Ce qui est parti sur elle, en une ligne (« Parti : … ») ; aucune quand rien n'est parti.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partis_dit: Option<String>,
 }
 
 /// LA FRISE de l'engagement valide `v` (`Frise`). `None` : aucune version passee, jamais modifie apres un envoi, ou la
@@ -404,7 +407,8 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois) -> R<Opt
             Some(n) => format!("Version {}", n),
             None => "Version".to_string(),
         };
-        versions.push(VersionDeLaFrise { version: n, le: *le, jour_affichage: le.jour_de_paris().jj_mm(), titre_dit, jour_dit: format!("le {}", le.jour_de_paris().jj_mm()), changements: changes, partis });
+        let partis_dit = (!partis.is_empty()).then(|| format!("Parti : {}", partis.join(" ; ")));
+        versions.push(VersionDeLaFrise { version: n, le: *le, jour_affichage: le.jour_de_paris().jj_mm(), titre_dit, jour_dit: format!("le {}", le.jour_de_paris().jj_mm()), changements: changes, partis, partis_dit });
         precedente = Some(*x);
     }
     Ok(Some(Frise { phrase: phrase_de_la_frise(ctx, v, departs, siens)?, versions }))
