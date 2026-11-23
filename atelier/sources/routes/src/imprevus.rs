@@ -1421,6 +1421,7 @@ impl<C> GesteDeRoute<C> {
             route,
             charge,
             libelle: libelle.texte(),
+            rang: RangDuGeste::Second,
             cases: Vec::new(),
             valeurs: ValeursDeDepart::default(),
             choix: ChoixDesCases::default(),
