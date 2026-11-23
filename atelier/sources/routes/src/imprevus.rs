@@ -1298,13 +1298,23 @@ pub(crate) struct GesteDeRoute<C, V = ValeursDeDepart, X = ChoixDesCases> {
     phrases: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     demande: Option<compagnie::demande::DemandeDuMotDePasse>,
+    /// Les parties d'une case faite de parties (`catalogue::Forme::Parties`) que la boite fait saisir, sous la cle de sa
+    /// case, quand la route les rend avec le geste (une date par annee de la regularisation CASC-SVP) ; aucune : rien.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    parties: BTreeMap<&'static str, Vec<crate::fiches::PartieDeLaFiche>>,
 }
 
 impl<C, V, X> GesteDeRoute<C, V, X> {
     /// Le geste dont la boite fait saisir les cases `cases` de la fiche de sa route, montrant d'abord `valeurs`, et
     /// offrant `choix` aux cases qui se choisissent.
     pub(crate) fn avec_cases(route: Route, charge: C, libelle: Affiche, cases: Vec<&'static str>, valeurs: V, choix: X) -> GesteDeRoute<C, V, X> {
-        GesteDeRoute { route, charge, libelle: libelle.texte(), cases, valeurs, choix, phrases: Vec::new(), demande: None }
+        GesteDeRoute { route, charge, libelle: libelle.texte(), cases, valeurs, choix, phrases: Vec::new(), demande: None, parties: BTreeMap::new() }
+    }
+
+    /// Le meme geste, sa case `cle` faite des parties `parties`.
+    pub(crate) fn en_parties(mut self, cle: &'static str, parties: Vec<crate::fiches::PartieDeLaFiche>) -> GesteDeRoute<C, V, X> {
+        self.parties.insert(cle, parties);
+        self
     }
 
     /// Le meme geste, sa boite disant `phrases` au-dessus de ses cases.
@@ -1383,6 +1393,7 @@ impl<C> GesteDeRoute<C> {
             choix: ChoixDesCases::default(),
             phrases: Vec::new(),
             demande: None,
+            parties: BTreeMap::new(),
         }
     }
 }

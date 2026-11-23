@@ -365,11 +365,7 @@ function dessinerCasc(r) {
         <div class="casc-option principale">
           <h5>${echapper(e.depuis_la_boite)}</h5>
           ${e.envoi ? `
-          <div class="e-contrat-champs">
-            ${r.annees.map((a) => `<label>${echapper(a.date_libelle)}
-              <input type="date" class="casc-date" data-annee="${echapper(a.annee)}"></label>`).join("")}
-          </div>
-          <button class="primaire" id="casc-envoyer">${echapper(e.envoi.bouton)}</button>
+          <div id="casc-envoi">${boutonsDesGestes([e.envoi], () => true, "primaire")}</div>
           <p class="discret">${echapper(e.automatique)}</p>` : `
           <p>${echapper(e.automatique)}</p>`}
         </div>
@@ -391,24 +387,15 @@ function dessinerCasc(r) {
     await ouvrirEtDire(r.dossier);
   };
   brancherLesGestes(document.getElementById("casc-noter"), e.noter, {}, async () => {});
-  const envoyer = document.getElementById("casc-envoyer");
-  if (envoyer) envoyer.onclick = async () => {
-    // La charge de l'envoi est une table année → jour : une date remplie part sous son année.
-    const vire_le = {};
-    for (const c of document.querySelectorAll(".casc-date")) if (c.value) vire_le[c.dataset.annee] = c.value;
-    const mdp = await demanderMotDePasse(e.envoi.demande, { envoi: true });
-    if (!mdp) return;
-    const rendre = occupe(envoyer, e.envoi.pendant);
+  // L'envoi est un geste que la route rend : sa boîte fait saisir la date de chaque virement, puis le mot de passe. Le
+  // repère des courriels fictifs se prend avant, pour montrer ensuite ceux qui sont partis.
+  const envoi = document.querySelector("#casc-envoi [data-geste]");
+  if (envoi) envoi.onclick = async () => {
     const repere = await repereCourrielsFictifs();
-    try {
-      const e2 = await api(e.envoi.route, { vire_le, motdepasse: mdp });
-      dire(e2.phrase, "envoye");
+    await faireLeGeste(e.envoi, {}, async (e2) => {
       cible.innerHTML = `<p>${echapper(e2.phrase)}</p>`;
       fenetreCourrielsFictifs("courriel", repere);
-    } catch (x) {
-      rendre();
-      dire(x.message, "erreur");
-    }
+    }, envoi);
   };
 }
 
@@ -453,38 +440,16 @@ function dessinerTableau(r, apercu) {
   if (!apercu) dire(r.phrase);
 }
 
-/** L'état rendu, tel quel : les groupes, leurs sous-totaux, le pied. */
+/** LE LIVRE DE PAIE, tel que la route le rend (`ecran.livre`) : ses colonnes, puis ses rangées, chacune ses cellules
+ *  déjà dites ; une rangée de total (`sorte`) se lit en gras, sauf ce qui la précise (une colonne discrète). */
 function dessinerLivre(r, apercu) {
   const cible = document.getElementById("exports-resultat");
-  const eur = (v) => (v === null || v === undefined ? "—" : echapper(v));
-  const ligne = (l) => `
-    <tr>
-      <td>${echapper(l.mois)}</td>
-      <td>${echapper(l.salarie)}</td>
-      <td class="discret">${echapper(l.spectacle || l.nature)}</td>
-      <td class="r">${eur(l.brut)}</td>
-      <td class="r">${eur(l.cotisations_salariales)}</td>
-      <td class="r">${eur(l.cotisations_patronales)}</td>
-      <td class="r">${eur(l.net_imposable)}</td>
-      <td class="r">${eur(l.net_a_payer)}</td>
-      <td class="r">${eur(l.pas)}</td>
-      <td class="r">${eur(l.cout_employeur)}</td>
-    </tr>`;
-  const total = (t, titre, classe) => `
-    <tr class="${classe}">
-      <td></td><td><b>${echapper(titre)}</b></td>
-      <td class="discret">${echapper(t.bulletins_dit)}</td>
-      <td class="r"><b>${eur(t.brut)}</b></td>
-      <td class="r"><b>${eur(t.cotisations_salariales)}</b></td>
-      <td class="r"><b>${eur(t.cotisations_patronales)}</b></td>
-      <td class="r"><b>${eur(t.net_imposable)}</b></td>
-      <td class="r"><b>${eur(t.net_a_payer)}</b></td>
-      <td class="r"><b>${eur(t.pas)}</b></td>
-      <td class="r"><b>${eur(t.cout_employeur)}</b></td>
-    </tr>`;
-  const corps = r.groupes.map((g) =>
-    g.lignes.map(ligne).join("") + total(g.totaux, g.total_dit, "sous-total")
-  ).join("");
+  const l = r.ecran.livre;
+  const classe = { sous_total: "sous-total", total_general: "total-general" };
+  const cellule = (t, c, gras) => `<td${c.a_droite ? ' class="r"' : c.discrete ? ' class="discret"' : ""}>${
+    gras && t && !c.discrete ? `<b>${echapper(t)}</b>` : echapper(t)}</td>`;
+  const corps = l.rangees.map((x) => `<tr${classe[x.sorte] ? ` class="${classe[x.sorte]}"` : ""}>${
+    x.cellules.map((t, i) => cellule(t, l.colonnes[i], x.sorte !== "ligne")).join("")}</tr>`).join("");
   cible.innerHTML = `
     <h2>${echapper(r.periode)}</h2>
     <p class="discret">${echapper(r.phrase)}</p>
@@ -492,9 +457,8 @@ function dessinerLivre(r, apercu) {
     ${r.avertissements.map((a) =>
         `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
-      <tr>${r.ecran.livre.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
+      <tr>${l.colonnes.map((c) => `<th>${echapper(c.libelle)}</th>`).join("")}</tr>
       ${corps}
-      ${total(r.totaux, r.ecran.livre.total_general, "total-general")}
     </table></div>
     ${r.ecran.ouvrir ? `<div class="actions">
       <button class="lien" id="x-dossier-2">${echapper(r.ecran.ouvrir)}</button></div>` : ""}`;

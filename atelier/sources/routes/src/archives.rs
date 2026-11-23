@@ -83,7 +83,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Exporter un état (livre de paie, charges…) en tableau ou en fichier.",
         charge: &ChargeExporter::CHARGE,
         exemple: r#"{"etat":"livre-de-paie","periode":"2026-11","regroupement":"salarie","format":"csv","apercu":true}"#,
-        rend: "le tableau, ou le fichier écrit",
+        rend: "le tableau, ou le fichier écrit ; ecran (le livre de paie tel qu'il se lit : colonnes, rangées et leurs cellules dites ; la régularisation CASC-SVP : ses étapes, ses gestes, dont l'envoi, une date par année)",
         refus: &[OPERATION, MANQUE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -131,7 +131,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Exports),
+        // `exporter` la rend en geste dans la regularisation CASC-SVP, la boite posee : une date par annee.
+        ecran: Ecran::GesteAvance(Place::Exports),
     },
 ];
 
@@ -730,12 +731,70 @@ struct EcranDUnEtat {
     casc: Option<EcranDeLaCasc>,
 }
 
-/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE : ses colonnes (le mois, le salarie, le spectacle, puis les montants de
-/// `documents::etats_paie::LigneLivre`, dans cet ordre) et sa ligne du total general.
+/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE, tel qu'il se lit : ses colonnes (le mois, le salarie, le spectacle, puis les
+/// montants de `documents::etats_paie::LigneLivre`, dans cet ordre), puis ses rangees dans l'ordre ou elles se lisent
+/// (les lignes de chaque groupe et son sous-total, le total general au bout), chacune ses cellules deja dites, une par
+/// colonne.
 #[derive(Debug, Serialize)]
 struct EcranDuLivre {
-    colonnes: [&'static str; 10],
-    total_general: &'static str,
+    colonnes: Vec<ColonneDuLivre>,
+    rangees: Vec<RangeeDuLivre>,
+}
+
+/// Une colonne du livre : son libelle, a droite pour un montant, en retrait pour ce qui precise la ligne (le spectacle,
+/// ou le nombre de bulletins d'un total).
+#[derive(Debug, Serialize)]
+struct ColonneDuLivre {
+    libelle: &'static str,
+    a_droite: bool,
+    discrete: bool,
+}
+
+/// Une rangee du livre : une ligne, le sous-total d'un groupe, ou le total general ; ses cellules, une par colonne.
+#[derive(Debug, Serialize)]
+struct RangeeDuLivre {
+    sorte: SorteDeRangee,
+    cellules: Vec<String>,
+}
+
+/// Ce qu'est une rangee du livre.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SorteDeRangee {
+    Ligne,
+    SousTotal,
+    TotalGeneral,
+}
+
+/// Ce qu'une cellule du livre dit d'un montant que la ligne ne dit pas (les pieces d'une paie importee l'ont tu).
+const MONTANT_TU: &str = "—";
+
+/// Le livre `l`, tel qu'il se lit : chaque cellule dite.
+fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
+    let colonne = |libelle, a_droite, discrete| ColonneDuLivre { libelle, a_droite, discrete };
+    let mut colonnes = vec![colonne("Mois", false, false), colonne("Salarié", false, false), colonne("Spectacle", false, true)];
+    colonnes.extend(["Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"].map(|c| colonne(c, true, false)));
+    let total = |sorte, titre: &str, t: &documents::etats_paie::Totaux| {
+        let mut cellules = vec![String::new(), titre.to_string(), t.bulletins_dit()];
+        cellules.extend(t.sommes_dites());
+        RangeeDuLivre { sorte, cellules }
+    };
+    let mut rangees = Vec::new();
+    for g in &l.groupes {
+        for x in &g.lignes {
+            // Le spectacle de la ligne ; sans spectacle, sa nature de contrat.
+            let quoi = if x.spectacle.is_empty() { x.libelle_nature.clone() } else { x.spectacle.clone() };
+            let mut cellules = vec![x.mois.to_string(), x.salarie.clone(), quoi];
+            cellules.extend(x.montants().into_iter().map(|m| match m {
+                Some(m) => socle::grandeurs::ecrit::texte::dit(m),
+                None => MONTANT_TU.to_string(),
+            }));
+            rangees.push(RangeeDuLivre { sorte: SorteDeRangee::Ligne, cellules });
+        }
+        rangees.push(total(SorteDeRangee::SousTotal, &g.total_dit, &g.totaux));
+    }
+    rangees.push(total(SorteDeRangee::TotalGeneral, "TOTAL GÉNÉRAL", &l.totaux));
+    EcranDuLivre { colonnes, rangees }
 }
 
 /// CE QUE L'ECRAN DIT DE LA REGULARISATION CASC-SVP, et ce qui s'y fait : son titre ; les virements (`virement`) ; les
@@ -750,7 +809,7 @@ struct EcranDeLaCasc {
     depuis_la_boite: &'static str,
     automatique: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    envoi: Option<EnvoiDeLaCasc>,
+    envoi: Option<GesteDeRoute<SansCharge, SansCharge, SansCharge>>,
     a_la_main_titre: &'static str,
     a_la_main: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -762,17 +821,6 @@ struct EcranDeLaCasc {
     colonnes: [&'static str; 4],
 }
 
-/// L'ENVOI DES DEUX COURRIELS, la boite posee : sa route (`casc-envoyer`), son bouton, ce qu'il dit pendant l'envoi, la
-/// demande du mot de passe, et la case de la date de chaque virement (`date_libelle` de chaque annee). La charge,
-/// `vire_le`, est une table annee -> jour : une date par annee remplie, sous son annee.
-#[derive(Debug, Serialize)]
-struct EnvoiDeLaCasc {
-    route: Route,
-    bouton: &'static str,
-    pendant: &'static str,
-    demande: compagnie::demande::DemandeDuMotDePasse,
-}
-
 /// Ce que la boite qui note une annee regularisee montre d'abord : la cotisation de l'annee.
 #[derive(Debug, Serialize)]
 struct ValeursDeLaCasc {
@@ -781,6 +829,7 @@ struct ValeursDeLaCasc {
 }
 
 const NOTER_REGULARISEE: Affiche = Affiche::new("Noter comme régularisé");
+const ENVOYER_LES_COURRIELS: Affiche = Affiche::new("Envoyer les 2 courriels");
 
 /// Ce que l'ecran dit de la regularisation `r`, et ce qui s'y fait.
 fn ecran_de_la_casc(ctx: &Contexte, r: &crate::importation::casc::Regularisation) -> R<EcranDeLaCasc> {
@@ -799,8 +848,14 @@ fn ecran_de_la_casc(ctx: &Contexte, r: &crate::importation::casc::Regularisation
             .disant(vec![format!("CASC-SVP {} : {}, {}.", a.annee, socle::texte::euros(a.cotisation), a.libelle_dit)])
         })
         .collect();
+    // L'ENVOI DES DEUX COURRIELS, la boite posee : le geste de `casc-envoyer`, qui exige le mot de passe du logiciel ; sa
+    // case `vire_le` (une table annee -> jour) se saisit une date par annee, sous son annee (`date_libelle`).
     let envoi = match r.boite_liee {
-        true => Some(EnvoiDeLaCasc { route: Route::CascEnvoyer, bouton: "Envoyer les 2 courriels", pendant: "Envoi…", demande: crate::coffre::demande(&ctx.racine, GESTE_CASC)? }),
+        true => Some(
+            GesteDeRoute::avec_cases(Route::CascEnvoyer, SansCharge {}, ENVOYER_LES_COURRIELS, vec![cle!(ChargeCasc, vire_le)], SansCharge {}, SansCharge {})
+                .exigeant(Some(crate::coffre::demande(&ctx.racine, GESTE_CASC)?))
+                .en_parties(cle!(ChargeCasc, vire_le), r.annees.iter().map(|a| crate::fiches::PartieDeLaFiche::jour(a.annee.to_string(), a.date_libelle.clone())).collect()),
+        ),
         false => None,
     };
     Ok(EcranDeLaCasc {
@@ -870,10 +925,10 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),
         sources: "Sources",
         ouvrir: (casc.is_none() && !ecrits.is_empty()).then_some("Ouvrir le dossier"),
-        livre: matches!(etat, EtatRendu::Livre(_)).then_some(EcranDuLivre {
-            colonnes: ["Mois", "Salarié", "Spectacle", "Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"],
-            total_general: "TOTAL GÉNÉRAL",
-        }),
+        livre: match &etat {
+            EtatRendu::Livre(l) => Some(ecran_du_livre(l)),
+            _ => None,
+        },
         casc,
     };
     Ok(EtatExporte { phrase, etat, phrases: avertissements, ecran })
@@ -1102,9 +1157,10 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
         .collect())
 }
 
-/// Le jour de chaque virement fait, par annee : un objet `{annee: jour}`.
-impl ValeurDeLaCharge<ParSaForme> for std::collections::BTreeMap<Annee, Jour> {
-    const FORME: Forme = Forme::Objet;
+/// Le jour de chaque virement fait, par annee : un objet `{annee: jour}`, une partie par annee (le geste d'envoi les
+/// rend : `ecran_de_la_casc`) ; une annee sans jour (`null`) n'a pas de virement fait.
+impl ValeurDeLaCharge<ParSaForme> for std::collections::BTreeMap<Annee, Option<Jour>> {
+    const FORME: Forme = Forme::Parties(&[]);
 }
 
 charge! {
@@ -1113,7 +1169,7 @@ charge! {
     /// logiciel tape pour l'envoi, l'enveloppe le prend (`Charge::mot_de_passe`).
     #[derive(Debug)]
     struct ChargeCasc {
-        vire_le: std::collections::BTreeMap<Annee, Jour> = dit("Virements faits", "{année: jour du virement fait, AAAA-MM-JJ}"),
+        vire_le: std::collections::BTreeMap<Annee, Option<Jour>> = dit("Virements faits", "{année: jour du virement fait, AAAA-MM-JJ}"),
     }
 }
 
@@ -1129,7 +1185,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     use crate::importation::casc::{ecrire, regularisation, Demande};
     let aujourdhui = socle::temps::jour_de_paris();
     let mut dates: Vec<(socle::mois::Annee, Jour)> = Vec::new();
-    for (a, &jour) in &c.vire_le {
+    for (a, jour) in c.vire_le.iter().filter_map(|(a, j)| j.map(|j| (a, j))) {
         if jour > aujourdhui {
             return Err(refus(format!(
                 "Le virement {} est date du {}, qui n'est pas encore arrive : le courriel annonce un virement FAIT. Rien n'est parti.",

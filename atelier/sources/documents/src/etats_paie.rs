@@ -479,12 +479,31 @@ struct TotauxRendus {
     inconnus: Vec<(ColonneDEtat, usize)>,
 }
 
+impl Totaux {
+    /// Le nombre de bulletins, dit (« 3 bulletins »).
+    pub fn bulletins_dit(&self) -> String {
+        let bulletins = self.bulletins();
+        format!("{} {}", bulletins, if bulletins == 1 { "bulletin" } else { "bulletins" })
+    }
+
+    /// La somme de chaque montant du livre, dite, dans l'ordre de ses colonnes (`CUMULABLES`).
+    pub fn sommes_dites(&self) -> Vec<String> {
+        CUMULABLES.iter().map(|(_, _, somme)| socle::grandeurs::ecrit::texte::dit(somme(&self.cumul).montant)).collect()
+    }
+}
+
+impl LigneLivre {
+    /// Les montants de la ligne, dans l'ordre des colonnes du livre (`CUMULABLES`) ; vide, celui qu'elle ne dit pas.
+    pub fn montants(&self) -> Vec<Option<Montant>> {
+        CUMULABLES.iter().map(|(_, montant, _)| montant(self)).collect()
+    }
+}
+
 impl From<Totaux> for TotauxRendus {
     fn from(t: Totaux) -> TotauxRendus {
-        let bulletins = t.bulletins();
         TotauxRendus {
-            bulletins,
-            bulletins_dit: format!("{} {}", bulletins, if bulletins == 1 { "bulletin" } else { "bulletins" }),
+            bulletins: t.bulletins(),
+            bulletins_dit: t.bulletins_dit(),
             sommes: CUMULABLES.iter().map(|(c, _, somme)| (*c, socle::grandeurs::ecrit::texte::dit(somme(&t.cumul).montant))).collect(),
             inconnus: t.inconnus(),
         }

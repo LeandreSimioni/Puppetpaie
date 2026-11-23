@@ -24,17 +24,20 @@ pub struct Mois {
 /// Les trois graphies d'un nom de mois que le moteur ecrit, chacune la ou elle s'ecrivait deja :
 /// - `Titre` (« Aout ») : noms de fichiers (`DSN_Aout2026.dsn`), titres et sections des etats ;
 /// - `Minuscule` (« aout ») : sans accent, dans une phrase (le libelle d'un mois d'engagement, d'un dossier) ;
-/// - `Accentuee` (« août ») : dans une phrase en francais (courriels, contrats, avenants, ecrans).
+/// - `Accentuee` (« août ») : dans une phrase en francais (courriels, contrats, avenants, ecrans) ;
+/// - `Abregee` (« janv. ») : sous les jours d'une carte de la page Paie (une carte importee).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Graphie {
     Titre,
     Minuscule,
     Accentuee,
+    Abregee,
 }
 
 const MOIS_TITRE: [&str; 12] = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"];
 const MOIS_MINUSCULE: [&str; 12] = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
 const MOIS_ACCENTUE: [&str; 12] = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const MOIS_ABREGE: [&str; 12] = ["janv.", "févr.", "mars", "avril", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
 
 /// UNE ANNEE OU UN MOIS QU'UN TEXTE DEPOSE FIXE, ecrit dans le code : `socle::annee!("2026")`, `socle::mois!("2026-03")`.
 /// Le texte est une constante (`TEXTE`), lue a la compilation : aucun texte lu a l'execution ne devient une annee ou un
@@ -304,6 +307,7 @@ impl MoisDeLAnnee {
             Graphie::Titre => &MOIS_TITRE,
             Graphie::Minuscule => &MOIS_MINUSCULE,
             Graphie::Accentuee => &MOIS_ACCENTUE,
+            Graphie::Abregee => &MOIS_ABREGE,
         };
         table[(self.0 - 1) as usize]
     }
