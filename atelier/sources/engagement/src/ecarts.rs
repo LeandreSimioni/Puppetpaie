@@ -261,13 +261,89 @@ pub struct Comparaison {
     /// D'ou vient le taux AT/MP du calcul.
     pub taux_atmp: Option<OrigineDuTauxAtmp>,
     /// Les ecarts ; `Err` : la paie ne se compare pas, et pourquoi.
-    pub ecarts: R<Vec<Ecart>>,
+    pub ecarts: Result<Vec<Ecart>, NonComparee>,
     /// La paie ne s'est pas comparee parce que le calcul a refuse la saisie (une configuration a completer, l'effectif
     /// de l'entreprise...) ou que le logiciel ne livre pas de quoi la calculer (`RienDeLivre`) : elle se compare de
     /// nouveau quand la compagnie s'ouvre. Les autres raisons tiennent aux pieces importees et ne changent pas.
     pub a_refaire: bool,
     /// Les libelles de cotisation du bulletin que la table ne rattache a aucune cotisation : non compares.
     pub non_rattachees: Vec<String>,
+}
+
+/// UNE PAIE IMPORTEE QUI NE SE COMPARE PAS : la sorte de sa raison (`SorteDeNonComparaison`, ce qui la regroupe d'une
+/// compagnie a l'autre), et le refus qui la dit, avec les valeurs de son cas.
+#[derive(Clone, Debug)]
+pub struct NonComparee {
+    pub sorte: SorteDeNonComparaison,
+    pub raison: Echec,
+}
+
+/// LA SORTE DE RAISON D'UNE PAIE IMPORTEE QUI NE SE COMPARE PAS, tiree de l'endroit et de la classe du refus, jamais de
+/// sa phrase : le genre de son incident (`import::ecarts`), qui ne porte aucune valeur du cas. Une liste du logiciel,
+/// ecrite par son code (`code`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SorteDeNonComparaison {
+    /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre` : le bareme de son annee, la couche
+    /// de sa convention).
+    RienDeLivre,
+    /// Aucune fiche de spectacle ne porte le spectacle de la paie.
+    SpectacleIntrouvable,
+    /// L'effectif d'une annee manque a la compagnie (`Classe::EffectifAbsent`).
+    EffectifAbsent,
+    /// Le taux AT/MP de l'annee manque a la compagnie (`Classe::TauxAtmpAbsent`).
+    TauxAtmpAbsent,
+    /// Une autre case de la compagnie manque au calcul (sa convention, la fiche du salarie) : il refuse la saisie.
+    CaseDeLaCompagnie,
+    /// Ce que les pieces impriment ne refait pas la saisie (une ligne sans rubrique, des jours travailles non dits, un
+    /// mois paye en partie).
+    PiecesInsuffisantes,
+    /// Une panne (un fichier qui ne se lit pas) : ce n'est pas un manque (`Echec::dit_un_manque`).
+    Panne,
+}
+
+impl SorteDeNonComparaison {
+    /// Son code, tel que le genre de l'incident l'ecrit.
+    pub fn code(self) -> &'static str {
+        match self {
+            SorteDeNonComparaison::RienDeLivre => "rien_de_livre",
+            SorteDeNonComparaison::SpectacleIntrouvable => "spectacle_introuvable",
+            SorteDeNonComparaison::EffectifAbsent => "effectif_absent",
+            SorteDeNonComparaison::TauxAtmpAbsent => "taux_atmp_absent",
+            SorteDeNonComparaison::CaseDeLaCompagnie => "case_de_la_compagnie",
+            SorteDeNonComparaison::PiecesInsuffisantes => "pieces_insuffisantes",
+            SorteDeNonComparaison::Panne => "panne",
+        }
+    }
+
+    /// LA SORTE DU REFUS `raison` d'une saisie refaite, venu de l'endroit `vient` (`Suivi::sorte`, `None` : un refus des
+    /// pieces). Le logiciel qui ne livre rien d'abord, puis une panne ; un manque, sa sorte : celle de sa classe quand elle
+    /// nomme une case de la compagnie, sinon celle de l'endroit qui l'a note.
+    fn du_refus(raison: &Echec, rien_de_livre: bool, vient: Option<SorteDeNonComparaison>) -> SorteDeNonComparaison {
+        if rien_de_livre {
+            return SorteDeNonComparaison::RienDeLivre;
+        }
+        if !raison.dit_un_manque() {
+            return SorteDeNonComparaison::Panne;
+        }
+        match (raison.classe, vient) {
+            (Some(socle::echec::Classe::EffectifAbsent), _) => SorteDeNonComparaison::EffectifAbsent,
+            (Some(socle::echec::Classe::TauxAtmpAbsent), _) => SorteDeNonComparaison::TauxAtmpAbsent,
+            (_, Some(s)) => s,
+            (_, None) => SorteDeNonComparaison::PiecesInsuffisantes,
+        }
+    }
+}
+
+impl std::fmt::Display for SorteDeNonComparaison {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.code())
+    }
+}
+
+impl serde::Serialize for SorteDeNonComparaison {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.code())
+    }
 }
 
 /// Quand le bulletin importe n'imprime pas la premiere a part, elle se compare dans la seconde (le modele de l'arrete
@@ -332,10 +408,11 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
             let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).map(|r| confronter(&r, p, &mut suivi));
-            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, non_rattachees } = suivi;
+            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, sorte, non_rattachees } = suivi;
             if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
                 return None;
             }
+            let ecarts = ecarts.map_err(|raison| NonComparee { sorte: SorteDeNonComparaison::du_refus(&raison, rien_de_livre, sorte), raison });
             Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees })
         })
         .collect()
@@ -371,6 +448,9 @@ struct Suivi {
     a_refaire: bool,
     /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre`).
     rien_de_livre: bool,
+    /// La sorte de raison que l'endroit d'un refus du calcul dit (`a_refaire`, `introuvable`) ; aucune : un refus que
+    /// les pieces font (`SorteDeNonComparaison::du_refus`).
+    sorte: Option<SorteDeNonComparaison>,
     non_rattachees: Vec<String>,
 }
 
@@ -413,8 +493,7 @@ fn refaire<'a>(
     };
     // La convention fait la couche du bareme (regle 8) : sans elle, le calcul n'est pas celui de la compagnie.
     if !ctx.entreprise.idcc.est_dite() {
-        c.a_refaire = true;
-        return Err(refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche"));
+        return Err(a_refaire(c, refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche")));
     }
     let brut = imp.objet().carte();
     let salarie = brut.salarie.as_ref().ok_or_else(|| refus("l'engagement importé ne nomme pas son salarié"))?;
@@ -547,7 +626,7 @@ fn refaire<'a>(
     // Le spectacle que le bulletin nomme ; sans titre, celui dont la fiche porte son numero d'objet.
     let spectacle = match (mensuelle, dit(&p.spectacle)) {
         (true, _) => None,
-        (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
+        (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| introuvable(c, m))?.cle),
         (false, None) => p.numero_objet.as_ref().and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite() == Some(n)).map(|(k, _)| k.clone())),
     };
     // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
@@ -836,9 +915,18 @@ fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
     (leur - notre).rapport(notre).map(|e| e.a_decimales(4))
 }
 
-/// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau.
+/// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau ; une case de la compagnie lui
+/// manque (sa classe la precise quand elle nomme l'effectif ou le taux AT/MP : `SorteDeNonComparaison::du_refus`).
 fn a_refaire(c: &mut Suivi, raison: Echec) -> Echec {
     c.a_refaire = true;
+    c.sorte = Some(SorteDeNonComparaison::CaseDeLaCompagnie);
+    raison
+}
+
+/// Le spectacle de la paie qu'aucune fiche ne porte encore : la paie se comparera de nouveau quand elle existera.
+fn introuvable(c: &mut Suivi, raison: Echec) -> Echec {
+    c.a_refaire = true;
+    c.sorte = Some(SorteDeNonComparaison::SpectacleIntrouvable);
     raison
 }
 

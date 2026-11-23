@@ -1358,6 +1358,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | ce qui diffère dans un écart de la comparaison (la base, un taux, un montant, une cotisation d'un seul côté) | `CeQuiDiffere` | `engagement/src/ecarts.rs` |
+| paie importée qui ne se compare pas (la sorte de sa raison, tirée de l'endroit et de la classe du refus, jamais de sa phrase, et le refus qui la dit ; la sorte fait le genre de son incident, sans aucune valeur du cas) | `NonComparee`, `SorteDeNonComparaison` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
@@ -2934,7 +2935,11 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   l'ouverture de la compagnie pour les paies importées pas encore comparées (`journal/ecarts-import.json`), chaque paie
   importée se compare à ce que le moteur aurait calculé de la même saisie, avec les barèmes et la configuration à la
   date de la période. Rien ne change dans l'engagement importé. Les écarts partent chez l'éditeur comme un incident de
-  fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart), sans rien afficher ni demander :
+  fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart ; son genre ne nomme que la cause,
+  des codes du logiciel : la cotisation, la grandeur et le logiciel d'un écart, la sorte de raison d'une paie non
+  comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; ce qui distingue deux
+  rapports d'une cause est dans leur détail, signé, et le registre `journal/ecarts-import-notes.json` garde les
+  signatures notées), sans rien afficher ni demander :
   ils ne désignent personne (ni nom, NIR, naissance, adresse, ni salaire ou montant d'une paie ; seulement la
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
