@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Essayer PuppetPaie — démo</title>
+<meta name="description" content="Essayer PuppetPaie dans le navigateur, sans rien installer : une démo avec une compagnie fictive.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg?v=20261103" type="image/svg+xml" sizes="any">
+<link rel="icon" href="/favicon.ico?v=20261103" sizes="32x32">
+<style>
+@font-face{font-family:"Libre Franklin";font-style:normal;font-weight:100 900;
+  font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable.woff2") format("woff2")}
+:root{--papier:#FFFFFF;--encre:#141413;--gris:#8A8782;--filet:#E6E5E2;--carmin:#9B1B30;--logo:#2350c4;color-scheme:light}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--papier);color:var(--encre);font:400 1rem/1.5 "Libre Franklin",system-ui,sans-serif}
+#accueil{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:3rem 16px;text-align:center}
+h1{margin:0 0 .4rem;font-weight:500;font-size:clamp(1.6rem,5vw,2.2rem);color:var(--logo)}
+.sous{margin:0 0 2.2rem;color:var(--gris)}
+ol{list-style:none;margin:0 0 2rem;padding:0;width:min(28rem,100%);text-align:left}
+li{padding:.55rem 0;border-top:1px solid var(--filet);color:var(--gris)}
+li:last-child{border-bottom:1px solid var(--filet)}
+li.encours{color:var(--encre)}
+li.fait{color:var(--encre)}
+li.fait::after{content:" — fait";color:var(--gris)}
+.barre{height:4px;margin-top:.45rem;background:var(--filet);border-radius:2px;overflow:hidden}
+.barre span{display:block;height:100%;width:0;background:var(--logo)}
+.barre.sans-total span{width:30%;animation:va 1.2s ease-in-out infinite alternate}
+@keyframes va{from{margin-left:0}to{margin-left:70%}}
+.rien{max-width:28rem;margin:0;color:var(--gris);font-size:.92rem}
+.message{max-width:30rem;margin:0 0 1.2rem}
+.message strong{color:var(--carmin);font-weight:500}
+button,.lien{font:inherit;padding:.55rem 1.1rem;border:1px solid var(--logo);border-radius:4px;background:var(--logo);
+  color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
+.lien.discret{background:none;color:var(--logo)}
+#cadre{position:fixed;inset:0;width:100%;height:100%;border:0;display:block}
+[hidden]{display:none!important}
+#arret{position:fixed;inset:0;background:rgba(255,255,255,.96);display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:2rem 16px;text-align:center}
+</style>
+
+<main id="accueil" aria-live="polite">
+  <h1>PuppetPaie — démo</h1>
+  <p class="sous">Le logiciel, avec une compagnie fictive, dans votre navigateur.</p>
+  <ol id="etapes">
+    <li id="e-telecharger">Le logiciel se télécharge<span id="e-taille"></span>
+      <div class="barre" id="barre"><span></span></div></li>
+    <li id="e-preparer">Il se prépare</li>
+    <li id="e-demarrer">Il s'ouvre</li>
+  </ol>
+  <div id="impossible" hidden>
+    <p class="message" id="impossible-phrase"></p>
+    <p><a class="lien" href="/#t-demo">Télécharger le logiciel</a></p>
+  </div>
+  <p class="rien">Ce que vous tapez dans la démo reste sur cet appareil et n'est enregistré nulle part : tout s'efface
+    quand vous fermez l'onglet.</p>
+</main>
+
+<div id="arret" hidden role="alertdialog" aria-labelledby="arret-phrase">
+  <p class="message" id="arret-phrase"></p>
+  <p><button type="button" id="relancer">Relancer la démo</button></p>
+  <p class="rien">Elle repart de zéro : ce que vous y avez fait est effacé.</p>
+</div>
+
+<script src="demo.js"></script>
+</html>
