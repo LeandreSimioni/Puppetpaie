@@ -56,11 +56,6 @@ function dessinerConfig() {
     dessinerImportation(liste);
     return;
   }
-  if (FICHE_ACTIVE === "coffre") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerCoffre(liste);
-    return;
-  }
   if (FICHE_ACTIVE === "metiers") {
     document.getElementById("config-formulaire").innerHTML = "";
     dessinerMetiers(liste);

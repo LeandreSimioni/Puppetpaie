@@ -235,6 +235,9 @@ const CASES = {
     html: (v, o) => `<input type="file" data-case${o.admis ? ` accept="${echapper(o.admis.join(","))}"` : ""}>`,
     lire: (x) => (x.dataset.contenu == null ? null : x.dataset.contenu),
   },
+  // UN MOT DE PASSE QU'UN HUMAIN TAPE : masqué, jamais pré-rempli, que le navigateur ne propose pas ; le journal des gestes
+  // de la page ne dit que qu'il a été tapé (`js/tuyau.js`). Il part tel qu'il est tapé, blancs compris.
+  mot_de_passe: { html: () => `<input type="password" autocomplete="new-password" data-case>`, lire: (x) => (x.value === "" ? null : x.value) },
 };
 
 /** L'ADRESSE OÙ LA FENÊTRE SERT UN DOCUMENT QUE LA ROUTE NOMME (`adresse`, `routes::ouverture::DocumentMontre`), refaite à
@@ -613,10 +616,13 @@ function dessinerLesAvances() {
 
 /* ------------------------------------------------ les gestes qu'une route rend */
 
-/** Les boutons des gestes, chacun son libellé. */
-function boutonsDesGestes(gestes) {
-  return gestes.map((g, k) => `<button class="lien" data-geste="${k}">${echapper(g.libelle)}</button>`).join("");
+/** Les boutons des gestes, chacun son libellé ; `garde` : ceux-là seulement (chacun garde son rang dans `gestes`). */
+function boutonsDesGestes(gestes, garde = () => true) {
+  return gestes.map((g, k) => (garde(g) ? `<button class="lien" data-geste="${k}">${echapper(g.libelle)}</button>` : "")).join("");
 }
+
+/** Un geste dont la route est avancée (sa fiche : `avance`) se range sous « Avancé ». */
+const gesteAvance = (g) => !!CATALOGUE[g.route].avance;
 
 /** Les champs de la fiche de la route du geste que sa boîte fait saisir (`cases`), dans l'ordre de la fiche. */
 function champsDuGeste(g) {
@@ -635,7 +641,10 @@ function chargeDuGeste(bloc, g) {
   return Object.keys(lu).length ? { ...g.charge, ...lu } : null;
 }
 
-/** Branche les boutons des gestes de `cible` : un geste sans case part avec sa charge ; un autre ouvre sa boîte.
+/** Branche les boutons des gestes de `cible` : un geste qui n'a ni case ni phrase part avec sa charge ; un autre ouvre sa
+ *  boîte (sans case, elle dit ses phrases et part par le bouton du geste : une confirmation). Un geste qui exige le mot
+ *  de passe du logiciel (`demande`, rendue par la route) le fait taper dans la boîte du mot de passe avant de partir ; il
+ *  part dans la charge, et la page ne le garde pas.
  *  `entete` : ce que la boîte dit de quoi il s'agit (`titre`, à la suite du libellé ; `dit`, dessous) ; `pardessus` :
  *  la boîte s'ouvre par-dessus celle qui est ouverte, qui revient quand elle se ferme ; `modifie` : la boîte modifie une
  *  chose qui existe (`casesDesChamps`). `apres` : après la réponse. */
@@ -648,13 +657,17 @@ function brancherLesGestes(cible, gestes, entete, apres) {
 
 async function faireLeGeste(g, entete, apres) {
   const partir = async (charge, boite) => {
+    const motdepasse = g.demande ? await demanderMotDePasse(g.demande) : null;
+    if (g.demande && !motdepasse) return;
+    // Le bouton de la boîte s'éteint le temps de la réponse (lier le Drive attend qu'on accepte chez Google).
+    const rallumer = boite ? occupe(document.getElementById("geste-ok")) : () => {};
     let r;
-    try { r = await api(g.route, charge); } catch (e) { dire(e.message, "erreur"); return; }
+    try { r = await api(g.route, motdepasse ? { ...charge, motdepasse } : charge); } catch (e) { rallumer(); dire(e.message, "erreur"); return; }
     if (boite) fermerBoite();
-    dire(r.phrase);
+    dire(r.phrase, r.couleur);
     await apres();
   };
-  if (!g.cases.length) { await partir(g.charge, false); return; }
+  if (!g.cases.length && !g.phrases.length) { await partir(g.charge, false); return; }
   const rendre = entete.pardessus ? mettreDeCote() : null;
   ouvrirBoite(`
     <h3>${echapper(g.libelle)}${entete.titre ? ` — ${echapper(entete.titre)}` : ""}</h3>
@@ -662,7 +675,7 @@ async function faireLeGeste(g, entete, apres) {
     <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="geste-ok">Enregistrer</button>
+      <button class="primaire" id="geste-ok">${g.cases.length ? "Enregistrer" : echapper(g.libelle)}</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
@@ -715,7 +728,8 @@ async function dessinerLEcranRendu(cible, f) {
  *  - Ce qu'il dit en tête : ses encarts.
  *  - Ses rangs : chacun ce qui s'y regarde (`montre`, le document que la route nomme : à gauche, la place gardée sur
  *    tous les rangs dès qu'un rang en a un), son titre, ce qu'il dit, sa pastille et son état, et ses gestes
- *    (`brancherLesGestes`, la boîte titrée du titre du rang) ; après un geste, `relire`.
+ *    (`brancherLesGestes`, la boîte titrée du titre du rang ; ceux dont la route est avancée, sous « Avancé ») ; après
+ *    un geste, `relire`.
  *  - Ses cases, dessinées comme celles d'une fiche (`casesDeLaFiche`, l'historique de ses cases datées compris), et le
  *    bouton de son geste (`enregistrer` : sa route, sa charge, le champ de la charge où vont les cases, `dans`, et son
  *    libellé). Enregistrer envoie ce que les cases disent et pose l'écran que la route rend en réponse ; un refus se
@@ -733,7 +747,8 @@ function poserLEcranRendu(cible, r, relire) {
           ${g.dit.map((l) => `<span class="discret">${echapper(l)}</span>`).join("")}
           <div>${pastilleDeLEtat(g.pastille)}${g.etat ? ` <span class="discret">${echapper(g.etat)}</span>` : ""}</div>
         </div>
-        <div class="rang-actions">${boutonsDesGestes(g.gestes)}</div>
+        <div class="rang-actions">${boutonsDesGestes(g.gestes, (x) => !gesteAvance(x))}${g.gestes.some(gesteAvance)
+          ? `<details class="e-avance"><summary>Avancé</summary>${boutonsDesGestes(g.gestes, gesteAvance)}</details>` : ""}</div>
       </div>`).join("")}</div>`;
   const g = r.enregistrer;
   const cases = !r.cases ? "" : `<div data-ecran-cases>${casesDeLaFiche({ cases: r.cases, historique: r.historique || [] })}</div>

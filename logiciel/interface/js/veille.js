@@ -38,11 +38,8 @@ async function rafraichirApresVeille(v) {
    l'endroit où le faire. Jamais une commande de terminal : une fenêtre
    n'en a pas. La mise à jour n'est pas ici : l'indicateur la dit
    (js/mise-a-jour.js). */
-/** Aller aux mots de passe, d'où qu'on soit -- et y ouvrir la ligne de ce
- *  qui manque, le curseur dans la case : il ne reste qu'à taper. */
-let OUVRIR_SERVICE = null;
-function allerAuxMotsDePasse(service) {
-  OUVRIR_SERVICE = service || null;
+/** Aller aux mots de passe, d'où qu'on soit. */
+function allerAuxMotsDePasse() {
   document.querySelector('.onglets button[data-vue="configuration"]').click();
   document.querySelector('.sous-onglets button[data-fiche="coffre"]').click();
 }
@@ -100,7 +97,7 @@ function dessinerVeille(v) {
   //    suivants se déplient.
   // Ce qui manque est celui du coffre AU MOMENT où la fenêtre répond (`dit.a_poser`), pas celui du dernier relevé.
   const afaire = k.a_poser.map((a) =>
-    `${echapper(a.phrase)} <button class="lien" data-aller="${echapper(a.service)}">${echapper(a.geste)}</button>`);
+    `${echapper(a.phrase)} <button class="lien" data-aller>${echapper(a.geste)}</button>`);
   if (d) [...d.manquants, ...d.incidents].forEach((x) => afaire.push(echapper(x)));
   if (v.erreur) afaire.push(echapper(v.erreur));
   if (afaire.length) {
@@ -118,7 +115,7 @@ function dessinerVeille(v) {
     b.onclick = () => document.querySelector('.onglets button[data-vue="historique"]').click();
   });
   texte.querySelectorAll("[data-aller]").forEach((b) => {
-    b.onclick = () => allerAuxMotsDePasse(b.dataset.aller);
+    b.onclick = () => allerAuxMotsDePasse();
   });
   const bh = texte.querySelector("#fictive-horloge");
   if (bh) bh.onclick = () => ouvrirBoite(`
