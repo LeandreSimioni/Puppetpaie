@@ -544,11 +544,13 @@ fn refaire<'a>(
         };
         saisies.push(donnee.ranger(&lue)?);
     }
-    // Le spectacle que le bulletin nomme ; sans titre, celui dont la fiche porte son numero d'objet.
-    let spectacle = match (mensuelle, dit(&p.spectacle)) {
-        (true, _) => None,
-        (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
-        (false, None) => p.numero_objet.as_ref().and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite() == Some(n)).map(|(k, _)| k.clone())),
+    // LE SPECTACLE DE LA PAIE : celui dont la fiche porte son numero d'objet (`Importe::spectacle_de`), que l'import a cree
+    // depuis ce numero avec un titre seulement propose ; le titre que le bulletin imprime, pour une paie sans numero.
+    let spectacle = match (mensuelle, imp.numero_objet_de(p), dit(&p.spectacle)) {
+        (true, _, _) => None,
+        (false, Some(_), _) => imp.spectacle_de(&ctx, p),
+        (false, None, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
+        (false, None, None) => None,
     };
     // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
     // (`Importe::contrat_de_la_paie` : sa fin, dite ou declaree, n'est jamais celle du mois que paie un bulletin), son

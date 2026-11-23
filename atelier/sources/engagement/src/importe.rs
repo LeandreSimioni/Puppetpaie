@@ -651,6 +651,19 @@ impl Importe {
         &self.pieces().paies
     }
 
+    /// LE NUMERO D'OBJET DE LA PAIE `p` : celui que sa piece imprime, ou celui que son contrat atteste. C'est lui qui
+    /// designe le spectacle (regle 6) ; le titre n'en est que le nom.
+    pub fn numero_objet_de<'a>(&'a self, p: &'a PaieVersee) -> Option<&'a NumeroObjetSpectacle> {
+        p.numero_objet.as_ref().or_else(|| self.contrat().and_then(|c| c.numero_objet.as_ref()))
+    }
+
+    /// LE SPECTACLE DE LA PAIE `p` : celui dont la fiche porte son numero d'objet (`numero_objet_de`). L'import cree la
+    /// fiche depuis ce numero, et le titre qu'il a lu n'y est que propose : c'est le numero qui la retrouve.
+    pub fn spectacle_de(&self, ctx: &Contexte, p: &PaieVersee) -> Option<droit::contexte::IdSpectacle> {
+        let objet = self.numero_objet_de(p)?;
+        ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|n| n.meme(objet))).map(|(k, _)| k.clone())
+    }
+
     /// LE CONTRAT D'UN PERMANENT S'ATTESTE MOIS PAR MOIS (`permanent`), comme ses bulletins l'ont atteste, et celui que
     /// ses seules DSN declarent : chaque mois verse, avec ses dates dans le contrat (celui de l'engagement :
     /// `Carte::contrat`) et la paie de ce mois. `None` : un mois verse que les dates du contrat ne touchent pas -- il se
@@ -861,15 +874,12 @@ impl Importe {
     /// Ce que les pieces ne disent pas est vide.
     pub fn paie(&self, ctx: &Contexte, mois: Mois) -> R<PaieImportee> {
         let p = self.paies().get(&mois).ok_or_else(|| socle::refus!("{} (rang {}) : aucune paie importee en {}", self.objet.fichier, self.objet.rang, mois))?;
-        let contrat = self.contrat();
-
         let nature = self.nature_rangee()?;
         let nat = nature.proprietes()?;
         let ctx = ctx.du_mois(mois)?;
         let cle = self.carte().salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
         let sal = crate::calcul::convention_de_l_employeur(&ctx, crate::fiche_du_salarie(&ctx, cle)?);
-        let objet = p.numero_objet.as_ref().or_else(|| contrat.and_then(|c| c.numero_objet.as_ref()));
-        let spectacle = objet.and_then(|o| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|n| n.meme(o))).map(|(k, _)| k.clone()));
+        let spectacle = self.spectacle_de(&ctx, p);
         let spec = match &spectacle {
             Some(k) => Some(crate::fiche_du_spectacle(&ctx, k)?),
             None => None,
