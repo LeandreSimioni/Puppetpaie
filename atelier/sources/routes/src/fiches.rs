@@ -39,7 +39,7 @@ use socle::texte::{capitaliser, strip};
 mod ecriture;
 mod rendue;
 pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, HistoireDUneCase, ListesDuSalarie, PartieDeLaFiche};
-pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, Forcer, SorteDeFiche};
+pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, poser_au, preparer, ChangementDit, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Legende = dit("Fiche", "la fiche ; seuls un salarié et un spectacle s'archivent");
 const CLE_FICHE: Legende = dit("Clé", "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise");
@@ -780,13 +780,58 @@ pub(crate) fn aujourd_hui() -> Jour {
 // --------------------------------------------------------------- activer-fiche
 
 /// Seul `actif` change, a partir d'aujourd'hui (archiver, c'est ne plus proposer a partir de ce jour ; ce qui precede
-/// reste ce qu'il etait), par l'ecrivain de la fiche (`poser`).
+/// reste ce qu'il etait), par l'ecrivain de la fiche (`poser`). Un spectacle s'archive date du jour meme quand sa case
+/// etait vide (`premiere_datee`) : le jour ou il se reactive est celui ou `actif` passe a vrai, que lit
+/// `ranger_les_spectacles_endormis`. Reactiver un spectacle qui n'est pas archive ne change rien.
 pub(crate) fn activer_fiche(ctx: &Contexte, c: &ChargeActiver) -> R<()> {
     let jour = Some(ctx.aujourdhui);
     match c {
         ChargeActiver::Salarie { cle, actif } => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::Actif(Some(*actif))], jour, None),
-        ChargeActiver::Spectacle { cle, actif } => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::Actif(Some(*actif))], jour, None),
+        ChargeActiver::Spectacle { cle, actif: true } if ctx.spectacles.get(cle).is_some_and(|s| !s.archivee()) => Ok(()),
+        ChargeActiver::Spectacle { cle, actif } => poser_au::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::Actif(Some(*actif))], true, jour, None, &ctx.lue_au),
     }
+}
+
+/// Le temps sans engagement apres lequel un spectacle se range dans les archives.
+const SANS_ENGAGEMENT: socle::date::Duree<socle::date::EnMois> = socle::date::Duree::mois(24);
+
+/// LES SPECTACLES QUE LE TEMPS RANGE (Léandre, ticket #621 : « si jamais on n'a pas fait un spectacle dans les 12 mois,
+/// ils s'archivent automatiquement. Mais si on continue de les jouer, ils continuent d'exister et on peut toujours les
+/// désarchiver. On peut dire 24 mois. » ; réactivé, les 24 mois repartent du jour de la réactivation) : chaque spectacle
+/// actif dont le dernier jour engage (`engagement::stock::derniers_jours_engages`) et le jour ou il a ete reactive, s'il
+/// l'a ete, sont tous deux plus de 24 mois avant aujourd'hui, s'archive comme a la main (`activer_fiche`). Un spectacle
+/// qu'aucun engagement n'engage, ou qu'un contrat sans fin tient en cours, reste. Le geste `ouverture` est le seul qui
+/// l'appelle. Rend le nom de chaque spectacle range.
+pub(crate) fn ranger_les_spectacles_endormis(ctx: &Contexte) -> R<Vec<String>> {
+    use engagement::stock::DernierJourEngage;
+    let jour = ctx.aujourdhui;
+    let du_jour = ctx.au(&jour)?;
+    let engages = engagement::stock::derniers_jours_engages(&ctx.racine)?;
+    let mut ranges = Vec::new();
+    for (cle, s) in du_jour.spectacles.iter().filter(|(_, s)| !s.archivee()) {
+        let Some(DernierJourEngage::Le(fin)) = engages.get(cle) else { continue };
+        let depuis = match reactive_le(&du_jour, cle, &jour) {
+            Some(r) => r.max(*fin),
+            None => *fin,
+        };
+        if jour <= depuis.apres(SANS_ENGAGEMENT)? {
+            continue;
+        }
+        activer_fiche(&du_jour, &ChargeActiver::Spectacle { cle: cle.clone(), actif: false })?;
+        ranges.push(match s.titre.portee().filter(|t| !t.trim().is_empty()) {
+            Some(t) => t.to_string(),
+            None => cle.to_string(),
+        });
+    }
+    Ok(ranges)
+}
+
+/// Le jour ou le spectacle `cle` a ete reactive : celui ou sa case `actif`, telle qu'elle vaut a `jour`, est passee a
+/// vrai ; aucun s'il ne l'a jamais ete.
+fn reactive_le(ctx: &Contexte, cle: &IdSpectacle, jour: &Jour) -> Option<Jour> {
+    let brute = ctx.spectacle_brut(cle.as_str())?;
+    let depuis = brute.depuis(droit::fiche::CaseSpectacle::Actif.into()).into_iter().filter(|d| d.is_none_or(|d| d <= *jour)).last()??;
+    (brute.au(&depuis).actif == Some(true)).then_some(depuis)
 }
 
 fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {

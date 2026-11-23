@@ -777,7 +777,7 @@ pub(crate) struct ConfigurationDite {
     configuration: ConfigurationDeLaPage,
 }
 
-/// La route `configuration` : celle aussi que rendent les routes qui l'ont changee (`rappels::revue`).
+/// La route `configuration`.
 pub(crate) fn configuration_dite(ctx: &Contexte) -> R<ConfigurationDite> {
     let configuration = configuration(ctx)?;
     Ok(ConfigurationDite { phrase: dire_la_configuration(&configuration), configuration })

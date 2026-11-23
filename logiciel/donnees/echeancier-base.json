@@ -15,22 +15,6 @@
       "fait_par": "exercice_clos"
     },
     {
-      "cle": "revue-spectacles",
-      "mois": [1, 2, 3],
-      "titre": "Les spectacles de {annee}",
-      "detail": "Dire lesquels se jouent encore en {annee} ; les autres s'archivent et se réactivent d'un clic. Le numéro d'objet d'un spectacle ne change pas d'une année à l'autre. Configuration › Spectacles.",
-      "source": "Le numéro d'objet est attribué par spectacle ou production, sans durée de validité : France Travail (questions-réponses sur le numéro d'objet) ; net-entreprises, fiche 3344.",
-      "fait_par": "coche"
-    },
-    {
-      "cle": "at-mp",
-      "mois": [1, 2],
-      "titre": "Relever le taux AT/MP {annee}",
-      "detail": "Le taux de l'année est notifié sur le compte AT/MP de net-entreprises (et revient en retour de nature 34). À saisir dans Configuration › Entreprise (Taux accident du travail).",
-      "source": "Notification sur le compte AT/MP de net-entreprises, en janvier, et renvoyée en retour DSN de nature 34.",
-      "fait_par": "coche"
-    },
-    {
       "cle": "fcap-svp",
       "idcc": ["3090"],
       "mois": [1, 2, 3],
