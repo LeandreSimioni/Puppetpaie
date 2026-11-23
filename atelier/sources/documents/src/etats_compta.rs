@@ -1617,7 +1617,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// reste a payer apres franchise, decote et abattement. Se calcule sur une ANNEE (ses seuils sont annuels).
 pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let Some(annee) = d.annee else {
-        return Err(socle::echec::cle("La taxe sur les salaires se calcule sur une ANNÉE (ses seuils sont annuels) : choisir l'année.", "annee"));
+        return Err(socle::echec::cle("La taxe sur les salaires se calcule sur une ANNÉE (ses seuils sont annuels) : choisir l'année.", "periode"));
     };
     // Qui doit la taxe, et sur quelle part : le meme regime que la DSN de decembre (`assujettissement`, CGI art. 231, 1).
     // NE PAS SAVOIR N'EST PAS UNE ERREUR : l'etat le dit, et dit quoi repondre.

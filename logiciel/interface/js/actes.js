@@ -503,7 +503,7 @@ async function boiteEnvoi(mois) {
         if (!g.demande) await ouvrirEtDire(r.chemin, r.phrase);
         else {
           dire(r.phrase, "envoye");
-          afficherEnvoi("Documents aux salariés", mois, r.phrase, r.avertissements);
+          afficherEnvoi(r, mois);
           fenetreCourrielsFictifs("documents", repere);
         }
         await rafraichirActions();
@@ -583,7 +583,7 @@ async function boiteSignature(mois, seulement) {
         if (!g.demande) await ouvrirEtDire(r.chemin, r.phrase);
         else {
           dire(r.phrase, "envoye");
-          afficherEnvoi("Contrats à signer", mois, r.phrase, r.avertissements);
+          afficherEnvoi(r, mois);
           if (enFictive()) fenetreCourrielsFictifs("signature", repere);
         }
         await rafraichirActions();
@@ -753,7 +753,7 @@ async function boiteAvenant(mois, salarie, debut, numero) {
       const r = await api("demander-signature", { mois, avenants: [{ salarie, debut, numero, mois, effet }], motdepasse: mdp });
       fermerBoite();
       dire(r.phrase, "envoye");
-      afficherEnvoi("Avenant à signer", a.mois, r.phrase, r.avertissements);
+      afficherEnvoi(r, a.mois);
       await rafraichirActions();
     } catch (e) {
       rendre();
@@ -770,7 +770,7 @@ async function boiteAvenant(mois, salarie, debut, numero) {
                                                   motdepasse: mdp, remplace: true });
       fermerBoite();
       dire(r.phrase, "envoye");
-      afficherEnvoi("Contrat à signer", a.mois, r.phrase, r.avertissements);
+      afficherEnvoi(r, a.mois);
       await rafraichirActions();
     } catch (e) {
       rendre();
@@ -779,13 +779,14 @@ async function boiteAvenant(mois, salarie, debut, numero) {
   };
 }
 
-function afficherEnvoi(titre, mois, phrase, details) {
+/** CE QUI EST PARTI, tel que la route d'envoi le rend (`r` : son titre, sa phrase, ses avertissements), sous le mois. */
+function afficherEnvoi(r, mois) {
   document.getElementById("resultat").innerHTML = `
     <div class="carte" style="margin-top:20px">
-      <h2>${echapper(titre)} — ${echapper(moisEnClair(mois))}</h2>
-      <div class="encart bien">${echapper(phrase)}</div>
-      ${details.length
-        ? `<p class="note">${echapper(details.join(" · "))}</p>` : ""}
+      <h2>${echapper(r.titre)} — ${echapper(moisEnClair(mois))}</h2>
+      <div class="encart bien">${echapper(r.phrase)}</div>
+      ${r.avertissements.length
+        ? `<p class="note">${echapper(r.avertissements.join(" · "))}</p>` : ""}
     </div>`;
 }
 

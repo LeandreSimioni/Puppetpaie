@@ -16,7 +16,7 @@ use compagnie::INTERFACE;
 use crate::SansCharge;
 use socle::mois::{Annee, Mois};
 use crate::catalogue::{Acte, Affiche, Forme, Fiche, Refus, FORME, MANQUE, OPERATION};
-use crate::declaration::{charge, cle, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::declaration::{charge, cle, dit, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::imprevus::GesteDeRoute;
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
@@ -34,7 +34,8 @@ use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
 const ANNEE: Legende = dit("Année", "l'année, AAAA");
-const TOUTES_LES_ANNEES: Legende = dit("Toutes les années", "vrai : toutes les années, à la place du mois ou de l'année").avancee();
+/// La periode d'un etat, que `exports-periodes` offre pour chaque etat (`catalogue::Forme::Periode`).
+const PERIODE_D_EXPORT: Legende = dit("Quand", "un mois, une année, ou toutes les années : une de celles que exports-periodes offre pour l'état");
 /// La periode d'un dossier, que `dossier-formes` offre (`catalogue::Forme::Periode`).
 pub(crate) const PERIODE: Legende = dit("Quand", "un mois, une année, ou toutes les années : une de celles que dossier-formes offre");
 const LOGICIEL: Legende = dit("Logiciel", "le logiciel du comptable ; absent : aucun");
@@ -81,7 +82,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::Exporter,
         geste: "Exporter un état (livre de paie, charges…) en tableau ou en fichier.",
         charge: &ChargeExporter::CHARGE,
-        exemple: r#"{"etat":"livre-de-paie","mois":"2026-11","regroupement":"salarie","format":"csv","apercu":true}"#,
+        exemple: r#"{"etat":"livre-de-paie","periode":"2026-11","regroupement":"salarie","format":"csv","apercu":true}"#,
         rend: "le tableau, ou le fichier écrit",
         refus: &[OPERATION, MANQUE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
@@ -664,16 +665,14 @@ fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
 }
 
 charge! {
-    /// La charge de `exporter` : l'etat (le livre de paie sans lui), la periode (le mois, l'annee, ou toutes les annees),
+    /// La charge de `exporter` : l'etat (le livre de paie sans lui), la periode (`PeriodeDemandee` : un mois, une annee, ou toutes les annees),
     /// le regroupement, le format, les coordonnees des salaries, l'apercu (rien n'est ecrit), et pour les ecritures
     /// comptables le logiciel du comptable et l'analytique. Le regroupement et le format se disent quand l'etat les
     /// demande (ses `questions`, ses `formats` : les tables des exports) ; ce qui n'est pas dit est absent.
     #[derive(Debug)]
     pub(crate) struct ChargeExporter {
         etat: EtatDExport = dit("État", "l'état ; exports-periodes dit ceux que la compagnie peut exporter"),
-        mois: Option<Mois> = legendes::MOIS,
-        annee: Option<Annee> = ANNEE,
-        toutes_les_annees: Option<bool> = TOUTES_LES_ANNEES,
+        periode: Option<socle::mois::PeriodeDemandee> = PERIODE_D_EXPORT,
         regroupement: Option<RegroupementDEtat> = dit("Regroupement", "le regroupement des lignes, parmi ceux que l'état propose (exports-periodes)").avancee(),
         format: Option<FormatDExport> = dit("Format", "le format du fichier, parmi ceux que l'état propose (exports-periodes)").avancee(),
         coordonnees: Option<bool> = dit("Coordonnées", "vrai : les coordonnées des salariés, quand l'état les propose").avancee(),
@@ -902,10 +901,15 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     // les cotisations.
     let regroupement = if demande("regroupement") { Some(choisi("regroupement", c.regroupement, &forme.regroupements)?) } else { None };
     let format = if forme.formats.is_empty() { None } else { Some(choisi("format", c.format, &forme.formats)?) };
+    // Une periode non dite n'est ni un mois, ni une annee, ni toutes : l'etat qui en a besoin la demande.
+    let (mois, annee, toutes) = match c.periode {
+        Some(p) => p.en_trois(),
+        None => (None, None, false),
+    };
     let d = Demande {
-        mois: c.mois,
-        annee: c.annee,
-        toutes: c.toutes_les_annees == Some(true),
+        mois,
+        annee,
+        toutes,
         regroupement,
         format,
         coordonnees: demande("coordonnees") && c.coordonnees == Some(true),
