@@ -564,13 +564,24 @@ pub(crate) enum Cloture {
 
 charge! {
     /// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la
-    /// ligne de commande ecrit `cli`, la page rien (`interface`).
-    #[derive(Debug)]
+    /// ligne de commande ecrit `cli`, la page rien (`interface`). L'Historique la rend dans le geste qui rouvre une annee
+    /// close (`ChargeCloture::rouvrir`).
+    #[derive(Debug, Serialize)]
     pub(crate) struct ChargeCloture {
         annee: Annee = ANNEE,
+        #[serde(skip_serializing_if = "Option::is_none")]
         forcer: Option<bool> = dit("Clore malgré tout", "vrai : clore malgré un mois sans DSN réelle acceptée").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
         rouvrir: Option<bool> = dit("Rouvrir l'année", "vrai : rouvrir l'année close (son archive reste)").avancee(),
+        #[serde(skip_serializing_if = "Option::is_none")]
         qui: Option<socle::forme::TexteDit> = dit("Qui", "qui clôt : la ligne de commande écrit cli ; la page ne le dit pas (interface)").avancee(),
+    }
+}
+
+impl ChargeCloture {
+    /// La charge qui rouvre l'annee `annee`.
+    pub(crate) fn rouvrir(annee: Annee) -> ChargeCloture {
+        ChargeCloture { annee, forcer: None, rouvrir: Some(true), qui: None }
     }
 }
 

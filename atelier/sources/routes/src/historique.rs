@@ -6,11 +6,13 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
-use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::declaration::{charge, dit, legendes, Legende};
+use crate::etapes::{action, Action, ChargeAnnee};
 use crate::gestes::exercice_ecrit::{ChargeCloture, ChargeExportCompta};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
+use crate::imprevus::GesteDeRoute;
 use crate::ouverture::mois_connus;
 use crate::SansCharge;
 use droit::contexte::Contexte;
@@ -30,8 +32,12 @@ const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
-    lecture(Route::Exercices, "Lister les années : leurs DSN, leur clôture, leur export comptable.", "annees (chacune : DSN, clôture, export)"),
-    lecture(Route::Regularisations, "Lister les corrections à porter et portées, par mois d'origine.", "les corrections, mois par mois"),
+    lecture(
+        Route::Exercices,
+        "Lister les années : leurs DSN, leur clôture, leur export comptable.",
+        "exercices (chacune : DSN, clôture, export ; actions : l'export compta et, ouverte, la clôture, comme une action des étapes ; gestes : rouvrir une année close) et exercices_dit (aucune année), dossier des archives et dossier_dit (son bouton)",
+    ),
+    lecture(Route::Regularisations, "Lister les corrections à porter et portées, par mois d'origine.", "titre (s'il y a des corrections), les corrections, mois par mois (chacun son titre)"),
     Fiche {
         route: Route::Cloture,
         geste: "Clore une année passée : archiver ses engagements, documents et déclarations.",
@@ -79,7 +85,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Reprendre le journal des envois d'après les retours relevés.",
         charge: &ChargeReprise::CHARGE,
         exemple: r#"{}"#,
-        rend: "ce qui se reprend, ligne par ligne, et ses pastilles",
+        rend: "ce qui se reprend, ligne par ligne, et ses pastilles ; ecran (ce que l'Historique en dit ; deplie : un dépôt réel accepté s'y trouve) ; gestes (reprendre ces dépôts : la même route, qui écrit)",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -140,14 +146,17 @@ impl Dite for RepriseDite {
 
 charge! {
     /// La charge de `journal-reprise` : `ecrire` vrai ecrit ce qui se reprend ; absent ou faux, la route le dit seulement.
-    #[derive(Debug)]
+    /// La route la rend dans son geste, qui ecrit.
+    #[derive(Debug, Serialize)]
     struct ChargeReprise {
+        #[serde(skip_serializing_if = "Option::is_none")]
         ecrire: Option<bool> = dit("Écrire ce qui se reprend", "vrai : écrire ce qui se reprend ; sinon, le dire seulement"),
     }
 }
 
 /// Ce que rend `journal-reprise` : sa phrase, ce que la reprise a trouve, ajoute (ou ajouterait, chaque depot dit pour
-/// l'ecran), deja connu, sans mois, sans mode (mis de cote, nommes), si elle a ecrit, et ce que l'Historique en dit (`ecran`).
+/// l'ecran), deja connu, sans mois, sans mode (mis de cote, nommes), si elle a ecrit, ce que l'Historique en dit (`ecran`)
+/// et le geste qui ecrit ce qui se reprend (`gestes`, tant qu'il reste a reprendre et que rien n'est ecrit).
 #[derive(Debug, Serialize)]
 struct RepriseDite {
     phrase: Phrase,
@@ -159,7 +168,10 @@ struct RepriseDite {
     ecrit: bool,
     rattaches: usize,
     ecran: EcranDeLaReprise,
+    gestes: Vec<GesteDeRoute<ChargeReprise, SansCharge, SansCharge>>,
 }
+
+const REPRENDRE_CES_DEPOTS: Affiche = Affiche::new("Reprendre ces dépôts");
 
 /// Un depot que la reprise remet au journal, tel que l'ecran le dit : quand et pour quel mois (`dit`), qui l'a depose et
 /// son flux (`origine_dit`), sa pastille.
@@ -173,7 +185,8 @@ struct AjoutDit {
 }
 
 /// Ce que l'Historique dit de la reprise : le resume replie, son titre, l'explication, les depots reels, le nom du
-/// logiciel lu, le bouton.
+/// logiciel lu ; `deplie` : elle se montre depliee quand un depot reel accepte s'y trouve (des essais retrouves sont un
+/// historique a ranger, pas une urgence).
 #[derive(Debug, Serialize)]
 struct EcranDeLaReprise {
     resume: String,
@@ -181,7 +194,7 @@ struct EcranDeLaReprise {
     explication: &'static str,
     reels: Option<String>,
     logiciel: &'static str,
-    bouton: String,
+    deplie: bool,
 }
 
 /// `journal-reprise` : la reprise du journal d'apres les retours (`envois::reprise_journal::reprise`), ses incidents
@@ -201,7 +214,13 @@ fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
         explication: "Le journal des dépôts est né le 11/09/2026 ; ce qui est parti avant ne s'y est pas écrit. Les accusés d'enregistrement reçus des organismes, eux, s'en souviennent. Les reprendre ne dépose rien et n'envoie rien : ça remet au journal ce qui a déjà eu lieu.",
         reels: (reels > 0).then(|| format!("{} sont des dépôts réels acceptés.", reels)),
         logiciel: "Le nom du logiciel n'est pas une annotation : il est lu dans le certificat de conformité. C'est lui qui distingue le dépôt d'un autre logiciel d'un dépôt PuppetPaie.",
-        bouton: format!("Reprendre ces {} dépôt(s)", n),
+        deplie: reels > 0,
+    };
+    // Ce qui reste a reprendre s'ecrit par la meme route, `ecrire` vrai.
+    let gestes = if n > 0 && !r.ecrit {
+        vec![GesteDeRoute::avec_cases(Route::JournalReprise, ChargeReprise { ecrire: Some(true) }, REPRENDRE_CES_DEPOTS, Vec::new(), SansCharge {}, SansCharge {})]
+    } else {
+        Vec::new()
     };
     // Un depot mis de cote se dit : son bilan ne dit pas s'il etait un essai ou un depot reel.
     let de_cote = match r.sans_mode.len() {
@@ -216,7 +235,7 @@ fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
         de_cote
     );
     let ajoutes = r.ajoutes.into_iter().map(ajout_dit).collect();
-    Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, sans_mode: r.sans_mode, ecrit: r.ecrit, rattaches: r.rattaches, ecran })
+    Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, sans_mode: r.sans_mode, ecrit: r.ecrit, rattaches: r.rattaches, ecran, gestes })
 }
 
 /// Un depot que la reprise remet, dit : quand il a ete recu et son mois, qui l'a depose ; sa pastille : un depot reel
@@ -244,17 +263,25 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
     AjoutDit { depot: d, dit, origine_dit, pastille }
 }
 
-/// Ce que rend `regularisations` : sa phrase, et par mois d'origine les corrections que la page montre.
+/// Ce que rend `regularisations` : sa phrase, le titre de l'Historique sur elles (`titre`, s'il y en a : les mois qui se
+/// corrigent et ceux en retard se disent sur leur ligne, et rien ne se dit ici quand il n'y a aucune correction), et par
+/// mois d'origine les corrections que la page montre.
 #[derive(Debug, Serialize)]
 struct Regularisations {
     phrase: Phrase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    titre: Option<&'static str>,
     corrections: Vec<CorrectionsDuMois>,
 }
 
-/// Les corrections d'un mois d'origine.
+/// Le titre des corrections dans l'Historique.
+const LES_CORRECTIONS: &str = "Les corrections";
+
+/// Les corrections d'un mois d'origine, sous son nom en clair (`titre`).
 #[derive(Debug, Serialize)]
 struct CorrectionsDuMois {
     mois: socle::mois::Mois,
+    titre: String,
     corrections: Vec<CorrectionDite>,
 }
 
@@ -277,10 +304,10 @@ fn regularisations(ctx: &Contexte) -> R<Regularisations> {
         let mut corrections: Vec<CorrectionDite> = portees.into_iter().map(|c| dite(c, "portée", true)).collect();
         corrections.extend(a_porter.into_iter().map(|c| dite(c, "à porter", false)));
         if !corrections.is_empty() {
-            out.push(CorrectionsDuMois { mois, corrections });
+            out.push(CorrectionsDuMois { mois, titre: mois.libelle(socle::mois::Graphie::Accentuee), corrections });
         }
     }
-    Ok(Regularisations { phrase: socle::phrase!("Mois qui portent des corrections : {}.", out.len()), corrections: out })
+    Ok(Regularisations { phrase: socle::phrase!("Mois qui portent des corrections : {}.", out.len()), titre: (!out.is_empty()).then_some(LES_CORRECTIONS), corrections: out })
 }
 
 /// Ce que rend `cloture` : sa phrase, et l'exercice clos ou rouvert.
@@ -305,17 +332,23 @@ fn cloture(ctx: &Contexte, c: crate::gestes::exercice_ecrit::ChargeCloture) -> R
     Ok(ClotureDite { phrase, cloture })
 }
 
-/// Ce que rend `exercices` : sa phrase, une ligne par annee (`phrases`), chaque annee, et le dossier des archives.
+/// Ce que rend `exercices` : sa phrase, une ligne par annee (`phrases`), chaque annee (`exercices_dit` quand il n'y en a
+/// aucune), et le dossier des archives, avec ce que dit le bouton qui l'ouvre (`dossier_dit`).
 #[derive(Debug, serde::Serialize)]
 struct ExercicesDits {
     phrase: Phrase,
     phrases: Vec<Phrase>,
     exercices: Vec<ExerciceDit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exercices_dit: Option<&'static str>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: std::path::PathBuf,
+    dossier_dit: &'static str,
 }
 
-/// Une annee connue du dossier : ses mois, ses DSN acceptees, sa cloture, son export compta, sa pastille, et sa ligne.
+/// Une annee connue du dossier : ses mois, ses DSN acceptees, sa cloture, son export compta, sa pastille, sa ligne, et
+/// ce qu'on peut faire d'elle : la boite de l'export compta et, ouverte, celle de la cloture (`actions`, comme les
+/// actions des etapes et des rappels) ; close, la rouvrir (`gestes` : la route appelee telle quelle).
 #[derive(Debug, serde::Serialize)]
 struct ExerciceDit {
     infos_dit: String,
@@ -325,7 +358,17 @@ struct ExerciceDit {
     clos: Option<crate::gestes::exercice_ecrit::ExerciceNote>,
     pastille: socle::ecran::Pastille,
     export: Option<ExportDeLAnnee>,
+    actions: Vec<Action>,
+    gestes: Vec<GesteDeRoute<ChargeCloture, SansCharge, SansCharge>>,
 }
+
+/// Ce que l'Historique dit quand aucune annee n'est connue.
+const AUCUNE_ANNEE: &str = "Aucune année";
+
+/// Le bouton qui ouvre le dossier des archives des exercices.
+const DOSSIER_DES_ARCHIVES: &str = "Dossier des archives";
+
+const ROUVRIR: Affiche = Affiche::new("Rouvrir");
 
 /// L'export compta d'une annee : son fichier, et quand il a ete ecrit.
 #[derive(Debug, serde::Serialize)]
@@ -341,8 +384,10 @@ fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
     Ok(ExercicesDits {
         phrase: socle::phrase!("Exercices : {}.", exercices.len()),
         phrases: exercices.iter().map(|e| socle::phrase!("{} : {}", e.annee, e.pastille.mots)).collect(),
+        exercices_dit: exercices.is_empty().then_some(AUCUNE_ANNEE),
         exercices,
         dossier: documents::DossierHorsDuMois::Exercices.sous(&ctx.racine),
+        dossier_dit: DOSSIER_DES_ARCHIVES,
     })
 }
 
@@ -378,6 +423,13 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
             None => " · pas d'export compta".to_string(),
         };
         let infos_dit = format!("{} mois · {}{}{}", mois.len(), socle::ecran::compte(acceptees.len(), "DSN acceptée", "DSN acceptées"), clos_dit, export_dit);
+        // Toute annee s'exporte ; une annee ouverte se clot (sa boite fait choisir de clore malgre tout), une close se rouvre.
+        let mut actions = vec![action(Route::ExportCompta, ChargeAnnee { annee: a }, None, "Export compta".into())];
+        let mut gestes = Vec::new();
+        match note {
+            Some(_) => gestes.push(GesteDeRoute::avec_cases(Route::Cloture, ChargeCloture::rouvrir(a), ROUVRIR, Vec::new(), SansCharge {}, SansCharge {})),
+            None => actions.push(action(Route::Cloture, ChargeAnnee { annee: a }, None, "Clôturer…".into())),
+        }
         out.push(ExerciceDit {
             infos_dit,
             annee: a,
@@ -387,6 +439,8 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
             // Sa pastille : close, faite ; ouverte, une information (une annee se clot quand la compagnie le veut).
             pastille: if note.is_some() { socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "clos") } else { socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Information, "ouvert") },
             export,
+            actions,
+            gestes,
         });
     }
     Ok(out)
