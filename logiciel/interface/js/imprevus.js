@@ -105,7 +105,11 @@ function peindreDus() {
     const r = cible.querySelector(`[data-du="${k}"]`);
     if (x.lecture === "a_corriger") return;
     const titreDeLaBoite = x.lecture ? nomDuSalarie(x.salarie) : x.qui;
-    brancherLesGestes(r.querySelector(".du-gestes"), x.gestes, { titre: titreDeLaBoite }, rafraichirImprevus);
+    brancherLesGestes(r.querySelector(".du-gestes"), x.gestes, { titre: titreDeLaBoite }, async (rendu) => {
+      await rafraichirImprevus();
+      // Des papiers écrits se remettent en main propre : leur dossier s'ouvre (`dossier`, que la route rend).
+      if (rendu && rendu.dossier) await ouvrirEtDire(rendu.dossier, rendu.phrase);
+    });
     if (x.lecture) brancherFin(r, x);
   });
 }

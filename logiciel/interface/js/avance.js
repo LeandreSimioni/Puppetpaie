@@ -711,7 +711,8 @@ async function faireLeGeste(g, entete, apres, bouton) {
     if (g.demande && !motdepasse) return;
     // Le bouton qui fait partir le geste s'éteint le temps de la réponse (lier le Drive attend qu'on accepte chez
     // Google) : on ne clique pas deux fois.
-    const rallumer = occupe(boite ? document.getElementById("geste-ok") : bouton);
+    // Un acte en cours se voit : le bouton dit son geste suivi de « … » le temps de la réponse.
+    const rallumer = occupe(boite ? document.getElementById("geste-ok") : bouton, `${g.libelle.replace(/…$/, "")}…`);
     let r;
     try { r = await api(g.route, motdepasse ? { ...charge, motdepasse } : charge); } catch (e) { rallumer(); dire(e.message, "erreur"); return; }
     if (boite) fermerBoite();
