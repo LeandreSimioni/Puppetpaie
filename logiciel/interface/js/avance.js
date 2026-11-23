@@ -125,11 +125,12 @@ const CASES = {
   },
   // UN OUI-NON PRÉ-REMPLI (`o.prerempli` : ce que le moteur prend sans lui) se montre tel que le moteur le prend, et se
   // change dans les deux sens : ce qui diffère du pré-rempli s'écrit, y revenir n'écrit rien. Sans pré-rempli, coché
-  // s'écrit oui, décoché n'écrit rien.
+  // s'écrit oui, décoché n'écrit rien. Un oui-non que la route exige (`o.obligatoire`) s'écrit toujours, oui ou non.
   oui_non: {
     html: (v, o) => `<input type="checkbox" data-case${(v == null ? o.prerempli : v) ? " checked" : ""}${
-      o.prerempli == null ? "" : ` data-prerempli="${o.prerempli ? "oui" : "non"}"`}>`,
-    lire: (x) => (x.dataset.prerempli == null ? (x.checked ? true : null)
+      o.prerempli == null ? "" : ` data-prerempli="${o.prerempli ? "oui" : "non"}"`}${o.obligatoire ? " data-obligatoire" : ""}>`,
+    lire: (x) => (x.dataset.obligatoire != null ? x.checked
+      : x.dataset.prerempli == null ? (x.checked ? true : null)
       : x.checked === (x.dataset.prerempli === "oui") ? null : x.checked),
   },
   mois: { html: (v) => `<input type="month" data-case${valeurDeDepart(v)}>`, lire: tape },
@@ -493,7 +494,7 @@ function caseDeRoute(c) {
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
   const balise = ["parties", "rangees", "html", "boutons"].includes(forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
-    ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis })}${
+    ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis, obligatoire: c.obligatoire })}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${
     c.renvoi ? `<button type="button" class="lien case-renvoi" data-renvoi="${echapper(JSON.stringify(c.renvoi))}">${echapper(c.renvoi.libelle)}</button>` : ""}</${balise}>`;
 }
@@ -563,7 +564,7 @@ function casesDesChamps(champs, valeurs, choix, o = {}) {
   };
   const une = (c) => {
     const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix,
-      exemple: exemple(c.nom), admis: c.admis };
+      exemple: exemple(c.nom), admis: c.admis, obligatoire: c.obligatoire };
     return caseDeRoute(o.modifie ? modifiable(d) : d);
   };
   const avance = (c) => !!o.modifie && !!c.avance;
@@ -575,6 +576,14 @@ function lireLesChamps(bloc, champs) {
   const lu = lireLesCases(bloc);
   return Object.fromEntries(champs.filter((c) => lu[c.nom] != null && !(Array.isArray(lu[c.nom]) && !lu[c.nom].length))
     .map((c) => [c.nom, lu[c.nom]]));
+}
+
+/** LES CASES QUE LA ROUTE EXIGE ET QUE `charge` NE DIT PAS (`obligatoire` de chaque champ de sa fiche) : chacune marquée
+ *  dans `bloc`, son tiroir « Avancé » ouvert ; les autres, démarquées. Vrai s'il en manque : la charge ne part pas. */
+function marquerLesManquantes(bloc, champs, charge) {
+  const manque = (c) => c.obligatoire && charge[c.nom] == null;
+  fautesDesCases(bloc, champs.map((c) => ({ cle: c.nom, anomalie: manque(c) ? { gravite: "erreur", message: "À remplir." } : null })));
+  return champs.some(manque);
 }
 
 /** Ce que la réponse dit à lire : sa phrase, puis ses lignes (chaque route automatique rend sa phrase). */
@@ -604,8 +613,10 @@ function dessinerAvance(cible) {
     brancherLesCases(bloc);
     bloc.querySelector("[data-faire]").onclick = async () => {
       const rendu = bloc.querySelector("[data-rendu]");
+      const charge = lireLesChamps(bloc, f.charge);
+      if (marquerLesManquantes(bloc, f.charge, charge)) return;
       try {
-        const r = await api(f.nom, lireLesChamps(bloc, f.charge));
+        const r = await api(f.nom, charge);
         rendu.innerHTML = phrasesDe(r).map((p) => `<p>${echapper(p)}</p>`).join("");
       } catch (e) {
         rendu.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
@@ -684,8 +695,13 @@ async function faireLeGeste(g, entete, apres) {
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
-  // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface).
-  document.getElementById("geste-ok").onclick = () => partir(chargeDuGeste(bloc, g) || g.charge, true);
+  // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface) ; une case que
+  // la route exige, vide, retient le geste et le dit sur elle.
+  document.getElementById("geste-ok").onclick = () => {
+    const charge = chargeDuGeste(bloc, g) || g.charge;
+    if (marquerLesManquantes(bloc, champsDuGeste(g), charge)) return;
+    partir(charge, true);
+  };
 }
 
 /* ------------------------------------------------ quitter un écran posé */
