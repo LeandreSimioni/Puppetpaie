@@ -139,6 +139,14 @@ que les routes rendent, **on regarde ce qu'on a perdu**, et pour chaque chose pe
 la route (alors tout le monde la voit) ou si l'on s'en passe. On ne recopie jamais d'office une page dans une route :
 ce serait faire primer la page. Une chose qui manque à l'écran est un manque de la route.
 
+**C'est le type qui décide de l'affichage** (Léandre, 23/11/2026 : « il y a un typage, et le typage, il est affiché
+d'une certaine façon », « si le typage, c'est une liste fermée, c'est pas qu'on écrit dans les consignes comment
+écrire », « les choix qu'on a, c'est vraiment une liste déroulante », pour le LLM « ça doit être le même principe »).
+Chaque case d'une route, celles de sa charge comme celles qu'elle rend, porte la forme de son type, et chaque forme
+n'a qu'un dessin : une liste fermée (un type à choix) se déclare `choix`, avec ses codes et leurs libellés, se dessine
+en liste déroulante, et se lit telle quelle en ligne de commande ; jamais en texte libre dont une phrase dirait les
+valeurs admises. Ni une consigne, ni une phrase, ni la page ne dit comment une case se saisit : son type le dit.
+
 **Quitter sans enregistrer se demande, partout** (Léandre, 23/11/2026 : « ça doit être une règle générale »). Dès
 qu'une case d'un écran porte une saisie qui n'est pas enregistrée, quitter cet écran ouvre la même boîte
 (`demanderSiEnregistrer` : enregistrer, jeter, ou rester) ; rien si l'on n'a rien changé, ou si l'on est revenu à ce
