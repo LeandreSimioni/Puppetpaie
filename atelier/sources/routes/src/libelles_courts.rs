@@ -195,7 +195,11 @@ fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
         .into_iter()
         .map(|d| {
             let propose = lc::proposer(&d.long, d.largeur);
-            let valeur = d.court.clone().unwrap_or_else(|| propose.clone());
+            // Ce que la case montre : le court que la compagnie a ecrit, ou ce que le logiciel propose.
+            let valeur = match &d.court {
+                Some(court) => court.clone(),
+                None => propose.clone(),
+            };
             Ligne { quoi: d.quoi, zone: zone(&d), propose, cle: d.cle, long: d.long, largeur: d.largeur, court: d.court, valeur }
         })
         .collect();

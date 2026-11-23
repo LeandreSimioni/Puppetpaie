@@ -179,11 +179,11 @@ impl DossierRendu {
             .salaries
             .iter()
             .map(|s| {
-                let pages: Vec<String> = d
-                    .pages
-                    .get(s.as_str())
-                    .map(|p| CategorieDeDocument::TOUTES.iter().filter_map(|c| p.get(c.texte()).map(|n| format!("{} : {} p.", c.libelle(), n))).collect())
-                    .unwrap_or_default();
+                // Un salarie sans piece n'a pas de pages.
+                let pages: Vec<String> = match d.pages.get(s.as_str()) {
+                    Some(p) => CategorieDeDocument::TOUTES.iter().filter_map(|c| p.get(c.texte()).map(|n| format!("{} : {} p.", c.libelle(), n))).collect(),
+                    None => Vec::new(),
+                };
                 if pages.is_empty() {
                     format!("{} : aucune page", s.as_str())
                 } else {
