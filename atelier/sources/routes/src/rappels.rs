@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les échéances du mois et de l'année.",
         charge: &SansCharge::CHARGE,
         exemple: "{}",
-        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_rangs (l'année qui vient, chacune avec son mois)",
+        rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état, si un rappel la dit et ses gestes ; ce que l'écran en montre, sous date_dit et bienvenue : ce_mois_titre, puis ce_mois_rangs (celles du mois qu'aucun rappel ne dit, chacune son titre, ce qu'elle dit, sa pastille et ses gestes) ou ce_mois_vide ; annee_titre, puis annee_mois (l'année qui vient, mois par mois : le mois et les titres de ce qui y tombe)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -255,8 +255,17 @@ struct Echeancier {
     ce_mois_vide: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     annee_titre: Option<&'static str>,
-    annee_rangs: Vec<RangDEcheance>,
+    annee_mois: Vec<MoisAVenir>,
     phrases: Vec<String>,
+}
+
+/// Un mois de l'annee qui vient : son nom, et ce qui y tombe, chaque echeance par son titre (« ✓ » apres une faite).
+/// `mois` vide : des echeances sans date butoir.
+#[derive(Debug, Serialize)]
+struct MoisAVenir {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mois: Option<String>,
+    echeances: Vec<String>,
 }
 
 /// Une echeance en rang de l'echeancier : son titre, ce qu'elle dit, sa pastille et ses gestes.
@@ -817,7 +826,8 @@ impl Echeance {
                 let valeurs = ValeursDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| s.cle.clone()).collect()) };
                 let choix = ChoixDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| crate::ouverture::Choix::de(&s.cle, &s.dit)).collect()) };
                 let geste = GesteDeRoute::avec_cases(Route::RevueSpectacles, charge.into(), CHOISIR_LES_SPECTACLES, vec![cle!(ChargeRevue, continuent)], valeurs, choix);
-                gestes.push(geste.disant(vec![self.question.clone(), REVUE_DIT.to_string()]));
+                // Une revue qui n'est pas encore due ne pose pas sa question : sa boite ne dit que l'aide.
+                gestes.push(geste.disant([self.question.as_str(), REVUE_DIT].into_iter().filter(|l| !l.is_empty()).map(str::to_string).collect()));
             }
         }
         if self.cochable {
@@ -998,9 +1008,18 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         (true, false) => (Some(CE_MOIS), Some(RIEN_A_FAIRE)),
         (true, true) => (None, None),
     };
-    // L'annee qui vient : chacune avec le mois ou elle tombe.
-    let annee_rangs: Vec<RangDEcheance> = a_venir.iter().map(|e| e.en_rang(e.tombe.map(|m| m.libelle(Graphie::Accentuee)).into_iter().collect())).collect();
-    let annee_titre = (!annee_rangs.is_empty()).then_some(L_ANNEE_QUI_VIENT);
+    // L'annee qui vient, mois par mois, dans l'ordre ou ils viennent : ce qui tombe dans chacun.
+    let mut annee_mois: Vec<(Option<Mois>, MoisAVenir)> = Vec::new();
+    for e in &a_venir {
+        let titre = if e.etat == Fait { format!("{} ✓", e.titre) } else { e.titre.clone() };
+        match annee_mois.iter_mut().find(|(m, _)| *m == e.tombe) {
+            Some((_, m)) => m.echeances.push(titre),
+            None => annee_mois.push((e.tombe, MoisAVenir { mois: e.tombe.map(|m| m.libelle(Graphie::Accentuee)), echeances: vec![titre] })),
+        }
+    }
+    annee_mois.sort_by_key(|(m, _)| *m);
+    let annee_mois: Vec<MoisAVenir> = annee_mois.into_iter().map(|(_, m)| m).collect();
+    let annee_titre = (!annee_mois.is_empty()).then_some(L_ANNEE_QUI_VIENT);
     let ce_mois: Vec<EcheanceDite> = ce_mois.iter().map(Echeance::dite).collect::<R<_>>()?;
     let a_venir: Vec<EcheanceDite> = a_venir.iter().map(Echeance::dite).collect::<R<_>>()?;
     let ligne = |x: &EcheanceDite| format!("{} ({}{})", x.titre, x.pastille.mots, if x.quand_dit.is_empty() { String::new() } else { format!(", {}", x.quand_dit) });
@@ -1020,7 +1039,7 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         ce_mois_rangs,
         ce_mois_vide,
         annee_titre,
-        annee_rangs,
+        annee_mois,
         phrases,
     })
 }

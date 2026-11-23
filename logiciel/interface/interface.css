@@ -1135,7 +1135,8 @@ pre.reponse {
 .echeance .actions { margin-top: 4px; }
 .accueil-annee { margin-top: 10px; }
 .accueil-annee summary { cursor: pointer; color: var(--discret); }
-.echeances-annee { margin: 8px 0 0; font-size: 13px; }
+.echeances-annee { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+.echeances-annee ul { margin: 0 0 4px; padding-left: 16px; }
 .tableau-compta { max-height: 50vh; overflow: auto; margin: 10px 0; }
 table.compta { border-collapse: collapse; font-size: 12px; width: 100%; }
 table.compta th, table.compta td { padding: 3px 6px; border-bottom: 1px solid var(--bord); text-align: left; }
@@ -1336,14 +1337,6 @@ section.bloc > .encart { margin-bottom: 10px; }
 .carte-export > summary h2::before { content: "▸ "; color: var(--discret); }
 .carte-export[open] > summary h2::before { content: "▾ "; }
 .carte-export[open] > summary { margin-bottom: 12px; }
-/* Le calendrier des exports : une ligne par année, douze mois. */
-.calendrier { display: flex; flex-direction: column; gap: 4px; }
-.calendrier .rangee { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
-.calendrier button { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--bord);
-  background: var(--carte); color: var(--texte); border-radius: 4px; cursor: pointer; min-width: 38px; }
-.calendrier button.an { font-weight: bold; min-width: 56px; }
-.calendrier button:disabled { opacity: .35; cursor: default; }
-.calendrier button.pris { background: var(--action); border-color: var(--action); color: #fff; }
 .carte-export h2 .discret { text-transform: none; letter-spacing: 0; }
 #vue-exports .champs { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 #vue-exports .champ .aide { max-width: 34rem; }

@@ -384,7 +384,8 @@ function htmlEcheancier(ech) {
       ${ech.ce_mois_rangs.length ? `<ul class="echeances">${rangs(ech.ce_mois_rangs, "ce_mois_rangs")}</ul>` : ""}
       ${ech.ce_mois_vide ? `<p class="discret">${echapper(ech.ce_mois_vide)}</p>` : ""}
       ${ech.annee_titre ? `<details class="accueil-annee"><summary>${echapper(ech.annee_titre)}</summary>
-        <ul class="echeances echeances-annee">${rangs(ech.annee_rangs, "annee_rangs")}</ul></details>` : ""}
+        <ul class="echeances-annee">${ech.annee_mois.map((m) => `<li>${m.mois ? `<b>${echapper(m.mois)}</b>` : ""}
+          <ul>${m.echeances.map((t) => `<li>${echapper(t)}</li>`).join("")}</ul></li>`).join("")}</ul></details>` : ""}
     </div>`;
 }
 

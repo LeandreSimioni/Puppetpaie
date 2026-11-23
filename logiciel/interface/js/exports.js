@@ -153,7 +153,7 @@ function dessinerQuestions(opt) {
   document.getElementById("exports-resultat").innerHTML = "";
   document.getElementById("x-suite").innerHTML = `
     <div class="champs">
-      ${q.has("periode") ? `<div class="champ pleine" id="x-periode">${caseDeRoute({ cle: "periode", libelle: e.quand,
+      ${q.has("periode") ? `<div class="champ" id="x-periode">${caseDeRoute({ cle: "periode", libelle: e.quand,
         forme: "periode", valeur: forme.periode_proposee, choix: forme.periodes_offertes })}</div>` : ""}
       ${q.has("regroupement") ? `<div class="champ">
         <label for="x-par">${echapper(e.regroupement_libelle)}</label>
@@ -295,8 +295,8 @@ async function ouvrirCourts(format, phrase) {
   };
 }
 
-/** `exporter` prend encore la période en trois champs (`mois`, `annee`, `toutes_les_annees`) : le code choisi dans le
- *  calendrier (`AAAA-MM`, `AAAA`, ou celui de toutes les années) va dans le sien. */
+/** `exporter` prend encore la période en trois champs (`mois`, `annee`, `toutes_les_annees`) : le code choisi dans la
+ *  liste (`AAAA-MM`, `AAAA`, ou celui de toutes les années) va dans le sien. */
 function periodeEnTrois(code) {
   if (/^\d{4}-\d{2}$/.test(code)) return { mois: code };
   if (/^\d{4}$/.test(code)) return { annee: Number(code) };
