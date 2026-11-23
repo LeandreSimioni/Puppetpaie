@@ -302,14 +302,19 @@ pub enum SorteDeNonComparaison {
     /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre` : le bareme de son annee, la couche
     /// de sa convention).
     RienDeLivre,
-    /// Aucune fiche de spectacle ne porte le spectacle de la paie.
-    SpectacleIntrouvable,
+    /// Le spectacle de la paie ne se reconnait pas : aucune fiche de spectacle ne le porte, ou son titre en designe
+    /// plusieurs (`Contexte::spectacle`) ; la paie se compare quand une seule fiche le porte.
+    SpectacleNonReconnu,
     /// L'effectif d'une annee manque a la compagnie (`Classe::EffectifAbsent`).
     EffectifAbsent,
     /// Le taux AT/MP de l'annee manque a la compagnie (`Classe::TauxAtmpAbsent`).
     TauxAtmpAbsent,
-    /// Une autre case de la compagnie manque au calcul (sa convention, la fiche du salarie) : il refuse la saisie.
+    /// Une autre case de la compagnie manque au calcul : son refus est d'une classe qui nomme une case d'une de ses
+    /// fiches (`Classe::Manque`, `FicheRefusee`, `ValeurARedire` : sa convention, la fiche du salarie).
     CaseDeLaCompagnie,
+    /// Le calcul refuse la saisie que les pieces ont donnee (un refus d'une autre classe : ce n'est pas une case de la
+    /// compagnie qui manque).
+    SaisieRefusee,
     /// Ce que les pieces impriment ne refait pas la saisie (une ligne sans rubrique, des jours travailles non dits, un
     /// mois paye en partie).
     PiecesInsuffisantes,
@@ -322,18 +327,30 @@ impl SorteDeNonComparaison {
     pub fn code(self) -> &'static str {
         match self {
             SorteDeNonComparaison::RienDeLivre => "rien_de_livre",
-            SorteDeNonComparaison::SpectacleIntrouvable => "spectacle_introuvable",
+            SorteDeNonComparaison::SpectacleNonReconnu => "spectacle_non_reconnu",
             SorteDeNonComparaison::EffectifAbsent => "effectif_absent",
             SorteDeNonComparaison::TauxAtmpAbsent => "taux_atmp_absent",
             SorteDeNonComparaison::CaseDeLaCompagnie => "case_de_la_compagnie",
+            SorteDeNonComparaison::SaisieRefusee => "saisie_refusee",
             SorteDeNonComparaison::PiecesInsuffisantes => "pieces_insuffisantes",
             SorteDeNonComparaison::Panne => "panne",
         }
     }
 
+    /// LA SORTE D'UN REFUS DU CALCUL de la saisie refaite, par sa classe (`a_refaire`) : une case d'une fiche de la
+    /// compagnie, ou la saisie que les pieces ont donnee. L'effectif et le taux AT/MP, que leur classe nomme aussi, se
+    /// rangent a part (`du_refus`).
+    fn du_calcul(raison: &Echec) -> SorteDeNonComparaison {
+        use socle::echec::Classe;
+        match raison.classe {
+            Some(Classe::Manque | Classe::FicheRefusee | Classe::ValeurARedire) => SorteDeNonComparaison::CaseDeLaCompagnie,
+            _ => SorteDeNonComparaison::SaisieRefusee,
+        }
+    }
+
     /// LA SORTE DU REFUS `raison` d'une saisie refaite, venu de l'endroit `vient` (`Suivi::sorte`, `None` : un refus des
     /// pieces). Le logiciel qui ne livre rien d'abord, puis une panne ; un manque, sa sorte : celle de sa classe quand elle
-    /// nomme une case de la compagnie, sinon celle de l'endroit qui l'a note.
+    /// nomme l'effectif ou le taux AT/MP, sinon celle de l'endroit qui l'a note.
     fn du_refus(raison: &Echec, rien_de_livre: bool, vient: Option<SorteDeNonComparaison>) -> SorteDeNonComparaison {
         if rien_de_livre {
             return SorteDeNonComparaison::RienDeLivre;
@@ -511,7 +528,7 @@ fn refaire<'a>(
     };
     // La convention fait la couche du bareme (regle 8) : sans elle, le calcul n'est pas celui de la compagnie.
     if !ctx.entreprise.idcc.est_dite() {
-        return Err(a_refaire(c, refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche")));
+        return Err(a_refaire(c, refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche").reclasser(socle::echec::Classe::Manque)));
     }
     // L'EFFECTIF D'UNE ANNEE D'AVANT QUE LA COMPAGNIE N'A PAS DIT (Léandre, 23/11/2026, « B ») : la comparaison prend celui
     // que « Pour démarrer » propose d'apres les paies reprises (`effectif_repris::effectifs_repris`, le meme calcul), sans
@@ -540,7 +557,8 @@ fn refaire<'a>(
                 socle::refus!(
                     "le bulletin imprime un abattement de {} % (la déduction forfaitaire spécifique) et la fiche du salarié ne dit pas sa profession : la paie se compare quand elle la dit",
                     socle::texte::virgule(t)
-                ),
+                )
+                .reclasser(socle::echec::Classe::Manque),
             ));
         }
     }
@@ -619,7 +637,7 @@ fn refaire<'a>(
             return Err(socle::refus!("la ligne de rémunération « {} » ne se rattache à aucune rubrique du catalogue", libelle));
         };
         use crate::ligne::{self, Cle, FormeSaisie, LigneDonnee, LignePaie, PaiementDeLigne, TauxDeLigne};
-        let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
+        let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin).map_err(|m| refusee(c, m))?;
         // UN CONTRAT PAYE AU MOIS ne porte en ligne que ses repas et ses nuitees (`crate::a_une_limite`) : son salaire se
         // dit dans les cases de sa carte (`conges::lignes_du_mois` le compose), lues sur sa ligne de salaire.
         if mensuelle && !crate::a_une_limite(&lue.code) {
@@ -637,7 +655,7 @@ fn refaire<'a>(
         }
         let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
-        let Some(forme) = FormeSaisie::de(&lue)? else {
+        let Some(forme) = FormeSaisie::de(&lue).map_err(|m| refusee(c, m))? else {
             saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures_par_unite(), precision: None, dates: jours.clone() }));
             continue;
         };
@@ -668,13 +686,13 @@ fn refaire<'a>(
             dates: voulue(Cle::Dates).then(|| jours.clone()),
             ..LigneDonnee::default()
         };
-        saisies.push(donnee.ranger(&lue)?);
+        saisies.push(donnee.ranger(&lue).map_err(|m| refusee(c, m))?);
     }
     // LE SPECTACLE DE LA PAIE, par la seule regle (`importe::spectacle_de_la_paie`) ; quand aucune fiche ne le porte
     // encore, la paie se compare de nouveau quand elle existe (`introuvable`).
     let spectacle = match mensuelle {
         true => None,
-        false => imp.spectacle_de(&ctx, p).map_err(|m| introuvable(c, m))?,
+        false => imp.spectacle_de(&ctx, p).map_err(|m| non_reconnu(c, m))?,
     };
     // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
     // (`Importe::contrat_de_la_paie` : sa fin, dite ou declaree, n'est jamais celle du mois que paie un bulletin), son
@@ -738,7 +756,7 @@ fn refaire<'a>(
         }
     }
     let paie = saisie.paies.into_iter().next().ok_or_else(|| refus("le calcul ne rend aucune paie"))?;
-    let garanties = crate::calcul::garanties_de_prevoyance(&ctx, &paie)?;
+    let garanties = crate::calcul::garanties_de_prevoyance(&ctx, &paie).map_err(|m| refusee(c, m))?;
     Ok(Refaite { paie, garanties, atmp_lu, cotisations })
 }
 
@@ -1007,18 +1025,26 @@ fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
     (leur - notre).rapport(notre).map(|e| e.a_decimales(4))
 }
 
-/// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau ; une case de la compagnie lui
-/// manque (sa classe la precise quand elle nomme l'effectif ou le taux AT/MP : `SorteDeNonComparaison::du_refus`).
+/// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau ; sa sorte, par la classe du refus
+/// (`SorteDeNonComparaison::du_calcul`, et `du_refus` pour l'effectif et le taux AT/MP).
 fn a_refaire(c: &mut Suivi, raison: Echec) -> Echec {
     c.a_refaire = true;
-    c.sorte = Some(SorteDeNonComparaison::CaseDeLaCompagnie);
+    c.sorte = Some(SorteDeNonComparaison::du_calcul(&raison));
     raison
 }
 
-/// Le spectacle de la paie qu'aucune fiche ne porte encore : la paie se comparera de nouveau quand elle existera.
-fn introuvable(c: &mut Suivi, raison: Echec) -> Echec {
+/// Une ligne de la saisie refaite que sa porte refuse (sa rubrique, sa forme, ses garanties) : le calcul refuse ce que
+/// les pieces ont donne. Les pieces ne changent pas : la paie ne se compare pas de nouveau.
+fn refusee(c: &mut Suivi, raison: Echec) -> Echec {
+    c.sorte = Some(SorteDeNonComparaison::SaisieRefusee);
+    raison
+}
+
+/// Le spectacle de la paie qui ne se reconnait pas (aucune fiche ne le porte, ou son titre en designe plusieurs) : la
+/// paie se comparera de nouveau quand une seule le portera.
+fn non_reconnu(c: &mut Suivi, raison: Echec) -> Echec {
     c.a_refaire = true;
-    c.sorte = Some(SorteDeNonComparaison::SpectacleIntrouvable);
+    c.sorte = Some(SorteDeNonComparaison::SpectacleNonReconnu);
     raison
 }
 
