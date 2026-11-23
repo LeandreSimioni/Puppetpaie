@@ -228,27 +228,6 @@ function brancherFichesAttendues() {
   });
 }
 
-/* Toutes les valeurs d'une case datée (`valeurs` de ses temps), une rangée chacune, celle d'aujourd'hui en gras. */
-function lignesDHistoire(t, nom, dire) {
-  return t.valeurs.map((e) => `
-      <div class="histoire-ligne${e.en_vigueur ? " en-vigueur" : ""}">
-        <span class="histoire-champ">${echapper(nom)}</span>
-        <span class="histoire-valeur">${echapper(dire(e.valeur))}</span>
-        <span class="histoire-date">${echapper(e.dit)}</span>
-        ${e.note ? `<div class="histoire-note">${echapper(e.note)}</div>` : ""}
-      </div>`).join("");
-}
-
-/* SOUS UNE CASE DATÉE, au plus deux lignes, telles que le moteur les dit (ses temps : `avant`, `a_venir`) : la valeur
- * d'avant (« jusqu'au … ») et la prochaine à venir (« à partir du … »), chacune avec d'où elle vient quand sa ligne le
- * dit. `dire` rend une valeur lisible. */
-function lignesDuTemps(t, dire) {
-  if (!t) return "";
-  const ligne = (l) => l ? `<div class="aide temps-case">${echapper(dire(l.valeur))} · ${
-    echapper(l.dit)}${l.note ? ` · <span class="discret">${echapper(l.note)}</span>` : ""}</div>` : "";
-  return ligne(t.avant) + ligne(t.a_venir);
-}
-
 /* MODIFIER, C'EST TOUJOURS LE MEME BOUTON : un crayon et le
    mot. Il y en avait trois formes -- un lien rouge « Modifier… » sur les
    paies, un bouton vert au crayon sur les fiches, « Remplacer… » ou
@@ -348,8 +327,10 @@ async function demanderSiEnregistrer() {
 }
 
 /** Appelee avant de quitter la fiche en cours (et « Pour démarrer », qui
- *  s'y peint en tête). Rend `true` si on peut partir. */
+ *  s'y peint en tête), ou l'écran que le dessinateur a posé (`quitterLEcran`).
+ *  Rend `true` si on peut partir. */
 async function quitterLaFiche() {
+  if (!(await quitterLEcran())) return false;
   if (!FICHE_MODIFIEE || ficheIdentique()) return quitterDemarrage();
   const fiche = FICHE_COURANTE;
   const choix = await demanderSiEnregistrer();

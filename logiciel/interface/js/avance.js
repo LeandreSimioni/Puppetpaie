@@ -647,6 +647,66 @@ async function faireLeGeste(g, entete, apres) {
   document.getElementById("geste-ok").onclick = () => partir(chargeDuGeste(bloc, g) || g.charge, true);
 }
 
+/* ------------------------------------------------ quitter un écran posé */
+
+/** L'ÉCRAN QUE LE DESSINATEUR A POSÉ, quand il se saisit : le bloc de ses cases, ce qu'elles disaient à l'ouverture
+ *  (`lireLesCases`), et ce qui l'enregistre (`enregistrer` : vrai quand c'est écrit). */
+let ECRAN_RETENU = null;
+
+/** Retient l'écran dont les cases sont dans `bloc`, tel qu'il s'ouvre. */
+function retenirLEcran(bloc, enregistrer) {
+  ECRAN_RETENU = { bloc, depart: JSON.stringify(lireLesCases(bloc)), enregistrer };
+}
+
+/** QUITTER L'ÉCRAN RETENU : rien à demander s'il n'est plus à l'écran, si l'on n'a rien changé ou si l'on est revenu à ce
+ *  qui était ; sinon la boîte des changements non enregistrés (`demanderSiEnregistrer`) : enregistrer, jeter, ou rester.
+ *  Rend `true` si l'on peut partir. */
+async function quitterLEcran() {
+  const e = ECRAN_RETENU;
+  if (!e || !e.bloc.isConnected || JSON.stringify(lireLesCases(e.bloc)) === e.depart) { ECRAN_RETENU = null; return true; }
+  const choix = await demanderSiEnregistrer();
+  if (choix === "rester") return false;
+  if (choix === "jeter") { ECRAN_RETENU = null; return true; }
+  return e.enregistrer();
+}
+
+/* ------------------------------------------------ un écran que la route rend */
+
+/** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (sa fiche : `affichage: "rendu"`). Sa charge : le mois de l'écran
+ *  quand sa fiche le prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la
+ *  place de l'écran. */
+async function dessinerLEcranRendu(cible, f) {
+  const mois = f.charge.some((c) => c.nom === "mois" && c.forme === "mois") && typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE
+    ? { mois: MOIS_AFFICHE } : {};
+  let r;
+  try { r = await api(f.nom, mois); }
+  catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
+  poserLEcranRendu(cible, r);
+}
+
+/** POSE DANS `cible` L'ÉCRAN RENDU `r` (`routes::fiches::EcranRendu`) : ses encarts, ses cases dessinées comme celles
+ *  d'une fiche (`casesDeLaFiche`, l'historique de ses cases datées compris), et le bouton de son geste (`enregistrer` :
+ *  sa route, sa charge, le champ de la charge où vont les cases, `dans`, et son libellé). Enregistrer envoie ce que les
+ *  cases disent et pose l'écran que la route rend en réponse ; un refus se dit, et les saisies restent. Quitter avec une
+ *  saisie non enregistrée se demande (`retenirLEcran`). */
+function poserLEcranRendu(cible, r) {
+  const g = r.enregistrer;
+  cible.innerHTML = `<div class="carte">${encarts(r.encarts)}<div data-ecran-cases>${casesDeLaFiche(r)}</div>
+    <div class="actions"><button class="primaire" data-enregistrer>${echapper(g.libelle)}</button></div></div>`;
+  const bloc = cible.querySelector("[data-ecran-cases]");
+  brancherLesCases(bloc);
+  const enregistrer = async () => {
+    let x;
+    try { x = await api(g.route, { ...g.charge, [g.dans]: lireLesCases(bloc) }); }
+    catch (e) { dire(e.message, "erreur"); return false; }
+    dire(x.phrase);
+    poserLEcranRendu(cible, x);
+    return true;
+  };
+  cible.querySelector("[data-enregistrer]").onclick = enregistrer;
+  retenirLEcran(bloc, enregistrer);
+}
+
 /* ------------------------------------------------ une fiche que la route rend */
 
 /** L'HISTORIQUE D'UNE FICHE (`historique` de la route `fiche`) : replié, une rangée par valeur de chaque case datée, en

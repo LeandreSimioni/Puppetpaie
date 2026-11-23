@@ -1,4 +1,4 @@
-/* La configuration : la liste, l'importation, metiers, organismes, AT/MP, sante. */
+/* La configuration : la liste, l'importation, metiers, AT/MP, sante ; les écrans qu'une route rend (`js/avance.js`). */
 "use strict";
 
 /* =======================================================================
@@ -44,6 +44,13 @@ function dessinerConfig() {
   const avance = document.getElementById("config-avance");
   avance.dataset.auto = document.querySelector(`.sous-onglets button[data-fiche="${FICHE_ACTIVE}"]`).dataset.place;
   dessinerAvance(avance);
+  // Un sous-onglet dont une route rend l'écran (sa fiche : `affichage: "rendu"`, sa place) : le dessinateur le pose.
+  const rendu = Object.values(CATALOGUE).find((f) => f.affichage === "rendu" && f.ecran === avance.dataset.auto);
+  if (rendu) {
+    document.getElementById("config-formulaire").innerHTML = "";
+    dessinerLEcranRendu(liste, rendu);
+    return;
+  }
   if (FICHE_ACTIVE === "importer") {
     document.getElementById("config-formulaire").innerHTML = "";
     dessinerImportation(liste);
@@ -62,11 +69,6 @@ function dessinerConfig() {
   if (FICHE_ACTIVE === "metiers") {
     document.getElementById("config-formulaire").innerHTML = "";
     dessinerMetiers(liste);
-    return;
-  }
-  if (FICHE_ACTIVE === "organismes") {
-    document.getElementById("config-formulaire").innerHTML = "";
-    dessinerOrganismes(liste);
     return;
   }
   // Les modèles de contrat et les clauses particulières : `modeles-contrat.js`.
@@ -890,60 +892,6 @@ async function dessinerMetiers(cible) {
   document.getElementById("metiers-filtre").oninput = (e) => { METIERS_FILTRE = e.target.value; peindre(); };
   document.getElementById("metiers-tous").onchange = (e) => { METIERS_TOUS = e.target.checked; peindre(); };
   peindre();
-}
-
-/* LES ORGANISMES ET LES CONTRATS DE LA DSN. Une ligne par
- * contrat que la convention exige ; le moteur (`organismes-contrats`) dit ce
- * qui est fixé par la branche et ce que la compagnie saisit. Enregistrer
- * écrit ce que la compagnie saisit (`organismes-enregistrer`) : la page ne
- * décide rien. */
-async function dessinerOrganismes(cible) {
-  let r;
-  // Les contrats de la periode regardee : le mois de l'onglet Paie, sinon le moteur prend celui du jour.
-  const mois = typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE ? { mois: MOIS_AFFICHE } : {};
-  try { r = await api("organismes-contrats", mois); }
-  catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-  const champ = (c, k, fixe, place) => fixe
-    ? `<span>${c[k] == null ? "" : echapper(c[k])}</span>`
-    : `<input type="text" data-contrat="${echapper(c.cle)}" data-champ="${k}"${valeurDeDepart(c[k])}
-         placeholder="${place}" maxlength="${k === "libelle" ? 30 : 9}">`;
-  // Ce qui est saisi d'un contrat, à une date : sa référence et son organisme.
-  const saisi = (v) => v ? [v.libelle, v.organisme].filter(Boolean).join(" · ") : "—";
-  // Sous le contrat, sa valeur d'avant et celle à venir ; toutes ses valeurs datées, repliées.
-  const temps = (c) => c.temps ? `${lignesDuTemps(c.temps, saisi)}${c.temps.valeurs.length ? `
-        <details class="historique-fiche"><summary>${aideDe("historique_titre")}</summary>
-          <div class="histoire">${lignesDHistoire(c.temps, c.quoi, saisi)}</div></details>` : ""}` : "";
-  const ligne = (c) => `
-    <tr>
-      <td><b>${echapper(c.quoi)}</b>
-        ${c.periode ? `<div class="note">${echapper(c.periode)}</div>` : ""}
-        ${c.note ? `<div class="note">${echapper(c.note)}</div>` : ""}
-        ${temps(c)}</td>
-      <td>${echapper(c.beneficiaires)}</td>
-      <td>${champ(c, "organisme", c.organisme_fixe, "P0983")}</td>
-      <td>${champ(c, "libelle", c.libelle_fixe, "référence du contrat")}</td>
-    </tr>`;
-  cible.innerHTML = `
-    <div class="carte">
-      <h2>Organismes et contrats DSN</h2>
-      ${encarts(r.encarts)}
-      <table class="tableau">
-        <thead><tr><th>Contrat</th><th>Bénéficiaires</th><th>Organisme</th><th>Référence du contrat</th></tr></thead>
-        <tbody>${r.contrats.map(ligne).join("")}</tbody>
-      </table>
-      <div class="actions"><button id="organismes-enregistrer">Enregistrer</button></div>
-    </div>`;
-  document.getElementById("organismes-enregistrer").onclick = async () => {
-    const contrats = {};
-    cible.querySelectorAll("input[data-contrat]").forEach((i) => {
-      (contrats[i.dataset.contrat] ||= {})[i.dataset.champ] = i.value.trim() || null;
-    });
-    try {
-      const x = await api("organismes-enregistrer", { contrats, ...mois });
-      dire(x.phrase);
-      dessinerOrganismes(cible);
-    } catch (e) { dire(e.message, "erreur"); }
-  };
 }
 
 
