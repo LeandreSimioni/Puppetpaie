@@ -765,10 +765,12 @@ pub enum DernierJourEngage {
 pub fn derniers_jours_engages(racine: &Path) -> R<BTreeMap<droit::contexte::IdSpectacle, DernierJourEngage>> {
     let mut out: BTreeMap<droit::contexte::IdSpectacle, DernierJourEngage> = BTreeMap::new();
     for o in tous(racine)?.1.objets.iter().filter(|o| !o.est_non_actif()) {
-        let dernier = match (o.carte().fin_lue(), o.mensuel()?) {
+        // Sans fin lue : un contrat au mois qui court tient le spectacle ; une carte sans jour, ou dont la nature n'est
+        // pas encore dite (une saisie commencee), ne l'engage pas encore.
+        let dernier = match (o.carte().fin_lue(), o.carte().nature) {
             (Some(f), _) => DernierJourEngage::Le(f),
-            (None, true) => DernierJourEngage::SansFin,
-            (None, false) => continue,
+            (None, Some(n)) if n.proprietes()?.mensuelle() => DernierJourEngage::SansFin,
+            (None, _) => continue,
         };
         let nommes = std::iter::once(&o.carte().spectacle).chain(o.avenants().iter().map(|a| &a.termes.spectacle)).flatten();
         for s in nommes {
