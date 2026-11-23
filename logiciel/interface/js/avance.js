@@ -715,6 +715,8 @@ async function faireLeGeste(g, entete, apres, bouton) {
     dire(r.phrase, r.couleur);
     await apres();
     rallumer();
+    // Ce que la route dit qui suit (`suite` : le dépôt d'un signalement écrit) s'ouvre ensuite.
+    if (r.suite) ouvrirGeste(r.suite);
   };
   if (!g.cases.length && !g.phrases.length) { await partir(g.charge, false); return; }
   const rendre = entete.pardessus ? mettreDeCote() : null;

@@ -58,7 +58,14 @@ use socle::fichiers::{repr, CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Fiche, Refus, MANQUE, OPERATION};
-use crate::declaration::{charge, dit, Legende};
+use crate::declaration::{charge, cle, dit, Legende};
+use crate::catalogue::Affiche;
+use crate::imprevus::GesteDeRoute;
+use crate::rappels::{ChoixDeLEcheance, GesteDEcheance, ValeursDeLEcheance};
+
+/// Les libelles des gestes d'une obligation due : la dire faite, dire le jour ou on l'a su.
+const NOTER_FAITE: Affiche = Affiche::new("Noter faite");
+const CONNU_LE: Affiche = Affiche::new("Connu le");
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 
@@ -69,6 +76,8 @@ const NON_ECRIT: Refus = Refus { classe: Classe::Refuse, corriger: "ce que la ph
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
+/// Les routes qu'une obligation due offre en gestes (`Obligation::geste_qui_la_dit_faite`, `geste_de_la_connaissance`).
+const GESTE: Ecran = Ecran::Geste(Place::Paie);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
@@ -94,7 +103,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::AccidentDeclare,
@@ -106,7 +115,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        ecran: GESTE,
     },
     Fiche {
         route: Route::AttestationDeclare,
@@ -118,7 +127,7 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: Ecran::DessineAvance(Place::Paie),
+        ecran: Ecran::GesteAvance(Place::Paie),
     },
 ];
 
@@ -795,6 +804,74 @@ impl Obligation {
         self.butoir.map(jour_et_heure::jour_limite)
     }
 
+    /// SON RANG PARMI CE QUI EST DU, en texte qui se range : le plus presse d'abord (`priorite` : en retard, puis le
+    /// reste), puis par date butoir ; une obligation sans butoir apres celles qui en ont une. Une carte a corriger passe
+    /// devant (`imprevus::RANG_D_UNE_CARTE_A_CORRIGER`).
+    pub(crate) fn rang(&self) -> String {
+        let butoir = match self.jour_butoir() {
+            Some(j) => j.iso(),
+            None => "9".to_string(),
+        };
+        format!("1{}{}", self.priorite, butoir)
+    }
+
+    /// LE GESTE QUI LA DIT FAITE, pour une obligation HORS DSN qu'une route retient faite (la declaration d'accident,
+    /// `accident-declare` ; l'attestation de salaire, `attestation-declare`) : ou la faire, ce qu'il faut avoir, et ses
+    /// cases (le jour, le lieu parmi les siens, la reference), remplies de ce qui en est deja dit. Aucun pour une autre.
+    pub(crate) fn geste_qui_la_dit_faite(&self, salarie: &IdSalarie, dernier_jour: Jour) -> R<Option<GesteDEcheance>> {
+        let route = match self.cle {
+            CleDObligation::DeclarationAccident => Route::AccidentDeclare,
+            CleDObligation::AttestationSalaire => Route::AttestationDeclare,
+            _ => return Ok(None),
+        };
+        let Some(Ou::Lieux(lieux)) = &self.ou else { return Ok(None) };
+        let fait = match &self.fait {
+            Some(FaitDit::Dit(f)) => Some(f),
+            _ => None,
+        };
+        let valeurs = ValeursDeLEcheance {
+            le: fait.map(|f| f.quand.jour()),
+            depot: fait.map(|f| f.depot),
+            reference: fait.and_then(|f| f.reference.clone()),
+            ..ValeursDeLEcheance::default()
+        };
+        let choix = ChoixDeLEcheance { depot: Some(lieux.iter().map(|l| crate::ouverture::Choix::de(l.code, &l.court)).collect()), ..ChoixDeLEcheance::default() };
+        let mut phrases = Vec::new();
+        let quand = [self.butoir_dit.clone(), Some(self.destinataire.clone()).filter(|d| !d.is_empty())].into_iter().flatten().collect::<Vec<_>>();
+        if !quand.is_empty() {
+            phrases.push(quand.join(" — "));
+        }
+        phrases.push(crate::ouverture::aide("hors_dsn")?.to_string());
+        phrases.extend(lieux.iter().map(|l| l.libelle.clone()));
+        if !self.a_avoir.is_empty() {
+            phrases.push(format!("Pièces à avoir : {}.", self.a_avoir.join(" ; ")));
+        }
+        let charge = crate::etapes::ChargeObligationDArret { salarie: salarie.clone(), dernier_jour };
+        let cases = vec![cle!(ChargeFaite, le), cle!(ChargeFaite, depot), cle!(ChargeFaite, reference)];
+        Ok(Some(GesteDeRoute::avec_cases(route, charge.into(), NOTER_FAITE, cases, valeurs, choix).disant(phrases)))
+    }
+
+    /// LE GESTE QUI DIT LE JOUR OU LA COMPAGNIE L'A SU, la ou le delai en court (`connaissance`) : sa boite dit le point
+    /// de depart presume et l'heure a verifier ; ses cases (le jour, l'heure) ne montrent que ce qui est deja dit (une
+    /// case laissee vide ne part pas : le moteur garde sa presomption). Aucun la ou rien ne se demande.
+    pub(crate) fn geste_de_la_connaissance(&self, salarie: &IdSalarie, dernier_jour: Jour) -> Option<GesteDEcheance> {
+        let c = self.connaissance.as_ref()?;
+        let de = match self.cle {
+            CleDObligation::DeclarationAccident => DeQuoi::Accident,
+            _ => DeQuoi::Arret,
+        };
+        let dit = self.depart.as_ref().filter(|d| d.saisi).map(|d| jour_et_heure::champs(d.quand));
+        let valeurs = ValeursDeLEcheance { jour: dit.map(|(j, _)| j), heure: dit.and_then(|(_, h)| h), ..ValeursDeLEcheance::default() };
+        let mut phrases = vec![c.titre.to_string()];
+        if let Some(presume) = self.depart.as_ref().and_then(|d| d.presume.as_ref()) {
+            phrases.push(format!("Point de départ présumé : {}", presume));
+        }
+        phrases.extend(c.heure_dite.map(str::to_string));
+        let charge = ChargeConnaissance { salarie: salarie.clone().into(), dernier_jour, de, jour: None, heure: None };
+        let cases = vec![cle!(ChargeConnaissance, jour), cle!(ChargeConnaissance, heure)];
+        Some(GesteDeRoute::avec_cases(Route::ArretConnaissance, charge.into(), CONNU_LE, cases, valeurs, ChoixDeLEcheance::default()).disant(phrases))
+    }
+
     /// « Dans les 48 heures — à compter de la connaissance de l'arrêt, le 02/11/2026. » : le delai et son point de
     /// depart, tels que l'ecran les dit ; `None` sans delai.
     fn delai_en_clair(&self) -> Option<String> {
@@ -1327,14 +1404,16 @@ fn reponse(ctx: &Contexte, a: &ArretSaisi, phrase: impl FnOnce(usize) -> Phrase)
 
 charge! {
     /// La charge de `arret-connaissance` : l'arret (le salarie et son dernier jour travaille), ce que la compagnie a
-    /// connu (`de`), le jour (vide : le moteur reprend sa presomption) et l'heure.
-    #[derive(Debug)]
+    /// connu (`de`), le jour (vide : le moteur reprend sa presomption) et l'heure. Le geste « Connu le » d'une obligation
+    /// l'ecrit aussi (`Obligation::geste_de_la_connaissance`).
+    #[derive(Debug, Clone, Serialize)]
     pub(crate) struct ChargeConnaissance {
         salarie: SalarieDesigne = SALARIE_ARRETE,
         dernier_jour: Jour = DERNIER_JOUR,
         de: DeQuoi = dit("De", "ce que la compagnie a connu"),
+        #[serde(skip_serializing_if = "Option::is_none")]
         jour: Option<Jour> = dit("Jour", "le jour ; vide : le moteur reprend sa présomption (avec une heure, pour l'accident : le jour de l'accident)"),
-        #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+        #[serde(default, deserialize_with = "jour_et_heure::saisie", skip_serializing_if = "Option::is_none")]
         heure: Option<HeureDuJour> = dit("Heure", "l'heure, HH:MM").avancee(),
     }
 }

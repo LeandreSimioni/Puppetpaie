@@ -51,6 +51,7 @@ use crate::catalogue::{Acte, Affiche, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 use crate::declaration::{charge, cle, dit, legendes, ChargeDuType, Legende};
+use crate::rappels::{ChoixDeLEcheance, GesteDEcheance, ValeursDeLEcheance};
 use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, tous_les_arrets, ArretDit, ContratAuJour};
 
 /// Le dernier jour travaille avant l'arret, qui le designe.
@@ -84,10 +85,10 @@ const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 pub const ROUTES: &[Fiche] = &[
     fiche(Route::Imprevus, "Lire les imprévus d'un mois ou d'un salarié, et ce qu'on peut en saisir.",
         &ChargeImprevus::CHARGE,
-        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures", Acte::Lit, ECRAN),
+        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures ; pour un mois, dus et dus_titre : ce qui est dû de ses arrêts, le plus pressé d'abord (rang), chaque obligation avec qui et ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
     fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &SansCharge::CHARGE, "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
     fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &ChargeMois::CHARGE,
-        r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où)", Acte::Lit, ECRAN),
+        r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où) ; dus et dus_titre : celles qui sont dues, dans leur rang (rang), une fin due avec ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
     fiche(Route::ArretContrats, "Lire les contrats qu'un arrêt suspendrait à ce jour.",
         &ChargeArretContrats::CHARGE,
         r#"{"salarie":"FULLER","jour":"2026-11-27"}"#, "contrats : ceux du salarié qui couvrent ce jour", Acte::Lit, ECRAN),
@@ -107,7 +108,7 @@ pub const ROUTES: &[Fiche] = &[
         r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","ij_brute":"40.89","ij_nette":"38.15"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 600, ..fiche(Route::ArretSignaler, "Fabriquer le signalement d'un arrêt, sans le déposer.",
         &ChargeArretSignaler::CHARGE,
-        r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","nature":"04"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, nature, type, ordre, avertissements", Acte::Ecrit, ECRAN) },
+        r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","nature":"04"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, nature, type, ordre, avertissements, suite (le geste qui le dépose)", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::ArretOublier, "Retirer un arrêt qui n'a pas été déclaré.", &ChargeArretOublier::CHARGE,
         UN_ARRET, "arret (l'arrêt retiré, résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionEnregistrer, "Enregistrer une absence qui suspend un contrat.",
@@ -120,10 +121,10 @@ pub const ROUTES: &[Fiche] = &[
         r#"{"salarie":"FULLER","debut":"2026-11-27"}"#, "suspension (l'absence retirée, résumée), phrase", Acte::Ecrit, GESTE_AVANCE) },
     Fiche { phrase: 600, ..fiche(Route::FinContratSignaler, "Fabriquer le signalement d'une fin de contrat, sans le déposer.",
         &ChargeFinContratSignaler::CHARGE,
-        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, type, ordre, preavis, avertissements", Acte::Ecrit, AVANCE) },
+        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, type, ordre, preavis, avertissements, suite (le geste qui le dépose)", Acte::Ecrit, GESTE) },
     Fiche { phrase: 160, ..fiche(Route::FinContratDocuments, "Fabriquer le certificat de travail et le reçu pour solde de tout compte.",
         &ChargeFinContratDocuments::CHARGE,
-        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "phrase, certificat et recu (leurs chemins), dossier, avertissements (ce qu'il faut savoir en les remettant)", Acte::Ecrit, ECRAN) },
+        r#"{"mois":"2026-11","salarie":"FULLER"}"#, "phrase, certificat et recu (leurs chemins), dossier, avertissements (ce qu'il faut savoir en les remettant)", Acte::Ecrit, GESTE) },
 ];
 
 // ------------------------------------------------------------------ les charges
@@ -331,11 +332,12 @@ impl ChargeFinContratSignaler {
 }
 
 charge! {
-    /// La charge de `fin-contrat-documents`.
-    #[derive(Debug)]
-    struct ChargeFinContratDocuments {
+    /// La charge de `fin-contrat-documents`. Le geste « Papiers de fin » d'une fin due l'ecrit aussi (`gestes_d_une_fin`).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeFinContratDocuments {
         mois: Mois = legendes::MOIS,
         salarie: SalarieDesigne = legendes::SALARIE,
+        #[serde(skip_serializing_if = "Option::is_none")]
         le: Option<Jour> = dit("Établis le", "le jour où ils s'établissent ; sinon aujourd'hui").avancee(),
     }
 }
@@ -360,10 +362,14 @@ fn ordre_du_signalement(ctx: &Contexte, ordre: Option<NumeroDOrdre>) -> R<(Numer
 
 // ------------------------------------------------------------------ les reponses
 
-/// `imprevus` : les imprevus resumes, les nomenclatures pour en saisir, et ce que l'ecran lit de chacun.
+/// `imprevus` : les imprevus resumes, les nomenclatures pour en saisir, et ce que l'ecran lit de chacun ; et CE QUI EST
+/// DU de leurs arrets (`dus`, le plus presse d'abord, chacune ses gestes ; `dus_titre`, quand il y en a).
 #[derive(Debug, Serialize)]
 struct ReponseImprevus {
     phrase: Phrase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dus_titre: Option<&'static str>,
+    dus: Vec<ObligationDue>,
     imprevus: Vec<Resume>,
     motifs_arret: Vec<CodeDuBloc60<MotifDArret>>,
     motifs_reprise: Vec<CodeDuBloc60<MotifDeReprise>>,
@@ -383,12 +389,86 @@ struct ReponseArrets {
     subrogation: Vec<CodeDuBloc60<SubrogationDeLArret>>,
 }
 
-/// `fins-de-contrat`.
+/// `fins-de-contrat` : les fins, et celles qui sont DUES (`dus` : une carte a corriger d'abord, puis le plus presse ;
+/// `dus_titre`, quand il y en a).
 #[derive(Debug, Serialize)]
 struct ReponseFins {
     phrase: Phrase,
     mois: Mois,
     fins: Vec<FinASignaler>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dus_titre: Option<&'static str>,
+    dus: Vec<FinASignaler>,
+}
+
+/// Le titre de ce qui est du, au-dessus des obligations dues des arrets et des fins de contrat.
+const CE_QUI_EST_DU: &str = "Ce qui est dû";
+
+/// Le rang d'une carte a corriger parmi ce qui est du : devant toute obligation (`Obligation::rang`).
+const RANG_D_UNE_CARTE_A_CORRIGER: &str = "0";
+
+/// UNE OBLIGATION DUE D'UN ARRET, telle que la colonne « Ce qui est dû » la montre : pour qui (`qui`), son rang parmi ce
+/// qui est du (`rang`, qui se range en texte avec celui des fins de contrat), l'obligation, et les gestes qui la font
+/// (signaler, la dire faite, dire le jour ou on l'a su).
+#[derive(Debug, Serialize)]
+struct ObligationDue {
+    qui: String,
+    rang: String,
+    obligation: crate::obligations::Obligation,
+    gestes: Vec<GesteDEcheance>,
+}
+
+/// Les libelles des gestes qui signalent.
+const SIGNALER_L_ARRET: Affiche = Affiche::new("Signaler l'arrêt");
+const SIGNALER_LA_REPRISE: Affiche = Affiche::new("Signaler la reprise");
+const SIGNALER_LA_FIN: Affiche = Affiche::new("Signaler la fin");
+const PAPIERS_DE_FIN: Affiche = Affiche::new("Papiers de fin");
+
+/// LE GESTE QUI FAIT UNE OBLIGATION DUE D'UN ARRET : le signalement de l'arret (ou son rectificatif), de sa reprise, qui
+/// s'ecrit puis se depose (sa reponse dit la `suite`) ; une obligation hors DSN, qui se dit faite
+/// (`Obligation::geste_qui_la_dit_faite`). Aucun pour une autre. Un signalement deja parti fait saisir celui qu'il
+/// remplace.
+pub(crate) fn geste_qui_fait(a: &ResumeDArret, o: &crate::obligations::Obligation) -> R<Option<GesteDEcheance>> {
+    use crate::obligations::CleDObligation as C;
+    let (nature, libelle) = match o.cle {
+        C::SignalementArret | C::SignalementArretRectificatif => (NatureSignalement::Arret, SIGNALER_L_ARRET),
+        C::SignalementReprise => (NatureSignalement::Reprise, SIGNALER_LA_REPRISE),
+        _ => return o.geste_qui_la_dit_faite(a.salarie(), a.dernier_jour_travaille()),
+    };
+    let mut ce_que_c_est = vec![a.dit.quoi.clone(), a.dit.periode.clone()];
+    if nature == NatureSignalement::Reprise {
+        ce_que_c_est.extend(a.dit.reprise_dit.clone());
+    }
+    let mut phrases = vec![ce_que_c_est.join(", "), crate::ouverture::aide("signalement_dsn")?.to_string()];
+    let mut cases = Vec::new();
+    if let Some(deja) = a.dit.deja_signale.get(&nature) {
+        phrases.push(format!("{}. {}", deja, crate::ouverture::aide("deja_signale")?));
+        cases.push(cle!(ChargeArretSignaler, remplace));
+    }
+    let charge = ChargeArretSignaler::de(a.salarie().clone(), a.dernier_jour_travaille(), nature);
+    Ok(Some(GesteDeRoute::avec_cases(Route::ArretSignaler, charge.into(), libelle, cases, ValeursDeLEcheance::default(), ChoixDeLEcheance::default()).disant(phrases)))
+}
+
+/// LE SIGNALEMENT D'UNE FIN DUE, qui s'ecrit puis se depose (sa reponse dit la `suite`) ; aucun tant qu'il lui manque une
+/// case (`a_saisir`) : elle se dit d'abord dans la carte.
+pub(crate) fn geste_du_signalement_de_fin(f: &FinLue) -> R<Option<GesteDEcheance>> {
+    if !f.a_saisir.is_empty() {
+        return Ok(None);
+    }
+    let charge = ChargeFinContratSignaler::de(f.mois, f.salarie.clone());
+    let phrases = vec![format!("{} — {}", f.libelle_nature, f.contrat_dit), crate::ouverture::aide("signalement_fin")?.to_string()];
+    let cases = vec![cle!(ChargeFinContratSignaler, remplace)];
+    Ok(Some(GesteDeRoute::avec_cases(Route::FinContratSignaler, charge.into(), SIGNALER_LA_FIN, cases, ValeursDeLEcheance::default(), ChoixDeLEcheance::default()).disant(phrases)))
+}
+
+/// LES GESTES D'UNE FIN DUE : la signaler (`geste_du_signalement_de_fin`), et ecrire les deux papiers qu'on remet au
+/// salarie qui part (sa boite dit d'abord ce qu'il faut savoir en les remettant).
+fn gestes_d_une_fin(f: &FinLue) -> R<Vec<GesteDEcheance>> {
+    let mut gestes: Vec<GesteDEcheance> = geste_du_signalement_de_fin(f)?.into_iter().collect();
+    let papiers = ChargeFinContratDocuments { mois: f.mois, salarie: f.salarie.clone().into(), le: None };
+    let avis = documents::fin_de_contrat::AVIS.iter().map(|a| a.to_string()).collect();
+    gestes.push(GesteDeRoute::avec_cases(Route::FinContratDocuments, papiers.into(), PAPIERS_DE_FIN, Vec::new(), ValeursDeLEcheance::default(), ChoixDeLEcheance::default()).disant(avis));
+    Ok(gestes)
 }
 
 /// `arret-contrats`.
@@ -412,7 +492,7 @@ struct ReponseSuspension {
     phrase: Phrase,
 }
 
-/// `arret-signaler` : le fichier ecrit.
+/// `arret-signaler` : le fichier ecrit, et son depot (`suite`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalement {
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
@@ -424,11 +504,19 @@ pub(crate) struct ReponseSignalement {
     #[serde(with = "droit::natures::en_nombre")]
     ordre: NumeroDOrdre,
     avertissements: Vec<String>,
+    suite: crate::etapes::Action,
 }
 
-/// `fin-contrat-signaler` : le fichier ecrit.
+/// CE QUI SUIT L'ECRITURE D'UN SIGNALEMENT : son depot (l'apercu du depot du fichier ecrit, puis le depot), le geste que
+/// la reponse rend en `suite`. Ecrire un fichier n'engage rien ; le deposer engage tout : deux gestes.
+fn le_depot(fichier: &std::path::Path) -> crate::etapes::Action {
+    crate::etapes::action(Route::DepotApercu, crate::depots::Designation::du_fichier(fichier.to_path_buf()), Some(Route::Deposer), "Déposer".into())
+}
+
+/// `fin-contrat-signaler` : le fichier ecrit, et son depot (`suite`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalementFin {
+    suite: crate::etapes::Action,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     fichier: std::path::PathBuf,
     phrase: Phrase,
@@ -1162,8 +1250,6 @@ struct Dit {
     contrat_dit: Option<String>,
     reprise_dit: Option<String>,
     paye_pendant: &'static str,
-    /// Le titre du geste qui signale, par nature de signalement (ecrite par son code).
-    signaler_titre: BTreeMap<NatureSignalement, &'static str>,
     /// Combien de fois chaque nature est deja partie, pour celles qui le sont.
     deja_signale: BTreeMap<NatureSignalement, String>,
 }
@@ -1205,15 +1291,6 @@ impl Dit {
             contrat_dit: x.contrat.map(|c| format!("contrat {}", c)),
             reprise_dit: x.reprise.map(|r| format!("reprise le {}", r.jj_mm_aaaa())),
             paye_pendant: if x.arret { "Payé pendant l'arrêt" } else { "Payé pendant l'absence" },
-            signaler_titre: NatureSignalement::TOUS
-                .into_iter()
-                .map(|n| {
-                    (n, match n {
-                        NatureSignalement::Arret => "Signaler l'arrêt",
-                        NatureSignalement::Reprise => "Signaler la reprise",
-                    })
-                })
-                .collect(),
             deja_signale: NatureSignalement::TOUS.into_iter().filter_map(|n| deja(n).map(|d| (n, d))).collect(),
         })
     }
@@ -1450,8 +1527,23 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
         r.dire_ce_qui_est_parti()?;
         out.push(r);
     }
+    // CE QUI EST DU DES ARRETS DU MOIS, le plus presse d'abord (`Obligation::rang`), chaque obligation avec ses gestes.
+    let mut dus = Vec::new();
+    if c.mois.is_some() {
+        for r in &out {
+            let Resume::Arret(a) = r else { continue };
+            for o in a.obligations.iter().filter(|o| o.du) {
+                let mut gestes: Vec<GesteDEcheance> = geste_qui_fait(a, o)?.into_iter().collect();
+                gestes.extend(o.geste_de_la_connaissance(a.salarie(), a.dernier_jour_travaille()));
+                dus.push(ObligationDue { qui: ctx.nomme(a.salarie()), rang: o.rang(), obligation: o.clone(), gestes });
+            }
+        }
+    }
+    dus.sort_by(|x, y| x.rang.cmp(&y.rang));
     Ok(ReponseImprevus {
         phrase: socle::phrase!("Imprévus : {}.", out.len()),
+        dus_titre: (!dus.is_empty()).then_some(CE_QUI_EST_DU),
+        dus,
         phrases: out.iter().flat_map(Resume::en_lignes).collect(),
         imprevus: out,
         motifs_arret: n.motifs_arret.saisissables(),
@@ -2040,6 +2132,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let preavis = declarations::fctu::libelle_preavis(fin.type_preavis)?;
     Ok(ReponseSignalementFin {
+        suite: le_depot(&cible),
         fichier: cible,
         phrase: phrase_du_signalement(&format!("Signalement de fin de contrat écrit (préavis : {}). Rien n'est parti.", preavis), &avertissements),
         type_declaration,
@@ -2185,6 +2278,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         NatureSignalement::Reprise => "Signalement de reprise écrit. Rien n'est parti.",
     };
     Ok(ReponseSignalement {
+        suite: le_depot(&cible),
         fichier: cible,
         phrase: phrase_du_signalement(fait, &avertissements),
         nature: c.nature,
@@ -2448,8 +2542,9 @@ contredit le signalement.",
 
 /// UNE FIN DE CONTRAT QUI SE SIGNALE, telle que la colonne du mois et les rappels la lisent : l'engagement (`salarie`,
 /// `numero`, `motif_rupture`, `preavis`, tels que la saisie les ecrit, et la periode de son contrat, `contrat_fini`), sa
-/// nature, ce qui manque pour la signaler (`a_saisir`), son obligation (`obligations::de_la_fin`) et sa pastille ; la
-/// route `fins-de-contrat` y ajoute ses phrases (`qui_dit`, `contrat_dit`).
+/// nature, ce qui manque pour la signaler (`a_saisir`, et ce que l'ecran en dit : `avant_signaler`, `la_dire`), son
+/// obligation (`obligations::de_la_fin`), sa pastille, son contrat en clair (`contrat_dit`), son rang parmi ce qui est
+/// du (`rang`) et ses gestes ; la route `fins-de-contrat` y ajoute qui (`qui_dit`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct FinLue {
     pub salarie: IdSalarie,
@@ -2468,9 +2563,17 @@ pub(crate) struct FinLue {
     pub obligation: crate::obligations::Obligation,
     #[serde(skip_serializing_if = "Option::is_none")]
     qui_dit: Option<String>,
+    contrat_dit: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    contrat_dit: Option<String>,
+    avant_signaler: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    la_dire: Option<&'static str>,
+    rang: String,
+    gestes: Vec<GesteDEcheance>,
 }
+
+/// Ce que l'ecran dit d'une fin a qui il manque une case, et le mot qui mene a la case.
+const LA_DIRE: &str = "La dire";
 
 /// LA FIN D'UNE CARTE VALIDEE QUI NE SE LIT PLUS (son contrat finit avant de commencer, son salarie n'est plus dit) : on
 /// ne sait ni si elle finit ce mois-ci, ni si elle se signale. Elle ne porte que ce qu'il faut corriger (`a_corriger`)
@@ -2486,6 +2589,7 @@ pub(crate) struct FinACorriger {
     pastille: Pastille,
     #[serde(skip_serializing_if = "Option::is_none")]
     qui_dit: Option<String>,
+    rang: &'static str,
 }
 
 /// UNE FIN DE LA LISTE DES FINS A SIGNALER : lue (`FinLue`, son salarie et son contrat dits), ou sur une carte a corriger
@@ -2503,6 +2607,22 @@ impl FinASignaler {
         match self {
             FinASignaler::Lue(f) => Some(f),
             FinASignaler::ACorriger(_) => None,
+        }
+    }
+
+    /// Est-elle due (la colonne « Ce qui est dû » la montre) : une carte a corriger, ou une fin due.
+    fn due(&self) -> bool {
+        match self {
+            FinASignaler::Lue(f) => f.du,
+            FinASignaler::ACorriger(_) => true,
+        }
+    }
+
+    /// Son rang parmi ce qui est du.
+    fn rang(&self) -> &str {
+        match self {
+            FinASignaler::Lue(f) => &f.rang,
+            FinASignaler::ACorriger(f) => f.rang,
         }
     }
 }
@@ -2573,7 +2693,9 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         let du = incomplet || obligation.du;
         let en_retard = obligation.etat == crate::obligations::EtatDObligation::EnRetard;
         let pastille = if incomplet && !en_retard { Pastille::de(socle::ecran::EtatDEcran::AFaire, "à compléter") } else { obligation.pastille.clone() };
-        out.push(FinASignaler::Lue(FinLue {
+        let contrat_dit = format!("contrat {}, fin le {}", numero_dit(e.numero.as_ref(), "", "", SANS_NUMERO), contrat.fin().jj_mm_aaaa());
+        let (avant_signaler, la_dire) = if incomplet { (Some(crate::ouverture::aide("a_dire_avant_signaler")?), Some(LA_DIRE)) } else { (None, None) };
+        let mut fin = FinLue {
             salarie,
             mois,
             contrat,
@@ -2585,10 +2707,19 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             a_saisir,
             du,
             pastille,
+            rang: obligation.rang(),
             obligation,
             qui_dit: None,
-            contrat_dit: None,
-        }));
+            contrat_dit,
+            avant_signaler,
+            la_dire,
+            gestes: Vec::new(),
+        };
+        // Une fin qui n'est pas due n'offre aucun geste.
+        if du {
+            fin.gestes = gestes_d_une_fin(&fin)?;
+        }
+        out.push(FinASignaler::Lue(fin));
     }
     Ok(out)
 }
@@ -2602,6 +2733,7 @@ fn fin_a_corriger(e: &Carte, mois: Mois, a_corriger: Manque) -> FinASignaler {
         a_corriger,
         pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, "à corriger"),
         qui_dit: None,
+        rang: RANG_D_UNE_CARTE_A_CORRIGER,
     })
 }
 
@@ -2617,7 +2749,6 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
                 let fin = f.contrat.fin().jj_mm_aaaa();
                 let ailleurs = if f.mois != c.mois { format!(" ({})", f.mois.libelle(Graphie::Accentuee)) } else { String::new() };
                 f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(&f.salarie), f.libelle_nature, fin, ailleurs));
-                f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO), fin));
             }
             FinASignaler::ACorriger(f) => {
                 let qui = match f.salarie.as_ref() {
@@ -2639,7 +2770,11 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
         0 => socle::phrase!("Fins de contrat du mois : {}.", fins.len()),
         n => socle::phrase!("Fins de contrat du mois : {}, dont {} à corriger.", fins.len(), n),
     };
-    Ok(ReponseFins { phrase, mois: c.mois, fins })
+    // CE QUI EST DU : une carte a corriger, une fin due ; dans leur rang.
+    let mut dus: Vec<FinASignaler> = fins.iter().filter(|f| f.due()).cloned().collect();
+    dus.sort_by(|x, y| x.rang().cmp(y.rang()));
+    let dus_titre = (!dus.is_empty()).then_some(CE_QUI_EST_DU);
+    Ok(ReponseFins { phrase, mois: c.mois, fins, dus_titre, dus })
 }
 
 /// Combien de mois en arriere un signalement de fin en retard se rappelle : une annee de paies.

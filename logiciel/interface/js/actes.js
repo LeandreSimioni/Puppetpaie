@@ -20,9 +20,8 @@
 */
 
 /** Le geste d'un groupe ou d'un carré : la boîte de la route que le moteur nomme (`route`, avec sa `charge` ; `puis` :
- *  l'acte qui suit). Un dossier à ouvrir porte son `chemin`. `seulement` : les salariés cochés d'avance. `sur` : ce sur
- *  quoi porte le geste d'un rappel (`objet`, `obligation`, ce que la boîte montre) : les gestes qui le lisent ne viennent
- *  que d'un rappel. */
+ *  l'acte qui suit). Un dossier à ouvrir porte son `chemin`. `seulement` : les salariés cochés d'avance. `sur` : le rappel dont
+ *  vient le geste (la fin de contrat à compléter : son `objet`). */
 function ouvrirGeste(action, mois, seulement, sur) {
   if (!action) return;
   if (action.chemin) return ouvrirEtDire(action.chemin, action.phrase, true);
@@ -45,10 +44,6 @@ function ouvrirGeste(action, mois, seulement, sur) {
       return f.a_saisir.length ? allerALaCase({ ...f, mois: f.mois || m }, f.a_saisir[0].champ) : null;
     }
     case "etat-du-mois": return null;   // le mois, déjà ouvert
-    case "fin-contrat-signaler": return boiteSignalerFin(m, sur.objet);
-    case "arret-signaler": return boiteSignalerArret(sur.objet, c.nature);
-    case "accident-declare":
-    case "attestation-declare": return boiteObligationFaite(sur.objet, sur.obligation);
     case "cloture": return boiteCloture(action);
     case "export-compta": return lancerExportCompta(c.annee);
   }

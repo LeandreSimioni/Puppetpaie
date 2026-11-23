@@ -272,21 +272,37 @@ struct MoisAVenir {
 type RangDEcheance = RangDeLEcran<ChargeDuGeste, ValeursDeLEcheance, ChoixDeLEcheance>;
 
 /// Un geste d'une echeance (`Echeance::gestes`) : la charge de sa route, ce que ses cases montrent d'abord, ce qu'elles
-/// offrent.
-type GesteDEcheance = GesteDeRoute<ChargeDuGeste, ValeursDeLEcheance, ChoixDeLEcheance>;
+/// offrent. Une obligation due d'un arret ou d'une fin de contrat a les memes (`obligations::Obligation::geste_qui_la_dit_faite`,
+/// `imprevus::geste_du_signalement`, `imprevus::gestes_d_une_fin`).
+pub(crate) type GesteDEcheance = GesteDeRoute<ChargeDuGeste, ValeursDeLEcheance, ChoixDeLEcheance>;
 
-/// Ce que les cases d'un geste d'une echeance montrent d'abord : les spectacles de la revue, tous cochés.
+/// Ce que les cases d'un geste d'une echeance montrent d'abord : les spectacles de la revue, tous cochés ; une obligation
+/// hors DSN deja dite faite, ce qui en est dit (le jour, le lieu, la reference) ; la connaissance d'un arret ou d'un
+/// accident deja dite, son jour et son heure.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct ValeursDeLEcheance {
     #[serde(skip_serializing_if = "Option::is_none")]
-    continuent: Option<Vec<droit::contexte::IdSpectacle>>,
+    pub(crate) continuent: Option<Vec<droit::contexte::IdSpectacle>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) le: Option<Jour>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) depot: Option<declarations::obligations::LieuHorsDsn>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) jour: Option<Jour>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) heure: Option<socle::paris::HeureDuJour>,
 }
 
-/// Ce qu'offrent les cases d'un geste d'une echeance : les spectacles de la revue, chacun dit avec son numero d'objet.
+/// Ce qu'offrent les cases d'un geste d'une echeance : les spectacles de la revue, chacun dit avec son numero d'objet ;
+/// les lieux ou une obligation hors DSN se fait, chacun dit en court.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct ChoixDeLEcheance {
     #[serde(skip_serializing_if = "Option::is_none")]
-    continuent: Option<Vec<crate::ouverture::Choix>>,
+    pub(crate) continuent: Option<Vec<crate::ouverture::Choix>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) depot: Option<Vec<crate::ouverture::Choix>>,
 }
 
 /// Le titre de l'echeancier du mois, ce qu'il dit quand il n'a rien, et celui de l'annee qui vient.
@@ -661,16 +677,6 @@ pub(crate) enum Objet {
     Arret(Box<ResumeDArret>),
 }
 
-impl Objet {
-    /// Le salarie qu'il nomme (la cle de sa fiche).
-    fn salarie(&self) -> droit::contexte::IdSalarie {
-        match self {
-            Objet::Fin(f) => f.salarie.clone(),
-            Objet::Arret(a) => a.salarie().clone(),
-        }
-    }
-}
-
 impl Echeance {
     fn nouveau(quoi: GenreDEcheance, cle: CleDEcheance, titre: String, question: String, tombe: Option<Mois>) -> Echeance {
         Echeance {
@@ -718,22 +724,12 @@ impl Echeance {
 
     /// LE GESTE QUI LA FAIT, en routes du catalogue (`etapes::action` : la route qu'il ouvre, sa charge, la route de
     /// l'acte qui suit, le mot du bouton), celles que l'ecran et le LLM appellent. Une obligation, lue sur ses champs : la
-    /// fin d'un contrat se signale (ou, s'il manque une case, se complete dans sa carte : la saisie du mois, puis
-    /// l'engagement modifie) ; un signalement DSN d'arret ou de reprise se signale ; une obligation hors DSN qu'une route
-    /// dit faite (`accident-declare`, `attestation-declare`) se dit faite ; le reste s'ouvre dans son mois. Une DSN, une
-    /// DPAE : l'apercu de son depot, puis le depot. La cloture, l'export compta : leur route (la revue des spectacles est
-    /// un de ses `gestes`). Le geste d'une route qui a sa structure de charge (le mois, les signalements des imprevus) la
-    /// passe ; un objet qui ne la remplit pas (un arret sans son salarie ou son dernier jour travaille)
-    /// n'offre pas de geste.
+    /// fin d'un contrat a qui il manque une case se complete dans sa carte (la saisie du mois, puis l'engagement
+    /// modifie) ; un signalement, une obligation hors DSN qu'une route dit faite, se font par un des `gestes` de
+    /// l'echeance, et n'ont pas d'action ; le reste s'ouvre dans son mois. Une DSN, une DPAE : l'apercu de son depot, puis
+    /// le depot. La cloture, l'export compta : leur route (la revue des spectacles est un de ses `gestes`).
     fn action(&self) -> R<Option<crate::etapes::Action>> {
-        use crate::etapes::{action, deposer_dsn, ChargeAnnee, ChargeMois, ChargeObligationDArret};
-        use crate::imprevus::{ChargeArretSignaler, ChargeFinContratSignaler, NatureSignalement};
-        // L'arret sur lequel porte l'obligation : son salarie et son dernier jour travaille.
-        let arret = || match &self.objet {
-            Some(Objet::Arret(a)) => Some((a.salarie().clone(), a.dernier_jour_travaille())),
-            _ => None,
-        };
-        let salarie = || self.objet.as_ref().map(Objet::salarie);
+        use crate::etapes::{action, deposer_dsn, ChargeAnnee, ChargeMois};
         Ok(Some(match &self.quoi {
             GenreDEcheance::Obligation => {
                 let Some(o) = self.obligation.as_ref() else { return Ok(None) };
@@ -744,20 +740,9 @@ impl Echeance {
                     C::SignalementFinContrat if !self.a_saisir.is_empty() => {
                         action(Route::Saisie, ChargeMois { mois }, Some(Route::ModifierEngagement), "Compléter le contrat".into())
                     }
-                    C::SignalementFinContrat => {
-                        let Some(s) = salarie() else { return Ok(None) };
-                        action(Route::FinContratSignaler, ChargeFinContratSignaler::de(mois, s), Some(Route::Deposer), "Signaler…".into())
-                    }
-                    cle @ (C::SignalementArret | C::SignalementArretRectificatif | C::SignalementReprise) => {
-                        let Some((s, dernier_jour)) = arret() else { return Ok(None) };
-                        let nature = if cle == C::SignalementReprise { NatureSignalement::Reprise } else { NatureSignalement::Arret };
-                        action(Route::ArretSignaler, ChargeArretSignaler::de(s, dernier_jour, nature), Some(Route::Deposer), "Signaler…".into())
-                    }
-                    C::DeclarationAccident | C::AttestationSalaire if hors_dsn => {
-                        let Some((salarie, dernier_jour)) = arret() else { return Ok(None) };
-                        let route = if cle == C::DeclarationAccident { Route::AccidentDeclare } else { Route::AttestationDeclare };
-                        action(route, ChargeObligationDArret { salarie, dernier_jour }, None, "Faite le".into())
-                    }
+                    // Un signalement, une obligation hors DSN : un des `gestes` de l'echeance (`Echeance::gestes`).
+                    C::SignalementFinContrat | C::SignalementArret | C::SignalementArretRectificatif | C::SignalementReprise => return Ok(None),
+                    C::DeclarationAccident | C::AttestationSalaire if hors_dsn => return Ok(None),
                     _ => action(Route::EtatDuMois, ChargeMois { mois }, None, "Ouvrir le mois".into()),
                 }
             }
@@ -810,21 +795,29 @@ impl Echeance {
             obligation: self.obligation.clone(),
             objet: self.objet.clone(),
             action: self.action()?,
-            gestes: self.gestes(),
+            gestes: self.gestes()?,
         })
     }
 
     /// LES GESTES QUE SA BOITE FAIT, tels que la page les dessine en boutons (`js/avance.js`, `brancherLesGestes`) : une
     /// echeance que seule la compagnie peut dire faite se coche (« C'est fait », `echeance-faite`), et se decoche une fois
     /// faite (« Pas encore fait ») ; la revue des spectacles fait cocher ceux qui continuent, tous cochés d'abord (la
-    /// charge n'en porte aucun : tout décocher les archive tous).
-    fn gestes(&self) -> Vec<GesteDEcheance> {
+    /// charge n'en porte aucun : tout décocher les archive tous). Une obligation due se fait par le geste que son objet
+    /// rend : le signalement d'un arret, de sa reprise ou d'une fin de contrat ; une obligation hors DSN se dit faite.
+    fn gestes(&self) -> R<Vec<GesteDEcheance>> {
         let mut gestes = Vec::new();
+        if let (true, Some(o), Some(objet)) = (self.due, self.obligation.as_ref(), self.objet.as_ref()) {
+            let geste = match objet {
+                Objet::Arret(a) => crate::imprevus::geste_qui_fait(a, o)?,
+                Objet::Fin(f) => crate::imprevus::geste_du_signalement_de_fin(f)?,
+            };
+            gestes.extend(geste);
+        }
         if let (GenreDEcheance::DeLAnnee(cle), Some(annee)) = (&self.quoi, self.annee) {
             if *cle == REVUE_SPECTACLES {
                 let charge = ChargeRevue { annee, continuent: Vec::new() };
-                let valeurs = ValeursDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| s.cle.clone()).collect()) };
-                let choix = ChoixDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| crate::ouverture::Choix::de(&s.cle, &s.dit)).collect()) };
+                let valeurs = ValeursDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| s.cle.clone()).collect()), ..ValeursDeLEcheance::default() };
+                let choix = ChoixDeLEcheance { continuent: Some(self.spectacles.iter().map(|s| crate::ouverture::Choix::de(&s.cle, &s.dit)).collect()), ..ChoixDeLEcheance::default() };
                 let geste = GesteDeRoute::avec_cases(Route::RevueSpectacles, charge.into(), CHOISIR_LES_SPECTACLES, vec![cle!(ChargeRevue, continuent)], valeurs, choix);
                 // Une revue qui n'est pas encore due ne pose pas sa question : sa boite ne dit que l'aide.
                 gestes.push(geste.disant([self.question.as_str(), REVUE_DIT].into_iter().filter(|l| !l.is_empty()).map(str::to_string).collect()));
@@ -836,7 +829,7 @@ impl Echeance {
             let libelle = if fait { C_EST_FAIT } else { PAS_ENCORE_FAIT };
             gestes.push(GesteDeRoute::avec_cases(Route::EcheanceFaite, charge.into(), libelle, Vec::new(), ValeursDeLEcheance::default(), ChoixDeLEcheance::default()));
         }
-        gestes
+        Ok(gestes)
     }
 
     /// Sa pastille : la couleur et les mots de son etat.
@@ -845,8 +838,8 @@ impl Echeance {
     }
 
     /// L'echeance en rang de l'echeancier, disant `dit`.
-    fn en_rang(&self, dit: Vec<String>) -> RangDEcheance {
-        RangDeLEcran { titre: self.titre.clone(), dit, pastille: self.pastille(), etat: None, montre: None, gestes: self.gestes() }
+    fn en_rang(&self, dit: Vec<String>) -> R<RangDEcheance> {
+        Ok(RangDeLEcran { titre: self.titre.clone(), dit, pastille: self.pastille(), etat: None, montre: None, gestes: self.gestes()? })
     }
 }
 
@@ -1001,7 +994,7 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
             let dit = if e.etat == Fait { Vec::new() } else { [&e.quand_dit, &e.detail].into_iter().filter(|l| !l.is_empty()).cloned().collect() };
             e.en_rang(dit)
         })
-        .collect();
+        .collect::<R<_>>()?;
     let dit_ailleurs = ce_mois.iter().any(|e| e.due);
     let (ce_mois_titre, ce_mois_vide) = match (ce_mois_rangs.is_empty(), dit_ailleurs) {
         (false, _) => (Some(CE_MOIS), None),
