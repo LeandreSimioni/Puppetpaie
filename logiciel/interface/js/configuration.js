@@ -54,9 +54,11 @@ function dessinerConfig() {
     dessinerCoffre(liste);
     return;
   }
-  if (FICHE_ACTIVE === "identite") {
+  // L'écran que la route de la place rend (`affichage: "montre"`) : le dessinateur le montre.
+  const montree = routeQuiMontre(avance.dataset.auto);
+  if (montree) {
     document.getElementById("config-formulaire").innerHTML = "";
-    dessinerIdentite(liste);
+    montrerLEcran(liste, montree);
     return;
   }
   if (FICHE_ACTIVE === "metiers") {

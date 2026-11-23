@@ -492,18 +492,6 @@ details.relire[open] > summary { margin-bottom: 8px; }
 .carte > .rang:only-child, .carte > .rang:first-child { margin-bottom: 0; border: 0; padding: 0; }
 /* La phrase qui ouvre une page de la Configuration : à quoi elle sert. */
 .intro { margin: 0 0 14px; color: var(--discret); font-size: 13px; }
-/* MODIFIER : un seul bouton, un crayon et le mot, neutre
-   partout. */
-.modifier { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px;
-  font-size: 14px; color: var(--texte); background: var(--carte);
-  border: 1px solid var(--bord); border-radius: 3px; cursor: pointer; white-space: nowrap; }
-.modifier:hover { border-color: var(--discret); }
-.modifier svg { width: 15px; height: 15px; fill: none; stroke: currentColor;
-  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.modifier:hover svg { animation: ecrire .6s ease-in-out infinite alternate; }
-.modifier input { display: none; }
-@keyframes ecrire { from { transform: translate(-2px, 1px) rotate(-8deg); }
-                    to { transform: translate(2px, -1px) rotate(6deg); } }
 .pastille {
   display: inline-block; padding: 1px 7px; border-radius: 9px;
   font-size: 11px; margin-top: 6px;
@@ -638,16 +626,11 @@ details.historique-fiche[open] > summary { margin-bottom: 8px; }
 .rang.mois .rang-infos { min-width: 0; }
 .rang.exercice .rang-infos { font-size: 13px; }
 .rang.import .rang-nom { min-width: 220px; }
-/* Signature, tampon, logo : l'image en place, à gauche. */
-.rang-image .identite-apercu { width: 13rem; flex: none; margin: 0; min-height: 76px; padding: 6px; }
-.rang-image .identite-apercu img { max-height: 84px; }
+/* Un rang d'un écran qu'une route rend (`montrerLEcran`) : ce qui s'y regarde, à gauche. */
+.rang-image .rang-apercu { width: 13rem; flex: none; margin: 0; min-height: 76px; padding: 6px; }
+.rang-image .rang-apercu img { max-height: 84px; }
+.rang-image .rang-apercu:empty { visibility: hidden; }
 .rang-image .rang-infos { display: flex; flex-direction: column; gap: 4px; }
-.identite-apercu.vide { color: var(--vide-texte); font-size: 12px; font-style: italic; }
-.bouton-fichier { display: inline-block; padding: 7px 14px; border: 1px solid var(--bord);
-  border-radius: 3px; background: var(--carte); color: var(--texte); font-size: 14px;
-  cursor: pointer; white-space: nowrap; }
-.bouton-fichier:hover { border-color: var(--action); }
-.bouton-fichier input { display: none; }
 .acte-dernier.faute { color: var(--erreur); }
 #titre-corrections[hidden] { display: none; }
 @media (max-width: 780px) {
@@ -1208,11 +1191,11 @@ table.compta tr.total-general td {
   font-size: 13px;
 }
 
-/* L'apercu d'une identite : signature, tampon, logo.
+/* Ce qui se regarde dans un rang (une signature, un tampon, un logo).
    Fond blanc impose -- une signature scannee est souvent transparente, et
    sur un fond sombre elle disparaitrait. On voit ce qui part sur le papier,
    pas ce que le theme de la page en fait. */
-.identite-apercu {
+.rang-apercu {
   background: var(--blanc);
   border: 1px solid var(--apercu-bord);
   border-radius: 6px;
@@ -1223,7 +1206,7 @@ table.compta tr.total-general td {
   justify-content: center;
   min-height: 90px;
 }
-.identite-apercu img { max-width: 100%; max-height: 120px; }
+.rang-apercu img { max-width: 100%; max-height: 120px; }
 
 /* Les soucis du bandeau au-dela du premier : derriere un clic. */
 .ennuis { display: inline; }

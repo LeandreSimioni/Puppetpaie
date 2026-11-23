@@ -249,13 +249,6 @@ function lignesDuTemps(t, dire) {
   return ligne(t.avant) + ligne(t.a_venir);
 }
 
-/* MODIFIER, C'EST TOUJOURS LE MEME BOUTON : un crayon et le
-   mot. Il y en avait trois formes -- un lien rouge « Modifier… » sur les
-   paies, un bouton vert au crayon sur les fiches, « Remplacer… » ou
-   « Changer… » sur les mots de passe et la signature. Les points de
-   suspension disent qu'une boite s'ouvre avant. Voir `.modifier`. */
-const CRAYON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
-
 /* UN MONTANT S'ECRIT D'UNE SEULE FACON : « 1 053,08 € ». Le
    moteur envoie des nombres (« 210.80 ») ; la page en avait trois mises en
    forme locales, et une dizaine d'endroits montraient le nombre tel quel --
