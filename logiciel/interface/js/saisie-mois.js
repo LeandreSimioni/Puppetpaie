@@ -24,8 +24,8 @@ function vueApercu(a) {
   if (!groupes.length) return phrase;
   return `
     <div class="mois-chiffres">
-      <div><span>Net à virer</span><b>${netPaye(a.total_net)}</b></div>
-      <div><span>Coût employeur</span><b>${euros(a.total_cout)}</b></div>
+      <div><span>${echapper(a.total_net_dit)}</span><b>${netPaye(a.total_net)}</b></div>
+      <div><span>${echapper(a.total_cout_dit)}</span><b>${euros(a.total_cout)}</b></div>
     </div>
     <ul class="mois-salaries">${groupes.map((g) => `
       <li title="${echapper(g.survol_dit)}">
@@ -48,9 +48,8 @@ async function calculerApercu(lu) {
     const a = lu && !modifications.length ? lireReponse(lu)
       : await aSonTour(() => api("apercu", { mois, modifications }));
     if (MOIS_AFFICHE !== mois) return;
-    // Un mois sans engagement d'ici : ce que l'aide en dit (les importés sont ceux de l'ancien logiciel).
-    cible.innerHTML = a.paies.length ? vueApercu(a)
-      : `<p class="discret">${aideDe(IMPORTES.length ? "importes" : NOUVELLE_CARTE.aide_vide)}</p>`;
+    // Un mois sans engagement d'ici : ce que la route `saisie` en dit (`vide_dit`).
+    cible.innerHTML = a.paies.length ? vueApercu(a) : `<p class="discret">${echapper(VIDE_DIT)}</p>`;
     poserLesPaies(a);
   } catch (e) {
     cible.innerHTML = `<div class="encart erreur">${erreurEnClair(e)}</div>`;
@@ -79,6 +78,7 @@ async function chargerMois(mois, repeint = false) {
   SAISIE = r.saisie;
   IMPORTES = r.importes;
   NOUVELLE_CARTE = r.nouvelle_carte;
+  VIDE_DIT = r.vide_dit;
   MOIS_AFFICHE = mois;
   if (!repeint) oublierLesBulles();
   document.getElementById("mois").value = mois;
@@ -89,7 +89,7 @@ async function chargerMois(mois, repeint = false) {
   if (repeint) window.scrollTo(0, defilement);
   await poserContratsEnCours(mois);
   if (DEMANDE_MOIS !== mois) return;
-  majAvisDuMois(mois, r.ferme_aux_neufs ? "" : r.phrase);
+  majAvisDuMois(r.demo, r.ferme_aux_neufs ? "" : r.phrase);
   dessinerMoisImporte(r.ferme_aux_neufs, r);
   document.getElementById("resultat").innerHTML = "";
   calculerApercu(lu.lectures.apercu);
@@ -109,19 +109,18 @@ async function repeindreLeMois(mois, ancien, frais) {
   await Promise.allSettled([dessinerActions(mois), dessinerImprevus(mois), dessinerEtatsDesEngagements(mois)]);
 }
 
-/** Ce que l'écran dit d'un mois, au-dessus de ses engagements : la phrase que le moteur rend (`saisie`), rien pour un
- *  mois importé. */
-function majAvisDuMois(mois, phrase) {
-  majAvisDemo(mois);
+/** Ce que l'écran dit d'un mois, au-dessus de ses engagements : la mention d'un mois saisi en démo et la phrase que le
+ *  moteur rend (`saisie`), rien pour un mois importé. */
+function majAvisDuMois(demo, phrase) {
+  majAvisDemo(demo);
   noteSaisie(phrase);
 }
 
-/** UN MOIS SAISI EN DÉMO, dans une compagnie gardée au déblocage : la mention du moteur (route `etat`, `demo`). */
-function majAvisDemo(mois) {
+/** UN MOIS SAISI EN DÉMO, dans une compagnie gardée au déblocage : la mention du moteur (route `saisie`, `demo`). */
+function majAvisDemo(demo) {
   const avis = document.getElementById("avis-demo");
-  const d = ETAT && ETAT.demo;
-  avis.hidden = !(d && d.mois.includes(mois));
-  if (!avis.hidden) avis.textContent = d.phrase;
+  avis.hidden = !demo;
+  if (demo) avis.textContent = demo;
 }
 
 /* LES ENGAGEMENTS IMPORTÉS QUI TOUCHENT LE MOIS (`importes` de la route `saisie`, `import::mois::cartes`) : une carte
@@ -133,6 +132,9 @@ let IMPORTES = [];
 /* CE QU'UNE CARTE NEUVE DU MOIS PEUT ÊTRE (`nouvelle_carte` de la route `saisie`) : sa nature d'ouverture, les natures
  * que le mois propose, si elle se choisit, et l'aide d'un mois vide. Le moteur le dit, mois par mois. */
 let NOUVELLE_CARTE = null;
+
+/* CE QUE DIT UN MOIS SANS PAIE D'ICI (`vide_dit` de la route `saisie`). */
+let VIDE_DIT = null;
 
 const CASES_IMPORTEES = [
   ["brut", "Brut"], ["net_imposable", "Net imposable"], ["net_a_payer", "Net à payer"],

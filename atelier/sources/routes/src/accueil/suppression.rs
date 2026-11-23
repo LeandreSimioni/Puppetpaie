@@ -441,6 +441,13 @@ pub(crate) struct MentionDemo {
     phrase: String,
 }
 
+impl MentionDemo {
+    /// Sa phrase, quand `mois` a ete saisi en demo ; aucune sinon.
+    pub(crate) fn du_mois(&self, mois: Mois) -> Option<&str> {
+        self.mois.contains(&mois).then_some(self.phrase.as_str())
+    }
+}
+
 /// La mention de demo de la compagnie ; `None` : une compagnie qui n'a pas ete creee en demo.
 pub(crate) fn mention(racine: &Path) -> R<Option<MentionDemo>> {
     let Some(d) = lire_la_demo(racine)? else { return Ok(None) };

@@ -67,7 +67,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie), vide_dit (ce que dit le mois quand l'aperçu n'a aucune paie d'ici), demo (la mention d'un mois saisi en démo)",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -79,7 +79,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &ChargeApercu::CHARGE,
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois, ses deux nombres (total_net, total_cout) et ce qu'ils disent (total_net_dit, total_cout_dit)",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -243,6 +243,12 @@ struct SaisieDuMois {
     importes_titre: &'static str,
     importes_dit: String,
     ferme_aux_neufs: Option<String>,
+    /// Ce que dit le mois quand l'apercu n'a aucune paie d'ici : que ses engagements viennent de l'ancien logiciel, ou
+    /// l'aide d'un mois vide (`NouvelleCarte::aide_vide`).
+    vide_dit: &'static str,
+    /// La mention d'un mois saisi en demo, dans une compagnie gardee (`accueil::suppression::mention`) ; aucune sinon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demo: Option<String>,
     nouvelle_carte: NouvelleCarte,
     /// La vue du mois (`engagement::stock::vue_du_mois`), les lignes des permanents calculees (`avec_les_lignes_calculees_des_permanents`).
     saisie: VueDuMois,
@@ -615,6 +621,8 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
+    let vide_dit = crate::ouverture::aide(if n_importes > 0 { "importes" } else { nouvelle_carte.aide_vide })?;
+    let demo = crate::accueil::suppression::mention(&ctx.racine)?.and_then(|m| m.du_mois(mois).map(str::to_string));
     let (saisie, a_completer) = avec_les_lignes_calculees_des_permanents(ctx, saisie)?;
     Ok(SaisieDuMois {
         mois,
@@ -623,6 +631,8 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         importes_dit: format!("{} de l'ancien logiciel", socle::ecran::compte(n_importes, "engagement", "engagements")),
         importes,
         ferme_aux_neufs: ferme,
+        vide_dit,
+        demo,
         nouvelle_carte,
         saisie,
         identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?),
@@ -2321,6 +2331,9 @@ struct Apercu {
     /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     total_net: Option<Montant>,
+    /// Ce que disent les deux nombres du mois : le net (ce qu'on vire), le cout employeur.
+    total_net_dit: &'static str,
+    total_cout_dit: &'static str,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
     avertissements: Vec<String>,
@@ -2366,6 +2379,8 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         paies,
         total_cout: r.total_cout,
         total_net: r.total_net,
+        total_net_dit: "Net à virer",
+        total_cout_dit: "Coût employeur",
         blocs: r.blocs,
         par_salarie: r.par_salarie,
         avertissements: r.avertissements,
