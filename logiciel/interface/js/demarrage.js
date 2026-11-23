@@ -201,12 +201,12 @@ function fenetreNative() {
   document.querySelector(".bandeau").classList.add("fenetre-tire");
   document.getElementById("fenetre-reduire").onclick = () => f.reduire();
   document.getElementById("fenetre-agrandir").onclick = () => f.agrandir();
-  // Fermer enregistre d'abord ce qui attend encore (la saisie s'enregistre
-  // une seconde apres la derniere frappe), puis ferme.
-  document.getElementById("fenetre-fermer").onclick = async () => {
-    if (!(await avantDeQuitter())) return;
-    f.fermer();
-  };
+  // Fermer, par ce bouton comme par le systeme (Alt+F4, la barre des
+  // taches), passe par `avantDeQuitter` : la question d'une saisie non
+  // enregistree, puis ce qui attend encore s'enregistre (la saisie
+  // s'enregistre une seconde apres la derniere frappe).
+  f.tenirLaFermeture(avantDeQuitter);
+  document.getElementById("fenetre-fermer").onclick = () => f.fermer();
   // Agrandie, le bouton du milieu restaure : il le montre.
   const milieu = document.getElementById("fenetre-agrandir");
   const suivre = async () => {

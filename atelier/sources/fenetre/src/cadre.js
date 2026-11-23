@@ -5,7 +5,8 @@
 // (`window.fenetrePuppetPaie` absent).
 //
 //   - `window.fenetrePuppetPaie` : reduire, agrandir (ou restaurer), fermer, `agrandie()` -- ce que les boutons d'une
-//     page appellent (la page du logiciel a les siens dans son bandeau, `js/demarrage.js`) ;
+//     page appellent (la page du logiciel a les siens dans son bandeau, `js/demarrage.js`) -- et
+//     `tenirLaFermeture(f)`, par quoi une page fait passer toute fermeture par sa question ;
 //   - TIRER : un appui dans une zone marquee `.fenetre-tire` (le bandeau du logiciel) ou `.pywebview-drag-region` (le
 //     corps des pages de l'accueil, ecrites pour la fenetre d'avant) deplace la fenetre des que la souris a bouge de
 //     quelques points -- un clic sans mouvement reste un clic (une tuile de l'accueil se clique) ; un double-clic
@@ -22,10 +23,31 @@
     const t = window.__TAURI_INTERNALS__;
     return t ? t.invoke("plugin:window|" + nom).catch(() => false) : Promise.resolve(false);
   };
+  // FERMER, PAR LE BOUTON OU PAR LE SYSTEME (Alt+F4, la barre des taches : main.rs remet la demande ici), est un seul
+  // chemin. Une page qui porte des saisies le tient (`tenirLaFermeture(avantDeQuitter)`, js/demarrage.js) : sa
+  // fonction dit si l'on peut partir. Vrai, la fenetre se ferme ; faux (on reste), la page annonce de nouveau qu'elle
+  // tient la fermeture. Une seconde demande pendant que la premiere attend sa reponse ferme : on peut toujours fermer
+  // le logiciel, meme quand la page ne repond plus (une fonction qui echoue laisse la demande en attente).
+  const TENUE = "puppetpaie-fermeture-tenue";
+  let tenir = null;
+  let enCours = false;
+  const detruire = () => geste("destroy");
+  const annoncer = () => {
+    const t = window.__TAURI_INTERNALS__;
+    if (t) t.invoke("plugin:event|emit", { event: TENUE, payload: null }).catch(() => false);
+  };
+  async function fermer() {
+    if (!tenir || enCours) return detruire();
+    enCours = true;
+    if (await tenir()) return detruire();
+    enCours = false;
+    annoncer();
+  }
   const fenetre = Object.freeze({
     reduire: () => geste("minimize"),
     agrandir: () => geste("toggle_maximize"),
-    fermer: () => geste("close"),
+    fermer,
+    tenirLaFermeture: (f) => { tenir = f; annoncer(); },
     agrandie: () => geste("is_maximized"),
   });
   Object.defineProperty(window, "fenetrePuppetPaie", { value: fenetre });
