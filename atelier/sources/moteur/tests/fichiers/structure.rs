@@ -146,6 +146,10 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
         for c in f["charge"].as_array().unwrap() {
             voir(format!("le libellé de {}.{}", nom, c["nom"].as_str().unwrap()), c["libelle"].as_str().unwrap(), COURT, true);
+            // Les valeurs d'une liste fermee, telles que leur type les dit (`socle::liste::ListeFermee`).
+            for v in c["choix"].as_array().into_iter().flatten() {
+                voir(format!("{}.{} : le choix « {} »", nom, c["nom"].as_str().unwrap(), v["code"].as_str().unwrap()), v["libelle"].as_str().unwrap(), CHOIX, false);
+            }
         }
         // Les cases de la carte, telles que la page les montre (`natures[].cases`, et celles qu'un motif de recours porte).
         for n in f["natures"].as_array().unwrap() {
@@ -188,6 +192,33 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
     }
     assert!(fautes.is_empty(), "ce que l'écran affiche n'est pas fait pour l'écran : récris-le bref, en mots, dans le moteur (le sens long reste au LLM) :\n{}", fautes.join("\n"));
+}
+
+/// UNE LISTE FERMEE SE DECLARE `choix` (AGENTS, « C'est le type qui décide de l'affichage ») : chaque champ qu'une fiche
+/// declare en texte, rempli d'un texte qu'aucune liste n'a, n'est jamais refuse a la porte comme une valeur hors d'une
+/// liste ; un champ que la route lit par une liste fermee declare donc sa forme par son type (`ListeDeChoix::de`). Une cle
+/// que nulle charge n'a ferme chaque charge essayee : la porte la refuse apres le champ (les cles se lisent dans leur
+/// ordre), et la route ne fait rien.
+#[test]
+fn un_champ_texte_n_est_pas_une_liste_fermee() {
+    use routes::catalogue::Forme;
+    let c = treteaux("liste-fermee");
+    let mut fautes = Vec::new();
+    for f in catalogue() {
+        let exemple: Value = serde_json::from_str(f.exemple).unwrap();
+        for champ in f.charge.iter().filter(|c| c.forme == Forme::Texte) {
+            let mut charge = exemple.clone();
+            let objet = charge.as_object_mut().unwrap();
+            objet.insert(champ.nom.to_string(), json!("hors-de-toute-liste"));
+            objet.insert("zz_une_cle_qu_aucune_charge_n_a".to_string(), json!(true));
+            let r = route(&c, f.nom(), charge, "2026-11-02");
+            let phrase = r["refus"]["phrase"].as_str().unwrap_or_default();
+            if phrase.contains("la valeur") && phrase.contains("n'est pas connue ici") {
+                fautes.push(format!("{}.{} : {}", f.nom(), champ.nom, phrase));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un champ déclaré texte est lu par une liste fermée : le déclarer par son type (Forme::Choix(ListeDeChoix::de::<T>())) :\n{}", fautes.join("\n"));
 }
 
 /// La place du libelle d'une case de fiche (une ligne du formulaire), de son aide et d'un choix de sa liste, en caracteres.
