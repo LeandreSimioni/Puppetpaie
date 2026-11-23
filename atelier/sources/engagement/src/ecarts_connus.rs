@@ -7,8 +7,10 @@
 //!
 //! UNE COMPARAISON QUI RETOMBE EXACTEMENT SUR UNE LIGNE N'EST PAS UN ECART (`ecarts::confronter`) : le taux que le
 //! bulletin imprime est celui que l'ancien logiciel a applique quand notre ligne porte celui du texte, et son montant est
-//! le notre, chaque ligne au taux du texte refaite au taux applique, a l'arrondi pres. Elle ne fait pas d'incident, et la
-//! carte de la paie importee dit l'explication et l'ecart chiffre (`import::mois`). Une comparaison qui ne colle pas
+//! le notre, chaque ligne au taux du texte refaite au taux applique, a l'arrondi pres. La paie se refait alors en
+//! memoire, ces lignes-la au taux applique (`droit::contexte::TauxApplique`), et se compare tout de nouveau : ce qui en
+//! retombe (l'assiette de la CSG, les nets, les totaux) ne sonne pas (`ecarts::comparer`). Elle ne fait pas d'incident,
+//! et la carte de la paie importee dit l'explication et l'ecart chiffre (`import::mois`). Une comparaison qui ne colle pas
 //! exactement reste un ecart : une ligne trop large cacherait un vrai defaut.
 
 use std::sync::{Arc, OnceLock};

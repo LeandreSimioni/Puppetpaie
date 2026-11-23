@@ -464,8 +464,24 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             }
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
-            let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).and_then(|r| confronter(&r, p, mois, &empreinte, &mut suivi));
-            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, sorte, non_rattachees, connus, effectif_propose } = suivi;
+            let mut ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &[], &mut suivi).and_then(|r| confronter(&r, p, mois, &empreinte, &mut suivi));
+            // UNE PAIE QUI RETOMBE EXACTEMENT SUR DES ECARTS CONNUS se refait, en memoire, aux taux que l'ancien logiciel a
+            // appliques a ces lignes-la (`Contexte::avec_les_taux_appliques`), et se compare tout de nouveau : ce qui en
+            // retombe (la prevoyance patronale dans l'assiette de la CSG, les nets) ne sonne pas, ce qui s'ecarte encore
+            // sonne. Les ecarts connus constates restent ceux de la premiere comparaison, au taux du texte.
+            if ecarts.is_ok() && !suivi.appliques.is_empty() {
+                let appliques = std::mem::take(&mut suivi.appliques);
+                let mut refait = Suivi::default();
+                ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &appliques, &mut refait).and_then(|r| confronter(&r, p, mois, &empreinte, &mut refait));
+                let mut connus = std::mem::take(&mut suivi.connus);
+                for k in refait.connus.drain(..) {
+                    if !connus.contains(&k) {
+                        connus.push(k);
+                    }
+                }
+                suivi = Suivi { connus, ..refait };
+            }
+            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, sorte, non_rattachees, connus, effectif_propose, appliques: _ } = suivi;
             if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
                 return None;
             }
@@ -484,7 +500,7 @@ pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Pa
             false => socle::refus!("l'engagement importé n'a pas de paie en {}", mois),
         });
     };
-    refaire(racine, imp, mois, p, nature, jours_comptes, &mut Suivi::default()).map(|r| r.paie)
+    refaire(racine, imp, mois, p, nature, jours_comptes, &[], &mut Suivi::default()).map(|r| r.paie)
 }
 
 /// Les paies de l'engagement importe `imp` que ce moteur refait : chacune avec son mois, la nature du contrat et le
@@ -505,12 +521,15 @@ struct Suivi {
     a_refaire: bool,
     /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre`).
     rien_de_livre: bool,
-    /// La sorte de raison que l'endroit d'un refus du calcul dit (`a_refaire`, `introuvable`) ; aucune : un refus que
+    /// La sorte de raison que l'endroit d'un refus dit (`a_refaire`, `refusee`, `non_reconnu`) ; aucune : un refus que
     /// les pieces font (`SorteDeNonComparaison::du_refus`).
     sorte: Option<SorteDeNonComparaison>,
     non_rattachees: Vec<String>,
     connus: Vec<crate::ecarts_connus::EcartConnuConstate>,
     effectif_propose: Vec<socle::mois::Annee>,
+    /// Les taux que l'ancien logiciel a appliques aux lignes des ecarts connus constates (`confronter`), auxquels la
+    /// paie se refait (`comparer`).
+    appliques: Vec<droit::contexte::TauxApplique>,
 }
 
 /// La paie refaite (`refaire`), et ce que la comparaison en lit.
@@ -532,11 +551,12 @@ fn refaire<'a>(
     p: &'a PaieVersee,
     nature: NatureDeContrat,
     jours_comptes: Option<socle::grandeurs::Jours>,
+    appliques: &[droit::contexte::TauxApplique],
     c: &mut Suivi,
 ) -> R<Refaite<'a>> {
     let fin = mois.dernier_jour();
     let annee = mois.annee();
-    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
+    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?.avec_les_taux_appliques(appliques.to_vec());
     // CE QUE LE LOGICIEL NE LIVRE PAS (le bareme de l'annee, la couche de la convention), avant toute autre raison : une
     // version suivante peut l'apporter, la paie se compare de nouveau a l'ouverture suivante (`a_refaire`), et
     // `comparer` dit si elle compte.
@@ -878,8 +898,6 @@ fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, ligne: Option<&cra
 fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCourte, c: &mut Suivi) -> R<Vec<Ecart>> {
     let (paie, garanties, atmp_lu, cotisations) = (&r.paie, &r.garanties, r.atmp_lu, r.cotisations);
     let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.as_ref());
-    // Ce que les ecarts connus expliquent des montants, salarial et employeur (leur - notre).
-    let (mut explique_sal, mut explique_pat) = (Montant::ZERO, Montant::ZERO);
     // Les deux cotes, par cotisation.
     let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<&CotisationImprimee>> = BTreeMap::new();
     // Les cotisations que le bulletin imprime apres son total (les facultatives, les exonerations) : hors de ce total.
@@ -1010,17 +1028,22 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
                 continue;
             }
             ici.retain(|e| e.mesure.ce_qui_differe() != montant && e.mesure.ce_qui_differe() != taux);
-            match salarie {
-                false => explique_pat = explique_pat + (leur - notre),
-                true => explique_sal = explique_sal + (leur - notre),
+            // Les lignes au taux du texte, que la paie refaite portera au taux applique (`comparer`).
+            let part_du_bareme = if salarie { droit::forme_bareme::Part::TauxSal } else { droit::forme_bareme::Part::TauxPat };
+            for n in nous.iter().filter(|n| part(n).0 == Some(connu.texte)) {
+                let t = droit::contexte::TauxApplique { cotisation: n.id.clone(), part: part_du_bareme, texte: connu.texte, applique: connu.applique };
+                if !c.appliques.contains(&t) {
+                    c.appliques.push(t);
+                }
             }
             c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(empreinte, &connu, notre, leur));
         }
         ecarts.extend(ici);
     }
-    // Les totaux du bulletin, sans ce qu'il imprime apres eux : l'ecart relatif seulement.
+    // LES TOTAUX DU BULLETIN, SANS CE QU'IL IMPRIME APRES EUX (`hors_total`) : nos lignes de ces cotisations, rangees
+    // comme la comparaison les range (`REPLIS` compris), n'y entrent pas non plus. L'ecart relatif seulement.
     let hors = |f: &dyn Fn(&LigneCotisation) -> Montant| -> Montant {
-        paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).fold(Montant::ZERO, |a, l| a + f(l))
+        nos.iter().filter(|(k, _)| hors_total.contains(k)).flat_map(|(_, v)| v.iter()).fold(Montant::ZERO, |a, l| a + f(l))
     };
     for (cle, notre, leur) in [
         (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
@@ -1029,13 +1052,7 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
         (TotalDuBulletin::NetImposable, paie.net_imposable, p.nets.net_imposable),
     ] {
         let Some(leur) = leur else { continue };
-        // Un total de cotisations est leur somme : ce que les ecarts connus en expliquent n'en est pas un ecart.
-        let explique = match cle {
-            TotalDuBulletin::CotisationsSalariales => explique_sal,
-            TotalDuBulletin::CotisationsPatronales => explique_pat,
-            TotalDuBulletin::NetSocial | TotalDuBulletin::NetImposable => Montant::ZERO,
-        };
-        if (leur - (notre + explique)).abs() > UN_CENTIME {
+        if (leur - notre).abs() > UN_CENTIME {
             let r = relatif(leur, notre);
             let mesure = if cle == TotalDuBulletin::CotisationsPatronales { MesureDeLEcart::MontantEmployeur(r) } else { MesureDeLEcart::MontantSalarie(r) };
             ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure });
