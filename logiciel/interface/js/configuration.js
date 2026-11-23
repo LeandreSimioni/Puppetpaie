@@ -11,7 +11,7 @@ let FICHE_NEUVE = false;
 
 document.querySelectorAll(".sous-onglets button").forEach((b) => {
   b.onclick = async () => {
-    if (!(await quitterLaFiche())) return;
+    if (!(await quitterLEcran())) return;
     document.querySelectorAll(".sous-onglets button").forEach((x) => x.classList.remove("actif"));
     b.classList.add("actif");
     if (FICHE_ACTIVE !== b.dataset.fiche) FICHE_NEUVE = false;
@@ -275,7 +275,7 @@ function dessinerConfig() {
         } catch (err) { dire(err.message, "erreur"); }
       };
       const ouvrir = async (c) => {
-        if (c !== CLE_ACTIVE && !(await quitterLaFiche())) return;
+        if (c !== CLE_ACTIVE && !(await quitterLEcran())) return;
         CLE_ACTIVE = c;
         FICHE_NEUVE = false;
         dessinerConfig();
@@ -555,7 +555,7 @@ document.addEventListener("click", async (ev) => {
 
 /* Ouvrir, dans Configuration, la fiche que l'import vient de créer. */
 async function ouvrirFicheImportee(nom, cle) {
-  if (!(await quitterLaFiche())) return;
+  if (!(await quitterLEcran())) return;
   document.querySelectorAll(".sous-onglets button").forEach((x) => x.classList.toggle("actif", x.dataset.fiche === nom));
   FICHE_ACTIVE = nom;
   CLE_ACTIVE = nom === "entreprise" ? null : cle;
@@ -765,8 +765,8 @@ async function ecrireImportation() {
   }
 }
 
-/* La fiche que le formulaire montre en ce moment : `quitterLaFiche` en a
- * besoin pour pouvoir l'enregistrer avant de partir. */
+/* La fiche que le formulaire montre en ce moment : une réponse de la route `fiche` qui arrive pour une autre ne se
+ * dessine pas (`ouvrirLaFicheRendue`). */
 let FICHE_COURANTE = null;
 
 /* CE QU'UN SPECTACLE, OU UN SALARIÉ, A COÛTÉ DANS L'ANNÉE.

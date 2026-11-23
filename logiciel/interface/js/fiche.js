@@ -44,7 +44,7 @@ function structureDecrite(cle, nom = FICHE_ACTIVE) {
 /* Une fiche s'ouvre telle que la route la rend (`ouvrirLaFicheRendue`), quelle qu'elle soit. */
 function dessinerFormulaire(fiche) {
   if (!fiche) return;
-  ouvrirLaFicheRendue(fiche);
+  return ouvrirLaFicheRendue(fiche);
 }
 
 /* LA FICHE QUE LA ROUTE REND (`fiche`), dessinée par le dessinateur commun (`js/avance.js`, `poserLaFiche`) : son en-tête,
@@ -58,8 +58,6 @@ let NOTE_APRES_OUVERTURE = null;     // ce que la fiche qui se rouvre dit sous �
 
 async function ouvrirLaFicheRendue(fiche) {
   FICHE_COURANTE = fiche;
-  FICHE_MODIFIEE = false;
-  FICHE_INITIALE = null;
   const note = NOTE_APRES_OUVERTURE;
   NOTE_APRES_OUVERTURE = null;
   const form = document.getElementById("config-formulaire");
@@ -118,7 +116,6 @@ async function ouvrirLaFicheRendue(fiche) {
   const changer = (e) => {
     const c = e.target.closest && e.target.closest(".case[data-cle]");
     if (c) { changees.delete(c.dataset.cle); changees.set(c.dataset.cle, tour + 1); }
-    marquerModifie();
     clearTimeout(minuterie);
     minuterie = setTimeout(relire, 400);
   };
@@ -137,7 +134,23 @@ async function ouvrirLaFicheRendue(fiche) {
     form.querySelector("[data-inviter]").onclick = (ev) => demanderFiche(ev.currentTarget, inv, bloc);
   }
   peindreCoutAnnee();
-  FICHE_INITIALE = JSON.stringify(lireLaFicheOuverte());
+  // Quitter la fiche avec une saisie non enregistrée se demande (`retenirLEcran`) : jeter la reprend telle qu'elle est
+  // enregistrée ; enregistrer peut être annulé dans la boîte de ce qui change, et l'on reste.
+  retenirLEcran(cases, { enregistrer: () => enregistrerFiche(fiche), jeter: () => dessinerFormulaire(fiche), quandChange: montrerModifie });
+}
+
+/* CE QUE LA FICHE MONTRE QUAND ON Y TAPE : la mention « modifié », et « Annuler », qu'une fiche sans liste (Entreprise)
+ * ne montre qu'après un changement ; revenu à ce qui était, elles s'effacent. */
+function montrerModifie(change) {
+  const t = document.getElementById("config-modifie");
+  const annuler = document.getElementById("config-annuler");
+  if (!change) {
+    if (t) t.hidden = true;
+    if (annuler && FICHE_SANS_LISTE) annuler.hidden = true;
+    return;
+  }
+  if (t) { t.hidden = false; t.textContent = ETAT.aides.fiche_modifiee; }
+  if (annuler) annuler.hidden = false;
 }
 
 /* OÙ UNE CASE RENVOIE (`renvoi` de la case, rendu par la route) : le sous-onglet des métiers, ou la case d'une autre
@@ -152,8 +165,13 @@ document.addEventListener("click", (e) => {
 
 /* Ce que dit la fiche ouverte, telle que la route la rend (`lireLesCases`) ; aucune fiche ouverte, rien. */
 function lireLaFicheOuverte() {
-  const rendue = document.querySelector("#config-formulaire [data-fiche-cases]");
+  const rendue = casesDeLaFicheOuverte();
   return rendue ? lireLesCases(rendue) : {};
+}
+
+/* Le bloc des cases de la fiche ouverte ; aucune fiche ouverte, rien. */
+function casesDeLaFicheOuverte() {
+  return document.querySelector("#config-formulaire [data-fiche-cases]");
 }
 
 /* Le salarie a choisir dans « Le dossier d'un salarié », a l'arrivee dans
@@ -161,7 +179,7 @@ function lireLaFicheOuverte() {
 let DOSSIER_PRECHOIX = null;
 
 async function exporterSalarie(cle) {
-  if (!(await quitterLaFiche())) return;
+  if (!(await quitterLEcran())) return;
   DOSSIER_PRECHOIX = cle;
   // L'onglet se dessine a son arrivee, et `dessinerDossier` y pose le choix.
   document.querySelector('.onglets button[data-vue="exports"]').click();
@@ -180,7 +198,7 @@ async function demanderFiche(bouton, inv, bloc) {
     const r = await api(inv.geste.route, { ...charge, motdepasse: mdp });
     // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
     ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
-    FICHE_MODIFIEE = false;
+    oublierLEcran(casesDeLaFicheOuverte());
     CLE_ACTIVE = null;
     FICHE_NEUVE = false;
     dessinerConfig();
@@ -248,97 +266,19 @@ function enEuros(v, max = 20) {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: max });
 }
 
-/*  CE QU'ON A TAPÉ ET PAS ENREGISTRÉ
- *
- *  Quitter l'onglet avec une saisie non enregistree se dit ; la copie de
- *  l'ancienne version dans `config/avant/` ne se montre pas. Rien si on n'a
- *  rien touche.
- */
-let FICHE_MODIFIEE = false;
-// LA FICHE TELLE QU'ELLE S'EST OUVERTE. Taper un « a » puis
-// l'effacer demandait d'enregistrer une fiche identique : on compare
-// maintenant ce qui est dans les cases a ce qui y etait a l'ouverture.
-let FICHE_INITIALE = null;
-
-function ficheIdentique() {
-  if (FICHE_INITIALE === null) return false;
-  return JSON.stringify(lireLaFicheOuverte()) === FICHE_INITIALE;
-}
-
-function marquerModifie() {
-  const annuler = document.getElementById("config-annuler");
-  if (ficheIdentique()) {
-    FICHE_MODIFIEE = false;
-    const t = document.getElementById("config-modifie");
-    if (t) t.hidden = true;
-    if (annuler && FICHE_SANS_LISTE) annuler.hidden = true;
-    return;
-  }
-  FICHE_MODIFIEE = true;
-  const t = document.getElementById("config-modifie");
-  if (t) { t.hidden = false; t.textContent = ETAT.aides.fiche_modifiee; }
-  if (annuler) annuler.hidden = false;
-}
-
 /* ANNULER, le pendant d'« Enregistrer » : ce
  * qu'on a tapé ne s'écrit pas. Enregistrer referme la fiche et revient à la
  * liste (ecrireFiche) ; Annuler aussi, sans rien écrire : une fiche neuve
  * n'est pas créée, une fiche existante reste telle qu'elle est enregistrée.
  * La fiche Entreprise n'a pas de liste où revenir : Annuler y reprend ce
  * qui est enregistré, et ne se montre que si l'on a changé quelque chose.
- * C'est le « Annuler les changements » de `quitterLaFiche`, demandé
- * d'un geste : il ne redemande pas. */
+ * C'est le « jeter » de la boîte des changements non enregistrés
+ * (`quitterLEcran`), demandé d'un geste : il ne redemande pas. */
 function annulerFiche() {
-  FICHE_MODIFIEE = false;
+  oublierLEcran(casesDeLaFicheOuverte());
   CLE_ACTIVE = null;
   FICHE_NEUVE = false;
   dessinerConfig();
-}
-
-/** LA BOÎTE DES CHANGEMENTS NON ENREGISTRÉS, la même partout (une fiche,
- *  « Pour démarrer ») : « enregistrer », « jeter », ou « rester » quand on
- *  la ferme d'un clic à côté. La boîte ouverte dessous (celle de
- *  l'ouverture) est mise de côté, et revient sauf si l'on jette. */
-async function demanderSiEnregistrer() {
-  const rendre = mettreDeCote();
-  const choix = await new Promise((resoudre) => {
-    let repondu = false;
-    const repondre = (v) => { if (!repondu) { repondu = true; resoudre(v); } };
-    ouvrirBoite(`<h3>${aideDe("non_enregistres_titre")}</h3>
-      <p>${aideDe("non_enregistres")}</p>
-      <div class="actions">
-        <button class="primaire" id="q-enregistrer">${aideDe("garder_changements")}</button>
-        <button class="secondaire" id="q-jeter">${aideDe("jeter_changements")}</button>
-      </div>`, () => repondre("rester"));
-    // REPONDRE D'ABORD, FERMER ENSUITE : dans l'autre ordre, `fermerBoite`
-    // appellerait le rappel de fermeture -- « rester » -- avant le bouton.
-    document.getElementById("q-enregistrer").onclick = () => { repondre("enregistrer"); fermerBoite(); };
-    document.getElementById("q-jeter").onclick = () => { repondre("jeter"); fermerBoite(); };
-  });
-  if (rendre && choix !== "jeter") rendre();
-  return choix;
-}
-
-/** Appelee avant de quitter la fiche en cours (et « Pour démarrer », qui
- *  s'y peint en tête), ou l'écran que le dessinateur a posé (`quitterLEcran`).
- *  Rend `true` si on peut partir. */
-async function quitterLaFiche() {
-  if (!(await quitterLEcran())) return false;
-  if (!FICHE_MODIFIEE || ficheIdentique()) return quitterDemarrage();
-  const fiche = FICHE_COURANTE;
-  const choix = await demanderSiEnregistrer();
-  if (choix === "rester") return false;
-  if (choix === "jeter") {
-    // La fiche redevient celle de l'entree : on la redessine depuis ce qui
-    // est enregistre, sinon la saisie abandonnee resterait dans les cases.
-    if (fiche) dessinerFormulaire(fiche);
-    FICHE_MODIFIEE = false;
-    return quitterDemarrage();
-  }
-  if (fiche) await enregistrerFiche(fiche);
-  // Enregistrer peut avoir ete annule (la boite des valeurs datees) : dans
-  // ce cas la fiche est toujours modifiee, et on ne part pas.
-  return !FICHE_MODIFIEE && quitterDemarrage();
 }
 
 /*  ENREGISTRER UNE FICHE : DATER CE QUI CHANGE
@@ -511,7 +451,7 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       // Annulé, ou la boîte fermée d'un clic à côté : la fiche garde ce qu'on y a tapé, et la page le dit.
       if (!réponse) {
         dire(ETAT.aides.rien_enregistre);
-        return;
+        return false;
       }
       return ecrireFiche(fiche, donnees, { ...réponse, confirme: true }, forcer);
     }
@@ -519,7 +459,7 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
     // Une fiche neuve : le moteur a fabriqué sa clé, c'est elle qu'on ouvre.
     if (!fiche.cle && r.cle) { CLE_ACTIVE = r.cle; FICHE_NEUVE = false; }
     dire(r.phrase);
-    FICHE_MODIFIEE = false;
+    oublierLEcran(casesDeLaFicheOuverte());
     // ENREGISTRER REFERME LA FICHE. Elle se redessinait ouverte,
     // identique : rien ne distinguait une fiche enregistree d'une fiche qui
     // ne l'etait pas, et l'editeur attendait qu'elle se ferme. Un salarie ou un
@@ -544,6 +484,7 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       // sans qu'on recharge le mois.
       rafraichirReferentiels();
     }
+    return true;
   } catch (e) {
     if (e.detail?.classe === "FicheRefusee") {
       // On propose de forcer, mais on ne force jamais tout seul : une regle
@@ -571,5 +512,6 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       const forcer = document.getElementById("b-forcer");
       if (forcer) forcer.onclick = () => { fermerBoite(); ecrireFiche(fiche, donnees, daté, true); };
     } else { dire(e.message, "erreur"); }
+    return false;
   }
 }

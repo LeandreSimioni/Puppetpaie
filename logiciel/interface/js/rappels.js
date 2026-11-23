@@ -165,9 +165,14 @@ function htmlDemarrage(manques) {
 }
 let DEMARRAGE_LISTES = 0;   // chaque liste peinte a son numéro : ses cases se lisent chez elle
 
-/* Les cases dessinées d'une liste : ce qu'une case de route fait seule (un calendrier, une rangée). */
+/* Les cases dessinées d'une liste : ce qu'une case de route fait seule (un calendrier, une rangée). Chaque liste est un
+ * écran retenu (`retenirLEcran`) : la quitter avec une saisie non enregistrée se demande ; une valeur que le moteur
+ * propose remplit sa case dès l'ouverture, elle n'est donc pas un changement. Jeter relit la liste. */
 function brancherDemarrage(conteneur) {
   conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => brancherLesCases(li));
+  conteneur.querySelectorAll(".demarrage-liste").forEach((liste) => {
+    retenirLEcran(liste, { enregistrer: () => enregistrerDemarrage(liste), jeter: repeindreDemarrage });
+  });
 }
 
 /* LES GESTES QUE « ENREGISTRER » JOUE (`a_enregistrer`, du moteur), tels que leurs cases les disent : `{route,
@@ -212,23 +217,6 @@ function changementsDemarrage(liste) {
   });
   return [...parFiche.values()].map(({ donnees, ...f }) => ({ ...f, ...casesDeLaCharge(donnees) }));
 }
-/* UNE LISTE OÙ L'ON A TAPÉ : une valeur que le moteur propose remplit sa case sans que personne n'y touche ; elle part
- * avec « Enregistrer », mais ce n'est pas un changement qu'on perdrait en quittant. Seule une liste où l'on a tapé
- * (`touchee`, posé à la première frappe, perdu quand la liste se relit) fait demander avant de partir. */
-document.addEventListener("input", (e) => {
-  const l = e.target.closest && e.target.closest(".demarrage-liste");
-  if (l) l.dataset.touchee = "1";
-});
-document.addEventListener("change", (e) => {
-  const l = e.target.closest && e.target.closest(".demarrage-liste");
-  if (l) l.dataset.touchee = "1";
-});
-const listeDemarrageModifiee = () => [...document.querySelectorAll(".demarrage-liste")]
-  .find((l) => l.dataset.touchee && (changementsDemarrage(l).length || gestesDemarrage(l).length));
-function demarrageModifie() {
-  return !!listeDemarrageModifiee();
-}
-
 /* ENREGISTRER « POUR DÉMARRER » : tout ce que la liste porte, une écriture
  * par fiche (`enregistrer-fiche`), puis chaque geste que le moteur dit de
  * jouer (`a_enregistrer`), puis la liste se relit. Le premier refus arrête
@@ -275,17 +263,6 @@ document.addEventListener("click", (e) => {
   if (b) enregistrerDemarrage(b.closest(".demarrage-liste"));
 });
 
-/* QUITTER « POUR DÉMARRER » avec des cases remplies et pas enregistrées : la
- * même boîte que la fiche (`demanderSiEnregistrer`). Rend vrai si l'on peut
- * partir. */
-async function quitterDemarrage() {
-  const liste = listeDemarrageModifiee();
-  if (!liste) return true;
-  const choix = await demanderSiEnregistrer();
-  if (choix === "rester") return false;
-  if (choix === "jeter") { await repeindreDemarrage(); return true; }
-  return enregistrerDemarrage(liste);
-}
 /* La liste relue, partout où elle est peinte ; la fiche Entreprise, si elle
  * est ouverte et qu'on n'y a rien tapé, montre ce qui vient de s'écrire. */
 async function repeindreDemarrage() {
@@ -301,7 +278,7 @@ async function repeindreDemarrage() {
     if (b.closest("#config-liste, #import-demarrage")) b.remove();
   });
   brancherDemarrage(document);
-  if (FICHE_ACTIVE === "entreprise" && !FICHE_MODIFIEE
+  if (FICHE_ACTIVE === "entreprise" && !ecranModifie(casesDeLaFicheOuverte())
       && !document.getElementById("vue-configuration").classList.contains("cachee")) {
     dessinerFormulaire(fichesDe("entreprise")[0]);
   }
@@ -311,7 +288,7 @@ async function repeindreDemarrage() {
 document.addEventListener("click", async (e) => {
   const b = e.target.closest && e.target.closest("[data-aller-configuration]");
   if (!b) return;
-  if (!(await quitterDemarrage())) return;
+  if (!(await quitterLEcran(document.getElementById("boite")))) return;
   fermerBoite();
   document.querySelector('.onglets button[data-vue="configuration"]').click();
   const sous = document.querySelector('.sous-onglets button[data-fiche="entreprise"]');
@@ -334,7 +311,7 @@ async function lireDemarrage(lu) {
  *  ouvre sa fiche. */
 async function allerAuManque(champ, onglet, nom, cle) {
   if (!document.getElementById("voile").classList.contains("cachee")) {
-    if (!(await quitterDemarrage())) return;
+    if (!(await quitterLEcran(document.getElementById("boite")))) return;
     fermerBoite();
   }
   // Déjà dans la configuration : on n'y retourne pas. Recliquer l'onglet
@@ -451,8 +428,8 @@ function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
     const boite = document.getElementById("boite");
     if (boite.querySelector(".boite-rappels")) boite.innerHTML = "";
   });
-  // FERMER AVEC DES CASES REMPLIES ET PAS ENREGISTRÉES demande, comme partout (`quitterDemarrage`).
-  const fermer = async () => { if (await quitterDemarrage()) fermerBoite(); };
+  // FERMER AVEC DES CASES REMPLIES ET PAS ENREGISTRÉES demande, comme partout (`quitterLEcran`).
+  const fermer = async () => { if (await quitterLEcran(document.getElementById("boite"))) fermerBoite(); };
   document.getElementById("rappels-fermer").onclick = fermer;
   CLIC_DEHORS = fermer;
   liste.forEach((r, i) => {
@@ -482,8 +459,10 @@ function boutonRappel(r, i) {
   return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + coche;
 }
 
+/* Le geste d'un rappel mène ailleurs : tout écran qui porte une saisie non enregistrée se quitte d'abord (la boîte, et
+ * ce qui est dessous), avant d'ouvrir l'onglet Paie, dont le gestionnaire ne redemande alors rien. */
 async function agirSurRappel(r) {
-  if (!(await quitterDemarrage())) return;
+  if (!(await quitterLEcran())) return;
   fermerBoite();
   const mois = r.action && r.action.charge.mois;
   // Un geste qui porte sur un mois l'ouvre d'abord : la boîte s'ouvre sur lui.

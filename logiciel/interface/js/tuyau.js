@@ -545,10 +545,9 @@ const encarts = (l) => l.map(encart).join("");
 /* ------------------------------------------------------------ navigation */
 document.querySelectorAll(".onglets button").forEach((b) => {
   b.onclick = async () => {
-    // Quitter une fiche en cours de saisie sans rien dire, c'est perdre ce
-    // qui vient d'etre tape. La boite ne s'ouvre que si quelque chose a
-    // change -- voir `quitterLaFiche`.
-    if (!(await quitterLaFiche())) return;
+    // Quitter un écran en cours de saisie sans rien dire, c'est perdre ce qui vient d'être tapé : la boîte ne s'ouvre
+    // que si quelque chose a changé (`quitterLEcran`).
+    if (!(await quitterLEcran())) return;
     document.querySelectorAll(".onglets button").forEach((x) => x.classList.remove("actif"));
     b.classList.add("actif");
     document.querySelectorAll(".vue").forEach((v) => v.classList.add("cachee"));
