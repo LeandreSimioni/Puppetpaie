@@ -2225,7 +2225,7 @@ fn lignes_imprimees(b: &BulletinLu, racine: &Path) -> R<Result<Vec<engagement::i
             },
             _ => None,
         };
-        out.push(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures_par_unite() });
+        out.push(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures, heures_imprimees: l.heures_imprimees });
     }
     Ok(Ok(out))
 }

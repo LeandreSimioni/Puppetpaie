@@ -513,7 +513,7 @@ fn refaire<'a>(
         let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = FormeSaisie::de(&lue)? else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures, precision: None, dates: jours.clone() }));
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures_par_unite(), precision: None, dates: jours.clone() }));
             continue;
         };
         // LA LIGNE DANS LA FORME QUE LE CATALOGUE DEMANDE DE SA RUBRIQUE, rangee par la porte d'une ligne saisie
@@ -535,7 +535,8 @@ fn refaire<'a>(
             rubrique: Some(lue.code.clone()),
             quantite: voulue(Cle::Quantite).then_some(paiement.quantite()),
             taux: if voulue(Cle::Taux) { Some(Some(par_unite()?)) } else { None },
-            heures: voulue(Cle::Heures).then_some(l.heures),
+            // La saisie ne porte que des heures par unite : le total que la ligne imprime s'y partage, ici seulement.
+            heures: voulue(Cle::Heures).then(|| l.heures_par_unite()),
             base,
             taux_majoration: part,
             montant: voulue(Cle::Montant).then_some(Some(paiement.montant())),

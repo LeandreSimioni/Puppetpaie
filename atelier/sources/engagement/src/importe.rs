@@ -288,11 +288,23 @@ pub struct LigneImprimee {
     pub soumis: bool,
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub paiement: Option<crate::ligne::PaiementDeLigne>,
+    /// Les heures d'une unite que son libelle dit (« Journée(s) de 7 Heures »), d'apres la table de lecture.
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub heures: Option<socle::grandeurs::HeuresParUnite>,
+    /// LES HEURES DE TRAVAIL QU'ELLE IMPRIME, toutes ensemble, telles qu'imprimees (« 2 services de répétition (8 h) » :
+    /// 8 h ; C. trav. R. 3243-1, 5°). Vide : elle n'en imprime pas, ou une paie rangee avant qu'elle les porte.
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub heures_imprimees: Option<socle::grandeurs::Heures>,
 }
 
 impl LigneImprimee {
+    /// SES HEURES PAR UNITE, pour la saisie qui la refait (qui ne porte que des heures par unite :
+    /// `droit::catalogue::Rubrique::heures_par_unite`) : celles que son libelle dit ; sinon le total qu'elle imprime,
+    /// partage sur sa quantite (`QuantiteDeLigne::partage`).
+    pub(crate) fn heures_par_unite(&self) -> Option<socle::grandeurs::HeuresParUnite> {
+        self.heures.or_else(|| self.heures_imprimees.zip(self.paiement.and_then(|p| p.quantite())).and_then(|(total, q)| q.partage(total)))
+    }
+
     /// LE RATTACHEMENT D'UNE LIGNE IMPRIMEE, le seul : sa ligne de remuneration, quand l'import l'a rattachee a une
     /// rubrique et qu'elle dit son montant, meme sans quantite ni taux (un forfait n'a pas de quantite) : ce montant, tel
     /// quel, et ce qu'elle paie et ses heures quand elle les dit, sous le code et le libelle de sa rubrique
@@ -300,7 +312,7 @@ impl LigneImprimee {
     /// (`PaieImportee::remuneration`) : elle n'est pas une ligne de paie.
     pub(crate) fn rattachee(&self, ctx: &Contexte) -> R<Option<crate::calcul::LigneRattachee>> {
         let (Some(rubrique), Some(montant)) = (&self.rubrique, self.montant) else { return Ok(None) };
-        crate::calcul::ligne_rattachee(rubrique, self.paiement, self.heures, montant, ctx).map(Some)
+        crate::calcul::ligne_rattachee(rubrique, self.paiement, self.heures, self.heures_imprimees, montant, ctx).map(Some)
     }
 }
 
@@ -894,7 +906,7 @@ impl Importe {
         // LES LIGNES DE REMUNERATION QUE LES PIECES DISENT : celles du bulletin ; a defaut, le brut que la DSN declare.
         let mut lignes_lues = p.lignes.clone();
         if lignes_lues.is_empty() {
-            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, rubrique: None, paiement: None, heures: None });
+            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, rubrique: None, paiement: None, heures: None, heures_imprimees: None });
         }
         // La quotite que la DSN declare (40.013) est, pour un salarie au mois, ses heures par mois (`quotite_contrat`) ; pour
         // un contrat d'usage, ses jours, que les jours du contrat disent (`Engagement::quotite`).

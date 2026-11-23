@@ -977,18 +977,6 @@ pub struct LignePaie {
     pub heures_imprimees: Option<Heures>,
 }
 
-impl LignePaie {
-    /// SES HEURES PAR UNITE : celles qu'elle imprime, rapportees a sa quantite ; sinon celles que la table donne a son
-    /// libelle. La saisie d'une ligne ne porte que des heures par unite (`droit::catalogue::Rubrique::heures_par_unite`) :
-    /// le total imprime s'y partage, et sa quantite fois elles le rend.
-    pub fn heures_par_unite(&self) -> Option<HeuresParUnite> {
-        match (self.heures_imprimees, self.quantite) {
-            (Some(total), Some(q)) => total.par_unite(q.grandeur::<socle::grandeurs::Unites>()),
-            _ => self.heures,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Cotisation {
     /// La famille (`familles` de la table) sous laquelle la ligne est ecrite.

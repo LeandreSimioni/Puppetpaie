@@ -884,11 +884,12 @@ impl Heures {
         HeuresParUnite(num::div(self.0, Decimal::from(n)))
     }
 
-    /// CES HEURES POUR CHACUNE DES UNITES `u`, un nombre d'unites qui peut etre a virgule (8 h sur 2 services : 4 h le
-    /// service ; 3,62 h sur une demi-journee : 7,24 h) : heures / unites = heures par unite ; `None` quand `u` est nul.
-    /// `par_jour` partage sur un compte entier de jours.
-    pub fn par_unite(self, u: Unites) -> Option<HeuresParUnite> {
-        (!u.0.is_zero()).then(|| HeuresParUnite(num::div(self.0, u.0)))
+    /// CES HEURES POUR CHACUNE DES `u` UNITES d'une quantite (des services, des journees, des semaines), qui peut etre
+    /// a virgule (8 h sur 2 services : 4 h le service ; 3,62 h sur une demi-journee : 7,24 h) : heures / quantite =
+    /// heures par unite ; `None` quand `u` est nulle. `par_jour` partage sur un compte entier de jours.
+    pub fn par_unite<G: Grandeur>(self, u: G) -> Option<HeuresParUnite> {
+        let u = decimal(u);
+        (!u.is_zero()).then(|| HeuresParUnite(num::div(self.0, u)))
     }
 
     /// Leur partie entiere, vers le bas (`13.9` h : `13`) : les heures entieres qu'une somme couvre.

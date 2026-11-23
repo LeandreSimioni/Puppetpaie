@@ -186,11 +186,14 @@ pub(crate) fn ligne_brut(l: &LignePaie, ctx: &Contexte) -> R<LigneBrut> {
 /// LA LIGNE D'UN BULLETIN IMPORTE RATTACHEE A LA RUBRIQUE `code` (`importe::LigneImprimee::rattachee`) : son montant tel
 /// qu'il le lit, qui ne se recompose jamais, et ce qu'il dit qu'elle paie et ses heures par unite quand il les imprime.
 /// Un forfait imprime a son seul montant ne dit pas ce qu'il paie : il ne compte aucune heure.
-pub(crate) fn ligne_rattachee(code: &droit::catalogue::CodeDeRubrique, paiement: Option<PaiementDeLigne>, heures: Option<socle::grandeurs::HeuresParUnite>, montant: Montant, ctx: &Contexte) -> R<LigneRattachee> {
+pub(crate) fn ligne_rattachee(code: &droit::catalogue::CodeDeRubrique, paiement: Option<PaiementDeLigne>, heures: Option<socle::grandeurs::HeuresParUnite>, imprimees: Option<Heures>, montant: Montant, ctx: &Contexte) -> R<LigneRattachee> {
     let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
-    let (heures_annexes, heures_faites) = match &paiement {
-        Some(p) => (heures_annexes(&r, p, heures)?, heures_faites(&r, p, heures)?),
-        None => (r.sens.de(courte(Heures::ZERO)), None),
+    // Les heures qu'elle imprime, toutes ensemble, sont ses heures, telles qu'imprimees, quand sa rubrique les fait
+    // saisir (aucun forfait ne compte a leur place).
+    let (heures_annexes, heures_faites) = match (&paiement, imprimees.filter(|_| r.heures_forfait.is_none())) {
+        (Some(_), Some(total)) => (r.sens.de(total), r.heures_a_saisir().then(|| r.sens.de(total))),
+        (Some(p), None) => (heures_annexes(&r, p, heures)?, heures_faites(&r, p, heures)?),
+        (None, _) => (r.sens.de(courte(Heures::ZERO)), None),
     };
     ligne_de(r, paiement, heures_annexes, heures_faites, montant, None, None)
 }
