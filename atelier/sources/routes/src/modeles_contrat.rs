@@ -450,13 +450,13 @@ impl Decoupe {
     }
 }
 
-/// Un alinea : sa condition (le champ qui doit avoir une valeur ; `None` : toujours) et son texte. Un geste l'ecrit,
-/// `modele-contrat` le rend.
+/// Un alinea : sa condition (le champ qui doit avoir une valeur ; `None` : toujours) et son texte (`None` : la rangee
+/// ne dit rien, elle ne s'ecrit pas). Un geste l'ecrit, `modele-contrat` le rend.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Alinea {
     si: Option<String>,
-    texte: String,
+    texte: Option<String>,
 }
 
 /// Un texte sur une ligne : un paragraphe du modele ne garde que ses mots.
@@ -474,10 +474,7 @@ fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Paragraphe> {
     }
     let mut lignes = vec![format!("ARTICLE: {}", titre), String::new()];
     for (n, a) in alineas.iter().enumerate() {
-        let t = une_ligne(&a.texte);
-        if t.is_empty() {
-            continue;
-        }
+        let Some(t) = a.texte.as_deref().map(une_ligne).filter(|t| !t.is_empty()) else { continue };
         if t.starts_with('#') || t.starts_with('[') || fabrique_pdf::modele::CLES.iter().any(|k| t.starts_with(k)) {
             return Err(refus(format!("L'alinéa {} de « {} » commence par un signe que le modèle lit autrement (#, [ ou une clé comme ARTICLE:) : le reformuler ; sa condition se choisit à côté. Rien n'est écrit.", n + 1, titre)));
         }
@@ -533,7 +530,7 @@ charge! {
         partie: Partie = PARTIE,
         numero: usize = NUMERO,
         titre: String = TITRE,
-        alineas: Vec<Alinea> = dit("Alinéas", "[{si, texte}, …] dans l'ordre : texte, l'alinéa (une donnée s'y insère par {{son.champ}}, un des `champs` de modele-contrat) ; si, le champ qui doit avoir une valeur pour qu'il s'écrive, null : toujours"),
+        alineas: Option<Vec<Alinea>> = dit("Alinéas", "[{si, texte}, …] dans l'ordre : texte, l'alinéa (une donnée s'y insère par {{son.champ}}, un des `champs` de modele-contrat) ; si, le champ qui doit avoir une valeur pour qu'il s'écrive, null : toujours ; sans alinéa, le paragraphe n'a que son titre"),
     }
 }
 
@@ -541,7 +538,10 @@ charge! {
 fn ecrire_paragraphe(ctx: &Contexte, c: ChargeEcrireParagraphe) -> R<Modeles> {
     sur_les_paragraphes(ctx, &c.id, c.partie, |d| {
         let i = d.indice(c.numero)?;
-        d.articles[i] = paragraphe(&c.titre, &c.alineas)?;
+        d.articles[i] = match &c.alineas {
+            Some(alineas) => paragraphe(&c.titre, alineas)?,
+            None => paragraphe(&c.titre, &[])?,
+        };
         Ok(format!("paragraphe {} « {} » écrit.", c.numero, d.titre(i)))
     })
 }
@@ -1019,8 +1019,8 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
             let alineas: Vec<Alinea> = alineas
                 .iter()
                 .map(|a| match fabrique_pdf::modele::condition(a) {
-                    Some((si, t)) => Alinea { si: Some(si.to_string()), texte: t.to_string() },
-                    None => Alinea { si: None, texte: a.clone() },
+                    Some((si, t)) => Alinea { si: Some(si.to_string()), texte: Some(t.to_string()) },
+                    None => Alinea { si: None, texte: Some(a.clone()) },
                 })
                 .collect();
             let corps = match ecrite(Some(numero), None) {
