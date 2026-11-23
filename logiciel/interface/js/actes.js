@@ -274,96 +274,55 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     ${encarts(a.encarts)}
     <div id="d-bilan">${encartRepetition(a.repetition)}</div>
     ${noteFictive()}
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="d-test" data-occupe="Envoi…">Envoyer le test</button>
-      <button class="secondaire envoi" id="d-reel" data-occupe="Dépôt…" disabled>Envoyer le réel</button>
-    </div>
-    ${a.mode === "reel" ? `<p class="discret"><button type="button" class="lien envoi" id="d-sans-test">envoyer sans test</button></p>` : ""}`);
+    <div id="d-depots"></div>`);
 
-  // Le mot de passe tapé pour le dépôt sert au renvoi (boiteRenvoiDsn) :
-  // on ne le redemande pas. Une erreur l'oublie, un refus aussi.
-  let mdpConnu = null;
-  const lancer = async (reel, forcer = false, contournement = "") => {
-    let mdp = "";
-    if (reel) {
-      mdp = mdpConnu || await demanderMotDePasse(a.demande, { envoi: true });
-      if (!mdp) return;
-      mdpConnu = mdp;
-    }
-    document.getElementById("d-test").disabled = true;
-    document.getElementById("d-reel").disabled = true;
-    const rendre = occupe(document.getElementById(reel ? "d-reel" : "d-test"));
-    try {
-      const r = await api("deposer", { ...charge, mode: reel ? "reel" : "test", motdepasse: mdp,
-                                       forcer, contournement });
-      rendre();
-      if (!reel) {
-        // LE TEST GARDE LA BOÎTE OUVERTE : on attend son compte rendu, et le
-        // bouton du réel s'allume ici même, sans avoir à revenir.
-        dire(r.phrase, "envoye");
-        attendreBilan();
-        rafraichirActions();
-        return;
-      }
-      fermerBoite();
+  // LES DÉPÔTS QUE LA ROUTE OUVRE (`principal`, `autres`, `sans_test`), et pourquoi le réel ne l'est pas
+  // (`reel_ferme`) : chacun un geste de `deposer`, qui demande lui-même le mot de passe du réel (`faireLeGeste`). Un
+  // geste qui ouvre une boîte (le renvoi, le réel sans test) l'ouvre par-dessus celle-ci.
+  const poserLesDepots = (x) => {
+    const el = document.getElementById("d-depots");
+    if (!el) return;
+    const gestes = [...x.autres, x.principal, ...(x.sans_test ? [x.sans_test] : [])];
+    const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
+      + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
+    el.innerHTML = `
+      <div class="actions">
+        <button class="secondaire" onclick="fermerBoite()">Annuler</button>
+        ${boutons((g) => x.autres.includes(g), "secondaire")}
+        ${boutons((g) => g === x.principal, "primaire")}
+      </div>
+      ${x.reel_ferme ? `<p class="discret">${echapper(x.reel_ferme)}</p>` : ""}
+      ${x.sans_test ? `<p class="discret">${boutons((g) => g === x.sans_test, "lien")}</p>` : ""}`;
+    brancherLesGestes(el, gestes, { pardessus: true }, apresLeDepot);
+  };
+  const apresLeDepot = async (r) => {
+    if (r.mode === "test") {
+      // LE TEST GARDE LA BOÎTE OUVERTE : on attend son compte rendu, et le réel s'ouvre ici même, sans avoir à revenir.
       dire(r.phrase, "envoye");
-      if (r.avis) avisApresLeDepot(r);
-      await rafraichirActions();
-      suivreDepot(quoi, r.flux, r.mois);
-    } catch (e) {
-      rendre();
-      const test = document.getElementById("d-test"), reelB = document.getElementById("d-reel");
-      if (test) test.disabled = false;
-      if (reelB) reelB.disabled = a.mode !== "reel";
-      if (e.detail?.classe === "RepetitionManquante") {
-        // « Aucun acte irréversible sans une répétition réussie du même
-        // contenu. » On ne renvoie pas l'utilisateur chercher une commande :
-        // le dépôt de test est un bouton, ici, tout de suite.
-        return boiteRepetition(e.message,
-                               () => lancer(false),
-                               (motif) => lancer(true, false, motif));
-      }
-      if (e.detail?.classe === "DsnDejaDeposee") {
-        // « On attend le retour, et si vraiment on y tient, après un
-        // avertissement, on peut renvoyer ». Le mot de
-        // passe déjà tapé sert au renvoi : on ne le redemande pas.
-        return boiteRenvoiDsn(e.message, () => lancer(true, true));
-      }
-      mdpConnu = null;
-      dire(e.message, "erreur");
+      rafraichirActions();
+      await attendreBilan();
+      return;
     }
+    fermerBoite();
+    dire(r.phrase, "envoye");
+    if (r.avis) avisApresLeDepot(r);
+    await rafraichirActions();
+    suivreDepot(quoi, r.flux, r.mois);
   };
   // LE COMPTE RENDU DU TEST, ATTENDU DANS LA BOÎTE. Toutes les dix secondes,
-  // cinq minutes au plus : il arrive le plus souvent dans la minute. Le réel
-  // reste éteint tant qu'on attend ; conforme, il devient LE bouton ; refusé,
-  // on dit pourquoi et il reste éteint. Passé cinq minutes, on cesse de
-  // demander (chaque tour relève les retours chez l'organisme : rien ne doit
-  // tourner sans fin) et le réel reste éteint ; le relevé ordinaire rangera le
-  // compte rendu, et l'étape du mois ouvrira alors le réel.
-  const zone = () => document.getElementById("d-bilan");
-  const boutonReel = (principal) => {
-    const b = document.getElementById("d-reel"), t = document.getElementById("d-test");
-    if (!b) return;
-    b.disabled = a.mode !== "reel" || !principal;
-    b.className = principal ? "primaire" : "secondaire";
-    b.classList.add("envoi");
-    if (t) t.className = principal ? "secondaire" : "primaire";
-    if (principal && a.mode === "reel") b.focus();
-    const sansTest = document.getElementById("d-sans-test");
-    if (sansTest && principal) sansTest.hidden = true;
-  };
+  // cinq minutes au plus : il arrive le plus souvent dans la minute. Arrivé,
+  // la boîte relit les dépôts que la route ouvre (conforme : le réel ; refusé :
+  // toujours le test). Passé cinq minutes, on cesse de demander (chaque tour
+  // relève les retours chez l'organisme : rien ne doit tourner sans fin) ; le
+  // relevé ordinaire rangera le compte rendu, et l'étape du mois ouvrira alors
+  // le réel.
   // La boîte peut se fermer pendant l'attente : l'écoute continue, et le dit
   // en bas de page quand le compte rendu arrive (« après un test aussi »).
   // `el` est CETTE boîte : une autre ouverte entre-temps n'est pas touchée.
   const attendreBilan = async () => {
-    const el = zone();
+    const el = document.getElementById("d-bilan");
     const ici = () => el && el.isConnected;
     const ecrire = (html) => { if (ici()) el.innerHTML = html; };
-    const test = document.getElementById("d-test");
-    boutonReel(false);
-    if (test) test.disabled = true;
-    const libre = () => { if (ici() && test) test.disabled = false; };
     // Seul le bilan du test (le certificat, ou le bilan d'anomalies) ouvre le
     // réel ou le ferme ; l'accusé d'enregistrement dit « envoi reçu », pas
     // « conforme » (le moteur refuse le réel sans lui, DSN comme DPAE).
@@ -376,39 +335,28 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
       } catch (e) { direLeRefusDuSuivi("bilan-repetition", e.message); }
       if (r && (r.etat === "testee" || r.etat === "test_refuse")) {
         ecrire(encartRepetition(r));
-        libre();
         if (!ici()) dire(`${r.titre} · ${r.phrase}`, r.couleur);
-        else if (r.etat === "testee") boutonReel(true);
+        else {
+          try { poserLesDepots(await api("depot-apercu", charge)); } catch (e) { dire(e.message, "erreur"); }
+        }
         rafraichirActions();
         return;
       }
       if (r) ecrire(encartRepetition(r) + phrasesDuReleve(r.a_dire).map((p) => `<p class="discret">${echapper(p)}</p>`).join(""));
       await new Promise((ok) => setTimeout(ok, enFictive() ? 3000 : 10000));
     }
-    libre();
   };
 
-  document.getElementById("d-test").onclick = () => lancer(false);
-  document.getElementById("d-reel").onclick = () => lancer(true);
-  // LE TEST D'ABORD, TOUJOURS : on propose d'abord un test, puis le réel. Le
-  // réel reste éteint tant que le test n'est pas revenu conforme. Passer
-  // outre reste possible, mais c'est un petit lien, et le moteur demande
-  // alors un motif écrit (RepetitionManquante → boiteRepetition).
-  const sansTest = document.getElementById("d-sans-test");
-  if (sansTest) sansTest.onclick = () => lancer(true);
-  // Un test déjà fait pour ce contenu : s'il attend encore son compte rendu,
-  // on l'attend ici ; s'il est arrivé, le réel est le bouton principal.
+  poserLesDepots(a);
+  // Un test déjà fait pour ce contenu qui attend encore son compte rendu : on l'attend ici.
   const rep = a.repetition;
-  if (rep && rep.etat === "testee") boutonReel(true);
-  else if (rep && rep.etat === "en_test") attendreBilan();
-  else {
-    // Pas de test pour ce contenu : c'est lui qui vient d'abord.
-    document.getElementById("d-test").className = "primaire";
-    document.getElementById("d-reel").className = "secondaire envoi";
-    // LE MOIS QU'ON VIENT DE FERMER PART EN TEST TOUT SEUL :
-    // « on produit la DSN de test complète et on attend le retour du test,
-    // ensuite on propose d'envoyer la DSN réelle ». Un test n'engage rien.
-    if (testerDabord) lancer(false);
+  if (rep && rep.etat === "en_test") attendreBilan();
+  // LE MOIS QU'ON VIENT DE FERMER PART EN TEST TOUT SEUL (l'action le dit, `tester`) :
+  // « on produit la DSN de test complète et on attend le retour du test,
+  // ensuite on propose d'envoyer la DSN réelle ». Un test n'engage rien.
+  else if (testerDabord && !(rep && rep.etat === "testee")) {
+    const principal = document.querySelector("#d-depots .actions .primaire[data-geste]");
+    if (principal) principal.click();
   }
 }
 
@@ -468,49 +416,6 @@ function encartRepetition(r) {
   if (!r) return "";
   return `<div class="encart ${ENCART_DE_COULEUR[r.couleur]}"><b>${echapper(r.titre)}</b>
     ${echapper(r.phrase)}${r.etat === "testee" ? certificatParPersonne(r.conforme) : ""}</div>`;
-}
-
-/** Le verrou test → réel : le refus du moteur (`RepetitionManquante`) dit pourquoi et la sortie de secours. Deux
- *  issues, et la première est la bonne : faire la répétition. La seconde part avec un motif écrit, que le moteur exige
- *  et inscrit au journal des dépôts. */
-function boiteRepetition(phrase, repeter, quandMeme) {
-  ouvrirBoite(`
-    <h3>Sans dépôt de test</h3>
-    ${encart({ couleur: "orange", phrase })}
-    <div class="actions">
-      <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="r-tester">Déposer en test</button>
-    </div>
-    <p class="note"><a href="#" id="r-outre">Déposer sans répétition</a></p>
-    <div id="r-motif" class="cachee">
-      <label>Le motif <textarea id="r-raison" rows="2"></textarea></label>
-      <div class="actions">
-        <button class="secondaire envoi" id="r-quand-meme">Déposer sans répétition</button>
-      </div>
-    </div>`);
-  document.getElementById("r-tester").onclick = () => { fermerBoite(); repeter(); };
-  document.getElementById("r-outre").onclick = (e) => {
-    e.preventDefault();
-    document.getElementById("r-motif").classList.remove("cachee");
-    document.getElementById("r-raison").focus();
-  };
-  document.getElementById("r-quand-meme").onclick = () => {
-    fermerBoite();
-    quandMeme(document.getElementById("r-raison").value.trim());
-  };
-}
-
-/** Une DSN réelle est déjà partie pour ce mois : le refus du moteur (`DsnDejaDeposee`) dit où elle en est ; on ne
- *  renvoie que si on le veut vraiment. */
-function boiteRenvoiDsn(phrase, renvoyer) {
-  ouvrirBoite(`
-    <h3>DSN déjà partie</h3>
-    ${encart({ couleur: "orange", phrase })}
-    <div class="actions">
-      <button class="primaire" onclick="fermerBoite()">Ne pas renvoyer</button>
-      <button class="secondaire envoi" id="d-renvoyer">Renvoyer quand même</button>
-    </div>`);
-  document.getElementById("d-renvoyer").onclick = () => { fermerBoite(); renvoyer(); };
 }
 
 /* ------------------------------------------ les documents aux salariés */

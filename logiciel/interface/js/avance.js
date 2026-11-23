@@ -701,10 +701,13 @@ function brancherLesGestes(cible, gestes, entete, apres) {
   });
 }
 
-/** `bouton` : celui du geste, éteint le temps de la réponse quand le geste part sans boîte. */
+/** `bouton` : celui du geste, éteint le temps de la réponse quand le geste part sans boîte. `apres` reçoit la réponse.
+ *  Un geste dont la route engage (sa fiche : `acte`) est un envoi : la boîte du mot de passe le sait (`envoi`), et le
+ *  bouton de sa boîte le porte. */
 async function faireLeGeste(g, entete, apres, bouton) {
+  const envoi = CATALOGUE[g.route].acte === "engage";
   const partir = async (charge, boite) => {
-    const motdepasse = g.demande ? await demanderMotDePasse(g.demande) : null;
+    const motdepasse = g.demande ? await demanderMotDePasse(g.demande, { envoi }) : null;
     if (g.demande && !motdepasse) return;
     // Le bouton qui fait partir le geste s'éteint le temps de la réponse (lier le Drive attend qu'on accepte chez
     // Google) : on ne clique pas deux fois.
@@ -713,7 +716,7 @@ async function faireLeGeste(g, entete, apres, bouton) {
     try { r = await api(g.route, motdepasse ? { ...charge, motdepasse } : charge); } catch (e) { rallumer(); dire(e.message, "erreur"); return; }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
-    await apres();
+    await apres(r);
     rallumer();
     // Ce que la route dit qui suit (`suite` : le dépôt d'un signalement écrit) s'ouvre ensuite.
     if (r.suite) ouvrirGeste(r.suite);
@@ -726,7 +729,7 @@ async function faireLeGeste(g, entete, apres, bouton) {
     <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-      <button class="primaire" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
+      <button class="primaire${envoi ? " envoi" : ""}" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
