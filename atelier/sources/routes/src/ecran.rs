@@ -48,19 +48,27 @@ pub(crate) struct RangDeLEcran<C, V, X> {
 }
 
 /// LE GESTE QUI ENREGISTRE LES CASES D'UN ECRAN RENDU : sa route, sa charge (`C`), le champ de cette charge ou vont les
-/// cases de l'ecran (`dans` : chacune sous sa cle, une case vide nulle), et son libelle. Sa route rend l'ecran enregistre.
-/// Ce n'est pas un `GesteDeRoute` : un geste fait saisir dans sa boite des champs de la charge de sa route, chacun le
-/// sien ; celui-ci envoie les cases deja posees sur l'ecran, toutes ensemble, dans un seul champ de la charge.
+/// cases de l'ecran (`dans` : chacune sous sa cle, une case vide nulle ; aucun : chacune sous sa cle dans la charge
+/// meme, une case vide absente, celles d'une boite de saisie, `imprevus::SaisieDUnImprevu`), et son libelle. Ce n'est
+/// pas un `GesteDeRoute` : un geste fait saisir dans sa boite des champs de la charge de sa route, que sa fiche decrit ;
+/// celui-ci envoie les cases que l'ecran a rendues et posees, toutes ensemble.
 #[derive(Debug, Serialize)]
 pub(crate) struct EnregistrerLEcran<C> {
     route: Route,
     charge: C,
-    dans: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dans: Option<&'static str>,
     libelle: &'static str,
 }
 
 impl<C> EnregistrerLEcran<C> {
+    /// Les cases vont toutes dans le champ `dans` de la charge (sa route rend l'ecran enregistre).
     pub(crate) fn de(route: Route, charge: C, dans: &'static str, libelle: Affiche) -> EnregistrerLEcran<C> {
-        EnregistrerLEcran { route, charge, dans, libelle: libelle.texte() }
+        EnregistrerLEcran { route, charge, dans: Some(dans), libelle: libelle.texte() }
+    }
+
+    /// Les cases vont chacune sous sa cle dans la charge meme.
+    pub(crate) fn a_plat(route: Route, charge: C, libelle: Affiche) -> EnregistrerLEcran<C> {
+        EnregistrerLEcran { route, charge, dans: None, libelle: libelle.texte() }
     }
 }

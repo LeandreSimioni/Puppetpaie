@@ -718,7 +718,7 @@ déclarations le disent, et ce ne sont pas la même :
 ```bash
 route arrets                      ce qui est saisi, et ce qui attend
 route imprevus                    les motifs de la norme
-route arret-contrats              ce qu'un arrêt suspendrait
+route arret-obligations           la boîte d'un arrêt : ses cases, le contrat, ce qu'il fera naître
 route arret-enregistrer {"salarie": "Celi", "dernier_jour": "2026-10-07", "debut": "2026-10-08", \
                                   "fin": "2026-10-20", "motif": "01"}
 route arret-signaler {"salarie": "Celi", "dernier_jour": "2026-10-07"}

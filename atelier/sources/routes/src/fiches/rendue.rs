@@ -241,7 +241,62 @@ impl<K> CaseDeLaFiche<K> {
     }
 }
 
+impl<K> CaseDeLaFiche<K> {
+    /// UNE CASE QU'UNE BOITE DE SAISIE REND (`imprevus::SaisieDUnImprevu`) : sa cle (le champ de la charge du geste qui
+    /// l'enregistre), son libelle, sa forme, son aide (la bulle au survol, vide : aucune) et sa valeur (ce qui est deja
+    /// saisi) ; de base, sur sa demi-largeur, sans bloc.
+    pub(crate) fn de_la_boite(cle: K, libelle: crate::catalogue::Affiche, forme: Forme, aide: &str, valeur: Option<ValeurDeCase>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche {
+            cle,
+            bloc: String::new(),
+            largeur: Largeur::Demie,
+            libelle: libelle.texte().to_string(),
+            forme,
+            place: PlaceDeLaCase::Base,
+            aide: aide.to_string(),
+            valeur,
+            exemple: None,
+            prerempli: None,
+            choix: None,
+            boutons: false,
+            parties: None,
+            ajouter: None,
+            dit: Vec::new(),
+            renvoi: None,
+            temps: None,
+            anomalie: None,
+        }
+    }
+
+    /// La meme case, offrant `choix` (une case qui se choisit).
+    pub(crate) fn offrant(self, choix: Vec<Choix>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { choix: Some(choix), ..self }
+    }
+
+    /// La meme case, faite des parties `parties` (`Forme::Parties`), sur toute la ligne.
+    pub(crate) fn en_parties(self, parties: Vec<PartieDeLaFiche>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { forme: Forme::Parties(&[]), largeur: Largeur::Pleine, parties: Some(parties), ..self }
+    }
+
+    /// La meme case, rangee sous « Avancé » (repliee tant qu'on ne l'ouvre pas).
+    pub(crate) fn avancee(self) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { place: PlaceDeLaCase::Avance, ..self }
+    }
+
+    /// La meme case, le moteur disant `dit` sous elle (une ligne chacune).
+    pub(crate) fn disant(self, dit: Vec<String>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { dit, ..self }
+    }
+}
+
 impl PartieDeLaFiche {
+    /// UNE PARTIE D'UNE CASE QU'UNE BOITE DE SAISIE REND (`CaseDeLaFiche::en_parties`), ouverte : son chemin dans la
+    /// valeur, ce qui la precede (la suite du libelle de sa case, « à » : vide, rien), sa forme et ce que le moteur prend
+    /// pour elle vide (`prerempli` : il le propose, la case le montre sans l'ecrire).
+    pub(crate) fn proposee(cle: &str, suite: &'static str, forme: Forme, prerempli: Option<ValeurDeCase>) -> PartieDeLaFiche {
+        PartieDeLaFiche { cle: cle.to_string(), libelle: suite.to_string(), forme, aide: None, exemple: None, prerempli, choix: None, boutons: false, ouverte: true }
+    }
+
     /// Une partie texte ouverte d'une case qu'un ecran rend (`CaseDeLaFiche::de_parties`) : son chemin, son libelle, son
     /// aide et l'exemple d'une partie vide.
     pub(crate) fn texte(cle: &str, libelle: crate::catalogue::Affiche, aide: String, exemple: Option<String>) -> PartieDeLaFiche {

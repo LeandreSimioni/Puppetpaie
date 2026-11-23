@@ -1,8 +1,9 @@
-//! Les routes des IMPREVUS d'un salarie : la liste (`imprevus`, `arrets`, `fins-de-contrat`, `arret-contrats`), l'arret
-//! saisi, repris, prolonge, signale ou oublie (`arret-enregistrer`, `arret-reprise`, `arret-prolonger`,
-//! `arret-signaler`, `arret-oublier`), ses indemnites journalieres (`arret-indemnites`), la suspension du bloc 65
-//! (`suspension-enregistrer`, `-modifier`, `-oublier`), et la fin d'un contrat signalee, avec ses documents
-//! (`fin-contrat-signaler`, `fin-contrat-documents`).
+//! Les routes des IMPREVUS d'un salarie : la liste (`imprevus`, `arrets`, `fins-de-contrat`), l'arret saisi, repris,
+//! prolonge, signale ou oublie (`arret-enregistrer`, `arret-reprise`, `arret-prolonger`, `arret-signaler`,
+//! `arret-oublier`), ses indemnites journalieres (`arret-indemnites`), la suspension du bloc 65 (sa boite,
+//! `suspension-saisie` ; `suspension-enregistrer`, `-modifier`, `-oublier`), et la fin d'un contrat signalee, avec ses
+//! documents (`fin-contrat-signaler`, `fin-contrat-documents`). La boite qui saisit un imprevu
+//! (`SaisieDUnImprevu`) est rendue par une lecture : `suspension-saisie` ici, `arret-obligations` pour un arret.
 //!
 //! RIEN NE PART D'ICI : un imprevu s'ecrit dans `imprevus/AAAA-MM.json`, et c'est la production du mois qui en tire la
 //! ligne de paie et le bloc de la DSN ; un signalement s'ecrit en fichier, il ne s'envoie pas. Les refus sont des
@@ -50,7 +51,11 @@ use socle::mois::{Graphie, Mois};
 use crate::catalogue::{Acte, Affiche, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::declaration::{charge, cle, dit, legendes, ChargeDuType, Legende};
+use crate::declaration::{charge, cle, dit, forme_du_type, legendes, ChargeDuType, Legende};
+use crate::ecran::EnregistrerLEcran;
+use crate::fiches::CaseDeLaFiche;
+use crate::ouverture::Choix;
+use droit::fiche::ValeurDeCase;
 use crate::rappels::{ChoixDeLEcheance, GesteDEcheance, ValeursDeLEcheance};
 use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, tous_les_arrets, ArretDit, ContratAuJour};
 
@@ -89,9 +94,9 @@ pub const ROUTES: &[Fiche] = &[
     fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &SansCharge::CHARGE, "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
     fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &ChargeMois::CHARGE,
         r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où) ; dus et dus_titre : celles qui sont dues, dans leur rang (rang), une fin due avec ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
-    fiche(Route::ArretContrats, "Lire les contrats qu'un arrêt suspendrait à ce jour.",
-        &ChargeArretContrats::CHARGE,
-        r#"{"salarie":"FULLER","jour":"2026-11-27"}"#, "contrats : ceux du salarié qui couvrent ce jour", Acte::Lit, ECRAN),
+    fiche(Route::SuspensionSaisie, "Lire la boîte qui saisit une absence, pour ce qui est déjà dit.",
+        &ChargeSuspensionSaisie::CHARGE,
+        r#"{"salarie":"FULLER","debut":"2026-11-27"}"#, SAISIE_REND, Acte::Lit, ECRAN),
     Fiche { phrase: 400, ..fiche(Route::ArretEnregistrer, "Enregistrer un arrêt de travail.",
         &ChargeArretEnregistrer::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","debut":"2026-11-30","fin":"2026-11-30","motif":"01"}"#,
@@ -150,30 +155,22 @@ charge! {
 }
 
 charge! {
-    /// La charge de `arret-contrats` : le salarie et son dernier jour travaille.
-    #[derive(Debug)]
-    struct ChargeArretContrats {
-        salarie: SalarieDesigne = legendes::SALARIE,
-        jour: Jour = dit("Dernier jour travaillé", "le dernier jour travaillé"),
-    }
-}
-
-charge! {
     /// La charge de `arret-enregistrer`. `connu` est la connaissance de l'accident, en la forme que lit
-    /// `obligations::connaissance_saisie` (`{jour, heure}`, celle de la route `arret-connaissance`).
+    /// `obligations::connaissance_saisie` (`{jour, heure}`, celle de la route `arret-connaissance`). La boite qui saisit
+    /// un arret (`arret-obligations`) nomme ses cases par ses champs (`cle!`).
     #[derive(Debug)]
-    struct ChargeArretEnregistrer {
-        salarie: SalarieDesigne = legendes::SALARIE,
-        dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
-        debut: Jour = dit("Début de l'arrêt", "le premier jour que l'avis prescrit ; le dernier jour travaillé s'il a été prescrit ce jour-là"),
-        fin: Jour = dit("Fin prescrite", "la fin prescrite"),
-        motif: MotifDArret = dit("Motif", "le motif d'arrêt (motifs_arret des nomenclatures de imprevus)"),
-        date_accident: Option<Jour> = dit("Jour de l'accident", "le jour de l'accident, quand le motif l'appelle").avancee(),
-        connu: Option<crate::obligations::ConnaissanceDite> = dit("Su le", "{jour, heure} où la compagnie a su l'accident, quand le motif l'appelle").avancee(),
-        contrat: Option<NumeroContrat> = dit("Contrat", "le contrat suspendu, quand plusieurs couvrent le jour").avancee(),
+    pub(crate) struct ChargeArretEnregistrer {
+        pub(crate) salarie: SalarieDesigne = legendes::SALARIE,
+        pub(crate) dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
+        pub(crate) debut: Jour = dit("Début de l'arrêt", "le premier jour que l'avis prescrit ; le dernier jour travaillé s'il a été prescrit ce jour-là"),
+        pub(crate) fin: Jour = dit("Fin prescrite", "la fin prescrite"),
+        pub(crate) motif: MotifDArret = dit("Motif", "le motif d'arrêt (motifs_arret des nomenclatures de imprevus)"),
+        pub(crate) date_accident: Option<Jour> = dit("Jour de l'accident", "le jour de l'accident, quand le motif l'appelle").avancee(),
+        pub(crate) connu: Option<crate::obligations::ConnaissanceDite> = dit("Su le", "{jour, heure} où la compagnie a su l'accident, quand le motif l'appelle").avancee(),
+        pub(crate) contrat: Option<NumeroContrat> = dit("Contrat", "le contrat suspendu, quand plusieurs couvrent le jour").avancee(),
         #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
-        jours_deja_indemnises: Option<Duree<EnJours>> = dit("Jours déjà indemnisés", "pour le maintien d'un permanent").avancee(),
-        note: Option<String> = dit("Note", "une note libre").avancee(),
+        pub(crate) jours_deja_indemnises: Option<Duree<EnJours>> = dit("Jours déjà indemnisés", "pour le maintien d'un permanent").avancee(),
+        pub(crate) note: Option<String> = dit("Note", "une note libre").avancee(),
     }
 }
 
@@ -282,6 +279,27 @@ charge! {
 }
 
 charge! {
+    /// La charge de `suspension-saisie` : l'absence telle qu'elle se saisit, chaque champ vide tant qu'il n'est pas dit
+    /// (les champs de `suspension-enregistrer`, que ses cases portent), et la carte d'ou l'on vient (le numero et le debut
+    /// de son contrat : c'est le sien qu'elle suspend).
+    #[derive(Debug)]
+    struct ChargeSuspensionSaisie {
+        salarie: Option<SalarieDesigne> = dit("Salarié", "le salarié absent"),
+        debut: Option<Jour> = dit("Premier jour d'absence", "le premier jour de l'absence"),
+        fin: Option<Jour> = dit("Dernier jour", "son dernier jour"),
+        motif: Option<MotifDeSuspension> = dit("Motif", "le code du motif"),
+        contrat: Option<NumeroContrat> = dit("Contrat", "le contrat, quand plusieurs couvrent le jour").avancee(),
+        note: Option<String> = dit("Note", "une note libre").avancee(),
+        carte_numero: Option<NumeroContrat> = CARTE_NUMERO,
+        carte_debut: Option<Jour> = CARTE_DEBUT,
+    }
+}
+
+/// La carte d'ou l'on vient, quand une boite de saisie s'ouvre depuis elle : le numero de son contrat, son premier jour.
+pub(crate) const CARTE_NUMERO: Legende = dit("Contrat de la carte", "le numéro du contrat de la carte d'où l'on vient").avancee();
+pub(crate) const CARTE_DEBUT: Legende = dit("Début de la carte", "le premier jour du contrat de la carte d'où l'on vient").avancee();
+
+charge! {
     /// La charge de `suspension-modifier` : le debut la designe ; la fin et le motif, s'ils se disent, changent.
     #[derive(Debug)]
     struct ChargeSuspensionModifier {
@@ -374,7 +392,7 @@ struct ReponseImprevus {
     motifs_arret: Vec<CodeDuBloc60<MotifDArret>>,
     motifs_reprise: Vec<CodeDuBloc60<MotifDeReprise>>,
     motifs_suspension: Vec<MotifSuspension>,
-    porte: Vec<crate::ouverture::Choix>,
+    porte: Vec<Choix>,
     /// Le mot du bouton qui ouvre la porte, dans le dossier d'un salarie.
     porte_dit: &'static str,
     /// Le titre des imprevus d'un salarie (son dossier), quand il en a.
@@ -388,11 +406,12 @@ const PORTE_DIT: &str = "Imprévu…";
 const SES_IMPREVUS: &str = "Ses imprévus";
 
 /// LA PORTE D'UN IMPREVU, sur la carte d'un engagement et dans le dossier d'un salarie : ce qui s'y ouvre, chaque choix
-/// par la route qui l'enregistre (son code), son libelle et ce qu'il couvre (`dit`).
-fn porte() -> Vec<crate::ouverture::Choix> {
+/// par la lecture qui rend sa boite de saisie (son code : `arret-obligations`, `suspension-saisie`, `SaisieDUnImprevu`),
+/// son libelle et ce qu'il couvre (`dit`).
+fn porte() -> Vec<Choix> {
     vec![
-        crate::ouverture::Choix::de(Route::ArretEnregistrer.nom(), "Un arrêt de travail").disant(Some("maladie, accident, maternité".to_string())),
-        crate::ouverture::Choix::de(Route::SuspensionEnregistrer.nom(), "Une absence").disant(Some("congé parental, sans solde".to_string())),
+        Choix::de(Route::ArretObligations.nom(), "Un arrêt de travail").disant(Some("maladie, accident, maternité".to_string())),
+        Choix::de(Route::SuspensionSaisie.nom(), "Une absence").disant(Some("congé parental, sans solde".to_string())),
     ]
 }
 
@@ -490,11 +509,191 @@ fn gestes_d_une_fin(f: &FinLue) -> R<Vec<GesteDEcheance>> {
     Ok(gestes)
 }
 
-/// `arret-contrats`.
+/// Ce que rend une boite de saisie (`suspension-saisie`, `arret-obligations`).
+pub(crate) const SAISIE_REND: &str = "titre, cases (chacune sa clé, celle d'un champ du geste qui enregistre, son libellé, sa forme, ses choix, sa valeur, ce que le moteur propose, prerempli, et ce qu'il dit sous elle), dit (ce que la boîte dit sous ses cases), enregistrer (sa route, sa charge déjà remplie, où chaque case va sous sa clé, et son libellé)";
+
+/// LA BOITE QUI SAISIT UN IMPREVU, telle qu'une lecture la rend pour les faits deja dits (`suspension-saisie` pour une
+/// absence, `arret-obligations` pour un arret) : son titre, ses cases ouvertes dans l'ordre ou elle les montre (chacune
+/// sous la cle du champ de la charge du geste qui l'enregistre, avec sa forme, son libelle, son aide, ses choix, sa
+/// valeur, ce que le moteur propose et ce qu'il dit sous elle), ce qu'elle dit sous ses cases (`dit`), et le geste qui
+/// l'enregistre (sa route, sa charge deja remplie de ce qui est sur, son libelle ; les cases y vont chacune sous sa cle).
+/// La page la redemande a chaque case changee, avec ce qui est saisi, et la redessine (`js/imprevus.js`).
 #[derive(Debug, Serialize)]
-struct ReponseContrats {
+pub(crate) struct SaisieDUnImprevu {
+    titre: String,
+    cases: Vec<CaseDeLaFiche<&'static str>>,
+    dit: Vec<String>,
+    enregistrer: EnregistrerLEcran<ChargeDeLaSaisie>,
+}
+
+impl SaisieDUnImprevu {
+    /// La boite titree `titre`, de ces cases, disant `dit`, enregistree par `route` avec la charge que `salarie` et `contrat`
+    /// remplissent deja.
+    pub(crate) fn de(titre: String, cases: Vec<CaseDeLaFiche<&'static str>>, dit: Vec<String>, route: Route, salarie: Option<SalarieDesigne>, contrat: &ContratDeLaSaisie) -> SaisieDUnImprevu {
+        let charge = ChargeDeLaSaisie { salarie, contrat: contrat.porte() };
+        SaisieDUnImprevu { titre, cases, dit, enregistrer: EnregistrerLEcran::a_plat(route, charge, ENREGISTRER) }
+    }
+}
+
+/// Le libelle du geste qui enregistre une boite de saisie.
+const ENREGISTRER: Affiche = Affiche::new("Enregistrer");
+
+/// Ce que le geste qui enregistre un imprevu porte deja : le salarie, et le contrat suspendu quand la boite ne le demande
+/// pas et qu'il se sait (celui de la carte d'ou l'on vient).
+#[derive(Debug, Serialize)]
+pub(crate) struct ChargeDeLaSaisie {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    salarie: Option<SalarieDesigne>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    contrat: Option<NumeroContrat>,
+}
+
+/// LE CONTRAT QU'UN IMPREVU EN SAISIE SUSPEND, tel que sa boite le traite (`contrat_de_la_saisie`).
+pub(crate) enum ContratDeLaSaisie {
+    /// Le jour n'est pas encore dit, ou un seul contrat le couvre : rien ne se demande, et le geste n'en porte pas (la
+    /// route qui enregistre prend le seul, `contrat_suspendu`).
+    RienADemander,
+    /// Le contrat de la carte d'ou l'on vient, parmi ceux qui couvrent le jour : rien ne se demande, le geste le porte.
+    LeSien(NumeroContrat),
+    /// Plusieurs contrats couvrent le jour : la case qui le fait choisir, chacun son numero et ce qu'il dit.
+    AChoisir(Vec<Choix>),
+    /// Aucun contrat ne couvre le jour : la phrase qui le dit (il n'y a rien a suspendre).
+    Aucun(String),
+}
+
+/// La case qui fait choisir le contrat, son libelle.
+const QUEL_CONTRAT: Affiche = Affiche::new("Quel contrat");
+
+impl ContratDeLaSaisie {
+    /// Ce que le geste qui enregistre porte deja : le sien.
+    fn porte(&self) -> Option<NumeroContrat> {
+        match self {
+            ContratDeLaSaisie::LeSien(n) => Some(n.clone()),
+            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::AChoisir(_) | ContratDeLaSaisie::Aucun(_) => None,
+        }
+    }
+
+    /// Le contrat que l'imprevu suspendrait, pour ce qui se lit avant l'enregistrement : le sien, ou celui qu'on a choisi
+    /// (`choisi`) quand la boite le demande ; aucun sinon.
+    pub(crate) fn voulu(&self, choisi: Option<&NumeroContrat>) -> Option<NumeroContrat> {
+        match self {
+            ContratDeLaSaisie::LeSien(n) => Some(n.clone()),
+            ContratDeLaSaisie::AChoisir(_) => choisi.cloned(),
+            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::Aucun(_) => None,
+        }
+    }
+
+    /// La case qui le fait choisir (sous la cle `cle`, montrant `choisi`), quand la boite le demande.
+    pub(crate) fn case(&self, cle: &'static str, choisi: Option<&NumeroContrat>) -> Option<CaseDeLaFiche<&'static str>> {
+        match self {
+            ContratDeLaSaisie::AChoisir(choix) => Some(CaseDeLaFiche::de_la_boite(cle, QUEL_CONTRAT, crate::catalogue::Forme::ChoixRendu, "", choisi.and_then(ValeurDeCase::de)).offrant(choix.clone())),
+            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::LeSien(_) | ContratDeLaSaisie::Aucun(_) => None,
+        }
+    }
+
+    /// Ce que la boite en dit : qu'aucun contrat ne couvre le jour.
+    pub(crate) fn dit(&self) -> Option<String> {
+        match self {
+            ContratDeLaSaisie::Aucun(p) => Some(p.clone()),
+            ContratDeLaSaisie::RienADemander | ContratDeLaSaisie::LeSien(_) | ContratDeLaSaisie::AChoisir(_) => None,
+        }
+    }
+}
+
+/// LE CONTRAT QUE SUSPENDRAIT L'IMPREVU DU SALARIE `cle` QUI COMMENCE (ou dont le dernier jour travaille est) `jour`,
+/// parmi ceux qui couvrent ce jour (`contrats_au`) : un seul, rien a demander ; celui de la carte d'ou l'on vient
+/// (`carte_numero`, sinon son premier jour `carte_debut`) quand il a son numero, le sien ; plusieurs, a choisir ; aucun,
+/// la phrase qui le dit. Sans salarie ni jour, rien a demander encore.
+pub(crate) fn contrat_de_la_saisie(ctx: &Contexte, cle: Option<&IdSalarie>, jour: Option<Jour>, carte_numero: Option<&NumeroContrat>, carte_debut: Option<Jour>) -> R<ContratDeLaSaisie> {
+    let (Some(cle), Some(jour)) = (cle, jour) else { return Ok(ContratDeLaSaisie::RienADemander) };
+    let contrats = contrats_au(ctx, cle, jour)?;
+    if contrats.is_empty() {
+        return Ok(ContratDeLaSaisie::Aucun(format!("Aucun contrat de {} ne couvre le {} : il n'y a rien à suspendre.", ctx.nomme(cle), jour.jj_mm_aaaa())));
+    }
+    if contrats.len() == 1 {
+        return Ok(ContratDeLaSaisie::RienADemander);
+    }
+    let sien = contrats.iter().find(|c| (carte_numero.is_some() && c.numero.as_ref() == carte_numero) || Some(c.periode.debut()) == carte_debut);
+    if let Some(n) = sien.and_then(|c| c.numero.clone()) {
+        return Ok(ContratDeLaSaisie::LeSien(n));
+    }
+    // Chaque contrat se dit en une ligne : son numero et sa periode ; un contrat sans numero ne se designe pas (la charge
+    // le nomme par son numero), il ne s'offre pas.
+    let choix = contrats
+        .iter()
+        .filter_map(|k| {
+            let numero = k.numero.as_ref()?;
+            let periode = match k.periode.fin() {
+                Some(f) => format!("du {} au {}", k.periode.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+                None => format!("depuis le {}", k.periode.debut().jj_mm_aaaa()),
+            };
+            Some(Choix::de(numero, format!("{}, {}", numero, periode)))
+        })
+        .collect();
+    Ok(ContratDeLaSaisie::AChoisir(choix))
+}
+
+/// Le titre d'une boite de saisie : ce qu'elle saisit, et pour qui (le nom du salarie, quand il se lit).
+pub(crate) fn titre_de_la_saisie(ctx: &Contexte, quoi: &str, cle: Option<&IdSalarie>) -> String {
+    match cle {
+        Some(c) => format!("{} — {}", quoi, ctx.nomme(c)),
+        None => quoi.to_string(),
+    }
+}
+
+/// Le salarie d'une boite de saisie, lu : sa cle, ou la phrase qui dit pourquoi il ne se lit pas (la boite la dit, et
+/// c'est la route qui enregistre qui le refusera).
+pub(crate) fn salarie_de_la_saisie(ctx: &Contexte, salarie: Option<&SalarieDesigne>) -> (Option<IdSalarie>, Option<String>) {
+    match salarie.map(|s| ctx.cle_du_salarie(s)) {
+        Some(Ok(cle)) => (Some(cle), None),
+        Some(Err(m)) => (None, Some(m.phrase)),
+        None => (None, None),
+    }
+}
+
+/// La note d'une boite de saisie : une case de texte, sous « Avancé », qui dit ce qu'elle est.
+pub(crate) fn case_de_la_note(cle: &'static str, note: Option<&String>) -> CaseDeLaFiche<&'static str> {
+    CaseDeLaFiche::de_la_boite(cle, NOTE, forme_du_type::<_, String>(), "", note.and_then(ValeurDeCase::de))
+        .avancee()
+        .disant(vec!["Une note pour vous : elle ne part nulle part.".to_string()])
+}
+
+const NOTE: Affiche = Affiche::new("Note");
+
+/// `suspension-saisie` : la boite qui saisit une absence, et sa phrase.
+#[derive(Debug, Serialize)]
+struct ReponseSaisieDUneAbsence {
     phrase: Phrase,
-    contrats: Vec<ContratAuJour>,
+    #[serde(flatten)]
+    boite: SaisieDUnImprevu,
+}
+
+/// `suspension-saisie` : la boite qui saisit une absence, pour ce qui est deja dit. Ses cases : du, au, le contrat quand
+/// plusieurs couvrent le premier jour (`contrat_de_la_saisie`), le motif (ceux qui se declarent, `motifs_de_suspension`),
+/// la note ; ce qu'elle dit : qu'aucun contrat ne couvre le jour, et ce que fait une absence saisie. Rien n'est ecrit,
+/// rien ne se refuse de l'absence elle-meme (c'est `suspension-enregistrer` qui refuse).
+fn suspension_saisie(ctx: &Contexte, c: ChargeSuspensionSaisie) -> R<ReponseSaisieDUneAbsence> {
+    let (cle, illisible) = salarie_de_la_saisie(ctx, c.salarie.as_ref());
+    let contrat = contrat_de_la_saisie(ctx, cle.as_ref(), c.debut, c.carte_numero.as_ref(), c.carte_debut)?;
+    let motifs = motifs_de_suspension()?.into_iter().map(|m| Choix::de(m.code, m.libelle_dit)).collect();
+    let jour = |cle, libelle, v: Option<Jour>| CaseDeLaFiche::de_la_boite(cle, libelle, forme_du_type::<_, Jour>(), "", v.as_ref().and_then(ValeurDeCase::de));
+    let mut cases = vec![
+        jour(cle!(ChargeSuspensionEnregistrer, debut), Affiche::new("Du"), c.debut),
+        jour(cle!(ChargeSuspensionEnregistrer, fin), Affiche::new("Au"), c.fin),
+    ];
+    cases.extend(contrat.case(cle!(ChargeSuspensionEnregistrer, contrat), c.contrat.as_ref()));
+    cases.push(
+        CaseDeLaFiche::de_la_boite(cle!(ChargeSuspensionEnregistrer, motif), Affiche::new("Motif"), forme_du_type::<_, MotifDeSuspension>(), "", c.motif.as_ref().and_then(ValeurDeCase::de))
+            .offrant(motifs),
+    );
+    cases.push(case_de_la_note(cle!(ChargeSuspensionEnregistrer, note), c.note.as_ref()));
+    let dit: Vec<String> = [illisible, contrat.dit(), Some("Saisie une fois : chaque mois qu'elle traverse la déclare et, si elle n'est pas payée, en retire le salaire.".to_string())]
+        .into_iter()
+        .flatten()
+        .collect();
+    let titre = titre_de_la_saisie(ctx, "Une absence", cle.as_ref());
+    let phrase = socle::phrase!("{} : {} cases.", titre, cases.len());
+    Ok(ReponseSaisieDUneAbsence { phrase, boite: SaisieDUnImprevu::de(titre, cases, dit, Route::SuspensionEnregistrer, c.salarie, &contrat) })
 }
 
 /// Ce que rend un geste sur un arret : l'arret resume, et ce qui se lit du geste ; un arret qu'on vient d'enregistrer, ce
@@ -518,27 +717,36 @@ struct ReponseSuspension {
 
 /// CE QU'UN IMPREVU QU'ON VIENT D'ENREGISTRER APPELLE ENCORE, quand il appelle quelque chose (le geste de ses indemnites
 /// journalieres, `a_dire` ; les jours que la saisie paie pendant lui, `cachets`) : le titre de la page qui le dit
-/// (`appelle_encore`) et le mot qui la laisse pour plus tard (`plus_tard`) ; rien n'est obligatoire. Rien d'appele :
-/// aucun des deux, et rien ne suit.
+/// (`appelle_encore`), ce qu'elle dit au-dessus des jours payes, quand il y en a (`jours_dit`), le mot qui la laisse
+/// pour plus tard (`plus_tard`) et celui qui enregistre ce qu'on y a dit (`enregistrer`) ; rien n'est obligatoire. Rien
+/// d'appele : aucun, et rien ne suit.
 #[derive(Debug, Default, Serialize)]
 struct EncoreAppele {
     #[serde(skip_serializing_if = "Option::is_none")]
     appelle_encore: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    jours_dit: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     plus_tard: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enregistrer: Option<&'static str>,
 }
 
 impl EncoreAppele {
     /// Ce que l'imprevu `r`, qu'on vient d'enregistrer, appelle encore.
     fn de(r: &Resume) -> EncoreAppele {
-        let appelle = match r {
-            Resume::Arret(a) => a.a_dire.is_some() || !a.cachets.is_empty(),
-            Resume::Suspension(s) => !s.cachets.is_empty(),
+        let (a_dire, cachets) = match r {
+            Resume::Arret(a) => (a.a_dire.is_some(), !a.cachets.is_empty()),
+            Resume::Suspension(s) => (false, !s.cachets.is_empty()),
         };
-        if appelle {
-            EncoreAppele { appelle_encore: Some("Ce qu'il appelle encore"), plus_tard: Some("Plus tard") }
-        } else {
-            EncoreAppele::default()
+        if !a_dire && !cachets {
+            return EncoreAppele::default();
+        }
+        EncoreAppele {
+            appelle_encore: Some("Ce qu'il appelle encore"),
+            jours_dit: cachets.then_some("Des jours sont payés pendant l'imprévu : cocher ceux à retirer de l'engagement."),
+            plus_tard: Some("Plus tard"),
+            enregistrer: Some(ENREGISTRER.texte()),
         }
     }
 }
@@ -602,7 +810,7 @@ macro_rules! dites {
         }
     )*};
 }
-dites!(ReponseImprevus, ReponseArrets, ReponseFins, ReponseContrats, ReponseArret, ReponseSuspension, ReponseSignalement, ReponseSignalementFin, ReponsePapiers);
+dites!(ReponseImprevus, ReponseArrets, ReponseFins, ReponseSaisieDUneAbsence, ReponseArret, ReponseSuspension, ReponseSignalement, ReponseSignalementFin, ReponsePapiers);
 
 /// Une route de ce module.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
@@ -614,7 +822,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             en_json(arrets(ctx)?)
         }
         Route::FinsDeContrat => en_json(fins_de_contrat(ctx, charge.lire()?)?),
-        Route::ArretContrats => en_json(arret_contrats(ctx, charge.lire()?)?),
+        Route::SuspensionSaisie => en_json(suspension_saisie(ctx, charge.lire()?)?),
         Route::ArretEnregistrer => {
             let c: ChargeArretEnregistrer = charge.lire()?;
             let mut r = arret_enregistrer(ctx, &c)?;
@@ -2880,26 +3088,6 @@ pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: Mois, aujourdhui: Jour)
 
 // ------------------------------------------------------------ les contrats d'un jour
 
-
-/// `arret-contrats` : les contrats d'un salarie qui couvrent un jour.
-fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> {
-    let cle = cle_du_nom(ctx, &c.salarie)?;
-    let mut contrats = contrats_au(ctx, &cle, c.jour)?;
-    let phrase = match contrats.len() {
-        0 => socle::phrase!("Aucun contrat de {} ne couvre le {} : il n'y a rien à suspendre.", ctx.nomme(&cle), c.jour.jj_mm_aaaa()),
-        n => socle::phrase!("Contrats qu'un arrêt peut toucher : {}.", n),
-    };
-    // Chaque contrat se dit en une ligne : son numero et sa periode.
-    for k in &mut contrats {
-        let periode = match k.periode.fin() {
-            Some(f) => format!("du {} au {}", k.periode.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
-            None => format!("depuis le {}", k.periode.debut().jj_mm_aaaa()),
-        };
-        k.dit = Some(format!("{}, {}", numero_dit(k.numero.as_ref(), "", "", SANS_NUMERO), periode));
-    }
-    Ok(ReponseContrats { phrase, contrats })
-}
-
 /// Les contrats de la fiche `cle` qui couvrent `jour`, lus dans les saisies, du plus ancien debut au plus recent.
 fn contrats_au(ctx: &Contexte, cle: &IdSalarie, jour: Jour) -> R<Vec<ContratAuJour>> {
     let mut sorties: Vec<ContratAuJour> = Vec::new();
@@ -2928,16 +3116,9 @@ fn contrats_au(ctx: &Contexte, cle: &IdSalarie, jour: Jour) -> R<Vec<ContratAuJo
             }
             sorties.push(ContratAuJour {
                 nom: ctx.nomme(cle),
-                salarie: c,
                 numero: e.numero.clone(),
                 periode: contrat,
-                mois: m,
-                spectacle: e.spectacle.clone(),
-                // Paye au mois (`Nature::mensuelle`) : son mois de paie se tire du moteur, et un arret y appelle le maintien
-                // de salaire (L1226-1 : pas pour un intermittent).
-                mensuel,
                 nature: e.nature,
-                dit: None,
             });
         }
     }
