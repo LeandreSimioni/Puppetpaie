@@ -2957,7 +2957,8 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   des codes du logiciel : la cotisation, la grandeur et le logiciel d'un écart, la sorte de raison d'une paie non
   comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; ce qui distingue deux
   rapports d'une cause est dans leur détail, signé, et le registre `journal/ecarts-import-notes.json` garde les
-  signatures notées), sans rien afficher ni demander :
+  signatures notées ; une compagnie déjà posée, dont ce registre n'existe pas encore, renote une fois ses rapports sous
+  leur genre par cause, et c'est voulu : le filet les regroupe désormais par cause), sans rien afficher ni demander :
   ils ne désignent personne (ni nom, NIR, naissance, adresse, ni salaire ou montant d'une paie ; seulement la
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
