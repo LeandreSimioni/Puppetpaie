@@ -183,7 +183,6 @@ routes! {
         CourrielsFictifs = "courriels-fictifs",
         Rappels = "rappels",
         Echeancier = "echeancier",
-        RevueSpectacles = "revue-spectacles",
         PourDemarrer = "pour-demarrer",
         EcheanceFaite = "echeance-faite",
         ConseilDuJour = "conseil-du-jour",

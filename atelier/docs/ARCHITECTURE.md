@@ -1649,8 +1649,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (`config/echeancier.json`), une déclaration du tableau de l'administrateur.
 - **échéance de l'année** : une échéance de calendrier : la `cle` d'une échéance d'`echeancier-base.json`, ou l'export
   comptable (une clé du logiciel). Une clé non vide, sans deux-points, écrite comme son texte ; celles que le moteur
-  lit, `CLOTURE`, `REVUE_SPECTACLES`, `AT_MP` (des clés de l'échéancier livré) et `EXPORT_COMPTA` (qui n'en est pas
-  une), tenues par un test de structure.
+  lit, `CLOTURE` (une clé de l'échéancier livré) et `EXPORT_COMPTA` (qui n'en est pas une), tenues par un test de
+  structure.
 - **genre d'une échéance** : ce qu'est une échéance des rappels : la DSN d'un mois, les DPAE d'un jour, une obligation
   due, une échéance de l'année. `Dsn`, `Dpae`, `Obligation`, `DeLAnnee(CleDAnnuelle)` ; écrit `dsn`, `dpae`,
   `obligation` ou la clé ; que porte une échéance, que les rappels rendent (`quoi`) et que lit le tableau de
@@ -4023,7 +4023,7 @@ contrat sans terme se jouent comme les autres : `engagement::stock::mois_saisis`
 (`Moteur::etapes_restantes`, ce que l'écran montre) et dont aucun signalement n'est dû. La mémoire de l'horloge
 (`config/horloge.json`) le garde avec l'empreinte de sa saisie et de ses imprévus : il ne se relit plus tant qu'elles ne
 changent pas et que sa DSN n'est pas refusée. Une année est faite quand l'année d'avant est close et exportée. Une
-échéance annuelle n'est faite que par son fait (le taux AT/MP posé, la revue des spectacles) : l'horloge n'en coche aucune.
+échéance annuelle n'est faite que par son fait (l'exercice clos, ou la compagnie qui la coche) : l'horloge n'en coche aucune.
 
 **Ce qu'elle ne fait jamais** : saisir, ni corriger une saisie (un signalement que la saisie ne permet pas d'écrire, un
 engagement que le moteur refuse de valider, restent à faire, et le pas le dit) ; redéposer les octets qu'un organisme a
@@ -4138,10 +4138,11 @@ l'échéance de dépôt (`declarations/src/echeance_dsn.rs` : le 5 ou le 15 du m
 reporté au jour ouvré, à midi ; le rappel la rend dans `echeance_depot`). Puis, quand l'année d'avant n'est pas close et a des mois :
 la clôture (seulement si la DSN de décembre est au journal — sinon c'est son
 rappel qui parle), l'export compta (absent, ou plus vieux que la dernière
-saisie de l'année), et au premier trimestre la revue des spectacles : lesquels
-continuent ; les autres s'archivent (`revue_spectacles`, journal §167 : un
-numéro d'objet ne se périme pas). Ce qui fait taire un rappel, c'est le
-fait ; jamais un clic — ici, la revue enregistrée.
+saisie de l'année). Ce qui fait taire un rappel, c'est le fait ; jamais un
+clic. « À faire » ne se dit que de ce qui est dû : la DSN d'un mois qui n'est
+pas fini, une échéance de l'année avant son premier mois, une DPAE plus de huit
+jours avant l'embauche (R1221-4), une clôture avant la DSN de décembre sont
+« à venir » (`EtatEcheance::AVenir`, pastille grise).
 
 **La clôture** (`cloturer`) refuse une année déjà close, l'année en cours,
 et une année dont un mois avec des paies n'a pas de DSN réelle acceptée

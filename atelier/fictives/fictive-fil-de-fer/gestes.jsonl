@@ -10,7 +10,6 @@
 {"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"DELMAS","confirme":true,"changements":[{"case":"email","valeur":"octave.delmas@exemple.invalid"}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"spectacle","cle":"objet-256Z00931107","confirme":true,"changements":[{"case":"titre","valeur":"Le Grand Fil"}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"spectacle","cle":"objet-256Z00931108","confirme":true,"changements":[{"case":"titre","valeur":"Mademoiselle Poussière"}]}}
-{"route":"revue-spectacles","charge":{"annee":2026,"continuent":["objet-256Z00931107","objet-256Z00931108"]}}
 {"heure":"2026-01-14T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931108"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":2},"taux":140,"lieu":"Atelier de la compagnie, 71100 Chalon-sur-Saône","dates":["2026-01-19","2026-01-20"],"planning":[]}]}]}}
@@ -169,7 +168,6 @@
 {"heure":"2027-01-05T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-12"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-12","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-12"}}
-{"heure":"2027-01-12T10:00:00","route":"revue-spectacles","charge":{"annee":2027,"continuent":["objet-256Z00931107","objet-256Z00931108"]}}
 {"route":"exporter","charge":{"etat":"fcap-svp","periode":"2026","format":"csv"}}
 {"route":"echeance-faite","charge":{"cle":"fcap-svp:2027"}}
 {"heure":"2027-01-29T10:00:00","route":"cloture","charge":{"annee":"2026"}}

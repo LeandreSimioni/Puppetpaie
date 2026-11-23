@@ -379,7 +379,6 @@ function poserLesRappels(liste, ech, fermerDit) {
         ? ` <span class="discret">— ${echapper(r.quand)}</span>` : ""}</h3>
       ${r.question ? `<p class="rappel-question">${echapper(r.question)}</p>` : ""}
       ${r.detail ? `<p class="note">${echapper(r.detail)}</p>` : ""}
-      ${r.spectacles.length ? `<ul class="rappel-liste">${r.spectacles.map((s) => `<li>${echapper(s.dit)}</li>`).join("")}</ul>` : ""}
       <div class="actions">${boutonRappel(r, i)}</div>
     </div>`).join("");
   document.getElementById("rappels-fermer").textContent = fermerDit;

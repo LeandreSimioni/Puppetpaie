@@ -224,7 +224,6 @@ pub(crate) enum ChargeDuGeste {
     Connaissance(crate::obligations::ChargeConnaissance),
     Papiers(crate::imprevus::ChargeFinContratDocuments),
     Annee(ChargeAnnee),
-    Revue(crate::rappels::ChargeRevue),
     Faite(crate::rappels::ChargeFaite),
     Piece(crate::documents::ChargePiecePartie),
 }
@@ -263,7 +262,6 @@ charge_du_geste! {
     crate::obligations::ChargeConnaissance => Connaissance,
     crate::imprevus::ChargeFinContratDocuments => Papiers,
     ChargeAnnee => Annee,
-    crate::rappels::ChargeRevue => Revue,
     crate::rappels::ChargeFaite => Faite,
     crate::documents::ChargePiecePartie => Piece,
 }
