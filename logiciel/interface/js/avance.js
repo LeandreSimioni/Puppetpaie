@@ -684,21 +684,24 @@ function chargeDuGeste(bloc, g) {
 function brancherLesGestes(cible, gestes, entete, apres) {
   cible.querySelectorAll("[data-geste]").forEach((b) => {
     const g = gestes[+b.dataset.geste];
-    b.onclick = () => faireLeGeste(g, entete, apres);
+    b.onclick = () => faireLeGeste(g, entete, apres, b);
   });
 }
 
-async function faireLeGeste(g, entete, apres) {
+/** `bouton` : celui du geste, éteint le temps de la réponse quand le geste part sans boîte. */
+async function faireLeGeste(g, entete, apres, bouton) {
   const partir = async (charge, boite) => {
     const motdepasse = g.demande ? await demanderMotDePasse(g.demande) : null;
     if (g.demande && !motdepasse) return;
-    // Le bouton de la boîte s'éteint le temps de la réponse (lier le Drive attend qu'on accepte chez Google).
-    const rallumer = boite ? occupe(document.getElementById("geste-ok")) : () => {};
+    // Le bouton qui fait partir le geste s'éteint le temps de la réponse (lier le Drive attend qu'on accepte chez
+    // Google) : on ne clique pas deux fois.
+    const rallumer = occupe(boite ? document.getElementById("geste-ok") : bouton);
     let r;
     try { r = await api(g.route, motdepasse ? { ...charge, motdepasse } : charge); } catch (e) { rallumer(); dire(e.message, "erreur"); return; }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
     await apres();
+    rallumer();
   };
   if (!g.cases.length && !g.phrases.length) { await partir(g.charge, false); return; }
   const rendre = entete.pardessus ? mettreDeCote() : null;
