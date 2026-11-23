@@ -30,7 +30,7 @@ const ENREGISTRER: Affiche = Affiche::new("Enregistrer");
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::OrganismesContrats,
-        geste: "Dire les contrats de la DSN (prévoyance, santé…) d'un mois, et ce qui manque, tels qu'on les saisit.",
+        geste: "Rendre l'écran des contrats de la DSN (prévoyance, santé…) d'un mois.",
         charge: &[Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois regardé, AAAA-MM ; le mois en cours sinon", avance: false }],
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "mois, encarts, cases (un contrat par case, sa clé : ses parties à saisir, organisme et libelle ; dessous, sa période, ses bénéficiaires et ce que les textes en donnent ; ses temps), historique (les valeurs datées de chaque contrat saisi), enregistrer (la route, la charge, le champ où vont les cases : chacune sous sa clé)",
@@ -187,14 +187,17 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         dit.push(format!("Bénéficiaires : {}.", ligne.beneficiaires));
         // Ce que les textes donnent se dit sous le contrat, et ne se saisit pas ; le reste est une partie a saisir.
         let mut parties = Vec::new();
-        let donne = |t: Option<&str>| t.unwrap_or("—").to_string();
         if ligne.organisme_fixe {
-            dit.push(format!("{} : {}, donné par les textes.", ORGANISME.texte(), donne(ligne.organisme.as_ref().map(IdentifiantDOrganisme::as_str))));
+            if let Some(o) = &ligne.organisme {
+                dit.push(format!("{} : {}, donné par les textes.", ORGANISME.texte(), o.as_str()));
+            }
         } else {
             parties.push(PartieDeLaFiche::texte("organisme", ORGANISME, "De 5 à 9 caractères, sans espace : sur le certificat d'adhésion et la fiche de paramétrage DSN.".to_string(), Some("P0983".to_string())));
         }
         if ligne.libelle_fixe {
-            dit.push(format!("{} : {}, donnée par les textes.", REFERENCE.texte(), donne(ligne.libelle.as_deref())));
+            if let Some(l) = &ligne.libelle {
+                dit.push(format!("{} : {}, donnée par les textes.", REFERENCE.texte(), l));
+            }
         } else {
             parties.push(PartieDeLaFiche::texte("libelle", REFERENCE, "De 1 à 30 caractères : sur la fiche de paramétrage DSN de l'organisme.".to_string(), None));
         }

@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::IdentiteImage,
-        geste: "Montrer la signature, le cachet ou le logo : l'image posée, ou le tampon que le logiciel dessine.",
+        geste: "Rendre l'image de la signature, du tampon ou du logo.",
         charge: &[QUOI_IDENTITE],
         exemple: r#"{"quoi":"cachet"}"#,
         rend: "phrase, media (son type), image (en base64)",
