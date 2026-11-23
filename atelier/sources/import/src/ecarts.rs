@@ -218,15 +218,95 @@ struct DetailSigne<'a> {
     detail: &'a Detail,
 }
 
-/// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, et les empreintes des
+/// UN ECART CONNU NOTE SUR UNE PAIE IMPORTEE (`engagement::ecarts_connus::EcartConnuConstate`), une ligne de
+/// `journal/ecarts-connus.json` : la paie (son empreinte, `engagement::ecarts::empreinte`), ce que la ligne connue dit
+/// et les deux montants de sa part, le notre (au taux du texte) et celui du bulletin. Ce que la carte de la paie importee
+/// explique a la compagnie (`mois`) ; une paie se compare une fois, ce qu'elle a constate se garde.
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EcartConnuNote {
+    pub paie: EmpreinteCourte,
+    pub logiciel: LogicielDUnBulletin,
+    pub cotisation: RegroupementDeComparaison,
+    pub grandeur: engagement::ecarts_connus::PartDuTaux,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub applique: socle::grandeurs::Taux,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub texte: socle::grandeurs::Taux,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub notre: socle::grandeurs::Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub leur: socle::grandeurs::Montant,
+    pub explication: String,
+}
+
+impl EcartConnuNote {
+    /// Ce que la carte de la paie importee en dit : l'explication, et l'ecart chiffre de la part.
+    pub fn phrase(&self) -> String {
+        let part = match self.grandeur {
+            engagement::ecarts_connus::PartDuTaux::Employeur => "part employeur",
+            engagement::ecarts_connus::PartDuTaux::Salarie => "part salariale",
+        };
+        format!(
+            "{} Sur ce bulletin ({}) : {} au lieu de {}, soit {} d'écart.",
+            self.explication,
+            part,
+            socle::texte::euros(self.leur),
+            socle::texte::euros(self.notre),
+            socle::texte::euros((self.leur - self.notre).abs())
+        )
+    }
+}
+
+/// Le registre des ecarts connus notes sur les paies importees.
+fn registre_des_connus(racine: &Path) -> PathBuf {
+    racine.join(envois::journal::JOURNAL).join("ecarts-connus.json")
+}
+
+/// LES ECARTS CONNUS NOTES SUR LES PAIES IMPORTEES (`EcartConnuNote`), la seule lecture ; aucun tant que leur registre
+/// n'existe pas.
+pub fn ecarts_connus_notes(racine: &Path) -> R<Vec<EcartConnuNote>> {
+    let p = registre_des_connus(racine);
+    if !socle::fichiers::existe(&p) {
+        return Ok(Vec::new());
+    }
+    socle::forme::lire_fichier(&p, "Le registre des écarts connus des paies importées ne se lit pas : le signaler au développeur.")
+}
+
+/// Ce qu'une revue des paies importees rend : les rapports, les empreintes des paies qui ne sont plus a comparer, et les
+/// ecarts connus que les paies comparees ont constates.
+pub struct Revue {
+    pub rapports: Vec<Rapport>,
+    pub faites: Vec<EmpreinteCourte>,
+    pub connus: Vec<EcartConnuNote>,
+}
+
+/// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, les empreintes des
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
-/// refusee se compare de nouveau la fois suivante).
-pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<EmpreinteCourte>)> {
+/// refusee se compare de nouveau la fois suivante), et les ecarts connus constates sur celles-ci.
+pub fn rapports(ctx: &Contexte) -> R<Revue> {
     let importes = engagement::importe::tous(&ctx.racine)?;
     let deja = comparees(&ctx.racine)?;
     let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
     let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
-    Ok((rapports_de(ctx, &comparaisons)?, faites))
+    let connus = comparaisons
+        .iter()
+        .filter(|c| !c.a_refaire)
+        .flat_map(|c| {
+            c.connus.iter().map(|k| EcartConnuNote {
+                paie: c.empreinte.clone(),
+                logiciel: k.connu.logiciel.clone(),
+                cotisation: k.connu.cotisation.clone(),
+                grandeur: k.connu.grandeur,
+                applique: k.connu.applique,
+                texte: k.connu.texte,
+                notre: k.notre,
+                leur: k.leur,
+                explication: k.connu.explication.clone(),
+            })
+        })
+        .collect();
+    Ok(Revue { rapports: rapports_de(ctx, &comparaisons)?, faites, connus })
 }
 
 fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> {
@@ -350,7 +430,7 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
     if engagement::importe::tous(racine)?.is_empty() {
         return Ok(0);
     }
-    let (rapports, faites) = rapports(ctx)?;
+    let Revue { rapports, faites, connus } = rapports(ctx)?;
     let mut signees = signatures_notees(racine)?;
     let avant = signees.len();
     let mut notes = 0;
@@ -375,6 +455,17 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
     }
     if signees.len() > avant {
         socle::ecriture::ecrire_json(&registre_des_notes(racine), &signees, 0)?;
+    }
+    // Les ecarts connus constates, avant le registre qui dit leurs paies comparees : une paie qui les a constates ne se
+    // compare plus, ils se gardent.
+    if !connus.is_empty() {
+        let mut notes_connus = ecarts_connus_notes(racine)?;
+        for k in connus {
+            if !notes_connus.contains(&k) {
+                notes_connus.push(k);
+            }
+        }
+        socle::ecriture::ecrire_json(&registre_des_connus(racine), &notes_connus, 2)?;
     }
     if !faites.is_empty() {
         let mut toutes = comparees(racine)?;

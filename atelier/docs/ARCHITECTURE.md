@@ -1358,6 +1358,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | ce qui diffère dans un écart de la comparaison (la base, un taux, un montant, une cotisation d'un seul côté) | `CeQuiDiffere` | `engagement/src/ecarts.rs` |
+| écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json`), la part dont il dit le taux, et l'écart connu constaté sur une paie importée (les deux montants de la part ; sa note dans `journal/ecarts-connus.json`, `import::ecarts::EcartConnuNote`) | `EcartConnu`, `PartDuTaux`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
 | paie importée qui ne se compare pas (la sorte de sa raison, tirée de l'endroit et de la classe du refus, jamais de sa phrase, et le refus qui la dit ; la sorte fait le genre de son incident, sans aucune valeur du cas) | `NonComparee`, `SorteDeNonComparaison` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
@@ -2943,7 +2944,14 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   ils ne désignent personne (ni nom, NIR, naissance, adresse, ni salaire ou montant d'une paie ; seulement la
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
-  caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
+  caviardage. Une paie se compare une fois. **Les écarts connus des anciens logiciels** (`ecarts-connus-base.json`,
+  `engagement::ecarts_connus` ; Léandre, 23/11/2026 : « on ne relève plus les défauts déjà relevés ») : un taux qu'un
+  ancien logiciel a appliqué autrement que le texte, déjà relevé, avec la source du taux du texte. Une part qui retombe
+  exactement sur une ligne (le taux du bulletin est celui appliqué quand le nôtre est celui du texte ; son montant est le
+  nôtre, chaque ligne au taux du texte refaite au taux appliqué, à la tolérance de la comparaison) n'est pas un écart,
+  ni le total des cotisations de sa part pour ce qu'elle en explique ; elle ne fait pas d'incident, se note dans
+  `journal/ecarts-connus.json`, et la carte de la paie importée dit l'explication et l'écart chiffré (« Écart connu »,
+  `import::mois`). Ce qui n'y retombe pas exactement sonne comme avant. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique). Ce que le logiciel ne livre pas pour calculer une paie (le barème de son année,
   la couche de sa convention : `droit::contexte::RienDeLivre`, que `Contexte::de_quoi_calculer` rend à part) ne l'inscrit pas au registre : la
   version qui le livrera la comparera à l'ouverture. Avant 2026 (`engagement::ecarts::COMPAREE_TOUJOURS_DES`, une
