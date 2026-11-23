@@ -915,34 +915,16 @@ impl FicheDuCompteRendu {
     fn de(mut fiche: FicheImportee) -> FicheDuCompteRendu {
         fiche.dire_ce_qui_se_montre();
         let completer_la_fiche = match (fiche.a_completer, fiche.fiche.nommee()) {
-            (true, Some(n)) => Some(GesteDeLaFiche::avec_cases(Route::Fiche, FicheAOuvrir::de(n), COMPLETER_LA_FICHE, Vec::new(), crate::SansCharge {}, crate::SansCharge {})),
+            (true, Some(n)) => Some(GesteDeLaFiche::avec_cases(Route::Fiche, crate::fiches::FicheARendre::de_la_fiche(n), COMPLETER_LA_FICHE, Vec::new(), crate::SansCharge {}, crate::SansCharge {})),
             (true, None) | (false, _) => None,
         };
         FicheDuCompteRendu { fiche, completer_la_fiche }
     }
 }
 
-/// LA FICHE QU'UN GESTE OUVRE, a la charge de la route `fiche` : son nom, et la cle d'un salarie ou d'un spectacle.
-#[derive(Debug, Serialize)]
-struct FicheAOuvrir {
-    nom: NomDeFiche,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cle: Option<String>,
-}
-
-impl FicheAOuvrir {
-    fn de(n: &FicheNommee) -> FicheAOuvrir {
-        let cle = match n {
-            FicheNommee::Entreprise => None,
-            FicheNommee::Salarie(k) => Some(k.to_string()),
-            FicheNommee::Spectacle(k) => Some(k.to_string()),
-        };
-        FicheAOuvrir { nom: n.nom(), cle }
-    }
-}
-
-/// LE GESTE QUI OUVRE UNE FICHE QUE L'IMPORT A CREEE, pour la completer (`fiche`) : il n'a pas de case.
-type GesteDeLaFiche = crate::imprevus::GesteDeRoute<FicheAOuvrir, crate::SansCharge, crate::SansCharge>;
+/// LE GESTE QUI OUVRE UNE FICHE QUE L'IMPORT A CREEE, pour la completer : la route `fiche`, sa charge la fiche telle
+/// qu'elle est enregistree (`FicheARendre::de_la_fiche`) ; il n'a pas de case.
+type GesteDeLaFiche = crate::imprevus::GesteDeRoute<crate::fiches::FicheARendre, crate::SansCharge, crate::SansCharge>;
 
 const COMPLETER_LA_FICHE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Compléter la fiche");
 

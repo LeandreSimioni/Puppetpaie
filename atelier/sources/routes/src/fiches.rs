@@ -38,7 +38,7 @@ use socle::texte::{capitaliser, strip};
 
 mod ecriture;
 mod rendue;
-pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, HistoireDUneCase, ListesDuSalarie, PartieDeLaFiche};
+pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, FicheARendre, HistoireDUneCase, ListesDuSalarie, PartieDeLaFiche};
 pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, poser_au, preparer, ChangementDit, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Legende = dit("Fiche", "la fiche ; seuls un salarié et un spectacle s'archivent");

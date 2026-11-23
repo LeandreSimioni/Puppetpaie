@@ -362,6 +362,13 @@ impl<'de> serde::Deserialize<'de> for Liste {
     }
 }
 
+/// Elle s'ecrit comme elle se lit : ses elements, tels quels (la charge d'un geste qu'une route rend).
+impl serde::Serialize for Liste {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
 impl Liste {
 
     /// CHAQUE ELEMENT LU SEUL EN SA FORME `T`, comme une saisie (`lire_saisie`) ; sa faute : le chemin sous `sous` et ce qui

@@ -25,16 +25,47 @@ use super::ecriture::{anomalies_enregistrees, anomalies_saisies, comblee, verdic
 /// l'entreprise), et ce qui est saisi (`changements`, comme a l'ecriture `enregistrer-fiche` et comme la carte : chacun
 /// lu seul dans le type de sa case, pose sur la fiche enregistree ; absents : la fiche telle qu'elle est enregistree), et
 /// les cases que la saisie vient de changer (`changees`, de la plus ancienne a la plus recente : ce qu'une case decide
-/// d'autres cases ne se fait que quand c'est elle qu'on vient de changer ; absentes : aucune).
-#[derive(Deserialize)]
+/// d'autres cases ne se fait que quand c'est elle qu'on vient de changer ; absentes : aucune). Elle s'ecrit aussi, sans
+/// ses cases vides : la charge d'un geste qui ouvre une fiche (« Compléter la fiche » de l'import, `de_la_fiche`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "nom", deny_unknown_fields)]
 pub(crate) enum FicheARendre {
     #[serde(rename = "entreprise")]
-    Entreprise { changements: Option<socle::forme::Liste>, changees: Option<Vec<CaseDeFiche>> },
+    Entreprise {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changements: Option<socle::forme::Liste>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changees: Option<Vec<CaseDeFiche>>,
+    },
     #[serde(rename = "salarie")]
-    Salarie { cle: Option<IdSalarie>, changements: Option<socle::forme::Liste>, changees: Option<Vec<CaseDeFiche>> },
+    Salarie {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cle: Option<IdSalarie>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changements: Option<socle::forme::Liste>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changees: Option<Vec<CaseDeFiche>>,
+    },
     #[serde(rename = "spectacle")]
-    Spectacle { cle: Option<IdSpectacle>, changements: Option<socle::forme::Liste>, changees: Option<Vec<CaseDeFiche>> },
+    Spectacle {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cle: Option<IdSpectacle>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changements: Option<socle::forme::Liste>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changees: Option<Vec<CaseDeFiche>>,
+    },
+}
+
+impl FicheARendre {
+    /// La fiche nommee `n` telle qu'elle est enregistree, sans rien de saisi.
+    pub(crate) fn de_la_fiche(n: &droit::fiche::FicheNommee) -> FicheARendre {
+        match n {
+            droit::fiche::FicheNommee::Entreprise => FicheARendre::Entreprise { changements: None, changees: None },
+            droit::fiche::FicheNommee::Salarie(k) => FicheARendre::Salarie { cle: Some(k.clone()), changements: None, changees: None },
+            droit::fiche::FicheNommee::Spectacle(k) => FicheARendre::Spectacle { cle: Some(k.clone()), changements: None, changees: None },
+        }
+    }
 }
 
 /// CE QUE L'EN-TETE D'UNE FICHE RENDUE DIT D'ELLE (`SorteDeFiche::entete`) : son titre, ce qui suit le titre, une note
