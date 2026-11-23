@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::{maintenant, INTERFACE};
@@ -47,16 +47,16 @@ use socle::mode::Mode;
 use socle::grandeurs::MontantUnitaire;
 use socle::mois::{Graphie, Mois};
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, LaCharge, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
+use crate::catalogue::{Acte, Affiche, Fiche, LaCharge, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::declaration::{charge, dit, legendes, ChampDuType, Legende};
+use crate::declaration::{charge, dit, legendes, Legende};
 use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, tous_les_arrets, ArretDit, ContratAuJour};
 
 /// Le dernier jour travaille avant l'arret, qui le designe.
 const DERNIER_JOUR_TRAVAILLE: Legende = dit("Dernier jour travaillé", "le dernier jour travaillé avant l'arrêt, qui le désigne");
-const DERNIER_JOUR: Champ = ChampDuType::du_type::<_, Jour>("dernier_jour", DERNIER_JOUR_TRAVAILLE).champ;
-const DEBUT: Champ = Champ { nom: "debut", libelle: Affiche::new("Premier jour d'absence"), forme: Forme::Date, sens: "le premier jour de l'absence, qui la désigne", avance: false };
+/// Le premier jour d'une absence, qui la designe.
+const DEBUT: Legende = dit("Premier jour d'absence", "le premier jour de l'absence, qui la désigne");
 const UN_ARRET: &str = r#"{"salarie":"FULLER","dernier_jour":"2026-11-27"}"#;
 
 /// Une fiche de ce module : `rend` et les refus que toutes partagent.
@@ -64,9 +64,10 @@ const fn fiche(route: Route, geste: &'static str, charge: &'static dyn LaCharge,
     Fiche { route, geste, charge, exemple, rend, refus: &[OPERATION, MANQUE, ILLISIBLE, FORME], acte, phrase: 0, ecran, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
-const ORDRE: Champ = Champ { nom: "ordre", libelle: Affiche::new("Numéro d'ordre"), forme: Forme::Nombre, sens: "son numéro d'ordre ; sinon le suivant de ceux déjà partis", avance: true };
-const REMPLACE: Champ = Champ { nom: "remplace", libelle: Affiche::new("Remplace"), forme: Forme::Texte, sens: "le signalement qu'il remplace", avance: true };
-const MODE: Champ = Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<socle::mode::Mode>()), sens: "un test écrit un fichier d'essai, marqué comme tel", avance: true };
+const ORDRE: Legende = dit("Numéro d'ordre", "son numéro d'ordre ; sinon le suivant de ceux déjà partis").avancee();
+const REMPLACE: Legende = dit("Remplace", "le signalement qu'il remplace").avancee();
+const MODE: Legende = dit("Test ou réel", "un test écrit un fichier d'essai, marqué comme tel").avancee();
+const CONSTITUE_LE: Legende = dit("Constitué le", "le jour de constitution ; sinon aujourd'hui").avancee();
 
 /// La nature d'un signalement d'arret (`declarations::signalement::NatureSignalement`) : 04 l'arret, 05 la reprise.
 
@@ -78,61 +79,50 @@ const AVANCE: Ecran = Ecran::DessineAvance(Place::Paie);
 const GESTE: Ecran = Ecran::Geste(Place::Paie);
 const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 
-// Les cases que la boite d'un geste fait saisir : celles de la fiche de sa route, nommees par le geste (`cases`).
-const FIN_PRESCRITE: Champ = Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin prescrite"), forme: Forme::Date, sens: "la nouvelle fin prescrite", avance: false };
-const REPRISE: Champ = Champ { nom: "reprise", libelle: Affiche::new("Reprise le"), forme: Forme::Date, sens: "le jour de la reprise ; nul l'efface", avance: false };
-const MOTIF_REPRISE: Champ = Champ { nom: "motif_reprise", libelle: Affiche::new("Motif de la reprise"), forme: Forme::Texte, sens: "le motif de la reprise", avance: true };
-const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), un montant (40.89, en nombre ou tel qu'il est tapé « 40,89 ») ; absente, elle ne change pas", avance: false };
-const IJ_NETTE: Champ = Champ { nom: "ij_nette", libelle: Affiche::new("Indemnité nette d'un jour"), forme: Forme::Texte, sens: "la même, nette de CSG et CRDS", avance: false };
-const IJ_BRUTE_MAJOREE: Champ = Champ { nom: "ij_brute_majoree", libelle: Affiche::new("Indemnité brute majorée"), forme: Forme::Texte, sens: "accident du travail, dès le 29e jour : brute", avance: true };
-const IJ_NETTE_MAJOREE: Champ = Champ { nom: "ij_nette_majoree", libelle: Affiche::new("Indemnité nette majorée"), forme: Forme::Texte, sens: "la même, nette", avance: true };
-const JOURS_DEJA_INDEMNISES: Champ = Champ { nom: "jours_deja_indemnises", libelle: Affiche::new("Jours déjà indemnisés"), forme: Forme::Nombre, sens: "les jours indemnisés dans les douze mois qu'aucun arrêt saisi ne porte", avance: true };
-const NOUVELLE_FIN: Champ = Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin"), forme: Forme::Date, sens: "sa nouvelle fin", avance: false };
 
 /// Les routes de ce module, et leurs fiches, dans l'ordre d'un arrêt : il s'enregistre, se suit, se signale, s'oublie.
 pub const ROUTES: &[Fiche] = &[
     fiche(Route::Imprevus, "Lire les imprévus d'un mois ou d'un salarié, et ce qu'on peut en saisir.",
-        &[MOIS, Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "à la place du mois : les imprévus de ce salarié", avance: true }],
+        &ChargeImprevus::CHARGE,
         r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures", Acte::Lit, ECRAN),
     fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &SansCharge::CHARGE, "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
-    fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &[MOIS],
+    fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &ChargeMois::CHARGE,
         r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où)", Acte::Lit, ECRAN),
     fiche(Route::ArretContrats, "Lire les contrats qu'un arrêt suspendrait à ce jour.",
-        &[SALARIE, Champ { nom: "jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé", avance: false }],
+        &ChargeArretContrats::CHARGE,
         r#"{"salarie":"FULLER","jour":"2026-11-27"}"#, "contrats : ceux du salarié qui couvrent ce jour", Acte::Lit, ECRAN),
     Fiche { phrase: 400, ..fiche(Route::ArretEnregistrer, "Enregistrer un arrêt de travail.",
         &ChargeArretEnregistrer::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","debut":"2026-11-30","fin":"2026-11-30","motif":"01"}"#,
         "arret (l'arrêt résumé), phrase", Acte::Ecrit, ECRAN) },
     Fiche { phrase: 700, ..fiche(Route::ArretProlonger, "Prolonger un arrêt : sa nouvelle fin.",
-        &[SALARIE, DERNIER_JOUR, FIN_PRESCRITE],
+        &ChargeArretProlonger::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","fin":"2026-12-04"}"#,
         "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::ArretReprise, "Poser ou effacer la reprise d'un arrêt.",
-        &[SALARIE, DERNIER_JOUR, REPRISE, MOTIF_REPRISE],
+        &ChargeArretReprise::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","reprise":"2026-12-03"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::ArretIndemnites, "Dire les indemnités journalières d'un arrêt, par jour.",
-        &[SALARIE, DERNIER_JOUR, IJ_BRUTE, IJ_NETTE, IJ_BRUTE_MAJOREE, IJ_NETTE_MAJOREE, JOURS_DEJA_INDEMNISES],
+        &ChargeArretIndemnites::CHARGE,
         r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","ij_brute":"40.89","ij_nette":"38.15"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 600, ..fiche(Route::ArretSignaler, "Fabriquer le signalement d'un arrêt, sans le déposer.",
-        &[SALARIE, DERNIER_JOUR, Champ { nom: "nature", libelle: Affiche::new("Nature"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<declarations::signalement::NatureSignalement>()), sens: "ce que le signalement déclare", avance: false }, REMPLACE, ORDRE, MODE,
-            Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
+        &ChargeArretSignaler::CHARGE,
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","nature":"04"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, nature, type, ordre, avertissements", Acte::Ecrit, ECRAN) },
-    Fiche { phrase: 400, ..fiche(Route::ArretOublier, "Retirer un arrêt qui n'a pas été déclaré.", &[SALARIE, DERNIER_JOUR],
+    Fiche { phrase: 400, ..fiche(Route::ArretOublier, "Retirer un arrêt qui n'a pas été déclaré.", &ChargeArretOublier::CHARGE,
         UN_ARRET, "arret (l'arrêt retiré, résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionEnregistrer, "Enregistrer une absence qui suspend un contrat.",
-        &[SALARIE, DEBUT, Champ { nom: "fin", libelle: Affiche::new("Dernier jour"), forme: Forme::Date, sens: "son dernier jour", avance: false }, Champ { nom: "motif", libelle: Affiche::new("Motif"), forme: Forme::Texte, sens: "le code du motif (nomenclatures de imprevus)", avance: false }, Champ { nom: "contrat", libelle: Affiche::new("Contrat"), forme: Forme::Texte, sens: "le contrat, quand plusieurs couvrent le jour", avance: true }, Champ { nom: "note", libelle: Affiche::new("Note"), forme: Forme::Texte, sens: "une note libre", avance: true }],
+        &ChargeSuspensionEnregistrer::CHARGE,
         r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27","motif":"501"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, AVANCE) },
     Fiche { phrase: 400, ..fiche(Route::SuspensionModifier, "Changer la fin ou le motif d'une absence.",
-        &[SALARIE, DEBUT, NOUVELLE_FIN, Champ { nom: "motif", libelle: Affiche::new("Nouveau motif"), forme: Forme::Texte, sens: "son nouveau motif", avance: true }],
+        &ChargeSuspensionModifier::CHARGE,
         r#"{"salarie":"FULLER","debut":"2026-11-27","fin":"2026-11-27"}"#, "suspension (l'absence résumée), phrase", Acte::Ecrit, GESTE_AVANCE) },
-    Fiche { phrase: 400, ..fiche(Route::SuspensionOublier, "Retirer une absence qui n'a pas été déclarée.", &[SALARIE, DEBUT],
+    Fiche { phrase: 400, ..fiche(Route::SuspensionOublier, "Retirer une absence qui n'a pas été déclarée.", &ChargeSuspensionOublier::CHARGE,
         r#"{"salarie":"FULLER","debut":"2026-11-27"}"#, "suspension (l'absence retirée, résumée), phrase", Acte::Ecrit, GESTE_AVANCE) },
     Fiche { phrase: 600, ..fiche(Route::FinContratSignaler, "Fabriquer le signalement d'une fin de contrat, sans le déposer.",
-        &[MOIS, SALARIE, REMPLACE, ORDRE, MODE,Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
+        &ChargeFinContratSignaler::CHARGE,
         r#"{"mois":"2026-11","salarie":"FULLER"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, type, ordre, preavis, avertissements", Acte::Ecrit, AVANCE) },
     Fiche { phrase: 160, ..fiche(Route::FinContratDocuments, "Fabriquer le certificat de travail et le reçu pour solde de tout compte.",
-        &[MOIS, SALARIE, Champ { nom: "le", libelle: Affiche::new("Établis le"), forme: Forme::Date, sens: "le jour où ils s'établissent ; sinon aujourd'hui", avance: true }],
+        &ChargeFinContratDocuments::CHARGE,
         r#"{"mois":"2026-11","salarie":"FULLER"}"#, "phrase, certificat et recu (leurs chemins), dossier, avertissements (ce qu'il faut savoir en les remettant)", Acte::Ecrit, ECRAN) },
 ];
 
@@ -141,27 +131,30 @@ pub const ROUTES: &[Fiche] = &[
 // `salarie` y est toujours ce que la personne en dit, un `SalarieDesigne` : la cle de la fiche, ou son nom, resolu a
 // l'entree de la route en `IdSalarie` (`Contexte::cle_du_salarie`). Ce qu'elles ecrivent, la fenetre l'ecrit (`compagnie::INTERFACE`).
 
-/// La charge de `imprevus` : les imprevus d'un mois, ou d'un salarie ; tous, sans l'un ni l'autre.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeImprevus {
-    mois: Option<Mois>,
-    salarie: Option<SalarieDesigne>,
+charge! {
+    /// La charge de `imprevus` : les imprevus d'un mois, ou d'un salarie ; tous, sans l'un ni l'autre.
+    #[derive(Debug)]
+    struct ChargeImprevus {
+        mois: Option<Mois> = legendes::MOIS,
+        salarie: Option<SalarieDesigne> = dit("Salarié", "à la place du mois : les imprévus de ce salarié").avancee(),
+    }
 }
 
-/// La charge de `fins-de-contrat` : le mois.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeMois {
-    mois: Mois,
+charge! {
+    /// La charge de `fins-de-contrat` : le mois.
+    #[derive(Debug)]
+    struct ChargeMois {
+        mois: Mois = legendes::MOIS,
+    }
 }
 
-/// La charge de `arret-contrats` : le salarie et son dernier jour travaille.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeArretContrats {
-    salarie: SalarieDesigne,
-    jour: Jour,
+charge! {
+    /// La charge de `arret-contrats` : le salarie et son dernier jour travaille.
+    #[derive(Debug)]
+    struct ChargeArretContrats {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        jour: Jour = dit("Dernier jour travaillé", "le dernier jour travaillé"),
+    }
 }
 
 charge! {
@@ -183,60 +176,64 @@ charge! {
     }
 }
 
-/// La charge de `arret-prolonger` : l'arret (son salarie, son dernier jour travaille) et sa nouvelle fin prescrite.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeArretProlonger {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
-    fin: Jour,
+charge! {
+    /// La charge de `arret-prolonger` : l'arret (son salarie, son dernier jour travaille) et sa nouvelle fin prescrite.
+    #[derive(Debug)]
+    struct ChargeArretProlonger {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
+        fin: Jour = dit("Nouvelle fin prescrite", "la nouvelle fin prescrite"),
+    }
 }
 
-/// La charge de `arret-reprise` : la reprise (nulle ou absente, elle s'efface) et son motif.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeArretReprise {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
-    reprise: Option<Jour>,
-    motif_reprise: Option<MotifDeReprise>,
+charge! {
+    /// La charge de `arret-reprise` : la reprise (nulle ou absente, elle s'efface) et son motif.
+    #[derive(Debug)]
+    struct ChargeArretReprise {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
+        reprise: Option<Jour> = dit("Reprise le", "le jour de la reprise ; nul l'efface"),
+        motif_reprise: Option<MotifDeReprise> = dit("Motif de la reprise", "le motif de la reprise").avancee(),
+    }
 }
 
-/// La charge de `arret-indemnites` : chaque montant par jour (40.89 en nombre, ou « 40,89 » tel que le releve l'ecrit,
-/// converti a la porte : `Charge::lire` ; l'arret le garde au centime), et les jours deja indemnises ; absent, rien ne
-/// change.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeArretIndemnites {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
-    ij_brute: Option<MontantUnitaire>,
-    ij_nette: Option<MontantUnitaire>,
-    ij_brute_majoree: Option<MontantUnitaire>,
-    ij_nette_majoree: Option<MontantUnitaire>,
-    #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
-    jours_deja_indemnises: Option<Duree<EnJours>>,
+charge! {
+    /// La charge de `arret-indemnites` : chaque montant par jour (40.89 en nombre, ou « 40,89 » tel que le releve l'ecrit,
+    /// converti a la porte : `Charge::lire` ; l'arret le garde au centime), et les jours deja indemnises ; absent, rien
+    /// ne change.
+    #[derive(Debug)]
+    struct ChargeArretIndemnites {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
+        ij_brute: Option<MontantUnitaire> = dit("Indemnité brute d'un jour", "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM) ; absente, elle ne change pas"),
+        ij_nette: Option<MontantUnitaire> = dit("Indemnité nette d'un jour", "la même, nette de CSG et CRDS"),
+        ij_brute_majoree: Option<MontantUnitaire> = dit("Indemnité brute majorée", "accident du travail, dès le 29e jour : brute").avancee(),
+        ij_nette_majoree: Option<MontantUnitaire> = dit("Indemnité nette majorée", "la même, nette").avancee(),
+        #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
+        jours_deja_indemnises: Option<Duree<EnJours>> = dit("Jours déjà indemnisés", "les jours indemnisés dans les douze mois qu'aucun arrêt saisi ne porte").avancee(),
+    }
 }
 
 pub(crate) use declarations::signalement::NatureSignalement;
 
-/// La charge de `arret-signaler`. `remplace` : l'identifiant du signalement qu'il annule et remplace ; `ordre` : son
-/// numero d'ordre (absent : le suivant) ; `le` : son jour de constitution (absent : aujourd'hui). Le geste qu'offre le
-/// rappel d'un signalement l'ecrit aussi (`ChargeArretSignaler::de`).
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeArretSignaler {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
-    nature: NatureSignalement,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    remplace: Option<IdentifiantDeDeclaration>,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
-    ordre: Option<NumeroDOrdre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mode: Option<Mode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    le: Option<Jour>,
+charge! {
+    /// La charge de `arret-signaler`. `remplace` : l'identifiant du signalement qu'il annule et remplace ; `ordre` : son
+    /// numero d'ordre (absent : le suivant) ; `le` : son jour de constitution (absent : aujourd'hui). Le geste qu'offre le
+    /// rappel d'un signalement l'ecrit aussi (`ChargeArretSignaler::de`).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeArretSignaler {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
+        nature: NatureSignalement = dit("Nature", "ce que le signalement déclare"),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        remplace: Option<IdentifiantDeDeclaration> = REMPLACE,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
+        ordre: Option<NumeroDOrdre> = ORDRE,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mode: Option<Mode> = MODE,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        le: Option<Jour> = CONSTITUE_LE,
+    }
 }
 
 impl ChargeArretSignaler {
@@ -261,59 +258,64 @@ fn mode_du_fichier(dit: Option<Mode>) -> Mode {
     }
 }
 
-/// La charge de `arret-oublier`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeArretOublier {
-    salarie: SalarieDesigne,
-    dernier_jour: Jour,
+charge! {
+    /// La charge de `arret-oublier`.
+    #[derive(Debug)]
+    struct ChargeArretOublier {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        dernier_jour: Jour = DERNIER_JOUR_TRAVAILLE,
+    }
 }
 
-/// La charge de `suspension-enregistrer`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeSuspensionEnregistrer {
-    salarie: SalarieDesigne,
-    debut: Jour,
-    fin: Jour,
-    motif: MotifDeSuspension,
-    contrat: Option<NumeroContrat>,
-    note: Option<String>,
+charge! {
+    /// La charge de `suspension-enregistrer`.
+    #[derive(Debug)]
+    struct ChargeSuspensionEnregistrer {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        debut: Jour = DEBUT,
+        fin: Jour = dit("Dernier jour", "son dernier jour"),
+        motif: MotifDeSuspension = dit("Motif", "le code du motif (nomenclatures de imprevus)"),
+        contrat: Option<NumeroContrat> = dit("Contrat", "le contrat, quand plusieurs couvrent le jour").avancee(),
+        note: Option<String> = dit("Note", "une note libre").avancee(),
+    }
 }
 
-/// La charge de `suspension-modifier` : le debut la designe ; la fin et le motif, s'ils se disent, changent.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeSuspensionModifier {
-    salarie: SalarieDesigne,
-    debut: Jour,
-    fin: Option<Jour>,
-    motif: Option<MotifDeSuspension>,
+charge! {
+    /// La charge de `suspension-modifier` : le debut la designe ; la fin et le motif, s'ils se disent, changent.
+    #[derive(Debug)]
+    struct ChargeSuspensionModifier {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        debut: Jour = DEBUT,
+        fin: Option<Jour> = dit("Nouvelle fin", "sa nouvelle fin"),
+        motif: Option<MotifDeSuspension> = dit("Nouveau motif", "son nouveau motif").avancee(),
+    }
 }
 
-/// La charge de `suspension-oublier`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeSuspensionOublier {
-    salarie: SalarieDesigne,
-    debut: Jour,
+charge! {
+    /// La charge de `suspension-oublier`.
+    #[derive(Debug)]
+    struct ChargeSuspensionOublier {
+        salarie: SalarieDesigne = legendes::SALARIE,
+        debut: Jour = DEBUT,
+    }
 }
 
-/// La charge de `fin-contrat-signaler` (`remplace`, `ordre`, `test`, `le` : comme `arret-signaler`). Le geste qu'offre
-/// le rappel d'une fin de contrat l'ecrit aussi (`ChargeFinContratSignaler::de`).
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeFinContratSignaler {
-    mois: Mois,
-    salarie: SalarieDesigne,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    remplace: Option<IdentifiantDeDeclaration>,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
-    ordre: Option<NumeroDOrdre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mode: Option<Mode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    le: Option<Jour>,
+charge! {
+    /// La charge de `fin-contrat-signaler` (`remplace`, `ordre`, `test`, `le` : comme `arret-signaler`). Le geste
+    /// qu'offre le rappel d'une fin de contrat l'ecrit aussi (`ChargeFinContratSignaler::de`).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeFinContratSignaler {
+        mois: Mois = legendes::MOIS,
+        salarie: SalarieDesigne = legendes::SALARIE,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        remplace: Option<IdentifiantDeDeclaration> = REMPLACE,
+        #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
+        ordre: Option<NumeroDOrdre> = ORDRE,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mode: Option<Mode> = MODE,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        le: Option<Jour> = CONSTITUE_LE,
+    }
 }
 
 impl ChargeFinContratSignaler {
@@ -328,13 +330,14 @@ impl ChargeFinContratSignaler {
     }
 }
 
-/// La charge de `fin-contrat-documents`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeFinContratDocuments {
-    mois: Mois,
-    salarie: SalarieDesigne,
-    le: Option<Jour>,
+charge! {
+    /// La charge de `fin-contrat-documents`.
+    #[derive(Debug)]
+    struct ChargeFinContratDocuments {
+        mois: Mois = legendes::MOIS,
+        salarie: SalarieDesigne = legendes::SALARIE,
+        le: Option<Jour> = dit("Établis le", "le jour où ils s'établissent ; sinon aujourd'hui").avancee(),
+    }
 }
 
 /// Le jour de constitution d'un signalement ou d'un document : celui que la charge dit ; absent, aujourd'hui (la fiche de
@@ -1046,7 +1049,7 @@ impl Designe {
 fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -> GesteDeRoute<Designe> {
     let motifs = n.motifs_reprise.saisissables().into_iter().map(|m| Choisi { code: m.code, libelle: m.libelle }).collect();
     GesteDeRoute {
-        cases: vec![REPRISE.nom, MOTIF_REPRISE.nom],
+        cases: vec!["reprise", "motif_reprise"],
         valeurs: ValeursDeDepart { reprise: a.reprise.clone(), motif_reprise: a.reprise_motif, ..ValeursDeDepart::default() },
         choix: ChoixDesCases { motif_reprise: Some(motifs) },
         ..d.geste(Route::ArretReprise, libelle)
@@ -1072,11 +1075,11 @@ fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bo
             IjDePrincipe::AuReleve(phrase) => dit = Some(phrase),
         }
     }
-    let mut cases = vec![IJ_BRUTE.nom, IJ_NETTE.nom];
+    let mut cases = vec!["ij_brute", "ij_nette"];
     if majoree {
-        cases.extend([IJ_BRUTE_MAJOREE.nom, IJ_NETTE_MAJOREE.nom]);
+        cases.extend(["ij_brute_majoree", "ij_nette_majoree"]);
     }
-    cases.push(JOURS_DEJA_INDEMNISES.nom);
+    cases.push("jours_deja_indemnises");
     // Des indemnites deja dites se reprennent ; pas encore dites, elles sont a dire.
     let libelle = if a.ij_brute.is_some() { INDEMNITES_DITES } else { INDEMNITES_A_DIRE };
     let valeurs = ValeursDeDepart {
@@ -1104,7 +1107,7 @@ fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool
     let mut g = Vec::new();
     if cours {
         g.push(GesteDeRoute {
-            cases: vec![FIN_PRESCRITE.nom],
+            cases: vec!["fin"],
             phrases: vec![crate::ouverture::aide("prolongation")?.to_string()],
             ..d.geste(Route::ArretProlonger, PROLONGER)
         });
@@ -1124,7 +1127,7 @@ fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool
 fn gestes_d_une_absence(s: &SuspensionSaisie, reportee: &[Mois]) -> Vec<GesteDeRoute<Designe>> {
     let d = Designe::Absence { salarie: s.salarie.clone(), debut: s.debut.clone() };
     let mut g = vec![GesteDeRoute {
-        cases: vec![NOUVELLE_FIN.nom],
+        cases: vec!["fin"],
         valeurs: ValeursDeDepart { fin: Some(s.fin.clone()), ..ValeursDeDepart::default() },
         ..d.geste(Route::SuspensionModifier, CHANGER_LA_FIN)
     }];
