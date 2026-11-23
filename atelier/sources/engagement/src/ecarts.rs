@@ -271,6 +271,9 @@ pub struct Comparaison {
     /// Les ecarts connus de l'ancien logiciel sur lesquels la paie retombe exactement (`ecarts_connus`) : ce ne sont
     /// pas des ecarts, la carte de la paie importee les explique a la compagnie ; rien n'en part chez l'editeur.
     pub connus: Vec<crate::ecarts_connus::EcartConnuConstate>,
+    /// Les annees dont la comparaison a pris l'effectif que les paies reprises proposent, la compagnie ne l'ayant pas dit
+    /// (`Contexte::avec_les_effectifs_proposes`) ; vide : celui de la compagnie, ou aucun.
+    pub effectif_propose: Vec<socle::mois::Annee>,
 }
 
 /// UNE PAIE IMPORTEE QUI NE SE COMPARE PAS : la sorte de sa raison (`SorteDeNonComparaison`, ce qui la regroupe d'une
@@ -411,12 +414,12 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
             let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).and_then(|r| confronter(&r, p, mois, &mut suivi));
-            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, sorte, non_rattachees, connus } = suivi;
+            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, sorte, non_rattachees, connus, effectif_propose } = suivi;
             if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
                 return None;
             }
             let ecarts = ecarts.map_err(|raison| NonComparee { sorte: SorteDeNonComparaison::du_refus(&raison, rien_de_livre, sorte), raison });
-            Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees, connus })
+            Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees, connus, effectif_propose })
         })
         .collect()
 }
@@ -456,6 +459,7 @@ struct Suivi {
     sorte: Option<SorteDeNonComparaison>,
     non_rattachees: Vec<String>,
     connus: Vec<crate::ecarts_connus::EcartConnuConstate>,
+    effectif_propose: Vec<socle::mois::Annee>,
 }
 
 /// La paie refaite (`refaire`), et ce que la comparaison en lit.
@@ -498,6 +502,19 @@ fn refaire<'a>(
     // La convention fait la couche du bareme (regle 8) : sans elle, le calcul n'est pas celui de la compagnie.
     if !ctx.entreprise.idcc.est_dite() {
         return Err(a_refaire(c, refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche")));
+    }
+    // L'EFFECTIF D'UNE ANNEE D'AVANT QUE LA COMPAGNIE N'A PAS DIT (Léandre, 23/11/2026, « B ») : la comparaison prend celui
+    // que « Pour démarrer » propose d'apres les paies reprises (`effectif_repris::effectifs_repris`, le meme calcul), sans
+    // rien ecrire ; ce que la compagnie a ecrit l'emporte (`Contexte::avec_les_effectifs_proposes`). Une annee qui ne se
+    // propose pas reste a dire : le calcul refuse, et la paie se compare quand la compagnie l'a dite.
+    let manquent = ctx.effectif().map_err(|m| a_refaire(c, m))?.a_dire(annee);
+    if !manquent.is_empty() {
+        let (repris, _) = crate::effectif_repris::effectifs_repris(&ctx, &manquent).map_err(|m| a_refaire(c, m))?;
+        let proposes: BTreeMap<socle::mois::Annee, socle::grandeurs::Effectif> = repris.iter().filter_map(|e| e.valeur.map(|v| (e.annee, v))).collect();
+        if !proposes.is_empty() {
+            c.effectif_propose = proposes.keys().copied().collect();
+            ctx = ctx.avec_les_effectifs_proposes(proposes);
+        }
     }
     let brut = imp.objet().carte();
     let salarie = brut.salarie.as_ref().ok_or_else(|| refus("l'engagement importé ne nomme pas son salarié"))?;

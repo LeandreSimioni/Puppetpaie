@@ -1206,6 +1206,9 @@ pub struct Contexte {
     /// Le taux AT/MP d'une annee qu'une piece atteste, pour une compagnie qui n'en a pas encore pose
     /// (`avec_le_taux_atmp_lu`) ; en memoire seulement.
     atmp_lu: Option<(Annee, socle::grandeurs::Taux)>,
+    /// Les effectifs d'annees d'avant que la compagnie n'a pas dits, tels que ses paies reprises les proposent, pour la
+    /// seule comparaison des paies importees (`avec_les_effectifs_proposes`) ; en memoire seulement.
+    effectifs_proposes: BTreeMap<Annee, socle::grandeurs::Effectif>,
 }
 
 /// LA PILE D'UN JOUR, et le `depuis` de chaque valeur datee qui s'y applique (`Contexte::regles_datees`).
@@ -1314,6 +1317,7 @@ impl Contexte {
             spectacles: spectacles_au(&fiches.spectacles, &date),
             fiches,
             atmp_lu: None,
+            effectifs_proposes: BTreeMap::new(),
         })
     }
 
@@ -1334,7 +1338,29 @@ impl Contexte {
             spectacles: spectacles_au(&self.fiches.spectacles, jour),
             fiches: self.fiches.clone(),
             atmp_lu: self.atmp_lu.clone(),
+            effectifs_proposes: self.effectifs_proposes.clone(),
         })
+    }
+
+    /// LES EFFECTIFS QUE LES PAIES REPRISES PROPOSENT (`engagement::effectif_repris::EffectifRepris`) : le meme contexte,
+    /// qui lit pour chaque annee de `proposes` l'effectif propose tant que la compagnie n'a rien ecrit pour elle (ce
+    /// qu'elle a ecrit l'emporte toujours, `effectif_lu`). Pour la seule comparaison d'une paie importee (Léandre,
+    /// 23/11/2026) : rien ne s'ecrit.
+    pub fn avec_les_effectifs_proposes(mut self, proposes: BTreeMap<Annee, socle::grandeurs::Effectif>) -> Contexte {
+        self.effectifs_proposes = proposes;
+        self
+    }
+
+    /// L'effectif de la compagnie tel que la fiche `fiche` et `config/effectifs.json` le disent (`effectif_de`), et, pour
+    /// une annee qu'ils ne disent pas, celui que ses paies reprises proposent (`avec_les_effectifs_proposes`).
+    fn effectif_lu(&self, fiche: &ChampsEntreprise) -> R<EffectifsParAnnee> {
+        let mut lu = effectif_de(&self.racine, fiche)?;
+        for (an, v) in &self.effectifs_proposes {
+            if !lu.annees.contains_key(an) {
+                lu.annees.insert(*an, *v);
+            }
+        }
+        Ok(lu)
     }
 
     /// LE TAUX AT/MP QU'UNE PIECE ATTESTE : le meme contexte, qui lit pour l'annee `an` le taux AT/MP `valeur` (en
@@ -1409,7 +1435,7 @@ impl Contexte {
 
     /// L'effectif de la compagnie (`config/effectifs.json`).
     pub fn effectif(&self) -> R<EffectifsParAnnee> {
-        effectif_de(&self.racine, &self.entreprise)
+        self.effectif_lu(&self.entreprise)
     }
 
     /// Le 5 a partir de cinquante salaries, le 15 sinon. Un effectif qu'il faudrait et que le moteur ne connait pas se
@@ -1463,7 +1489,7 @@ impl Contexte {
         ]
         .into_iter()
         .collect();
-        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu))
+        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu, self.effectifs_proposes))
     }
 
     /// LA PILE DE `jour` : le socle livre + la couche de la convention que la fiche `ent` nomme + la surcouche de la
@@ -1478,7 +1504,7 @@ impl Contexte {
         socle::fichiers::garde_notee(cache, cle, || {
             let (pile, regles) = self.empiler(jour, ent)?;
             // Le controle est ici, le seul endroit qui compose un bareme.
-            controler(&pile, ent, &effectif_de(&self.racine, ent)?, surcouche(jour.annee())?.texte())?;
+            controler(&pile, ent, &self.effectif_lu(ent)?, surcouche(jour.annee())?.texte())?;
             Ok(Arc::new(PileLue { pile: Arc::new(pile), regles }))
         })
     }
@@ -1739,7 +1765,7 @@ impl Contexte {
     /// effectif de l'annee.
     pub fn entreprise_lue(&self, jour: &Jour) -> R<crate::bareme::EntrepriseLue> {
         let fiche = self.entreprise_au(jour);
-        let lu = effectif_de(&self.racine, &fiche)?;
+        let lu = self.effectif_lu(&fiche)?;
         Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.annee()), cse: lu.cse(jour.annee()), cinquante: lu.cinquante(jour.annee()), taux_lus: false })
     }
 

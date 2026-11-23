@@ -144,6 +144,9 @@ pub struct Cas {
     leur_taux: Option<socle::grandeurs::Taux>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
     ecart_relatif: Option<socle::grandeurs::Coefficient>,
+    /// Les annees dont le calcul a pris l'effectif que les paies reprises proposent (`Comparaison::effectif_propose`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    effectif_propose: Vec<socle::mois::Annee>,
 }
 
 fn montant() -> &'static Regex {
@@ -328,6 +331,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         notre_taux: None,
         leur_taux: None,
         ecart_relatif: None,
+        effectif_propose: c.effectif_propose.clone(),
     };
 
     let mut ecarts: BTreeMap<(RegroupementDeComparaison, CeQuiDiffere, LogicielDuRapport), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
