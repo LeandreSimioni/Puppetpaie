@@ -163,15 +163,16 @@ function boiteFrise(ligne) {
     <div class="actions"><button class="secondaire" onclick="fermerBoite()">Fermer</button></div>`);
 }
 
-/** La phrase du moteur, et le choix : rendre l'engagement non actif, ou le garder. */
-function boiteNonActif(phrase) {
+/** L'avertissement du moteur (`retirer-engagement`) : sa phrase, et le choix qu'il nomme : rendre l'engagement non
+ *  actif, ou le garder. */
+function boiteNonActif(a) {
   return new Promise((resoudre) => {
     ouvrirBoite(`
-      <h3>Retirer cet engagement ?</h3>
-      <div class="encart attention">${echapper(phrase)}</div>
+      <h3>${echapper(a.titre)}</h3>
+      <div class="encart attention">${echapper(a.phrase)}</div>
       <div class="actions">
-        <button class="secondaire" id="r-garder">Garder l'engagement</button>
-        <button class="primaire" id="r-non-actif">Le rendre non actif</button>
+        <button class="secondaire" id="r-garder">${echapper(a.garder)}</button>
+        <button class="primaire" id="r-non-actif">${echapper(a.confirmer)}</button>
       </div>`, () => resoudre(false));
     document.getElementById("r-garder").onclick = () => { fermerBoite(); resoudre(false); };
     document.getElementById("r-non-actif").onclick = () => { resoudre(true); fermerBoite(); };
@@ -190,7 +191,7 @@ function peindreNonActifs(liste) {
     d.innerHTML = `<div class="na-ligne">
         <span><b>${echapper(n.nom)}</b>
           <span class="discret">· ${echapper(n.dit)}</span></span>
-        <span class="mot-etat" title="${echapper(n.non_actif_dit)}">non actif</span>
+        <span class="mot-etat" title="${echapper(n.non_actif_dit)}">${echapper(n.mot)}</span>
       </div>
       ${n.a_faire?.length ? `<div class="etats-actes">${n.a_faire.map((x) =>
         `<span class="etat-acte orange"><i class="carre"></i>${echapper(x)}</span>`).join("")}</div>` : ""}`;
@@ -199,18 +200,19 @@ function peindreNonActifs(liste) {
 }
 
 /** L'avertissement du moteur : chaque engagement nommé une fois, une ligne par ce que le changement entraîne, et,
- *  quand un terme change dans le mois de la carte, d'où il vaut (`jour`) avec le jour, le 1er tant qu'on n'en dit pas
- *  d'autre. Rend la réponse (`{jour}`) à la confirmation, `null` à « Annuler ». */
+ *  quand un terme change dans le mois de la carte, d'où il vaut (`jour`) avec la case du jour et ce qu'elle montre
+ *  d'abord (`jour_libelle`, `jour_propose`). Rend la réponse (`{jour}`) à la confirmation, `null` à « Annuler ». */
 function boiteAvertissement(a) {
   return new Promise((repondre) => {
-    ouvrirBoite(`<h3>Modifier l'engagement</h3>
+    ouvrirBoite(`<h3>${echapper(a.titre)}</h3>
       ${a.engagements.map((e) => `<div class="encart attention"><b>${echapper(e.qui)}</b>
         ${e.consequences.length ? `<ul>${e.consequences.map((c) => `<li>${echapper(c)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
       ${a.jour ? `<p>${echapper(a.jour)}</p>
-        <label>le <input id="av-jour" class="jour-du-mois" type="text" inputmode="numeric" value="1"></label>` : ""}
+        <label>${echapper(a.jour_libelle)} <input id="av-jour" class="jour-du-mois" type="text" inputmode="numeric"
+          value="${echapper(a.jour_propose)}"></label>` : ""}
       <div class="actions">
-        <button class="secondaire" id="av-non">Annuler</button>
-        <button class="primaire" id="av-oui">Modifier l'engagement</button>
+        <button class="secondaire" id="av-non">${echapper(a.annuler)}</button>
+        <button class="primaire" id="av-oui">${echapper(a.confirmer)}</button>
       </div>`, () => repondre(null));
     document.getElementById("av-non").onclick = () => fermerBoite();
     document.getElementById("av-oui").onclick = () => {

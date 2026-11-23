@@ -360,6 +360,8 @@ struct NonActif {
     contrat: PeriodeOuverte,
     non_actif: String,
     non_actif_dit: String,
+    /// Le mot que sa carte porte (`non_actif_dit` en dit le jour).
+    mot: &'static str,
     dit: String,
     a_faire: Vec<String>,
 }
@@ -2964,6 +2966,7 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             contrat,
             non_actif: socle::paris::ecrit::seconde::texte(n.le()),
             non_actif_dit: format!("non actif depuis le {}", n.le().dit()),
+            mot: "non actif",
             a_faire: crate::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),
         });
     }

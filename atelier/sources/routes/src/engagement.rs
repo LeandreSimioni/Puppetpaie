@@ -55,7 +55,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Modifier un engagement validé : changer des cases de sa carte, et le revalider.",
         charge: &CHARGE_MODIFIER,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":160,"lieu":null,"dates":["2026-11-27"],"planning":[]}]}],"confirme":false,"jour":null}"#,
-        rend: "rien n'a changé : change faux ; ce qui est parti le demande : avertissement (à montrer, puis renvoyer avec confirme), rien n'est écrit ; écrit : change, phrase (un terme vaut à partir du mois de la carte)",
+        rend: "rien n'a changé : change faux ; ce qui est parti le demande : avertissement (à montrer, puis renvoyer avec confirme : son titre, annuler, confirmer, et la case du jour, jour_libelle et jour_propose, quand un terme vaut d'un autre jour), rien n'est écrit ; écrit : change, phrase (un terme vaut à partir du mois de la carte)",
         refus: &[
             SAISIE_INCOMPLETE,
             OPERATION,
@@ -72,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Retirer l'engagement d'une carte, ou le rendre non actif si un envoi est parti.",
         charge: &ChargeRetirer::CHARGE,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"confirme":true}"#,
-        rend: "phrase : retiré, ou non actif et ce que cela rend à faire ; un envoi est parti : avertissement (à montrer, puis renvoyer avec confirme), rien n'est écrit",
+        rend: "phrase : retiré, ou non actif et ce que cela rend à faire ; un envoi est parti : avertissement (sa phrase, son titre, garder, confirmer : à montrer, puis renvoyer avec confirme), rien n'est écrit",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -164,12 +164,47 @@ enum Modification {
 
 /// L'avertissement d'une modification : chaque engagement touche, ce que le changement entraine pour lui, et d'ou vaut
 /// un terme change (`jour`, `null` quand il vaut du debut).
+/// La boite qui le montre : son titre, ses deux boutons (`annuler`, `confirmer` : renvoyer avec `confirme`) ; quand un
+/// terme vaut d'un autre jour que le 1er, la case du jour (`jour_libelle`) et ce qu'elle montre d'abord (`jour_propose`,
+/// le jour d'ou il vaut, `jour_dit`).
 #[derive(Debug, Serialize)]
 struct Avertissement {
     engagements: Vec<Touche>,
     /// D'ou vaut ce qui change, en une phrase.
     #[serde(rename = "jour")]
     jour_dit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jour_libelle: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jour_propose: Option<String>,
+    titre: &'static str,
+    annuler: &'static str,
+    confirmer: &'static str,
+}
+
+impl Avertissement {
+    /// L'avertissement de `engagements`, dont un terme change vaut du jour `depuis`, quand il en a un.
+    fn de(engagements: Vec<Touche>, depuis: Option<socle::date::Jour>) -> Avertissement {
+        Avertissement {
+            engagements,
+            jour_dit: depuis.map(|j| vaut_a_partir_du(&j)),
+            jour_libelle: depuis.map(|_| "le"),
+            jour_propose: depuis.map(|j| j.quantieme_ecrit()),
+            titre: "Modifier l'engagement",
+            annuler: "Annuler",
+            confirmer: "Modifier l'engagement",
+        }
+    }
+}
+
+/// L'AVERTISSEMENT D'UN RETRAIT (`retirer-engagement`, un envoi parti) : ce qui est parti (`phrase`), et la boite qui le
+/// montre : son titre, garder l'engagement (`garder`), ou le rendre non actif (`confirmer` : renvoyer avec `confirme`).
+#[derive(Debug, Serialize)]
+struct AvertissementDuRetrait {
+    phrase: String,
+    titre: &'static str,
+    garder: &'static str,
+    confirmer: &'static str,
 }
 
 /// Un engagement que la modification touche : nomme (`qui`), une ligne par consequence.
@@ -184,7 +219,7 @@ struct Touche {
 struct Retrait {
     phrase: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
-    avertissement: Option<String>,
+    avertissement: Option<AvertissementDuRetrait>,
 }
 
 // ------------------------------------------------------------------ outils
@@ -374,7 +409,7 @@ fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: RangDansLeMois, o: &enga
     let lignes = ce_que_le_changement_entraine(ctx, &v, &departs)?;
     if !confirme && !lignes.is_empty() {
         let touche = Touche { qui: engagement::etats::qui_de(ctx, v.objet()), consequences: lignes };
-        return Ok(Issue::Avertir(Avertissement { engagements: vec![touche], jour_dit: depuis.map(|j| vaut_a_partir_du(&j)) }));
+        return Ok(Issue::Avertir(Avertissement::de(vec![touche], depuis)));
     }
     Ok(Issue::Ecrite(depuis))
 }
@@ -463,7 +498,15 @@ fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
         let parti = !engagement::etats::ce_qui_est_parti(&o, &departs).is_empty();
         return match engagement::etats::supprimer(ctx, &o, &departs) {
             Ok(()) => Ok(Retrait { phrase: Phrase::fixe("Engagement retiré."), avertissement: None }),
-            Err(m) if parti => Ok(Retrait { phrase: socle::phrase!("{}", m.phrase), avertissement: Some(m.phrase) }),
+            Err(m) if parti => Ok(Retrait {
+                phrase: socle::phrase!("{}", m.phrase),
+                avertissement: Some(AvertissementDuRetrait {
+                    phrase: m.phrase,
+                    titre: "Retirer cet engagement ?",
+                    garder: "Garder l'engagement",
+                    confirmer: "Le rendre non actif",
+                }),
+            }),
             Err(m) => Err(m),
         };
     }

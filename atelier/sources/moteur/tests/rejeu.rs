@@ -133,7 +133,7 @@ fn un_engagement_dont_un_envoi_est_parti_ne_se_supprime_pas() {
     let avant = ecrits();
     let charge = json!({"mois": "2026-11", "engagement": outils::identite_a(&racine, novembre(), 0), "confirme": false});
     let r = outils::route(&racine, "retirer-engagement", charge, "2026-12-16");
-    assert!(outils::reussi(&r)["avertissement"].is_string(), "{}", r);
+    assert!(outils::reussi(&r)["avertissement"]["phrase"].is_string(), "{}", r);
     assert!(ecrits() == avant, "l'avertissement a ecrit l'engagement");
 }
 
