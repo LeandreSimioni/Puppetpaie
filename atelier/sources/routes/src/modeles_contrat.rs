@@ -474,11 +474,18 @@ fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Paragraphe> {
     }
     let mut lignes = vec![format!("ARTICLE: {}", titre), String::new()];
     for (n, a) in alineas.iter().enumerate() {
-        let Some(t) = a.texte.as_deref().map(une_ligne).filter(|t| !t.is_empty()) else { continue };
+        let si = a.si.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let Some(t) = a.texte.as_deref().map(une_ligne).filter(|t| !t.is_empty()) else {
+            // Une condition sans texte ne dirait rien : on ne la jette pas sans le dire.
+            if si.is_some() {
+                return Err(erreur(Classe::Manque, format!("L'alinéa {} de « {} » a une condition et pas de texte : écrire son texte, ou retirer la ligne. Rien n'est écrit.", n + 1, titre)));
+            }
+            continue;
+        };
         if t.starts_with('#') || t.starts_with('[') || fabrique_pdf::modele::CLES.iter().any(|k| t.starts_with(k)) {
             return Err(refus(format!("L'alinéa {} de « {} » commence par un signe que le modèle lit autrement (#, [ ou une clé comme ARTICLE:) : le reformuler ; sa condition se choisit à côté. Rien n'est écrit.", n + 1, titre)));
         }
-        lignes.push(match a.si.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        lignes.push(match si {
             Some(si) => format!("[si {}] {}", si, t),
             None => t,
         });
