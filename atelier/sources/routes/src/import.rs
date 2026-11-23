@@ -801,7 +801,7 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
         phrase,
         titre: "Reprendre votre passé",
         repris,
-        gestes: vec![geste_de_l_import(Route::Importer, IMPORTER), geste_de_l_import(Route::ImportationApercu, APERCU)],
+        gestes: vec![geste_de_l_import(Route::Importer, IMPORTER).principal(), geste_de_l_import(Route::ImportationApercu, APERCU)],
         editeur_titre: "Ce qui attend l'éditeur",
         contrats: contrats.len(),
         salaries: salaries.len(),
@@ -853,7 +853,7 @@ impl CompteRenduDeLImport {
     fn de(lu: Importation) -> CompteRenduDeLImport {
         let gestes = match lu.ecrit || lu.rien_a_faire {
             true => Vec::new(),
-            false => vec![geste_de_l_import(Route::Importer, REPRENDRE)],
+            false => vec![geste_de_l_import(Route::Importer, REPRENDRE).principal()],
         };
         CompteRenduDeLImport { lu, gestes, mots: MOTS_DU_COMPTE_RENDU }
     }

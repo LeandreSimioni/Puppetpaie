@@ -700,7 +700,7 @@ function vueImportation(r) {
         <p class="note">${aideDe("import_copies")}</p></div>`
     : r.rien_a_faire
       ? `${questions}<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
-      : `${questions}<p><span id="import-reprendre">${boutonsDesGestes(r.gestes, () => true, "primaire")}</span>
+      : `${questions}<p><span id="import-reprendre">${boutonsDesGestes(r.gestes)}</span>
          <span class="discret">${echapper(r.reprendre)}</span>
          <span class="note">${aideDe("import_avant_clic")}</span></p>`;
   return `${vueNonRepris(r.tri.non_repris, r.pastilles, mots)}
