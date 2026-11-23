@@ -402,6 +402,13 @@ pub struct FicheImportee {
     pub lu_dans_dit: Option<String>,
     /// Creee, completee ou deja la, faite ; a creer ou a completer, a faire.
     pub pastille: Pastille,
+    /// CE QUI SE MONTRE DE SES ANOMALIES (`dire_ce_qui_se_montre`) : ses valeurs fausses, « <case> : <ce qui ne va
+    /// pas> » ; une case vide n'est pas une faute (ce qu'un acte exige, « Pour démarrer » le dit apres l'import).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fautes: Vec<String>,
+    /// Le libelle du geste qui ouvre la fiche pour la completer : une fiche creee, nommee, qui a une faute ; aucun sinon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completer_la_fiche: Option<&'static str>,
 }
 
 impl FicheImportee {
@@ -417,10 +424,25 @@ impl FicheImportee {
             lu_dans: None,
             lu_dans_dit: None,
             pastille: Pastille::de(EtatDEcran::AFaire, "à créer"),
+            fautes: Vec::new(),
+            completer_la_fiche: None,
         };
         f.ajouter_ecarts(ecarts);
         f.poser(donnees, anomalies);
         f
+    }
+
+    /// CE QUI SE MONTRE D'ELLE, une fois tout ce que l'import en dit pose : ses fautes (ses anomalies de gravite
+    /// `Erreur`, sous le libelle de leur case), et le geste qui l'ouvre pour la completer quand elle est creee et en a.
+    pub fn dire_ce_qui_se_montre(&mut self) {
+        self.fautes = self
+            .anomalies
+            .iter()
+            .filter(|a| a.gravite == declarations::champs::Gravite::Erreur)
+            .map(|a| format!("{} : {}", a.libelle.clone().unwrap_or_else(|| a.champ.to_string()), a.message))
+            .collect();
+        let ouvrable = self.etat == EtatFiche::Creee && self.fiche.nommee().is_some() && !self.fautes.is_empty();
+        self.completer_la_fiche = ouvrable.then_some("Compléter la fiche");
     }
 
     /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.

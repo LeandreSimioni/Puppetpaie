@@ -408,11 +408,8 @@ async function apresLImport(r) {
   await relireEtat();
   rafraichirReferentiels();
   // Rien de repris (un dossier vide, des pièces illisibles) : le guide reste, avec ce que le moteur en a dit.
-  let etat;
-  try { etat = await api("importation-etat"); } catch (e) { dire(e.message, "erreur"); return; }
-  const etatCible = document.getElementById("import-etat");
-  if (etatCible) { etatCible.innerHTML = vueEtatImportation(etat); brancherIdentites(etatCible, etat); }
-  if (!etat.repris) return;
+  const etat = await rafraichirEtatImportation();
+  if (!etat || !etat.repris) return;
   const guide = document.getElementById("import-guide");
   if (guide) guide.innerHTML = vueGuideReplie(etat.guide);
   const essentiel = document.getElementById("import-essentiel");
@@ -421,7 +418,7 @@ async function apresLImport(r) {
   if (demarrage) await peindreDemarrage(demarrage);
   // CE QUI RESTE À DIRE : la nature des contrats repris se demande en tête de la page ; on y va.
   const aDire = document.querySelector("[data-nature-rang]");
-  const vers = aDire || etatCible;
+  const vers = aDire || document.getElementById("import-etat");
   if (vers) vers.scrollIntoView({ block: aDire ? "center" : "start" });
 }
 
@@ -576,7 +573,7 @@ async function ouvrirFicheImportee(nom, cle) {
    redire. Un écart vient d'une DSN (`dsn`, `mois`), d'un bulletin ou d'un certificat
    (`bulletin`, `fichier`, `page`) : la fiche fait foi, il est seulement
    signalé. Une case vide est complétée, et la page dit d'où. */
-function fichesImportees(fiches, titre, mots) {
+function fichesImportees(fiches, titre) {
   const lignes = fiches.map((f) => {
     const etat = pastilleDeLEtat(f.pastille);
     // Ce que le moteur dit de la fiche : d'où elle vient, ce qu'elle reçoit, ce qu'une pièce disait autrement.
@@ -585,14 +582,12 @@ function fichesImportees(fiches, titre, mots) {
       `<div class="acte-dernier"><b>${echapper(e.champ)}</b> ${echapper(e.dit)}</div>`).join("");
     const ecarts = f.ecarts.map((e) =>
       `<div class="acte-dernier"><b>${echapper(e.champ)}</b> — ${echapper(e.dit)}</div>`).join("");
-    // UNE VALEUR FAUSSE DES PIÈCES se dit, avec le libellé de sa case ; une
-    // case vide n'est pas une faute (ce qu'un acte exige, « Pour démarrer »
-    // le dit après l'import).
-    const fautes = f.anomalies.filter((a) => a.gravite === "erreur").map((a) =>
-      `<div class="acte-dernier faute">${echapper(a.libelle || a.champ)} : ${echapper(a.message)}</div>`).join("");
-    const ouvrable = f.etat === "creee" && f.cle && f.nom;
-    const reste = fautes ? `<div class="acte-dernier">${ouvrable ? `<button type="button" class="petit" data-ouvrir-fiche="${echapper(f.nom)}"
-            data-ouvrir-cle="${echapper(f.cle)}">${echapper(mots.completer)}</button>` : ""}</div>${fautes}` : "";
+    // Ses valeurs fausses (`fautes`) et le geste qui ouvre la fiche pour la compléter (`completer_la_fiche`), tels que
+    // la route les rend.
+    const fautes = (f.fautes || []).map((x) => `<div class="acte-dernier faute">${echapper(x)}</div>`).join("");
+    const ouvrir = f.completer_la_fiche ? `<div class="acte-dernier"><button type="button" class="petit" data-ouvrir-fiche="${echapper(f.nom)}"
+            data-ouvrir-cle="${echapper(f.cle)}">${echapper(f.completer_la_fiche)}</button></div>` : "";
+    const reste = `${ouvrir}${fautes}`;
     return `<div class="rang import">
       <span class="rang-nom">${echapper(f.libelle)}</span>
       ${etat}
@@ -667,14 +662,16 @@ function vueNonRepris(nr, pastilles, mots) {
     </div>`;
 }
 
+/* L'état de l'import relu et redessiné ; rend ce que la route a dit (rien si elle a refusé, ou que l'écran n'est pas là). */
 async function rafraichirEtatImportation() {
   const cible = document.getElementById("import-etat");
-  if (!cible) return;
+  if (!cible) return null;
   try {
     const e = await api("importation-etat");
     cible.innerHTML = vueEtatImportation(e);
     brancherIdentites(cible, e);
-  } catch (e) { dire(e.message, "erreur"); }
+    return e;
+  } catch (e) { dire(e.message, "erreur"); return null; }
 }
 
 /* L'aperçu, ou ce qui a été repris. Aucun logiciel n'y est nommé : les
@@ -690,19 +687,15 @@ function vueImportation(r) {
   // Ce que la DSN reprise déclare d'un contrat repris autrement que sa carte (`dsn_fait_foi`, du moteur, phrases comprises).
   const remplace = r.dsn_fait_foi.length
     ? `<p class="note">${echapper(mots.dsn_fait_foi)}</p><ul>${r.dsn_fait_foi.map((x) => `<li>${echapper(x.phrase)}</li>`).join("")}</ul>` : "";
-  // Les personnes mises de côté, chacune sa question (`identites`, du moteur) :
-  // elles se répondent dans l'état de l'import.
-  const questions = r.identites.length
-    ? `<div class="encart attention"><b>${echapper(mots.identites)}</b><ul>${r.identites.map((q) => `<li>${echapper(q.question)}</li>`).join("")}</ul></div>` : "";
-  const bouton = r.ecrit
-    ? `<div class="encart ${couleur}"><b>${echapper(mots.repris)}</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}
-        ${pose}${remplace}
-        <p class="note">${aideDe("import_copies")}</p></div>`
-    : r.rien_a_faire
-      ? `${questions}<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
-      : `${questions}<p><span id="import-reprendre">${boutonsDesGestes(r.gestes)}</span>
-         <span class="discret">${echapper(r.reprendre)}</span>
-         <span class="note">${aideDe("import_avant_clic")}</span></p>`;
+  // CE QUI LE CLOT, tel que la route le tranche (`cloture`) : les personnes que l'import mettrait de côté (elles se
+  // répondent dans l'état de l'import), ce qui est repris et ses notes, puis le geste qui reprend, s'il y en a un.
+  const c = r.cloture;
+  const questions = c.questions.length
+    ? `<div class="encart attention"><b>${echapper(mots.identites)}</b><ul>${c.questions.map((q) => `<li>${echapper(q)}</li>`).join("")}</ul></div>` : "";
+  const titre = c.titre ? `<b>${echapper(c.titre)}</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}` : "";
+  const bouton = `${questions}<div class="encart ${couleur}">${titre}${pose}${remplace}
+      ${c.notes.map((n) => `<p class="note">${echapper(n)}</p>`).join("")}</div>
+    <p id="import-reprendre">${boutonsDesGestes(r.gestes)}</p>`;
   return `${vueNonRepris(r.tri.non_repris, r.pastilles, mots)}
     ${compteRenduImport(r.tri, r.pastilles, mots)}
     <h3>${echapper(r.titre_dit)}</h3>
@@ -712,9 +705,9 @@ function vueImportation(r) {
     ${piecesImportees(r.certificats, mots.certificats)}
     ${piecesImportees(r.aem_pdf, mots.aem_pdf)}
     ${avert}
-    ${fichesImportees(r.entreprise ? [r.entreprise] : [], mots.entreprise, mots)}
-    ${fichesImportees(r.salaries, mots.salaries, mots)}
-    ${fichesImportees(r.spectacles, mots.spectacles, mots)}
+    ${fichesImportees(r.entreprise ? [r.entreprise] : [], mots.entreprise)}
+    ${fichesImportees(r.salaries, mots.salaries)}
+    ${fichesImportees(r.spectacles, mots.spectacles)}
     ${ecartsBulletinDsn(r.tri, mots)}
     ${bouton}`;
 }

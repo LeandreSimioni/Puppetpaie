@@ -56,7 +56,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare) ; gestes (« Reprendre », tant que rien n'est écrit) ; mots (les titres du compte rendu)",
+        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare) ; gestes (« Reprendre », tant que rien n'est écrit) ; mots (les titres du compte rendu) ; cloture (ce qui le clôt : titre, notes, questions) ; de chaque fiche, fautes et completer_la_fiche",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -69,7 +69,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Reprendre les pièces du dossier d'import : fiches, engagements importés.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort), mots (les titres du compte rendu)",
+        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort), mots (les titres du compte rendu), cloture (ce qui est repris et ses notes)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -111,7 +111,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // La boite aux lettres `import/` entiere, bulletins compris (`import::bulletins`).
         Route::ImportationApercu => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(CompteRenduDeLImport::de(crate::importation::bulletins::apercu_dossier(ctx)?))
+            en_json(CompteRenduDeLImport::de(crate::importation::bulletins::apercu_dossier(ctx)?)?)
         }
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
@@ -119,7 +119,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::Importer => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(CompteRenduDeLImport::de(crate::importation::ecrite::importer(ctx)?))
+            en_json(CompteRenduDeLImport::de(crate::importation::ecrite::importer(ctx)?)?)
         }
         // La nature des contrats repris qu'aucun bulletin ne dit.
         Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
@@ -847,15 +847,41 @@ struct CompteRenduDeLImport {
     gestes: Vec<GesteDeLImport>,
     /// Les titres de ses parties et de ses colonnes (`MOTS_DU_COMPTE_RENDU`).
     mots: MotsDuCompteRenduDeLImport,
+    /// Ce qui le clot (`ClotureDuCompteRendu`).
+    cloture: ClotureDuCompteRendu,
+}
+
+/// CE QUI CLOT LE COMPTE RENDU DE L'IMPORT, que la route tranche : ce qui est repris, quand l'import a ecrit (son titre,
+/// et ce que l'import fait des copies) ; qu'il n'y a rien a reprendre ; ou, avant d'ecrire, ce que le geste reprendrait
+/// et que rien n'est ecrit avant lui, avec les personnes que l'import mettrait de cote (`questions`).
+#[derive(Debug, Serialize)]
+struct ClotureDuCompteRendu {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    titre: Option<&'static str>,
+    notes: Vec<String>,
+    questions: Vec<Phrase>,
 }
 
 impl CompteRenduDeLImport {
-    fn de(lu: Importation) -> CompteRenduDeLImport {
-        let gestes = match lu.ecrit || lu.rien_a_faire {
-            true => Vec::new(),
-            false => vec![geste_de_l_import(Route::Importer, REPRENDRE).principal()],
+    fn de(mut lu: Importation) -> R<CompteRenduDeLImport> {
+        let a_reprendre = !(lu.ecrit || lu.rien_a_faire);
+        let gestes = match a_reprendre {
+            true => vec![geste_de_l_import(Route::Importer, REPRENDRE).principal()],
+            false => Vec::new(),
         };
-        CompteRenduDeLImport { lu, gestes, mots: MOTS_DU_COMPTE_RENDU }
+        let cloture = match (lu.ecrit, lu.rien_a_faire) {
+            (true, _) => ClotureDuCompteRendu { titre: Some("Repris"), notes: vec![crate::ouverture::aide("import_copies")?.to_string()], questions: Vec::new() },
+            (false, true) => ClotureDuCompteRendu { titre: None, notes: vec![crate::ouverture::aide("import_rien")?.to_string()], questions: lu.identites.iter().map(|q| q.question.clone()).collect() },
+            (false, false) => ClotureDuCompteRendu {
+                titre: None,
+                notes: vec![lu.reprendre.clone(), crate::ouverture::aide("import_avant_clic")?.to_string()],
+                questions: lu.identites.iter().map(|q| q.question.clone()).collect(),
+            },
+        };
+        for f in lu.entreprise.iter_mut().chain(lu.salaries.iter_mut()).chain(lu.spectacles.iter_mut()) {
+            f.dire_ce_qui_se_montre();
+        }
+        Ok(CompteRenduDeLImport { lu, gestes, mots: MOTS_DU_COMPTE_RENDU, cloture })
     }
 }
 
@@ -874,12 +900,10 @@ struct MotsDuCompteRenduDeLImport {
     bulletins: &'static str,
     certificats: &'static str,
     aem_pdf: &'static str,
-    /// Les fiches creees, completees ou laissees (`entreprise`, `salaries`, `spectacles`), et le bouton qui ouvre une
-    /// fiche creee a qui il manque une valeur.
+    /// Les fiches creees, completees ou laissees (`entreprise`, `salaries`, `spectacles`).
     entreprise: &'static str,
     salaries: &'static str,
     spectacles: &'static str,
-    completer: &'static str,
     /// Le tableau des ecarts entre un bulletin et ce que la DSN ou l'historique disait, et ses colonnes.
     ecarts: &'static str,
     ecart_bulletin: &'static str,
@@ -887,9 +911,8 @@ struct MotsDuCompteRenduDeLImport {
     ecart_champ: &'static str,
     ecart_dsn: &'static str,
     ecart_imprime: &'static str,
-    /// Ce qui est repris (`fichiers`), ce que les DSN ont pose dans la configuration (`parametrage`), ce qu'elles
-    /// declarent autrement (`dsn_fait_foi`), et les personnes mises de cote (`identites`).
-    repris: &'static str,
+    /// Ce que les DSN ont pose dans la configuration (`parametrage`), ce qu'elles declarent autrement (`dsn_fait_foi`),
+    /// et les personnes mises de cote (`cloture.questions`).
     pose: &'static str,
     dsn_fait_foi: &'static str,
     identites: &'static str,
@@ -908,14 +931,12 @@ const MOTS_DU_COMPTE_RENDU: MotsDuCompteRenduDeLImport = MotsDuCompteRenduDeLImp
     entreprise: "Entreprise",
     salaries: "Salariés",
     spectacles: "Spectacles",
-    completer: "Compléter la fiche",
     ecarts: "Écarts des bulletins",
     ecart_bulletin: "Bulletin",
     ecart_mois: "Mois",
     ecart_champ: "Champ",
     ecart_dsn: "DSN ou historique",
     ecart_imprime: "Bulletin",
-    repris: "Repris",
     pose: "Posé dans la configuration",
     dsn_fait_foi: "La DSN fait foi",
     identites: crate::importation::identite::LA_MEME_PERSONNE,
