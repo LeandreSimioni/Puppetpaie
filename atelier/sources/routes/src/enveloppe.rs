@@ -30,8 +30,12 @@ pub use socle::texte::Phrase;
 use super::catalogue::{self, Route};
 
 /// La cle de la charge ou la page et le LLM portent le mot de passe du logiciel tape pour la route. Il est a
-/// l'enveloppe, pas a la route : la route le lit par `Charge::mot_de_passe`, sa forme ne le declare pas.
-const MOT_DE_PASSE: &str = "motdepasse";
+/// l'enveloppe, pas a la route : la route le lit par `Charge::mot_de_passe`, sa structure ne le porte pas ; sa
+/// declaration le dit (`charge! { motdepasse = … ; … }`).
+pub(crate) const MOT_DE_PASSE: &str = "motdepasse";
+
+/// Le mot de passe tape, tel que l'enveloppe le lit : un texte, ou rien.
+pub(crate) type MotDePasseTape = Option<socle::secret::Secret>;
 
 // ------------------------------------------------------------------------------------------------- la demande
 
@@ -102,7 +106,7 @@ pub struct Charge {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MotDePasseDeLaCharge {
-    motdepasse: Option<socle::secret::Secret>,
+    motdepasse: MotDePasseTape,
 }
 
 impl<'de> Deserialize<'de> for Charge {

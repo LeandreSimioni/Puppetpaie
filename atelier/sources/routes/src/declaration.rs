@@ -200,8 +200,16 @@ pub struct ChargeDuType {
 /// `nom: Type = legende`, ses attributs `serde` au-dessus de lui ; sa cle est son nom (jamais `#[serde(rename)]` ni
 /// `flatten` : la fiche ne les verrait pas). La declaration ajoute elle-meme la lecture stricte (`Deserialize`,
 /// `deny_unknown_fields`) : la structure ne les ecrit pas.
+///
+/// Une route qui prend le mot de passe tape le dit en tete (`motdepasse = LEGENDE;`) : l'enveloppe le lit et le retire
+/// avant que la route lise sa structure (`crate::enveloppe::MOT_DE_PASSE`), qui ne le porte donc pas ; la charge le dit en
+/// dernier, sa forme et son obligation tirees du type que l'enveloppe lit (`crate::enveloppe::MotDePasseTape`).
 macro_rules! charge {
+    (motdepasse = $m:expr; $($reste:tt)*) => {
+        $crate::declaration::charge! { @[$crate::declaration::ChampDuType::du_type::<_, $crate::enveloppe::MotDePasseTape>($crate::enveloppe::MOT_DE_PASSE, $m),] $($reste)* }
+    };
     (
+        @[$($en_plus:expr,)*]
         $(#[$a:meta])*
         $v:vis struct $nom:ident {
             $( $(#[$fa:meta])* $fv:vis $f:ident : $t:ty = $l:expr ),* $(,)?
@@ -217,10 +225,26 @@ macro_rules! charge {
         impl $nom {
             /// Sa charge au catalogue : la fiche de la route la nomme (`charge: &Type::CHARGE`).
             $v const CHARGE: $crate::declaration::ChargeDuType = $crate::declaration::ChargeDuType {
-                champs: &[ $( $crate::declaration::ChampDuType::du_type::<_, $t>(stringify!($f), $l), )* ],
+                champs: &[ $( $crate::declaration::ChampDuType::du_type::<_, $t>(stringify!($f), $l), )* $($en_plus,)* ],
             };
         }
+    };
+    ($($reste:tt)*) => {
+        $crate::declaration::charge! { @[] $($reste)* }
     };
 }
 
 pub(crate) use charge;
+
+/// LE NOM D'UN CHAMP D'UNE CHARGE DECLAREE, que le compilateur tient : `cle!(ChargeChanger, nouveau)` ne compile que si la
+/// structure a ce champ. Ce qu'un geste rendu nomme de ses cases.
+macro_rules! cle {
+    ($t:ty, $f:ident) => {{
+        let _ = |c: &$t| {
+            let _ = &c.$f;
+        };
+        stringify!($f)
+    }};
+}
+
+pub(crate) use cle;
