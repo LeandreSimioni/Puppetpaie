@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &ChargeApercuSignature::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; contrats (chacun : son état, part (ce qu'il ajoute à la charge d'un départ, coché), voir_avenant (l'aperçu de son avenant), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe) ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), les mêmes ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
+        rend: "titre, titre_en_attente ; les départs ouverts, chacun un geste (route, charge, libellé, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe) : principal (envoyer à la signature quand la boîte est posée, imprimer sinon) et autres, aucun sans contrat à envoyer ; contrats (chacun : son état, part (ce qu'il ajoute à la charge d'un départ, coché), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe) ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), les mêmes ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -147,7 +147,8 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
-        ecran: ECRAN,
+        // `signature-apercu` la rend en geste, sur un contrat a envoyer dont le salarie n'a pas de courriel.
+        ecran: Ecran::Geste(Place::Paie),
     },
 ];
 
@@ -382,6 +383,18 @@ pub(crate) struct GesteRecu {
 /// (`ContratASigner::part`) ; elles montrent d'abord ce qui part si l'on n'en decoche aucun (`ValeursDesContrats`).
 pub(crate) type GesteDesContrats = crate::imprevus::GesteDeRoute<crate::etapes::ChargeMois, ValeursDesContrats, crate::SansCharge>;
 
+/// LE GESTE QUI POSE LE COURRIEL QUI MANQUE au salarie d'un contrat a envoyer, la boite posee (`poser-courriel`) : sa
+/// charge designe le salarie, sa case `email` la complete.
+pub(crate) type GesteDuCourriel = crate::imprevus::GesteDeRoute<SalarieSansCourriel, crate::SansCharge, crate::SansCharge>;
+
+/// Le salarie dont la boite fait poser le courriel.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct SalarieSansCourriel {
+    salarie: IdSalarie,
+}
+
+const POSER_LE_COURRIEL: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Son courriel…");
+
 /// CE QUE LES CASES D'UN DEPART DES CONTRATS MONTRENT D'ABORD : la part de chaque contrat a envoyer, de ceux des salaries
 /// choisis quand la charge en dit (`ChargeApercuSignature::salaries`).
 #[derive(Debug, Clone, Default, Serialize)]
@@ -440,6 +453,9 @@ pub(crate) struct ContratASigner {
     /// L'apercu de son avenant, quand il part en avenant.
     #[serde(skip_serializing_if = "Option::is_none")]
     voir_avenant: Option<crate::etapes::Action>,
+    /// Le geste qui pose le courriel de son salarie : a envoyer, la boite posee, et le courriel manque.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    courriel: Option<GesteDuCourriel>,
 }
 
 
@@ -1106,11 +1122,24 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
         } else {
             (Some(ChargeSignature::des_contrats(mois, vec![ContratVise { salarie: p.salarie.id.clone(), debut, numero: numero.clone() }])), None)
         };
+        let destinataire = p.salarie.email.dite().cloned();
+        // LE COURRIEL QUI MANQUE se pose ici, dans la fiche du salarie, la boite posee : sans lui, le contrat s'imprime.
+        let courriel = (boite_liee && a_envoyer && destinataire.is_none()).then(|| {
+            GesteDuCourriel::avec_cases(
+                Route::PoserCourriel,
+                SalarieSansCourriel { salarie: p.salarie.id.clone() },
+                POSER_LE_COURRIEL,
+                vec![crate::declaration::cle!(ChargeCourriel, email)],
+                crate::SansCharge {},
+                crate::SansCharge {},
+            )
+        });
         contrats.push(ContratASigner {
             part,
             voir_avenant,
+            courriel,
             salarie: p.salarie.id.clone(),
-            destinataire: p.salarie.email.dite().cloned(),
+            destinataire,
             spectacle: p.titre()?,
             contrat,
             numero_dit: numero.as_ref().map(|n| format!("contrat n° {}", n)),

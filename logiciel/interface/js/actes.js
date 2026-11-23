@@ -561,10 +561,8 @@ async function boiteSignature(charge) {
           <span><b>${echapper(c.nom)}</b> — ${echapper(c.spectacle)},
             ${echapper(c.periode_dit)}
             ${c.numero_dit ? `<span class="discret">(${echapper(c.numero_dit)})</span>` : ""}
-            ${a.boite_liee ? (c.destinataire ? `<br><span class="discret">${echapper(c.destinataire)}</span>`
-              : `<br><span class="s-courriel">Son courriel
-                  <input type="email" class="s-courriel-saisi" placeholder="son courriel" data-salarie="${echapper(c.salarie)}">
-                  <button type="button" class="lien s-courriel-poser" data-salarie="${echapper(c.salarie)}">Enregistrer</button></span>`) : ""}
+            ${a.boite_liee && c.destinataire ? `<br><span class="discret">${echapper(c.destinataire)}</span>` : ""}
+            ${c.courriel ? `<br><span class="s-courriel" data-i="${i}">${boutonsDesGestes([c.courriel])}</span>` : ""}
             ${c.pastille ? `<br>${pastilleDeLEtat(c.pastille)}` : ""}${c.voir_avenant ? `
               <button class="lien s-avenant" data-i="${i}">${echapper(c.voir_avenant.libelle)}</button>` : ""}</span>
         </label>`).join("")}
@@ -602,24 +600,18 @@ async function boiteSignature(charge) {
       }
     };
   });
-  // LE COURRIEL QUI MANQUE se saisit ici : il s'enregistre dans la fiche du
-  // salarié (`poser-courriel`), et la boîte se rouvre avec lui.
-  document.querySelectorAll(".s-courriel-poser").forEach((b) => {
-    b.onclick = async (ev) => {
-      ev.preventDefault();                 // le bouton est dans un <label>
-      const champ = document.querySelector(`.s-courriel-saisi[data-salarie="${CSS.escape(b.dataset.salarie)}"]`);
-      try {
-        var pose = await api("poser-courriel", { salarie: b.dataset.salarie, email: champ ? champ.value : "" });
-      } catch (e) { dire(e.message, "erreur"); return; }
+  // LE COURRIEL QUI MANQUE : le geste que la route rend sur le contrat (`courriel`, `poser-courriel`), sa boîte par-dessus
+  // celle-ci ; il s'enregistre dans la fiche du salarié, et la boîte se rouvre avec lui, les mêmes salariés cochés.
+  document.querySelectorAll(".s-courriel").forEach((el) => {
+    const c = contrats[+el.dataset.i];
+    el.onclick = (ev) => ev.preventDefault();   // dans un <label> : ne pas cocher la case
+    brancherLesGestes(el, [c.courriel], { titre: c.nom, pardessus: true }, async (pose) => {
       await relireEtat();
-      const gardes = [...document.querySelectorAll(".s-qui:checked")].map((c) => c.value);
+      const gardes = [...document.querySelectorAll(".s-qui:checked")].map((x) => x.value);
       fermerBoite();
       dire(pose.phrase, "envoye");
       boiteSignature({ mois, salaries: gardes });
-    };
-  });
-  document.querySelectorAll(".s-courriel-saisi").forEach((c) => {
-    c.onclick = (ev) => ev.preventDefault();   // dans un <label> : ne pas cocher la case
+    });
   });
   // L'aperçu de son avenant, tel que la route le nomme (`voir_avenant`).
   document.querySelectorAll(".s-avenant").forEach((b) => {
