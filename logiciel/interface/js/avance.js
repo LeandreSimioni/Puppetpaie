@@ -44,7 +44,7 @@ function objetEnClair(v) {
 }
 
 /** Les formes qui se tapent ou se choisissent d'une valeur simple : une valeur composée ne s'y écrit pas. */
-const FORMES_SIMPLES = new Set(["texte", "nombre", "montant", "oui_non", "mois", "date", "choix", "choix_rendu"]);
+const FORMES_SIMPLES = new Set(["texte", "texte_long", "nombre", "montant", "oui_non", "mois", "date", "choix", "choix_rendu"]);
 
 /** Ce que le moteur prend pour une case vide (`o.prerempli`), montré dans la case sans y être écrit ; sans lui, l'exemple
  *  que la route donne d'une case vide (`o.exemple`), grisé. */
@@ -117,6 +117,8 @@ function casesACocher(v, choix) {
  *  `data-case`. Un jour et des jours s'ouvrent dans le calendrier (`js/calendrier.js`, `poserLesCalendriers`). */
 const CASES = {
   texte: { html: (v, o) => `<input type="text" data-case${valeurDeDepart(v)}${prerempliDe(o)}>`, lire: tape },
+  // UN TEXTE LONG, sur plusieurs lignes : une zone de texte, lue comme un texte.
+  texte_long: { html: (v, o) => `<textarea rows="3" data-case${prerempliDe(o)}>${v == null ? "" : echapper(String(v))}</textarea>`, lire: tape },
   nombre: { html: (v, o) => `<input type="text" inputmode="decimal" data-case${valeurDeDepart(v)}${prerempliDe(o)}>`, lire: tape },
   // Un montant montré tel qu'il s'écrit (`montantEcrit`) ; laissé tel quel, il repart tel que le moteur l'a écrit.
   montant: {
@@ -693,11 +695,15 @@ function chargeDuGeste(bloc, g) {
  *  part dans la charge, et la page ne le garde pas.
  *  `entete` : ce que la boîte dit de quoi il s'agit (`titre`, à la suite du libellé ; `dit`, dessous) ; `pardessus` :
  *  la boîte s'ouvre par-dessus celle qui est ouverte, qui revient quand elle se ferme ; `modifie` : la boîte modifie une
- *  chose qui existe (`casesDesChamps`). `apres` : après la réponse. */
+ *  chose qui existe (`casesDesChamps`) ; `quitter` : le bloc dont les écrans retenus se quittent avant le geste, qui
+ *  les redessinera (`quitterLEcran` : enregistrer, jeter ou rester). `apres` : après la réponse. */
 function brancherLesGestes(cible, gestes, entete, apres) {
   cible.querySelectorAll("[data-geste]").forEach((b) => {
     const g = gestes[+b.dataset.geste];
-    b.onclick = () => faireLeGeste(g, entete, apres, b);
+    b.onclick = async () => {
+      if (entete.quitter && !(await quitterLEcran(entete.quitter))) return;
+      await faireLeGeste(g, entete, apres, b);
+    };
   });
 }
 
@@ -964,7 +970,7 @@ function poserLaFiche(cible, f) {
       if (!t || reecrites.has(k.split("|")[0])) return;
       if (x.isContentEditable) x.innerHTML = t.innerHTML;
       else if (x.type === "checkbox") x.checked = t.checked;
-      else if (x.tagName === "INPUT" || x.tagName === "SELECT") x.value = t.value;
+      else if (x.tagName === "INPUT" || x.tagName === "SELECT" || x.tagName === "TEXTAREA") x.value = t.value;
     });
     brancherLesCases(cible);
     const garde = actif ? controles().find(([k]) => k === actif[0]) : null;

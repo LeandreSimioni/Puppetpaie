@@ -59,12 +59,14 @@ impl<S, T: ValeurDeLaCharge<S>> ValeurDeLaCharge<EnListe<S>> for Vec<T> {
 }
 
 /// La forme d'une liste dont chaque valeur a la forme `f` : des textes, des jours, des objets, plusieurs valeurs d'une
-/// liste fermee. Une autre n'a pas encore de case qui la saisisse en liste : elle ne compile pas.
+/// liste fermee, des rangees (chacune une valeur faite des memes parties). Une autre n'a pas encore de case qui la
+/// saisisse en liste : elle ne compile pas.
 const fn en_liste(f: Forme) -> Forme {
     match f {
         Forme::Texte => Forme::Liste,
         Forme::Date => Forme::Jours,
         Forme::Objet => Forme::Objet,
+        Forme::Parties(_) => Forme::Rangees,
         Forme::Choix(l) => Forme::PlusieursChoix(l),
         _ => panic!("une liste de cette forme n'a pas de case : la dire au développeur"),
     }
@@ -136,7 +138,7 @@ formes! {
 }
 
 /// CE QUE LE TYPE D'UN CHAMP NE PEUT PAS SAVOIR : son libelle (ce que l'ecran montre), son sens (ce que le LLM lit), s'il
-/// est « avance » (l'ecran le range sous Avancé). Un texte peut se preciser (`rendue`, `fichier`) ; aucune autre forme.
+/// est « avance » (l'ecran le range sous Avancé). Un texte peut se preciser (`rendue`, `longue`, `fichier`) ; aucune autre forme.
 #[derive(Clone, Copy, Debug)]
 pub struct Legende {
     libelle: Affiche,
@@ -159,6 +161,11 @@ impl Legende {
     /// Un texte dont la route rend les valeurs a cote, sous la cle du champ (`Forme::ChoixRendu`).
     pub const fn rendue(self) -> Legende {
         Legende { precise: Some(Forme::ChoixRendu), ..self }
+    }
+
+    /// Un texte long, sur plusieurs lignes (`Forme::TexteLong`).
+    pub const fn longue(self) -> Legende {
+        Legende { precise: Some(Forme::TexteLong), ..self }
     }
 
     /// Un texte qui porte un fichier choisi sur le poste, de ces types de media (`Forme::Fichier`).
@@ -192,7 +199,7 @@ impl ChampDuType {
             None => T::FORME,
             Some(p) => match T::FORME {
                 Forme::Texte => p,
-                _ => panic!("seul un texte se précise (`rendue`, `fichier`) : les autres formes, leur type les dit"),
+                _ => panic!("seul un texte se précise (`rendue`, `longue`, `fichier`) : les autres formes, leur type les dit"),
             },
         };
         ChampDuType { champ: Champ { nom, libelle: l.libelle, forme, sens: l.sens, avance: l.avance }, obligatoire: T::OBLIGATOIRE }

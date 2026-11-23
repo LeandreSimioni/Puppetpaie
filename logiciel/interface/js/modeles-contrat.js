@@ -19,7 +19,9 @@
    `js/avance.js`) : sa route, sa charge, son libellé, sa boîte.
 
    `ouvert` : la charge du geste qui a ouvert l'éditeur d'une partie d'un modèle
-   ({nature, id, partie}), redessinée après chaque geste. */
+   ({nature, id, partie}), redessinée après chaque geste. Chaque geste, et ouvrir
+   ou fermer un modèle, quitte d'abord les paragraphes retenus de l'éditeur
+   (`quitterLEcran`) : une saisie non enregistrée se demande. */
 async function dessinerModelesContrat(cible, ouvert = null) {
   cible.innerHTML = `<p class="note">…</p>`;
   let m;
@@ -59,20 +61,23 @@ async function dessinerModelesContrat(cible, ouvert = null) {
   cible.querySelectorAll(".modele-contrat").forEach((bloc, k) => {
     const x = modeles[k];
     const ici = estOuvert(x);
-    bloc.querySelector("[data-ouvrir]").onclick = () => redessiner(ici ? null : x.ouvrir.charge);
-    brancherLesGestes(bloc.querySelector("[data-gestes]"), x.gestes, { titre: x.nom }, redessiner);
+    bloc.querySelector("[data-ouvrir]").onclick = async () => { if (await quitterLEcran(cible)) redessiner(ici ? null : x.ouvrir.charge); };
+    brancherLesGestes(bloc.querySelector("[data-gestes]"), x.gestes, { titre: x.nom, quitter: cible }, redessiner);
     if (ici) dessinerEditeurDeModele(bloc.querySelector(".modele-editeur"), ouvert, redessiner);
   });
   cible.querySelectorAll("[data-nature-gestes]").forEach((bloc, k) => {
     const n = m.natures[k];
-    brancherLesGestes(bloc, n.gestes, { titre: n.titre }, redessiner);
+    brancherLesGestes(bloc, n.gestes, { titre: n.titre, quitter: cible }, redessiner);
   });
 }
 
 /* L'ÉDITEUR D'UNE PARTIE D'UN MODÈLE (son contrat ou son avenant), en
-   paragraphes : un paragraphe qui a son geste `ecrire` s'écrit, un autre se lit.
-   Une donnée s'insère par la liste (`champs` de la route), dans l'alinéa où l'on
-   écrit ; la condition d'un alinéa se choisit dans la même liste. `redessiner` :
+   paragraphes. Un paragraphe d'un spécial a ses cases (`cases` : son titre, ses
+   alinéas en rangées, chacun sa condition et son texte), dessinées par le
+   dessinateur, et le geste qui les enregistre (`ecrire`) : chacun est un écran
+   retenu (`retenirLEcran`), et le quitter avec une saisie non enregistrée se
+   demande. Un paragraphe de la base se lit (`alineas`). Une donnée s'insère par
+   la liste (`champs` de la route), dans l'alinéa où l'on écrit. `redessiner` :
    redessine la liste, l'éditeur ouvert sur la partie qu'on lui donne. */
 async function dessinerEditeurDeModele(cible, ici, redessiner) {
   let lu;
@@ -88,21 +93,25 @@ async function dessinerEditeurDeModele(cible, ici, redessiner) {
       <option value="">${premier}</option>
       ${lu.champs.map((c) => `<option value="${echapper(c.marqueur)}" ${c.marqueur === si ? "selected" : ""}>${echapper(c.quoi)}</option>`).join("")}
     </select>`;
-  const alinea = (a, actif) => `
+  // Un alinéa de la base, qui se lit seulement.
+  const alineaLu = (a) => `
     <div class="modele-alinea">
-      ${choix("modele-si", "Toujours", a.si, actif)}
-      <textarea rows="3" ${actif ? "" : "readonly"}>${echapper(a.texte)}</textarea>
+      ${choix("modele-si", "Toujours", a.si, false)}
+      <textarea rows="3" readonly>${echapper(a.texte)}</textarea>
     </div>`;
+  const corps = (p) => (p.ecrire
+    ? `<div class="modele-entete"><b>${p.numero}</b></div>
+      <div data-paragraphe-cases>${grilleDesCases(p.cases.map(caseDeRoute).join(""), "", false)}</div>`
+    : `<div class="modele-entete">
+        <b>${p.numero}</b>
+        <input type="text" class="modele-titre" value="${echapper(p.titre)}" readonly>
+      </div>
+      <div class="modele-alineas">${p.alineas.map(alineaLu).join("")}</div>`);
   const paragraphe = (p) => `
     <div class="modele-paragraphe">
-      <div class="modele-entete">
-        <b>${p.numero}</b>
-        <input type="text" class="modele-titre" value="${echapper(p.titre)}" ${p.ecrire ? "" : "readonly"}>
-      </div>
-      <div class="modele-alineas">${p.alineas.map((a) => alinea(a, !!p.ecrire)).join("")}</div>
+      ${corps(p)}
       ${p.ecrire || p.gestes.length ? `<div class="modele-gestes">
-        ${p.ecrire ? `<button type="button" data-enregistrer>${echapper(p.ecrire.libelle)}</button>
-        <button type="button" class="lien" data-alinea>Ajouter un alinéa</button>` : ""}
+        ${p.ecrire ? `<button type="button" data-enregistrer>${echapper(p.ecrire.libelle)}</button>` : ""}
         <span data-gestes>${boutonsDesGestes(p.gestes)}</span>
       </div>` : ""}
     </div>`;
@@ -123,9 +132,11 @@ async function dessinerEditeurDeModele(cible, ici, redessiner) {
     ${ecrit ? choix("modele-inserer", "Insérer une donnée", null, true) : ""}
     ${lu.articles.map(paragraphe).join("")}`;
 
-  cible.querySelectorAll("[data-partie]").forEach((b) => { b.onclick = () => redessiner(lu.parties[+b.dataset.partie].charge); });
+  cible.querySelectorAll("[data-partie]").forEach((b) => {
+    b.onclick = async () => { if (await quitterLEcran(cible)) redessiner(lu.parties[+b.dataset.partie].charge); };
+  });
   const gestes = cible.querySelector("[data-modele-gestes]");
-  if (gestes) brancherLesGestes(gestes, lu.gestes, { titre: lu.nom }, () => redessiner());
+  if (gestes) brancherLesGestes(gestes, lu.gestes, { titre: lu.nom, quitter: cible }, () => redessiner());
   cible.querySelector("[data-apercu]").onclick = async (ev) => {
     const choisi = lu.engagements[cible.querySelector(".modele-engagement").value];
     const rallumer = occupe(ev.target);
@@ -141,28 +152,35 @@ async function dessinerEditeurDeModele(cible, ici, redessiner) {
   cible.querySelectorAll(".modele-paragraphe").forEach((bloc, k) => {
     const p = lu.articles[k];
     const siens = bloc.querySelector("[data-gestes]");
-    if (siens) brancherLesGestes(siens, p.gestes, { titre: p.titre }, () => redessiner());
+    if (siens) brancherLesGestes(siens, p.gestes, { titre: p.titre, quitter: cible }, () => redessiner());
     if (!p.ecrire) return;
-    // Le geste qui enregistre le paragraphe part avec sa charge, que complètent le titre et les alinéas tapés.
-    bloc.querySelector("[data-enregistrer]").onclick = async () => {
+    // Le geste qui enregistre le paragraphe part avec sa charge, que complète ce que ses cases disent, chacune sous sa
+    // clé ; une case que la route exige, vide, le retient et le dit sur elle.
+    const cases = bloc.querySelector("[data-paragraphe-cases]");
+    brancherLesCases(cases);
+    const champs = champsDuGeste(p.ecrire);
+    const enregistrer = async () => {
+      const charge = chargeDuGeste(cases, p.ecrire) || p.ecrire.charge;
+      if (marquerLesManquantes(cases, champs, charge)) return false;
       try {
-        const r = await api(p.ecrire.route, {
-          ...p.ecrire.charge,
-          titre: bloc.querySelector(".modele-titre").value,
-          alineas: [...bloc.querySelectorAll(".modele-alinea")].map((a) => ({ si: a.querySelector("select").value || null, texte: a.querySelector("textarea").value })),
-        });
-        await redessiner();
-        dire(r.phrase);
+        dire((await api(p.ecrire.route, charge)).phrase);
+        return true;
       } catch (e) {
         dire(e.message, "erreur");
+        return false;
       }
     };
-    bloc.querySelector("[data-alinea]").onclick = () => bloc.querySelector(".modele-alineas").insertAdjacentHTML("beforeend", alinea({ si: null, texte: "" }, true));
+    retenirLEcran(cases, { enregistrer });
+    bloc.querySelector("[data-enregistrer]").onclick = async () => {
+      if (!(await enregistrer())) return;
+      oublierLEcran(cases);
+      if (await quitterLEcran(cible)) redessiner();
+    };
   });
   if (!ecrit) return;
   // L'alinéa où l'on écrit en dernier reçoit la donnée choisie.
   let dernier = null;
-  cible.addEventListener("focusin", (ev) => { if (ev.target.matches(".modele-alinea textarea")) dernier = ev.target; });
+  cible.addEventListener("focusin", (ev) => { if (ev.target.matches("[data-paragraphe-cases] textarea")) dernier = ev.target; });
   const inserer = cible.querySelector(".modele-inserer");
   inserer.onchange = () => {
     if (dernier && inserer.value) {
