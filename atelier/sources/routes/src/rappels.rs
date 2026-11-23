@@ -864,13 +864,15 @@ pub(crate) struct EcheanceDite {
 }
 
 /// Un spectacle actif que la revue de l'annee demande : sa cle, son titre et son numero d'objet tels que sa fiche les
-/// porte (vides quand elle ne les dit pas), et son nom a l'ecran (`nomme` : son titre, sinon sa cle).
+/// porte (vides quand elle ne les dit pas), son nom a l'ecran (`nomme` : son titre, sinon sa cle), et ce que la revue en
+/// dit (`dit` : son nom et son numero d'objet, ou « aucun numéro »).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SpectacleARevoir {
     cle: droit::contexte::IdSpectacle,
     titre: Option<String>,
     numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
     nomme: String,
+    dit: String,
 }
 
 /// Ce qu'une echeance lit : la compagnie, le jour, et le journal des depots (lu une fois).
@@ -1357,7 +1359,12 @@ fn spectacles_a_revoir(ctx: &Contexte, annee: Annee, faites: &Cochees) -> R<Vec<
                 Some(t) => t.clone(),
                 None => cle.to_string(),
             };
-            SpectacleARevoir { cle: cle.clone(), titre, numero_objet: s.numero_objet.dite().cloned(), nomme }
+            let numero_objet = s.numero_objet.dite().cloned();
+            let dit = match &numero_objet {
+                Some(n) => format!("{} — {}", nomme, n),
+                None => format!("{} — aucun numéro", nomme),
+            };
+            SpectacleARevoir { cle: cle.clone(), titre, numero_objet, nomme, dit }
         })
         .collect())
 }
