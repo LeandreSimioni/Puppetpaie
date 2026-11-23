@@ -44,7 +44,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "titre, repris (un historique est repris : le guide se replie), importer et apercu (les gestes, route, charge et libellé), editeur_titre, importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
+        rend: "titre, repris (un historique est repris : le guide se replie), gestes (importer ; importation-apercu, sous « Avancé »), editeur_titre, importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -111,7 +111,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // La boite aux lettres `import/` entiere, bulletins compris (`import::bulletins`).
         Route::ImportationApercu => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(crate::importation::bulletins::apercu_dossier(ctx)?)
+            en_json(CompteRendu::de(crate::importation::bulletins::apercu_dossier(ctx)?))
         }
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
@@ -119,7 +119,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::Importer => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(crate::importation::ecrite::importer(ctx)?)
+            en_json(CompteRendu::de(crate::importation::ecrite::importer(ctx)?))
         }
         // La nature des contrats repris qu'aucun bulletin ne dit.
         Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
@@ -801,8 +801,7 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
         phrase,
         titre: "Reprendre votre passé",
         repris,
-        importer: crate::etapes::action(Route::Importer, crate::SansCharge {}, None, "Importer".to_string()),
-        apercu: crate::etapes::action(Route::ImportationApercu, crate::SansCharge {}, None, "Aperçu, sans rien écrire".to_string()),
+        gestes: vec![geste_de_l_import(Route::Importer, IMPORTER), geste_de_l_import(Route::ImportationApercu, APERCU)],
         editeur_titre: "Ce qui attend l'éditeur",
         contrats: contrats.len(),
         salaries: salaries.len(),
@@ -823,6 +822,47 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
     })
 }
 
+/// UN GESTE DE L'IMPORT (`imprevus::GesteDeRoute`) : sa route ne prend rien, il n'a pas de case.
+type GesteDeLImport = crate::imprevus::GesteDeRoute<crate::SansCharge, crate::SansCharge, crate::SansCharge>;
+
+// Les libelles des gestes de l'import, en constantes : un texte fautif ne compile pas (`Affiche::new`).
+const IMPORTER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Importer");
+const APERCU: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Aperçu, sans rien écrire");
+
+/// Le geste de l'import vers `route`, sous `libelle` : sans charge ni case.
+fn geste_de_l_import(route: Route, libelle: crate::catalogue::Affiche) -> GesteDeLImport {
+    crate::imprevus::GesteDeRoute::avec_cases(route, crate::SansCharge {}, libelle, Vec::new(), crate::SansCharge {}, crate::SansCharge {})
+}
+
+// Le libelle du geste qui reprend ce que l'apercu a lu.
+const REPRENDRE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Reprendre");
+
+/// CE QUE `importation-apercu` ET `importer` RENDENT : ce que l'import lit, ou a ecrit (`Importation`), et ses gestes :
+/// reprendre ce que l'apercu a lu (`importer`, sous le libelle « Reprendre »), tant que rien n'est ecrit et qu'il y a
+/// quelque chose a reprendre ; aucun sinon.
+#[derive(Debug, Serialize)]
+struct CompteRendu {
+    #[serde(flatten)]
+    lu: Importation,
+    gestes: Vec<GesteDeLImport>,
+}
+
+impl CompteRendu {
+    fn de(lu: Importation) -> CompteRendu {
+        let gestes = match lu.ecrit || lu.rien_a_faire {
+            true => Vec::new(),
+            false => vec![geste_de_l_import(Route::Importer, REPRENDRE)],
+        };
+        CompteRendu { lu, gestes }
+    }
+}
+
+impl Dite for CompteRendu {
+    fn phrase(&self) -> &Phrase {
+        &self.lu.phrase
+    }
+}
+
 /// `importation-etat` : ce qui a deja ete repris, et ce que la page en dit.
 #[derive(Debug, Serialize)]
 struct EtatImportation {
@@ -831,11 +871,8 @@ struct EtatImportation {
     titre: &'static str,
     /// Un historique est-il repris (une reprise ou un contrat) ? Alors l'essentiel du guide se replie avec lui.
     repris: bool,
-    /// Le geste qui reprend le dossier d'import : `importer`, la premiere fois comme les suivantes.
-    importer: crate::etapes::Action,
-    /// Le geste qui dit ce que l'import reprendrait, sans rien ecrire (`importation-apercu`), hors du chemin simple
-    /// (`guide.avance`).
-    apercu: crate::etapes::Action,
+    /// Ses gestes : reprendre le dossier d'import, et l'apercu, que sa fiche range sous « Avancé ».
+    gestes: Vec<GesteDeLImport>,
     /// Le titre de ce qui attend l'editeur (`editeur`), quand quelque chose l'attend.
     editeur_titre: &'static str,
     importe_le: Option<Jour>,

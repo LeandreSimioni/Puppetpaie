@@ -226,8 +226,6 @@ pub(crate) enum ChargeDuGeste {
     Annee(ChargeAnnee),
     Faite(crate::rappels::ChargeFaite),
     Piece(crate::documents::ChargePiecePartie),
-    /// La charge d'une route qui ne prend rien (`importer`, `importation-apercu`) : `{}`.
-    Vide(crate::SansCharge),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -266,7 +264,6 @@ charge_du_geste! {
     ChargeAnnee => Annee,
     crate::rappels::ChargeFaite => Faite,
     crate::documents::ChargePiecePartie => Piece,
-    crate::SansCharge => Vide,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici

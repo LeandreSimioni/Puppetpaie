@@ -327,8 +327,8 @@ const fenetreDuPoste = () => !!window.fenetrePuppetPaie;
    première reprise : on ajoute au dossier et on relance l'import, qui ne
    reprend que le neuf (`guide.rejouer`, du moteur). Une fois l'historique
    repris, l'état le dit en une ligne, ce qui reste à dire se peint
-   au-dessus, et le guide se replie. L'aperçu, qui n'écrit rien, est hors
-   du chemin simple (`guide.avance`). */
+   au-dessus, et le guide se replie. Les gestes sont ceux que la route rend
+   (`gestes`) ; l'aperçu, qui n'écrit rien, sa fiche le range sous « Avancé ». */
 async function dessinerImportation(cible) {
   let e;
   try { e = await api("importation-etat"); } catch (err) {
@@ -350,16 +350,14 @@ async function dessinerImportation(cible) {
       <div id="import-demarrage"></div>
       <div id="import-guide">${e.repris ? vueGuideReplie(e.guide) : vueGuideImport(e.guide)}</div>
       <p class="note">${echapper(e.guide.rejouer)}</p>
-      <p><button class="primaire" id="import-tout">${echapper(e.importer.libelle)}</button></p>
-      <details><summary>${echapper(e.guide.avance)}</summary>
-        <button type="button" class="lien" id="import-apercu">${echapper(e.apercu.libelle)}</button></details>
+      <div id="import-gestes">${boutonsRanges(e.gestes)}</div>
       <div id="import-resultat"></div>
     </div>`;
-  document.getElementById("import-tout").onclick = () => importerDepuisLeGuide(e.importer);
+  // Les gestes que la route rend (`gestes` : importer ; l'aperçu, que sa fiche range sous « Avancé »).
+  brancherLesGestes(document.getElementById("import-gestes"), e.gestes, {}, apresLImport);
   brancherIdentites(document.getElementById("import-etat"), e);
   // Ce qui reste à dire pour la configuration (`pour-demarrer`), dès qu'il y a un historique repris.
   if (e.repris) peindreDemarrage(document.getElementById("import-demarrage"));
-  document.getElementById("import-apercu").onclick = () => apercuImportation(e.apercu, e.importer);
   const ouvrir = document.getElementById("import-ouvrir");
   // La boîte import/ de la compagnie, créée si elle manque.
   if (ouvrir) ouvrir.onclick = () => ouvrirEtDire(e.dossier, "", true);
@@ -393,18 +391,27 @@ function vueGuideImport(g) {
     <p class="note">${echapper(g.rien_n_est_perdu)}</p>`;
 }
 
-/* « IMPORTER », D'UN GESTE, la première fois comme les suivantes : le moteur
-   reprend le neuf (`importer`), puis la page se redessine — au-dessus, ce
-   qui reste à dire (la nature des contrats repris, `importation-etat` ; ce
-   qu'une DSN donnerait et ce qui se saisit, `pour-demarrer`) — et, dessous,
-   ce qui a été repris. */
-async function importerDepuisLeGuide(importer) {
-  const rendre = occupe(document.getElementById("import-tout"), "Import…");
-  await ecrireImportation(importer);
-  rendre();
+/* CE QUE L'APERÇU OU L'IMPORT REND (`importation-apercu`, `importer`), la
+   première fois comme les suivantes : dessous, le compte rendu et ses gestes
+   (« Reprendre », que la route rend tant que rien n'est écrit). Quand
+   l'import a écrit (`ecrit`), la page se relit — au-dessus, ce qui reste à
+   dire (la nature des contrats repris, `importation-etat` ; ce qu'une DSN
+   donnerait et ce qui se saisit, `pour-demarrer`). */
+async function apresLImport(r) {
+  const cible = document.getElementById("import-resultat");
+  cible.innerHTML = vueImportation(r);
+  const reprendre = document.getElementById("import-reprendre");
+  if (reprendre) brancherLesGestes(reprendre, r.gestes, {}, apresLImport);
+  if (!r.ecrit) return;
+  // Les fiches créées doivent apparaître dans Salariés et Spectacles, et
+  // dans les déroulants de la saisie, sans recharger la page.
+  await relireEtat();
+  rafraichirReferentiels();
   // Rien de repris (un dossier vide, des pièces illisibles) : le guide reste, avec ce que le moteur en a dit.
   let etat;
   try { etat = await api("importation-etat"); } catch (e) { dire(e.message, "erreur"); return; }
+  const etatCible = document.getElementById("import-etat");
+  if (etatCible) { etatCible.innerHTML = vueEtatImportation(etat); brancherIdentites(etatCible, etat); }
   if (!etat.repris) return;
   const guide = document.getElementById("import-guide");
   if (guide) guide.innerHTML = vueGuideReplie(etat.guide);
@@ -412,7 +419,10 @@ async function importerDepuisLeGuide(importer) {
   if (essentiel) essentiel.innerHTML = "";
   const demarrage = document.getElementById("import-demarrage");
   if (demarrage) await peindreDemarrage(demarrage);
-  document.getElementById("import-etat").scrollIntoView({ block: "start" });
+  // CE QUI RESTE À DIRE : la nature des contrats repris se demande en tête de la page ; on y va.
+  const aDire = document.querySelector("[data-nature-rang]");
+  const vers = aDire || etatCible;
+  if (vers) vers.scrollIntoView({ block: aDire ? "center" : "start" });
 }
 
 /* L'ÉTAT (`importation-etat`), en une ligne et sans nommer de logiciel :
@@ -694,7 +704,7 @@ function vueImportation(r) {
         <p class="note">${aideDe("import_copies")}</p></div>`
     : r.rien_a_faire
       ? `${questions}<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
-      : `${questions}<p><button class="primaire" id="import-ecrire">Reprendre</button>
+      : `${questions}<p><span id="import-reprendre">${boutonsDesGestes(r.gestes, () => true, "primaire")}</span>
          <span class="discret">${echapper(r.reprendre)}</span>
          <span class="note">${aideDe("import_avant_clic")}</span></p>`;
   return `${vueNonRepris(r.tri.non_repris, r.pastilles)}
@@ -711,54 +721,6 @@ function vueImportation(r) {
     ${fichesImportees(r.spectacles, "Spectacles")}
     ${ecartsBulletinDsn(r.tri)}
     ${bouton}`;
-}
-
-function brancherImportation(importer) {
-  const b = document.getElementById("import-ecrire");
-  // « Reprendre », sous l'aperçu, est le même geste qu'« Importer » (`importer` de `importation-etat`).
-  if (b) b.onclick = () => importerDepuisLeGuide(importer);
-}
-
-/* L'APERÇU (`apercu` de `importation-etat` : sa route et sa charge), puis le geste qui reprend (`importer`). */
-async function apercuImportation(apercu, importer) {
-  const cible = document.getElementById("import-resultat");
-  // LE GESTE QUI ATTEND SE VOIT : le bouton dit qu'il lit, la page qu'elle travaille.
-  const rendre = occupe(document.getElementById("import-apercu"), "Lecture…");
-  cible.innerHTML = `<p class="discret">Lecture…</p>`;
-  try {
-    const r = await api(apercu.route, apercu.charge);
-    cible.innerHTML = vueImportation(r);
-    brancherImportation(importer);
-  } catch (e) {
-    cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
-  } finally {
-    rendre();
-  }
-}
-
-/* LA REPRISE (`importer` de `importation-etat` : sa route et sa charge). */
-async function ecrireImportation(importer) {
-  const cible = document.getElementById("import-resultat");
-  cible.classList.add("attente");
-  occupe(document.getElementById("import-ecrire"), "Reprise…");
-  try {
-    const r = await api(importer.route, importer.charge);
-    cible.innerHTML = vueImportation(r);
-    brancherImportation(importer);
-    // Les fiches créées doivent apparaître dans Salariés et Spectacles, et
-    // dans les déroulants de la saisie, sans recharger la page.
-    await relireEtat();
-    rafraichirReferentiels();
-    // CE QUI RESTE À DIRE : la nature des contrats repris se demande en tête de la page ; on y va.
-    await rafraichirEtatImportation();
-    const aDire = document.querySelector("[data-nature-rang]");
-    if (aDire) aDire.scrollIntoView({ block: "center" });
-    dire(r.phrase, r.couleur);
-  } catch (e) {
-    cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
-  } finally {
-    cible.classList.remove("attente");
-  }
 }
 
 /* La fiche que le formulaire montre en ce moment : une réponse de la route `fiche` qui arrive pour une autre ne se

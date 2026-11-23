@@ -5,7 +5,7 @@
 //! n'ont pas dite (`nature`), la question d'identite qu'une DSN pose sur une fiche sans NIR (`identite`), le matricule qu'une DSN qui arrive
 //! declare (`matricules`), ce que les DSN reprises disent de la configuration (`parametrage`), la regularisation
 //! CASC-SVP des mois importes (`casc`) et l'incident d'un document accepte sans etre lu (`incident`). La reponse de
-//! l'import (`import::reponse::Importation`) se dit ici (`Dite`).
+//! l'import (`import::reponse::Importation`) se dit dans celle des routes (`routes::import`, `CompteRendu`).
 
 pub mod bulletins;
 pub mod casc;
@@ -17,9 +17,3 @@ pub mod incident;
 pub mod matricules;
 pub mod nature;
 pub mod parametrage;
-
-impl crate::enveloppe::Dite for import::reponse::Importation {
-    fn phrase(&self) -> &socle::texte::Phrase {
-        &self.phrase
-    }
-}
