@@ -194,9 +194,6 @@ pub struct Fenetre {
     /// reprises, jamais refaites, quand la compagnie s'ouvre, se ferme et se rouvre.
     fil: Arc<Fil>,
     files: Mutex<HashMap<PathBuf, Arc<FileDesEtats>>>,
-    /// LES ENVOIS PARTIS EN FOND de chaque compagnie (`routes::envois_en_fond`), par dossier : gardes quand la compagnie
-    /// se ferme et se rouvre, attendus avant de fermer le logiciel ou de lacher la compagnie.
-    envois: Mutex<HashMap<PathBuf, Arc<EnvoisEnFond>>>,
     phase: Mutex<Phase>,
     /// LE MOT DE PASSE DE L'ADMINISTRATEUR, tape une fois dans cette fenetre : il ouvre ses autres
     /// compagnies sans le redemander tant que la fenetre vit. Il OUVRE, il n'autorise rien : un acte reel redemande
@@ -519,7 +516,6 @@ impl Fenetre {
             local,
             fil: Fil::nouveau(),
             files: Mutex::new(HashMap::new()),
-            envois: Mutex::new(HashMap::new()),
             phase: Mutex::new(Phase::Accueil),
             administrateur: Mutex::new(None),
             temoin: Mutex::new(Instant::now()),
@@ -571,9 +567,10 @@ impl Fenetre {
         files.entry(cle).or_insert_with(|| self.fil.file(racine, None)).clone()
     }
 
-    /// Les envois partis en fond de la compagnie `racine`, nes a son premier envoi ou a son ouverture.
+    /// LES ENVOIS PARTIS EN FOND de la compagnie `racine` (`routes::envois_en_fond`) : gardes quand la compagnie se ferme
+    /// et se rouvre, attendus avant de fermer le logiciel ou de lacher la compagnie.
     fn envois_de(&self, racine: &Path) -> Arc<EnvoisEnFond> {
-        tenu(&self.envois).entry(cle_du_dossier(racine)).or_insert_with(EnvoisEnFond::nouveaux).clone()
+        routes::envois_en_fond::de_la_compagnie(racine)
     }
 
     /// LES COMPAGNIES DE L'INSTALLATION, TENUES A JOUR DES LE LANCEMENT : n'importe quelle compagnie s'ouvre
@@ -663,8 +660,7 @@ impl Fenetre {
     fn lacher(&self, racine: &Path) {
         let cle = cle_du_dossier(racine);
         // Un envoi en fond ecrit dans ce dossier : il va au bout avant que la compagnie s'en aille.
-        let envois = tenu(&self.envois).remove(&cle);
-        if let Some(e) = envois {
+        if let Some(e) = routes::envois_en_fond::lacher(racine) {
             e.attendre();
         }
         if let Phase::Ouverte { racine: r, veille, .. } = self.phase() {
@@ -737,8 +733,7 @@ impl Fenetre {
     /// Fermer, ou redemarrer pour la mise a jour : un envoi parti en fond va d'abord au bout (`EnvoisEnFond::attendre`),
     /// jamais coupe au milieu, et la version neuve ne s'installe qu'apres lui.
     fn fermer_le_logiciel(&self) {
-        let envois: Vec<Arc<EnvoisEnFond>> = tenu(&self.envois).values().cloned().collect();
-        for e in envois {
+        for e in routes::envois_en_fond::tous() {
             e.attendre();
         }
         if let Some(f) = tenu(&self.fermer).as_ref() {

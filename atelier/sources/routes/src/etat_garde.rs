@@ -105,7 +105,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les quatre étapes du mois : DPAE, Contrats, DSN, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux)",
+        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux) ; ou_en_est, le cadre sous le mois (titre, dernier : le dernier fait du mois et ce qui en est revenu, prochaine : la prochaine étape et son échéance) ; envois (ce qui part en fond de ce mois : en cours, parti, ou échoué et le geste qui le refait)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -471,13 +471,16 @@ impl Serialize for ALaPage<'_> {
     }
 }
 
-/// `etat-du-mois` tel que la page le recoit : le bilan, et si le mot de passe du logiciel est pose. LE COFFRE N'EST PAS
-/// DANS L'EMPREINTE (un `.bin`, qu'on ne lit pas) : ce qu'il dit se relit a chaque fois.
+/// `etat-du-mois` tel que la page le recoit : le bilan, si le mot de passe du logiciel est pose, et ce qui part en fond de
+/// ce mois (`envois` : en cours, parti, ou echoue avec le geste qui le refait ; la fenetre seule en fait partir, la ligne
+/// de commande va au bout avant de rendre). LE COFFRE ET LES ENVOIS EN FOND NE SONT PAS DANS L'EMPREINTE (un `.bin`
+/// qu'on ne lit pas ; la memoire de ce processus) : ce qu'ils disent se relit a chaque fois.
 #[derive(Serialize)]
 struct DuMois<'a> {
     #[serde(flatten)]
     bilan: &'a Bilan,
     mot_de_passe_pose: bool,
+    envois: Vec<crate::envois_en_fond::EnvoiDit>,
 }
 
 impl Dite for DuMois<'_> {
@@ -489,7 +492,8 @@ impl Dite for DuMois<'_> {
 fn du_mois<'a>(racine: &Path, bilan: &'a Bilan) -> R<DuMois<'a>> {
     let pose = compagnie::coffre::Coffre::du_poste(racine)
         .ouverture_exigee()?;
-    Ok(DuMois { bilan, mot_de_passe_pose: pose })
+    let envois = crate::envois_en_fond::de_la_compagnie(racine).dits_du_mois(bilan.mois());
+    Ok(DuMois { bilan, mot_de_passe_pose: pose, envois })
 }
 
 /// TOUT L'ECRAN D'UN MOIS, tel que la page le lit (`chargerMois`) : la phrase de ses etapes, le mois, `lectures` (une

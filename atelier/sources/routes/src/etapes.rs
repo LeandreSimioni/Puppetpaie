@@ -367,6 +367,45 @@ pub(crate) struct Bilan {
     phrase: Phrase,
     colonnes: Vec<String>,
     pub(crate) etapes: Vec<Etape>,
+    /// Le cadre sous le mois : son dernier fait et sa prochaine etape (`OuEnEstLeMois`).
+    ou_en_est: OuEnEstLeMois,
+}
+
+/// OU EN EST LE MOIS, le cadre que la page pose sous lui : son titre, le dernier fait du mois tel que l'Historique le dit
+/// (la derniere ligne du journal de ce mois, son acte et ce qui en est revenu : `historique_mois::acte`,
+/// `envois::etats::resume`), et la prochaine etape, telle que la colonne des etapes la montre (la premiere case a faire
+/// de l'etape suivante, sinon la premiere qui attend : `phrase_du_groupe`). Lu de l'etat du mois, jamais de la page : il
+/// est juste apres reouverture, et le meme en ligne de commande. Ce qui part en fond s'y ajoute a la lecture
+/// (`etat_garde::DuMois::envois`).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct OuEnEstLeMois {
+    titre: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dernier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prochaine: Option<String>,
+}
+
+impl OuEnEstLeMois {
+    /// Le cadre de `mois` : `lignes`, le journal (`envois::journal::lu`), ses etapes deja faites.
+    fn de(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], etapes: &[Etape]) -> OuEnEstLeMois {
+        let du_mois: Vec<&envois::journal::Ligne> = envois::journal::filtrer(lignes, None, Some(mois), None).collect();
+        // Le plus recent ; a la meme heure, le reel devant son test (l'ordre de l'Historique).
+        let dernier = du_mois.iter().max_by(|a, b| (a.quand(), a.mode()).cmp(&(b.quand(), b.mode()))).map(|l| {
+            let recus = etats::contrats_recus(lignes);
+            let avenants = etats::avenants_par_contrat(lignes);
+            format!("{} : {}.", crate::historique_mois::acte(ctx, l), etats::resume(Some(l), &recus, &avenants))
+        });
+        let groupes = || etapes.iter().flat_map(|e| e.groupes.iter().map(move |g| (e, g)));
+        let a_faire = groupes().find(|(e, g)| e.suivante && matches!(g.etat, EtatCase::AFaire | EtatCase::Refuse)).and_then(|(_, g)| g.phrase.clone());
+        let attend = groupes().find(|(_, g)| g.etat == EtatCase::EnAttente).and_then(|(_, g)| g.phrase.clone());
+        let prochaine = match (a_faire, attend) {
+            (Some(p), _) => Some(format!("Prochaine étape — {}.", p)),
+            (None, Some(p)) => Some(format!("En attente — {}.", p)),
+            (None, None) => None,
+        };
+        OuEnEstLeMois { titre: format!("Où en est {}", mois.libelle(Graphie::Accentuee)), dernier, prochaine }
+    }
 }
 
 /// `mois-a-ouvrir` : le mois a ouvrir, celui du jour, et les etapes qui restent au premier.
@@ -407,6 +446,11 @@ impl Bilan {
     /// La phrase du bilan, celle de l'ecran du mois.
     pub(crate) fn phrase(&self) -> &Phrase {
         &self.phrase
+    }
+
+    /// Le mois du bilan.
+    pub(crate) fn mois(&self) -> Mois {
+        self.mois
     }
 }
 
@@ -460,7 +504,7 @@ fn faire_signer(mois: Mois, salaries: Option<Vec<IdSalarie>>, signee: bool) -> A
 /// et offre d'imprimer.
 const SIGNATURE_A_POSER: &str = "Signature de l'employeur à poser…";
 
-/// LES GESTES QUI REFONT UN ENVOI PARTI EN FOND QUI N'EST PAS ALLE AU BOUT (`envois_en_fond::CeQuiPart`) : la boite d'ou
+/// LES GESTES QUI REFONT UN ENVOI PARTI EN FOND QUI N'EST PAS ALLE AU BOUT (`envois_en_fond::EnvoiQuiPart`) : la boite d'ou
 /// il est parti, rouverte ; ce qui n'est pas parti y est encore a faire partir.
 pub(crate) fn refaire_la_signature(mois: Mois) -> Action {
     vers(VueDuGeste::ContratsAEnvoyer, crate::contrats::ChargeApercuSignature { mois, salaries: None }, Some(Route::DemanderSignature), REFAIRE_L_ENVOI.into())
@@ -2263,7 +2307,9 @@ impl<'a> Moteur<'a> {
                 })
                 .collect();
             let etapes = suivante(etapes);
-            return Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(None, &etapes), colonnes, etapes });
+            let lignes = envois::journal::lu(&self.ctx.racine)?.lignes;
+            let ou_en_est = OuEnEstLeMois::de(self.ctx, le_mois, &lignes, &etapes);
+            return Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(None, &etapes), colonnes, etapes, ou_en_est });
         }
         let paies = self.etat_par_engagement(le_mois)?;
         let signee = crate::contrats::signature_posee(self.ctx)?;
@@ -2418,7 +2464,9 @@ impl<'a> Moteur<'a> {
         ];
         let noms: Vec<String> = cols.iter().map(|c| c.nom.clone()).collect();
         let etapes = suivante(etapes);
-        Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(debut, &etapes), colonnes: noms, etapes })
+        let lignes = envois::journal::lu(&self.ctx.racine)?.lignes;
+        let ou_en_est = OuEnEstLeMois::de(self.ctx, le_mois, &lignes, &etapes);
+        Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(debut, &etapes), colonnes: noms, etapes, ou_en_est })
     }
 
     /// LA DSN DU MOIS, par etablissement. Elle « est mensuelle et produite par établissement employeur » (cahier technique

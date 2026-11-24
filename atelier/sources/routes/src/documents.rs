@@ -1175,8 +1175,9 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     verifier_preuve(ctx, Some(preuve), &demande_documents(ctx, mois)?)?;
     let mot_de_passe = socle::temps::duree(t_preuve);
     crate::envois_en_fond::partir(ctx, || {
-        Ok(crate::envois_en_fond::CeQuiPart {
+        Ok(crate::envois_en_fond::EnvoiQuiPart {
             quoi: format!("Documents {} ({})", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(messages.len(), "salarié", "salariés")),
+            mois: Some(mois),
             refaire: Some(crate::etapes::refaire_les_documents(mois)),
         })
     })?;

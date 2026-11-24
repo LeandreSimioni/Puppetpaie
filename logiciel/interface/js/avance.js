@@ -864,6 +864,8 @@ function partiEnFond(r) {
   fermerBoite();
   dire(r.phrase);
   suivreVeille();
+  // Le cadre sous le mois (`etat-du-mois`) dit l'envoi en cours.
+  rafraichirActions();
   return true;
 }
 

@@ -628,9 +628,10 @@ un libellé, chacun sa forme.
 | adresse | `Url` | `socle/src/garde_reseau.rs` |
 | un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
 | le temps d'un travail du fil de fond fait par qui l'attend (le navigateur, sans second fil) | `LeTempsDUnTravail` | `socle/src/fil_de_fond.rs` |
-| un envoi parti en fond, dans la fenêtre (ce qu'il dit en partant : `CeQuiPart` ; où il en est : `EtatDUnEnvoi` ; tel que le bandeau le dit : `EnvoiDit`) | `EnvoiEnFond` | `routes/src/envois_en_fond.rs` |
+| un envoi parti en fond, dans la fenêtre (ce qu'il dit en partant : `EnvoiQuiPart` ; où il en est : `EtatDUnEnvoi` ; tel que le bandeau le dit : `EnvoiDit`) | `EnvoiEnFond` | `routes/src/envois_en_fond.rs` |
 | les envois partis en fond d'une compagnie, que la fenêtre garde | `EnvoisEnFond` | `routes/src/envois_en_fond.rs` |
 | numéro d'un envoi parti en fond | `NumeroDEnvoi` | `routes/src/envois_en_fond.rs` |
+| où en est le mois, le cadre sous lui : son dernier fait et sa prochaine étape | `OuEnEstLeMois` | `routes/src/etapes.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -4113,7 +4114,11 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   par compagnie**, dans l'ordre des clics : le second attend que le premier soit au bout avant même de se vérifier, et lit
   le journal qu'il a écrit. **Fermer ou redémarrer pour la mise à jour attend les envois en vol**
   (`EnvoisEnFond::attendre`, dans `Fenetre::fermer_le_logiciel`), comme lâcher une compagnie qu'on supprime : la version
-  neuve ne s'installe qu'après eux, et ne se prend en compte qu'au lancement suivant.
+  neuve ne s'installe qu'après eux, et ne se prend en compte qu'au lancement suivant. **Sous le mois, le cadre « où en
+  est » le dit en entier** (`etat-du-mois` : `ou_en_est`, `OuEnEstLeMois`, et `envois`, ceux du mois partis en fond) :
+  le dernier fait du mois, lu au journal comme l'Historique le dit (son acte, ce qui en est revenu, les retours d'un
+  dépôt à mesure qu'ils arrivent), et la prochaine étape telle que la colonne des étapes la montre ; le bandeau garde sa
+  phrase courte.
 
 
 ## L'horloge des compagnies fictives

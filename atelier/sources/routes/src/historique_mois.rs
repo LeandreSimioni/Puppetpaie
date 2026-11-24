@@ -316,7 +316,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
 }
 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
-fn acte(ctx: &Contexte, l: &Ligne) -> String {
+pub(crate) fn acte(ctx: &Contexte, l: &Ligne) -> String {
     match l {
         Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration, e.detail.type_declaration),
         Ligne::Dpae(_) => "DPAE".into(),

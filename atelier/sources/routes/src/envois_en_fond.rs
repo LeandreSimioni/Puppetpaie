@@ -24,6 +24,7 @@ use droit::contexte::Contexte;
 use serde::{Deserialize, Serialize};
 use socle::echec::{Classe, R};
 use socle::memoire::{repris, tenu};
+use socle::mois::Mois;
 use socle::texte::Phrase;
 
 use crate::catalogue::Route;
@@ -32,8 +33,11 @@ use crate::enveloppe::{en_json, Dite, Refus, Reponse};
 /// CE QUI PART, tel qu'un envoi le dit au moment de partir (`partir`) : ce qui part, en mots (« 2 contrats », « DSN de
 /// novembre 2026 »), et le geste qui le refait s'il n'arrive pas au bout (la boite d'ou il est parti) ; aucun quand ce
 /// geste est a sa place, sur l'ecran d'ou l'envoi est parti.
-pub(crate) struct CeQuiPart {
+pub(crate) struct EnvoiQuiPart {
     pub(crate) quoi: String,
+    /// Le mois dont il part : le cadre de ce mois le dit (`etat-du-mois`) ; aucun pour ce qui ne part d'aucun mois (une
+    /// demande de fiche, un dossier, la regularisation CASC-SVP).
+    pub(crate) mois: Option<Mois>,
     pub(crate) refaire: Option<crate::etapes::Action>,
 }
 
@@ -68,7 +72,7 @@ thread_local! {
 /// partout ailleurs, rien. Une compagnie aux envois simules ne part jamais en fond : rien ne quitte le poste, rien ne
 /// se fait attendre. Une seule fois par route : un second envoi de la meme route (les avenants apres les contrats, la
 /// demande de taux apres la DPAE) part sur le meme fil, sous le meme numero.
-pub(crate) fn partir(ctx: &Contexte, ce_qui_part: impl FnOnce() -> R<CeQuiPart>) -> R<()> {
+pub(crate) fn partir(ctx: &Contexte, ce_qui_part: impl FnOnce() -> R<EnvoiQuiPart>) -> R<()> {
     let attendu = ATTENTE.with(|a| a.borrow().as_ref().is_some_and(|x| x.numero.is_none()));
     if !attendu || compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok(());
@@ -136,6 +140,7 @@ struct EnvoiEnFond {
     numero: NumeroDEnvoi,
     route: Route,
     quoi: String,
+    mois: Option<Mois>,
     refaire: Option<crate::etapes::Action>,
     suivre: Option<crate::depots::ChargeSuivre>,
     issue: Option<Issue>,
@@ -183,6 +188,50 @@ pub struct EnvoisEnFond {
 #[serde(deny_unknown_fields)]
 struct PhraseRendue {
     phrase: String,
+}
+
+/// LES ENVOIS PARTIS EN FOND DE CHAQUE COMPAGNIE DE CE PROCESSUS, par dossier : la fenetre les sert (`servir`) et les
+/// attend (`tous`, `lacher`), le cadre d'un mois les dit (`etat-du-mois`). En ligne de commande, rien n'y entre.
+static PAR_COMPAGNIE: Mutex<Vec<(std::path::PathBuf, Arc<EnvoisEnFond>)>> = Mutex::new(Vec::new());
+
+/// La cle d'une compagnie : son dossier resolu ; un dossier qui ne se resout plus (efface, deplace) se nomme par son
+/// chemin, qui le designe encore ; un dossier qui ne se resout pas pour une autre raison aussi, et cela se note.
+fn cle(racine: &std::path::Path) -> std::path::PathBuf {
+    match socle::fichiers::resolu(racine) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => racine.to_path_buf(),
+        Err(e) => {
+            compagnie::diagnostic::noter_moteur(&socle::echec::du_disque(&racine, &e).en_lignes());
+            racine.to_path_buf()
+        }
+    }
+}
+
+/// Les envois partis en fond de la compagnie `racine`, nes a son premier envoi ou a sa premiere lecture.
+pub fn de_la_compagnie(racine: &std::path::Path) -> Arc<EnvoisEnFond> {
+    let c = cle(racine);
+    let mut toutes = tenu(&PAR_COMPAGNIE);
+    match toutes.iter().find(|(k, _)| *k == c) {
+        Some((_, e)) => e.clone(),
+        None => {
+            let e = EnvoisEnFond::nouveaux();
+            toutes.push((c, e.clone()));
+            e
+        }
+    }
+}
+
+/// Ceux de toutes les compagnies (fermer le logiciel les attend).
+pub fn tous() -> Vec<Arc<EnvoisEnFond>> {
+    tenu(&PAR_COMPAGNIE).iter().map(|(_, e)| e.clone()).collect()
+}
+
+/// LA COMPAGNIE S'EN VA (supprimee, deplacee) : ses envois, retires, pour qu'on les attende.
+pub fn lacher(racine: &std::path::Path) -> Option<Arc<EnvoisEnFond>> {
+    let c = cle(racine);
+    let mut toutes = tenu(&PAR_COMPAGNIE);
+    let i = toutes.iter().position(|(k, _)| *k == c)?;
+    Some(toutes.remove(i).1)
 }
 
 /// Une route servie en fond n'est plus en vol, quoi qu'il lui soit arrive.
@@ -242,11 +291,11 @@ impl EnvoisEnFond {
     }
 
     /// L'envoi part : il prend son numero, et remplace ce que le bandeau disait d'un envoi de la meme route au bout.
-    fn inscrire(&self, route: Route, c: CeQuiPart) -> NumeroDEnvoi {
+    fn inscrire(&self, route: Route, c: EnvoiQuiPart) -> NumeroDEnvoi {
         let numero = NumeroDEnvoi(self.dernier.fetch_add(1, Ordering::SeqCst) + 1);
         let mut envois = tenu(&self.envois);
         envois.retain(|e| e.route != route || e.issue.is_none());
-        envois.push(EnvoiEnFond { numero, route, quoi: c.quoi, refaire: c.refaire, suivre: None, issue: None, dit_au_passage: false });
+        envois.push(EnvoiEnFond { numero, route, quoi: c.quoi, mois: c.mois, refaire: c.refaire, suivre: None, issue: None, dit_au_passage: false });
         numero
     }
 
@@ -298,8 +347,18 @@ impl EnvoisEnFond {
     /// CE QUE LE BANDEAU DIT DES ENVOIS : « 2 contrats en cours d'envoi… », puis la phrase de la route au bout, ou ce qui a
     /// echoue et le geste qui le refait.
     pub fn dits(&self) -> Vec<EnvoiDit> {
+        self.dits_de(|_| true)
+    }
+
+    /// Ceux qui partent de `mois`, tels que le cadre du mois les dit (`etat-du-mois`).
+    pub(crate) fn dits_du_mois(&self, mois: Mois) -> Vec<EnvoiDit> {
+        self.dits_de(|e| e.mois == Some(mois))
+    }
+
+    fn dits_de(&self, garder: impl Fn(&EnvoiEnFond) -> bool) -> Vec<EnvoiDit> {
         tenu(&self.envois)
             .iter()
+            .filter(|e| garder(e))
             .map(|e| {
                 let (etat, phrase) = match &e.issue {
                     None => (EtatDUnEnvoi::EnCours, en_cours(&e.quoi).to_string()),
