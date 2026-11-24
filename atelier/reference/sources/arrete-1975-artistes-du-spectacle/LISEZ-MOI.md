@@ -9,6 +9,9 @@ les pièces, `articles-20261010.md` le texte.
   porte « cuits » dans les taux du barème (`logiciel/donnees/baremes/2026.json`, `_statuts`) et le facteur AT/MP 0,70 ;
   la cotisation du régime local d'Alsace-Moselle de l'artiste aussi, 0,91 = 1,3 × 70 % (`regime_local_alsace_moselle`
   du corps des barèmes 2025 et 2026, avec la page des taux réduits de l'Urssaf : `../urssaf-taux-reduits-artistes/`).
+  L'art. 1 (`articles-20261110.md`) fonde aussi, avec le BOSS § 220 et la page Urssaf de la réduction générale, la
+  ligne `reduction_generale` de Coolpaie dans `logiciel/donnees/ecarts-connus-base.json` : des taux spécifiques, qui
+  ne se cumulent pas avec la réduction générale (`engagement::ecarts_connus::Constat::AbsenteDuCalcul`).
 - art. 3, al. 2 : le plafond d'un artiste engagé moins de cinq jours continus, douze fois le plafond horaire par
   journée de travail. Le moteur : `paie/src/plafond.rs` (`plafond_urssaf`, `pour_paie`, `plafond_journees`), à la
   lettre depuis la vague 1l (10/10/2026, `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1l.md`) : la « période

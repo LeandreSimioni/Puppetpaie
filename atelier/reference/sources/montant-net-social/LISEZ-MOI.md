@@ -184,6 +184,10 @@ ligne `prevoyance` des intermittents, le Fonds santé (santé) du décès (prév
 - `legi-arrete-20160225-bulletin/` : les articles 3, 4, 5 et 6 de l'arrêté du 25/02/2016 en vigueur
   (`LEGIARTI000047098507`, `...47098456`, `...36902939`, `...36902139`) et leurs versions précédentes, relevés le
   10/10/2026 dans l'archive globale LEGI de la DILA ; transcription dans `legi-arrete-20160225-bulletin.md`.
+  L'article 4 (la mention « Exonérations et allègements de cotisations », la somme des réductions) sert aussi à
+  `logiciel/donnees/ecarts-connus-base.json` : il fonde l'effet de la ligne `reduction_generale` de Coolpaie, une
+  déduction (`engagement::ecarts_connus::EffetSurLaPaie::Deduction`), que la comparaison des paies importées compte de
+  moins, en valeur absolue (`engagement::ecarts::confronter`).
 - Déjà déposés : l'article 1 (le modèle, I) et le code du travail R. 3243-1 et R. 3243-2
   (`code-du-travail/articles-20261010.md`, l. 431-461).
 

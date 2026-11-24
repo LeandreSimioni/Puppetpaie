@@ -15,6 +15,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::ecarts::RegistreLu;
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
@@ -365,8 +366,12 @@ fn piece_dite(s: Source) -> String {
     }
 }
 
-/// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul.
-fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&ContratRelu>, dpae: EtatDeCarte, connus: &[&crate::ecarts::EcartConnuNote]) -> R<CarteImportee> {
+/// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul ; `connus`, les ecarts
+/// connus que leur registre garde pour sa paie, ou leur registre illisible.
+fn carte(
+    ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&ContratRelu>, dpae: EtatDeCarte,
+    connus: RegistreLu<Vec<&engagement::ecarts_connus::EcartConnuConstate>>,
+) -> R<CarteImportee> {
     let p = paie.map(|x| &x.paie);
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
@@ -606,8 +611,21 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     }
     // CE QUE L'ANCIEN LOGICIEL A APPLIQUE AUTREMENT QUE LE TEXTE, deja releve (`engagement::ecarts_connus`) : la carte
     // dit l'explication et l'ecart chiffre.
-    for k in connus {
-        cases.push(CaseLue { libelle: "Écart connu", valeur: Some(k.phrase()), source: Some(format!("bulletin {}", k.logiciel.as_str())), vide_dit: None, non_lu: false, pourquoi: None });
+    match connus {
+        RegistreLu::Lu(siens) => {
+            for k in siens {
+                cases.push(CaseLue { libelle: "Écart connu", valeur: Some(k.phrase()), source: Some(format!("bulletin {}", k.logiciel.as_str())), vide_dit: None, non_lu: false, pourquoi: None });
+            }
+        }
+        RegistreLu::Illisible(_) if p.is_some() => cases.push(CaseLue {
+            libelle: "Écart connu",
+            valeur: None,
+            source: None,
+            vide_dit: Some("ne se lit pas"),
+            non_lu: true,
+            pourquoi: Some("L'explication des écarts connus de cette paie ne se lit pas : elle ne se montre pas. L'éditeur en est averti.".to_string()),
+        }),
+        RegistreLu::Illisible(_) => {}
     }
 
     // LES LIGNES DU BULLETIN : ce que chacune paie, telle qu'une phrase le dit, et son montant.
@@ -712,17 +730,22 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let embauches = etats::embauches_par_depot(&lignes);
     let (certifiees, _) = envois::reprise_journal::embauches_attestees(ctx)?;
-    let connus = crate::ecarts::ecarts_connus_notes(&ctx.racine)?;
+    // UN REGISTRE DES ECARTS CONNUS ILLISIBLE ne ferme pas le mois : chaque carte qui a une paie dit que son explication
+    // ne se lit pas (l'editeur le sait par l'incident de l'ouverture, `ecarts::noter`).
+    let connus = crate::ecarts::ecarts_connus_lus(&ctx.racine);
     let mut cartes = Vec::new();
     for i in importes {
         let contrat = i.contrat_lu()?;
         let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let dpae = dpae_de(&embauches, &certifiees, brut.salarie.as_ref(), brut.numero.as_ref(), brut.debut);
-        // Les ecarts connus que la comparaison de cette paie a constates (`crate::ecarts::EcartConnuNote`).
+        // Les ecarts connus que la comparaison de cette paie a constates (`engagement::ecarts_connus::EcartConnuConstate`).
         let empreinte = i.paies().get(&mois).map(|p| engagement::ecarts::empreinte(&i, mois, p));
-        let siens: Vec<&crate::ecarts::EcartConnuNote> = connus.iter().filter(|k| Some(&k.paie) == empreinte.as_ref()).collect();
-        cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae, &siens)?);
+        let siens = match &connus {
+            RegistreLu::Lu(v) => RegistreLu::Lu(v.iter().filter(|k| Some(&k.paie) == empreinte.as_ref()).collect()),
+            RegistreLu::Illisible(e) => RegistreLu::Illisible(e.clone()),
+        };
+        cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae, siens)?);
     }
     cartes.sort_by(|a, b| (&a.debut, &a.nom).cmp(&(&b.debut, &b.nom)));
     Ok(cartes)

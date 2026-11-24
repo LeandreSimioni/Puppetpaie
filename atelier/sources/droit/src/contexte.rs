@@ -1209,6 +1209,22 @@ pub struct Contexte {
     /// Les effectifs d'annees d'avant que la compagnie n'a pas dits, tels que ses paies reprises les proposent, pour la
     /// seule comparaison des paies importees (`avec_les_effectifs_proposes`) ; en memoire seulement.
     effectifs_proposes: BTreeMap<Annee, socle::grandeurs::Effectif>,
+    /// Les taux qu'un ancien logiciel a appliques autrement que le texte, pour la seule comparaison d'une paie importee
+    /// qui retombe sur ses ecarts connus (`avec_les_taux_appliques`) ; en memoire seulement.
+    taux_appliques: Vec<TauxApplique>,
+}
+
+/// UN TAUX QU'UN ANCIEN LOGICIEL A APPLIQUE AUTREMENT QUE LE TEXTE, sur une paie importee qui retombe exactement sur
+/// l'un de ses ecarts connus (`engagement::ecarts_connus`) : la rubrique de la cotisation `cotisation` dont la part `part`
+/// porte le taux du texte `texte` le porte a `applique` (`bareme::bareme_applique`, son dernier etage). La comparaison refait
+/// ainsi la paie telle que l'ancien logiciel l'a calculee, et ce qui en retombe (l'assiette de la CSG, les nets) ne se
+/// compte pas pour un ecart. Rien ne s'ecrit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TauxApplique {
+    pub cotisation: IdDeCotisation,
+    pub part: crate::forme_bareme::Part,
+    pub texte: socle::grandeurs::Taux,
+    pub applique: socle::grandeurs::Taux,
 }
 
 /// LA PILE D'UN JOUR, et le `depuis` de chaque valeur datee qui s'y applique (`Contexte::regles_datees`).
@@ -1318,6 +1334,7 @@ impl Contexte {
             fiches,
             atmp_lu: None,
             effectifs_proposes: BTreeMap::new(),
+            taux_appliques: Vec::new(),
         })
     }
 
@@ -1339,7 +1356,17 @@ impl Contexte {
             fiches: self.fiches.clone(),
             atmp_lu: self.atmp_lu.clone(),
             effectifs_proposes: self.effectifs_proposes.clone(),
+            taux_appliques: self.taux_appliques.clone(),
         })
+    }
+
+    /// LES TAUX QU'UN ANCIEN LOGICIEL A APPLIQUES AUTREMENT QUE LE TEXTE (`TauxApplique`) : le meme contexte, dont la
+    /// compagnie que la pile lit les porte (`entreprise_lue`), et la pile d'une paie avec eux
+    /// (`bareme::bareme_applique`). Pour la seule comparaison d'une paie importee qui retombe exactement sur des ecarts
+    /// connus : rien ne s'ecrit.
+    pub fn avec_les_taux_appliques(mut self, taux: Vec<TauxApplique>) -> Contexte {
+        self.taux_appliques = taux;
+        self
     }
 
     /// LES EFFECTIFS QUE LES PAIES REPRISES PROPOSENT (`engagement::effectif_repris::EffectifRepris`) : le meme contexte,
@@ -1489,7 +1516,7 @@ impl Contexte {
         ]
         .into_iter()
         .collect();
-        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu, self.effectifs_proposes))
+        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu, self.effectifs_proposes, self.taux_appliques))
     }
 
     /// LA PILE DE `jour` : le socle livre + la couche de la convention que la fiche `ent` nomme + la surcouche de la
@@ -1766,7 +1793,14 @@ impl Contexte {
     pub fn entreprise_lue(&self, jour: &Jour) -> R<crate::bareme::EntrepriseLue> {
         let fiche = self.entreprise_au(jour);
         let lu = self.effectif_lu(&fiche)?;
-        Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.annee()), cse: lu.cse(jour.annee()), cinquante: lu.cinquante(jour.annee()), taux_lus: false })
+        Ok(crate::bareme::EntrepriseLue {
+            fiche,
+            effectif: lu.valeur(jour.annee()),
+            cse: lu.cse(jour.annee()),
+            cinquante: lu.cinquante(jour.annee()),
+            taux_lus: false,
+            taux_appliques: self.taux_appliques.clone(),
+        })
     }
 
     /// Le plafond de la Securite sociale de l'annee, ses deux valeurs en euros entiers, d'apres la fiche entreprise de ce

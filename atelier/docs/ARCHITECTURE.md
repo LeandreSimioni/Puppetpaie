@@ -1261,6 +1261,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | activité d'un mois repris (ses cachets, heures et jours de travail rémunéré, chacun vide quand les pièces le taisent ; une seule règle, `importe::activite_du_mois`, que lisent la carte du mois importé, la comparaison, la CASC-SVP et les états par `PaieDuMois::activite`) | `engagement::importe::ActiviteDuMois` | `engagement/src/importe.rs` |
 | paie reprise qui ne se range pas (celle d'un mois d'un contrat dont la nature reste à dire : ce qui lit les paies du mois la rend à part, ne la compte pas et la dit sur ce contrat, sans refuser le reste, `importe::paies_du_mois`, `etats::paies_du_mois`) | `engagement::importe::NatureADire` | `engagement/src/importe.rs` |
 | paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
+| graine d'une paie versée (ce qui la reconnaît d'une comparaison à l'autre, la seule chose que son empreinte signe : la liste fixe des champs que ses pièces disaient quand l'empreinte est née, écrits comme ils l'étaient ; ce que l'import lui ajoute ensuite, l'abattement, les heures qu'une ligne imprime, n'y entre jamais, `PaieVersee::graine`, `ecarts::empreinte`) | `engagement::importe::GraineDUnePaie` | `engagement/src/importe.rs` |
 | paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
 | cumuls de l'année à la reprise (ce qu'un ancien logiciel avait cumulé pour un salarié dans l'année civile, avant le jour où PuppetPaie paie, et que ses pièces ne disent pas : la déduction forfaitaire spécifique pratiquée, les heures supplémentaires payées, le net des heures en plus exonéré d'impôt ; la case `cumuls_reprise` de sa fiche, dans la pièce que seule une paie reprise ouvre, `RepriseDesCumuls`) | `droit::fiche::CumulsReprise` | `droit/src/fiche.rs` |
 | contrat qu'un certificat Congés Spectacles couvre (l'engagement de son dernier mois, la fiche du salarié, et chacun de ses mois payés, lus dans leurs paies validées, sans recalcul ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
@@ -1364,7 +1365,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | ce qui diffère dans un écart de la comparaison (la base, un taux, un montant, une cotisation d'un seul côté) | `CeQuiDiffere` | `engagement/src/ecarts.rs` |
-| écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json`), la part dont il dit le taux, et l'écart connu constaté sur une paie importée (les deux montants de la part ; sa note dans `journal/ecarts-connus.json`, `import::ecarts::EcartConnuNote`) | `EcartConnu`, `PartDuTaux`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
+| écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json`), ce qu'il constate (le taux d'une part, un `CeQuiDiffere`, appliqué et du texte ; ou une cotisation que le bulletin imprime à tort et que le moteur ne calcule pas, avec son effet sur ce que la paie a cotisé : une déduction ou une cotisation de plus), et l'écart connu constaté sur une paie importée (la paie, ce que la compagnie et le salarié ont cotisé de plus ou de moins que le texte ; il est aussi sa note dans `journal/ecarts-connus.json`) | `EcartConnu`, `Constat`, `EffetSurLaPaie`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
+| taux appliqué par un ancien logiciel (la cotisation, la part du barème, le taux du texte et celui appliqué, que la pile d'une paie porte en mémoire pour refaire une paie importée qui retombe sur ses écarts connus) | `TauxApplique` | `droit/src/contexte.rs` |
+| revue des paies importées pas encore comparées (les rapports à noter au journal des incidents, les paies qui ne sont plus à comparer, les écarts connus constatés : ce que `import::ecarts::noter` écrit) | `Revue` | `import/src/ecarts.rs` |
+| registre des écarts d'import tel qu'il se lit (les paies comparées, les rapports notés, les écarts connus constatés : ce qu'il garde, ou illisible, un registre dont on ne sait rien, qui n'est pas un registre vide ; la carte d'une paie importée lit ainsi ses écarts connus) | `RegistreLu` | `import/src/ecarts.rs` |
 | paie importée qui ne se compare pas (la sorte de sa raison, tirée de l'endroit et de la classe du refus, jamais de sa phrase, et le refus qui la dit ; la sorte fait le genre de son incident, sans aucune valeur du cas) | `NonComparee`, `SorteDeNonComparaison` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
@@ -2811,11 +2815,15 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée. **L'abattement** que
   l'en-tête imprime (« Abattement : 21 », la déduction forfaitaire spécifique appliquée, un choix de la compagnie
   salarié par salarié ; Léandre, 23/11/2026 : « on fait l'abattement qu'on veut ») se garde dans la paie importée
-  (`PaieVersee::abattement`) et complète la fiche du salarié comme ses autres cases, sans rien écraser : la profession
-  dont le taux de l'année de la période est celui-là (`DfsDuBareme::professions_au_taux`), quand elle est seule ; un
-  taux que plusieurs professions partagent (la catégorie 25 % : dramatique, lyrique, chorégraphique) ne choisit rien,
-  et la réponse de l'import dit pourquoi (`importation::bulletins::profession_de_l_abattement`). Une paie dont le bulletin
-  imprime un abattement ne se compare qu'une fois la profession dite sur la fiche (`SorteDeNonComparaison::CaseDeLaCompagnie`).
+  (`PaieVersee::abattement`, hors de l'empreinte de la paie, qui ne signe que sa graine : `GraineDUnePaie`). L'import n'écrit rien de la
+  déduction forfaitaire : une profession posée sans l'option de la compagnie ferait refuser chaque paie d'ici du salarié.
+  « Pour démarrer » la propose, sur la ligne du salarié dont la fiche ne la dit pas (`demarrage::abattements_a_dire`,
+  le bulletin repris le plus récent) : la profession dont le taux de l'année de ce bulletin est celui-là
+  (`DfsDuBareme::professions_au_taux`), quand elle est seule, que la compagnie valide ou corrige ; un taux que plusieurs
+  professions partagent (la catégorie 25 % : dramatique, lyrique, chorégraphique) ne choisit rien, et la phrase les
+  nomme. Une paie dont le bulletin imprime un abattement ne se compare qu'une fois la profession dite sur la fiche
+  (`SorteDeNonComparaison::CaseDeLaCompagnie`) : le calcul de la déduction lit plus que son taux (la profession, pour
+  les frais que l'annexe 2 de l'arrêté laisse hors de l'assiette, l'option de la compagnie et l'accord du salarié).
 - **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`importation/ecrite.rs`) : les fiches à créer, par le même
   chemin que l'écran (`routes::fiches::ecrire_fiche`) ; dans une fiche qui existe, seulement ce qui y est vide ou
   « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
@@ -2951,20 +2959,39 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   date de la période. Rien ne change dans l'engagement importé. Les écarts partent chez l'éditeur comme un incident de
   fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart ; son genre ne nomme que la cause,
   des codes du logiciel : la cotisation, la grandeur et le logiciel d'un écart, la sorte de raison d'une paie non
-  comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; ce qui distingue deux
+  comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; une sorte a un seul
+  comportement : la paie se compare de nouveau à chaque ouverture, sauf quand ce sont les pièces qui ne refont pas la
+  saisie, `SorteDeNonComparaison::se_recompare`, `Comparaison::a_refaire` ; ce qui distingue deux
   rapports d'une cause est dans leur détail, signé, et le registre `journal/ecarts-import-notes.json` garde les
-  signatures notées), sans rien afficher ni demander :
+  signatures notées ; une compagnie déjà posée, dont ce registre n'existe pas encore, renote une fois ses rapports sous
+  leur genre par cause, et c'est voulu : le filet les regroupe désormais par cause), sans rien afficher ni demander :
   ils ne désignent personne (ni nom, NIR, naissance, adresse, ni salaire ou montant d'une paie ; seulement la
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
-  caviardage. Une paie se compare une fois. **Les écarts connus des anciens logiciels** (`ecarts-connus-base.json`,
+  caviardage. Une paie se compare une fois. Un des trois registres (les paies comparées, les rapports notés, les
+  écarts connus) qui ne se lit pas est un registre dont on ne sait rien, pas un registre vide (`import::ecarts::
+  RegistreLu`) : il ne ferme rien, ne se réécrit pas, un incident le dit une fois par ouverture ; illisible, le
+  premier ne dit d'aucune paie qu'elle est comparée, le second d'aucun rapport qu'il est noté, et la carte d'une paie
+  importée dit en mots que l'explication de ses écarts connus ne se lit pas. Les écarts connus se gardent dès qu'ils
+  sont constatés, la paie fût-elle comparée avec l'effectif seulement proposé. **Les écarts connus des anciens logiciels** (`ecarts-connus-base.json`,
   `engagement::ecarts_connus` ; Léandre, 23/11/2026 : « on ne relève plus les défauts déjà relevés ») : un taux qu'un
   ancien logiciel a appliqué autrement que le texte, déjà relevé, avec la source du taux du texte. Une part qui retombe
   exactement sur une ligne (le taux du bulletin est celui appliqué quand le nôtre est celui du texte ; son montant est le
-  nôtre, chaque ligne au taux du texte refaite au taux appliqué, à la tolérance de la comparaison) n'est pas un écart,
-  ni le total des cotisations de sa part pour ce qu'elle en explique ; elle ne fait pas d'incident, se note dans
-  `journal/ecarts-connus.json`, et la carte de la paie importée dit l'explication et l'écart chiffré (« Écart connu »,
-  `import::mois`). Ce qui n'y retombe pas exactement sonne comme avant. Ce qui ne se compare pas le dit (une période sans barème, une convention
+  nôtre, chaque ligne au taux du texte refaite au taux appliqué, à la tolérance de la comparaison) n'est pas un écart :
+  la paie se refait alors en mémoire, ces lignes-là au taux que l'ancien logiciel a appliqué, par le même chemin du
+  barème (`droit::contexte::TauxApplique`, `Contexte::avec_les_taux_appliques` : la compagnie que la pile lit les
+  porte, `entreprise_lue`, comme l'effectif proposé, et le dernier étage de `bareme_applique` les pose), et se compare tout de nouveau ; ce qui
+  en retombe (la prévoyance patronale dans l'assiette de la CSG, les nets, les totaux) ne sonne pas, ce qui s'écarte
+  encore sonne, et rien ne s'écrit. Une ligne peut aussi constater une cotisation que le bulletin imprime à tort et que
+  le moteur ne calcule pas (`ecarts_connus::Constat::AbsenteDuCalcul` : la réduction générale appliquée à un artiste en
+  2026, arrêté du 24/01/1975, art. 1, BOSS « Allègements généraux » § 220, Urssaf « Les règles de cumul » ; elle ne vaut
+  que pour la paie du statut qu'elle nomme), avec son effet, que la ligne dit et fonde (`EffetSurLaPaie` : une
+  déduction, la mention « Exonérations et allègements de cotisations » de l'arrêté du 25/02/2016, art. 4, compte de
+  moins le montant imprimé en valeur absolue, quel que soit son signe) : ce n'est pas un écart, et le total des cotisations de sa part la compte,
+  sauf quand le bulletin l'imprime hors de son total. Elle ne fait pas d'incident, se note dans
+  `journal/ecarts-connus.json`, et la carte de la paie importée dit, en une phrase chiffrée, ce que la compagnie (ou le
+  salarié) a cotisé de moins ou de plus que le texte, pour quoi, et pourquoi (« Écart connu »,
+  `EcartConnuConstate::phrase`, `import::mois`). Ce qui n'y retombe pas exactement sonne comme avant. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique). Ce que le logiciel ne livre pas pour calculer une paie (le barème de son année,
   la couche de sa convention : `droit::contexte::RienDeLivre`, que `Contexte::de_quoi_calculer` rend à part) ne l'inscrit pas au registre : la
   version qui le livrera la comparera à l'ouverture. Avant 2026 (`engagement::ecarts::COMPAREE_TOUJOURS_DES`, une
@@ -2973,7 +3000,9 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   l'effectif d'une année d'avant (Léandre, 23/11/2026, « B ») : tant que la compagnie ne l'a pas dit, la comparaison
   prend celui que « Pour démarrer » propose d'après les paies reprises (`EffectifRepris`), en mémoire et sans rien
   écrire (`Contexte::avec_les_effectifs_proposes` ; ce que la compagnie a écrit l'emporte), et le dit
-  (`Comparaison::effectif_propose`) ; une année qui ne se propose pas reste non comparée. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
+  (`Comparaison::effectif_propose`) ; une paie ainsi comparée n'entre pas au registre pour de bon : elle se compare de
+  nouveau tant que la compagnie n'a pas écrit l'effectif, et ses rapports déjà notés ne se notent pas deux fois (le
+  registre des rapports notés) ; une année qui ne se propose pas reste non comparée. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
   (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), son motif de recours (celui que sa DSN
   déclare, S21.G00.40.021 : `Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa
   carte, d'un mois que le contrat et la paie couvrent entier (`ecarts::contrat_au_mois`, `salaire_et_heures`). Le

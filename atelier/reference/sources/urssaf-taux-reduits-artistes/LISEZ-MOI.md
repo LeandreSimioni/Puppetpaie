@@ -39,6 +39,10 @@ D13 reste à chercher sous ce titre, s'il existe encore (la page des taux a pu l
 
 ## Où le moteur s'en sert
 
+`logiciel/donnees/ecarts-connus-base.json`, la ligne `maladie` de Coolpaie (`…-20260715.txt`, « Taux plein : 9,10 % ») :
+le taux du texte d'un écart connu (`engagement::ecarts_connus`), auquel la comparaison des paies importées
+(`engagement::ecarts::confronter`) reconnaît le taux réduit de 4,90 % que l'ancien logiciel a gardé en 2026.
+
 `logiciel/donnees/baremes/2026.json`, section artiste : les notes `_source` recomposent 5,99 / 4,83 / 1,48 / 0,28 /
 3,68 / 0,07 depuis la table BOSS × 0,70 et l'arrêté de 1975 ; cette page les **donne directement**, à citer en plus le
 jour où le barème se relit. L'AT « abattu et arrondi à la décimale la plus proche » : le barème fait 1,50 × 0,70 = 1,05
