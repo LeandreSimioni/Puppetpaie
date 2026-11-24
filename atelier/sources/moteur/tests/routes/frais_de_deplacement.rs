@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use crate::outils::rejeu::{rejouer_dossier, scenario};
 use socle::grandeurs::{Montant, MontantUnitaire};
 
-use crate::outils::{dossier_de_test, grandeur, reussi, route};
+use crate::outils::{dossier_de_test, grandeur, identite, le_mois, paie_ecrite, reussi, route, valider_la_carte};
 
 #[test]
 fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
@@ -111,4 +111,49 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
     assert!(ligne(&new_york, "repas_au_dela").is_none());
     let loge = ailleurs(&[("repas", "90", "NY", &["loge"])]);
     assert_eq!(n(&ligne(&loge, "repas_au_dela").unwrap()["montant"]), grandeur("57.92"));
+}
+
+/// SOUS DEDUCTION FORFAITAIRE SPECIFIQUE, LE REMBOURSEMENT DE FRAIS ENTRE DANS L'ASSIETTE AVANT L'ABATTEMENT : arrete du
+/// 4 septembre 2025, art. 9, I, al. 4 (`atelier/reference/sources/dfs/arrete-2025-frais-professionnels/articles-20261110.md`,
+/// l. 43 : « y compris, le cas échéant, les indemnités versées [...] à titre de remboursement des frais professionnels,
+/// à l'exception de celles » de l'annexe 2, qui ne nomme pas le repas d'une artiste dramatique) ; BOSS, Frais
+/// professionnels, § 2240 (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2794-2796). Le
+/// chômage d'un intermittent les compte, avant l'abattement (fiche net-entreprises 484 : « 4500 + 500 = 5000 »).
+/// FULLER, artiste dramatique (18 % en 2026, art. 9, II), deux cachets de 150 € et un repas de 20 € au restaurant, sous
+/// sa limite de 21,40 € : 300 + 20 = 320 ; la déduction, 320 × 18 % = 57,60 ; l'assiette abattue, 262,40 (246 si le repas
+/// restait dehors).
+#[test]
+fn sous_dfs_le_remboursement_de_frais_entre_dans_l_assiette_avant_l_abattement() {
+    let d = dossier_de_test("frais_de_deplacement", "dfs");
+    let sc = d.join("scenario");
+    std::fs::create_dir_all(&sc).unwrap();
+    let gestes = std::fs::read_to_string(scenario("treteaux-du-banc").join("gestes.jsonl")).unwrap();
+    let debut: Vec<&str> = gestes.lines().take_while(|l| !l.contains("\"geste\":\"jour\"")).collect();
+    std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
+    let (_, c) = rejouer_dossier(&sc, &d);
+    let jour = "2026-11-02";
+    let mois = le_mois("2026-11");
+    // La compagnie opte par accord collectif (art. 9, I, al. 2) ; la fiche de FULLER dit sa profession.
+    let option = json!({"nom": "entreprise", "confirme": true, "changements": [{"case": "deduction_forfaitaire_option", "valeur": "accord_collectif"}]});
+    reussi(&route(&c, "enregistrer-fiche", option, jour));
+    let profession = json!({"nom": "salarie", "cle": "FULLER", "confirme": true, "depuis": "2026-11-01",
+        "changements": [{"case": "deduction_forfaitaire", "valeur": "artiste_dramatique"}]});
+    reussi(&route(&c, "enregistrer-fiche", profession, jour));
+    let jours = json!(["2026-11-20", "2026-11-21"]);
+    let lignes = json!([
+        {"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []},
+        {"rubrique": "repas", "quantite": {"unites": 1}, "taux": 20, "territoire": null, "cases": ["restaurant"], "lieu": null, "dates": ["2026-11-20"], "planning": []},
+    ]);
+    let carte = json!({"ecrite": identite(&c, mois, "FULLER", None)});
+    reussi(&route(&c, "enregistrer-saisie", json!({"mois": "2026-11", "carte": carte, "changements": [{"case": "lignes", "valeur": lignes}]}), jour));
+    reussi(&valider_la_carte(&c, mois, "FULLER", jour));
+
+    let p = paie_ecrite(&c, "2026-11", "FULLER", None)["paie"].clone();
+    // Un montant de la paie ecrite, en texte ou en nombre.
+    let m = |v: &Value| grandeur::<Montant>(v.to_string().trim_matches('"'));
+    let dfs = &p["deduction_forfaitaire"];
+    assert_eq!(m(&p["brut"]), grandeur("300"), "{}", p);
+    assert_eq!((m(&dfs["frais_reintegres"]), m(&dfs["montant"])), (grandeur("20"), grandeur("57.60")), "{}", p);
+    assert_eq!(m(&p["bases"]["brut_dfs"]), grandeur("262.40"), "{}", p);
+    assert_eq!((m(&p["bases"]["brut_chomage"]), m(&p["assiette_chomage"])), (grandeur("320"), grandeur("320")), "{}", p);
 }

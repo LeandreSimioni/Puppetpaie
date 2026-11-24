@@ -343,17 +343,23 @@ pub enum Plafonnement {
     Regularise(AnneeAnterieure),
 }
 
-/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), le brut dans la limite des
-/// plafonds du chomage de la paie (`chomage` : le chomage et l'AGS d'un permanent, le chomage d'un intermittent ;
-/// `TranchesDuPlafond::chomage`) et dans celle des plafonds de l'Apec d'un permanent (`apec`, `TranchesDuPlafond::apec`),
-/// qui ne se regularisent pas : aucun texte depose ne dit la regularisation de ces contributions (la fiche Unedic ne dit
-/// que l'identite de leur assiette avec celle de la securite sociale), et seul se regularise ce qu'un texte depose fonde
-/// (Leandre, 19/11/2026).
+/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), et le brut dans la limite des
+/// plafonds de l'Apec d'un permanent (`apec`, `TranchesDuPlafond::apec`), qui ne se regularise pas, comme le chomage
+/// (`chomage`) : aucun texte depose ne dit la regularisation de ces contributions (la fiche Unedic ne dit que l'identite
+/// de leur assiette avec celle de la securite sociale), et seul se regularise ce qu'un texte depose fonde (Leandre,
+/// 19/11/2026).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssiettesPlafonnees {
     pub regularisees: Regularisees,
-    pub chomage: Montant,
     pub apec: Montant,
+}
+
+/// L'ASSIETTE DU CHOMAGE D'UNE PAIE (le chomage et l'AGS d'un permanent, le chomage d'un intermittent) : la remuneration
+/// `remuneration` qui y entre (le brut soumis, et sous deduction forfaitaire specifique les frais qu'elle reintegre :
+/// `engagement::calcul::DeductionForfaitaire::avant_abattement`) dans la limite des plafonds du chomage de la paie
+/// (`TranchesDuPlafond::chomage` fois `plafond`), sans regularisation (`AssiettesPlafonnees`).
+pub fn chomage(remuneration: Montant, plafond: Montant, tranches: &TranchesDuPlafond) -> Montant {
+    remuneration.min(plafond * tranches.chomage)
 }
 
 /// LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE : le critere de `Regularisees::sous` (la somme des
@@ -399,7 +405,7 @@ pub fn assiettes_plafonnees(
             Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg, tranches) - a.appliquees
         }
     };
-    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage), apec: remuneration.min(plafond * tranches.apec) }
+    AssiettesPlafonnees { regularisees, apec: remuneration.min(plafond * tranches.apec) }
 }
 
 /// LES TRANCHES DE LA RETRAITE COMPLEMENTAIRE D'UNE PAIE D'INTERMITTENT, SUR LE PLAFOND DE L'ANNEE : la tranche 1, la

@@ -9,9 +9,8 @@
 //! - l'annexe 2, I, 2° et 5° : les defraiements de tournee des artistes dramatiques, lyriques, choregraphiques et
 //!   regisseurs de theatre, les frais de deplacement des musiciens, choristes et chefs d'orchestre restent hors de
 //!   l'assiette ;
-//! - BOSS « Frais professionnels », § 2320 (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`) : pour
-//!   le spectacle vivant, par tolerance, tout remboursement de frais au sens de l'arrete se cumule avec la DFS, hors de
-//!   l'assiette abattue ;
+//! - BOSS « Frais professionnels », § 2240-2250 (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`) :
+//!   tout autre remboursement de frais entre dans l'assiette avant l'abattement ;
 //! - CSS R. 242-1, al. 6, et BOSS « Assiette generale » § 410 : l'assiette abattue ne descend pas sous le SMIC ;
 //! - annexes VIII et X du 15/11/2024, art. 49 : le chomage « avant application de l'abattement » ; norme DSN, bloc 78 :
 //!   les Conges Spectacles « avant toute deduction forfaitaire specifique ».

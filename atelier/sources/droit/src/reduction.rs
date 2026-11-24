@@ -130,7 +130,12 @@ fn repartir_la_reduction(rg: &ParametresDeLaReduction, coefficient: Coefficient,
 /// reduction generale [...] calcule pour les remunerations apres application de l'abattement forfaitaire [...] ne peut
 /// exceder, pour ces remunerations, 130 % du montant la reduction calcule sans application du meme abattement. >> La
 /// reduction se calcule donc sur le brut abattu (`abattu`), dans la limite (`limite`, lue au bareme :
-/// `deduction_forfaitaire.limite_reduction_generale`) de celle du brut entier.
+/// `deduction_forfaitaire.limite_reduction_generale`) de celle des memes remunerations sans l'abattement (`brut` :
+/// l'assiette avant l'abattement, le brut et les frais que la deduction reintegre,
+/// `engagement::calcul::DeductionForfaitaire::avant_abattement`). INFERENCE, ecrite comme telle : << ces
+/// remunerations >> sont celles que l'abattement abat, remboursements de frais reintegres compris (arrete du 4 septembre
+/// 2025, art. 9, I, al. 4) ; aucun texte depose ne dit la remuneration << sans application du meme abattement >> d'une
+/// paie qui en reintegre.
 pub fn reduction_generale_sous_dfs(
     rg: Option<&ParametresDeLaReduction>, limite: Taux, statut: Option<Statut>, brut: Montant, abattu: Montant, heures: Heures, caisse_conges: bool,
 ) -> R<Option<ReductionGenerale>> {
@@ -154,10 +159,11 @@ pub fn reduction_generale_sous_dfs(
 ///
 /// Ce qui se compare au seuil, ce sont « les revenus d'activité tels qu'ils sont pris en compte pour la détermination de
 /// l'assiette des cotisations définie à l'article L. 242-1 » (CSS L. 241-2-1 et L. 241-6-1, versions du 01/01/2025 au
-/// 01/01/2026, `atelier/reference/sources/legi-entrepot/`) : le brut, moins la deduction forfaitaire specifique du
-/// contrat quand il en a une (`deduction_forfaitaire`, son montant), puisque sous elle « l'assiette des cotisations »
-/// est le montant global des remunerations abattu de la deduction (arrete du 4 septembre 2025, art. 9, I,
-/// `atelier/reference/sources/dfs/arrete-2025-frais-professionnels/`). Ces deux articles ne reprennent pas la limite
+/// 01/01/2026, `atelier/reference/sources/legi-entrepot/`) : la remuneration avant l'abattement (`remuneration` : le
+/// brut, et sous deduction forfaitaire specifique les frais qu'elle reintegre), moins la deduction du contrat quand il
+/// en a une (`deduction_forfaitaire`, son montant), puisque sous elle « l'assiette des cotisations » est le montant
+/// global des remunerations, remboursements de frais compris, abattu de la deduction (arrete du 4 septembre 2025, art. 9,
+/// I, `atelier/reference/sources/dfs/arrete-2025-frais-professionnels/`). Ces deux articles ne reprennent pas la limite
 /// propre a la reduction generale (L. 241-13, III, al. 4 : la remuneration du coefficient « ne tient compte des
 /// déductions au titre de frais professionnels calculées forfaitairement [...] que dans des limites et conditions
 /// fixées par arrêté ») : ils n'empruntent a L. 241-13 que le calcul du SMIC (« deuxième alinéa du III »). Le BOSS lit
@@ -166,15 +172,15 @@ pub fn reduction_generale_sous_dfs(
 /// `atelier/reference/sources/boss/boss-allegements-generaux-20261123.txt`, l. 241-252 ; la version 2026, celle de la
 /// reduction generale, la seule que le BOSS serve encore).
 pub fn au_dela_du_seuil(
-    rg: Option<&ParametresDeLaReduction>, brut: Montant, deduction_forfaitaire: Option<Montant>, heures: Heures, seuil: Coefficient,
+    rg: Option<&ParametresDeLaReduction>, remuneration: Montant, deduction_forfaitaire: Option<Montant>, heures: Heures, seuil: Coefficient,
 ) -> R<bool> {
     let smic = requis(rg.and_then(|r| r.smic_horaire_reference), "reduction_generale.smic_horaire_reference")?;
     if heures <= Heures::ZERO {
         return Err(socle::echec::refus("Un seuil de SMIC se compare à des heures rémunérées : la paie n'en porte aucune."));
     }
     let revenus = match deduction_forfaitaire {
-        Some(d) => brut - d,
-        None => brut,
+        Some(d) => remuneration - d,
+        None => remuneration,
     };
     Ok(revenus > (heures * smic).au_centime() * seuil)
 }

@@ -2090,7 +2090,7 @@
       "domaine": "paie générale",
       "public": "employeur",
       "quand": "toujours",
-      "texte": "Pour un technicien intermittent, ou un artiste engagé cinq jours ou plus, le plafond de la Sécurité sociale de chaque paie est réduit aux jours du contrat dans le mois, jours non travaillés compris. Pour un contrat de 8 jours dans un mois de 31 jours, en {annee} : {bareme:plafond_securite_sociale/mensuel} × 8/31, soit {bareme:plafond_securite_sociale/mensuel*8/31,2}, que le salarié ait travaillé 2 ou 8 de ces jours.",
+      "texte": "Pour un technicien intermittent, ou un artiste engagé cinq jours ou plus, le plafond de la Sécurité sociale de chaque paie est proratisé sur les jours du contrat dans le mois, jours non travaillés compris. Pour un contrat de 8 jours dans un mois de 31 jours, en {annee} : {bareme:plafond_securite_sociale/mensuel} × 8/31, soit {bareme:plafond_securite_sociale/mensuel*8/31,2}, que le salarié ait travaillé 2 ou 8 de ces jours.",
       "source": [
         {
           "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",

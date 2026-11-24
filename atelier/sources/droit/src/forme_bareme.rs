@@ -1166,12 +1166,11 @@ crate::cle_opaque! {
 
 forme! {
     /// LA SECTION `deduction_forfaitaire` DU BAREME DE L'ANNEE : la regle (les professions, le taux de chaque categorie,
-    /// le plafond annuel, la limite de la reduction generale, les rubriques abattues, la tolerance du BOSS). Une forme du bareme, pas la DFS d'une paie
-    /// (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle d'un
-    /// salarie (`DfsDuSalarie`).
+    /// le plafond annuel, la limite de la reduction generale, les rubriques abattues). Une forme du bareme, pas la DFS
+    /// d'une paie (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle
+    /// d'un salarie (`DfsDuSalarie`).
     pub struct DfsDuBareme {
         pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
-        pub frais_cumulables: bool,
         pub taux: BTreeMap<CategorieDfs, Taux>,
         pub plafond_annuel: Montant,
         /// La limite de la reduction generale sous DFS, en pourcentage de celle du brut entier (arrete du 4 decembre

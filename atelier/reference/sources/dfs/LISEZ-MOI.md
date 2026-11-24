@@ -44,8 +44,9 @@ Les codes sont relevés à leur place : CSS R. 242-1, L. 241-13 et D. 241-7 (`..
   accord dit, la paie refuse.
 - I, al. 4 : l'assiette comprend « le cas échéant, les indemnités versées […] à titre de remboursement des frais
   professionnels, à l'exception de celles [de] l'annexe ». → `frais_hors_assiette` des professions ; tout autre
-  remboursement de frais reste hors de l'assiette lui aussi, par la tolérance du BOSS, § 2320 (lot DF2, 14/10/2026 ;
-  `frais_cumulables` du barème, `calcul::dfs_applicable` ; voir `../boss/LISEZ-MOI.md`).
+  remboursement de frais entre dans l'assiette avant l'abattement (`calcul::dfs_applicable`, `calcul::abattement_dfs` ;
+  BOSS § 2240, voir `../boss/LISEZ-MOI.md`), et avec lui dans l'assiette du chômage d'un intermittent (fiche
+  net-entreprises 484) ; la DSN le déclare en bloc 54 de type 35.
 - I, dernier al. : « sans préjudice du sixième alinéa de l'article R. 242-1 du code de la sécurité sociale » → l'assiette
   minimum (`abattement_dfs`).
 - II : le spectacle vivant à 25 % au 31/12/2023 perd 2 points par an depuis 2024, 3 depuis 2026, nul en 2032 (23, 21,
@@ -155,10 +156,10 @@ au régime AGIRC-ARRCO »).
    poste : `../boss/boss-frais-professionnels-20261013.pdf`, version en vigueur au 01/01/2026 ; ce qu'on en lit, § par §, dans
    `../boss/LISEZ-MOI.md`). Il confirme le calendrier des taux (16 et 18 % en 2026), le plafond de 7 600 € apprécié par
    employeur (§ 2160 : le point 5 ci-dessous n'est plus un manque), l'option et le consentement (§ 2180-2210, § 2330), et
-   dit deux choses de plus : **§ 2320, pour le spectacle vivant, les remboursements de frais au sens de l'arrêté se cumulent
-   avec la DFS par tolérance, sans réintégration** (le refus du point 4 ci-dessous est à lever : un lot de code), et § 2150,
-   pas de DFS sur un mois complet d'absence (servira au point 2). **Le refus est levé (lot DF2, 14/10/2026)** : le barème
-   porte la tolérance (`deduction_forfaitaire.frais_cumulables`, 2025 et 2026), `calcul::dfs_applicable` la lit.
+   dit la règle du non-cumul (§ 2240-2250 : les remboursements de frais entrent dans l'assiette avant l'abattement, sauf
+   l'annexe 2 ; point 4 ci-dessous), et § 2150, pas de DFS sur un mois complet d'absence (servira au point 2). Sa
+   tolérance du § 2320 (le cumul de tous les remboursements de frais avec la DFS, pour les huit secteurs) n'est pas
+   appliquée : « Pas de tolérance, c'est la loi » (Léandre, 24/11/2026).
 2. **Un salarié au mois sous DFS** (permanent, CDD de droit commun) : refusé. Son chômage relève de l'art. 49 du règlement
    général (« entrant dans l'assiette des cotisations de sécurité sociale ») sans l'« avant application de l'abattement »
    des annexes VIII et X ; l'arrêté d'agrément du 19/12/2024 (`autres/`) ne le dit « avant abattement » que pour les
@@ -166,14 +167,22 @@ au régime AGIRC-ARRCO »).
    3090 « servant de base aux cotisations de la sécurité sociale » (titre XII, 12.6.1), 1285 rien. Ses tranches Agirc-Arrco
    mensuelles et son assiette minimum (151,67 h). Un lot à part.
 3. **Un cadre sous DFS** : refusé (l'assiette de l'Apec sous DFS n'est dans aucun texte déposé ; ses tranches journalières).
-4. ~~**Un remboursement de frais réintégré** (hors annexe 2) : refusé.~~ **Levé (lot DF2, 14/10/2026)** : le BOSS, § 2320,
-   laisse tout remboursement de frais au sens de l'arrêté hors de l'assiette pour les huit secteurs ; rien n'est réintégré,
-   le bloc 54 de type 35 ne s'écrit toujours pas. Reste refusée (`calcul::dfs_applicable`, lot DF2) une ligne hors
-   assiette qui n'est pas un remboursement de frais (une rubrique de nature `indemnite`) : le rescrit BOSS-RES-000010
-   (`../boss/boss-frais-professionnels-20261013.txt`, § 2325) veut une indemnité de transport conventionnelle dans
-   l'assiette « dès le 1er euro », et aucun texte déposé ne dit ce qu'une autre indemnité hors assiette devient sous DFS.
-   Le catalogue livré n'a aucune indemnité conventionnelle de ce genre pour un contrat d'usage. Réintégrer toucherait l'assiette du chômage (les annexes disent
-   « avant abattement », pas « sans les frais ») et la DSN (bloc 54 de type 35, `bloc-S21.G00.54.txt` l. 39-43).
+4. **Un remboursement de frais réintégré** (hors annexe 2) : porté. Il entre dans l'assiette avant l'abattement
+   (`calcul::dfs_applicable`, `calcul::abattement_dfs` ; arrêté, art. 9, I, al. 4 ; BOSS § 2240 ; l'exemple de l'Urssaf,
+   `../urssaf-frais-professionnels/urssaf-frais-professionnels-20261030.txt`, l. 1146-1157), dans l'assiette du chômage
+   d'un intermittent (art. 49 des annexes : les rémunérations « entrant dans l'assiette des cotisations de sécurité
+   sociale », « avant application de l'abattement » ; la fiche net-entreprises 484 : « 4500 + 500 = 5000 » au 51 de
+   type 002), dans la remuneration comparée au seuil d'un taux réduit (`droit::reduction::au_dela_du_seuil`) et dans
+   celle « sans application du même abattement » de la réduction générale (`droit::reduction::reduction_generale_sous_dfs`,
+   INFÉRENCE écrite là) ; la DSN les déclare en bloc 54 de type 35 (`bloc-S21.G00.54.txt` l. 39-43 ; `dsn::autre_revenu`).
+   Ni la CSG (INFÉRENCE : l'Urssaf dit que la DFS « ne s'applique pas au calcul de la CSG et de la CRDS », dont l'assiette
+   reste la sienne, frais exclus ; aucun texte déposé ne dit la réintégration pour elle) ni les Congés Spectacles, la
+   prévoyance ou les contributions conventionnelles, dont l'assiette est le brut, ne les comptent. Reste refusée
+   (`calcul::dfs_applicable`) une ligne hors assiette qui n'est pas un remboursement de frais (une rubrique de nature
+   `indemnite`) : le rescrit BOSS-RES-000010 (`../boss/boss-frais-professionnels-20261013.txt`, § 2325) veut une indemnité
+   de transport conventionnelle dans l'assiette « dès le 1er euro », et aucun texte déposé ne dit ce qu'une autre
+   indemnité hors assiette devient sous DFS. Le catalogue livré n'a aucune indemnité conventionnelle de ce genre pour un
+   contrat d'usage.
 5. **Le cumul d'avant le logiciel** : une compagnie qui arrive en cours d'année avec une DFS déjà déduite ailleurs la
    dit sur la fiche du salarié (`cumuls_reprise.deduction_forfaitaire`, `droit::fiche::CumulsReprise`), case que seule
    une paie reprise de l'année montre ; sans elle, une paie reprise de l'année fait refuser le plafond

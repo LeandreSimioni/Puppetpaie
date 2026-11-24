@@ -75,21 +75,17 @@ Ce qu'on en lit (chapitre 9) :
 - **§ 2240-2290, non-cumul** : les remboursements de frais (réels ou forfaitaires) et prises en charge directes entrent dans
   l'assiette avant l'abattement, sauf l'annexe 2 de l'arrêté (défraiements de tournée des artistes dramatiques, lyriques,
   chorégraphiques et régisseurs de théâtre ; allocations de saison ; frais des chefs d'orchestre, musiciens et choristes en
-  déplacement…). Les outils de travail (véhicule, ordinateur) ne sont pas une prise en charge de frais. **MAIS § 2320, huit
-  secteurs dont le spectacle vivant : « par tolérance », depuis le 01/01/2023 et jusqu'à l'extinction, « l'ensemble des
-  remboursements de frais professionnels définis par l'arrêté du 4 septembre 2025 peut faire l'objet d'un cumul avec la
-  déduction forfaitaire spécifique » ; leur intégration dans l'assiette avant l'abattement « n'est pas obligatoire ».** Le
-  rescrit BOSS-RES-000010 borne la tolérance : une indemnité de transport conventionnelle n'est pas un remboursement de
-  frais au sens de l'arrêté, elle se réintègre dès le premier euro. **Conséquence pour le moteur, à porter (décision par le
-  texte, pas par Léandre)** : le refus d'un remboursement de frais hors annexe 2 pour un salarié sous DFS
-  (`calcul::dfs_applicable`, point 4 du `LISEZ-MOI` de `../dfs/`) n'a plus de raison d'être pour un remboursement de frais
-  au sens de l'arrêté : il reste hors de l'assiette abattue, comme ceux de l'annexe 2 ; seule une indemnité conventionnelle
-  (qui n'est pas un frais) se réintègre. Le BOSS est opposable (Léandre, 10/10/2026, § 1090 de l'assiette générale). **Porté par le
-  lot DF2 (14/10/2026)** : le barème le dit (`deduction_forfaitaire.frais_cumulables`, 2025 et 2026, son `_frais_cumulables`
-  cite § 2300, 2310, 2320 et 2325), `calcul::dfs_applicable` le lit ; une rubrique de nature `frais` (catalogue ou
-  compagnie) reste hors de l'assiette abattue ; test : `tests/calcul/dfs.rs`,
-  `un_remboursement_de_frais_sous_dfs_reste_hors_de_l_assiette_abattue_par_la_tolerance_du_boss`. Le rescrit
-  BOSS-RES-000010 est dans la page déposée (§ 2325, l. 2923-2934) : pas de dépôt à part.
+  déplacement…). Les outils de travail (véhicule, ordinateur) ne sont pas une prise en charge de frais. Le moteur suit la
+  règle (l. 2794-2796 et 2808) : `calcul::dfs_applicable` rend les remboursements de frais (rubrique de nature `frais`,
+  catalogue ou compagnie, dans leurs limites d'exonération) que l'annexe 2 ne laisse pas dehors pour la profession, et
+  `calcul::abattement_dfs` abat le brut et ces frais ensemble ; le chômage d'un intermittent les compte avant
+  l'abattement ; la DSN les déclare en bloc 54 de type 35 (`dsn::autre_revenu`) ; test :
+  `moteur/tests/routes/frais_de_deplacement.rs`, `sous_dfs_le_remboursement_de_frais_entre_dans_l_assiette_avant_l_abattement`.
+  Le § 2320 (l. 2917-2921) admet « par tolérance », pour les huit secteurs dont le spectacle vivant, le cumul de tous les
+  remboursements de frais avec la déduction : le moteur ne l'applique pas (Léandre, 24/11/2026 : « Pas de tolérance,
+  c'est la loi »). Le rescrit BOSS-RES-000010 (§ 2325, l. 2923-2934, dans la page déposée) : une indemnité de transport
+  conventionnelle n'est pas un remboursement de frais au sens de l'arrêté, elle entre dans l'assiette dès le premier
+  euro ; une ligne hors assiette qui n'est pas un remboursement de frais refuse (`calcul::dfs_applicable`).
 - **§ 2300, le calendrier du spectacle vivant** : à 20 % → −1 point en 2024 et 2025, −2 points de 2026 à 2028, −3 points de
   2029 à 2031, zéro au 01/01/2032 ; à 25 % → −2 points en 2024 et 2025, −3 points de 2026 à 2031, zéro au 01/01/2032. Donc
   **2026 : 16 % et 18 %** ; 2027 : 14 % et 15 %. Même calendrier que l'arrêté du 4 septembre 2025 (annexe 1), que les barèmes

@@ -890,10 +890,12 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let mut sous_le_deplafonne: Option<Cotisation> = None;
     // Le 131 de la tranche 1 (celui qui fait la somme de `retraite_t1`), sous la base duquel se declare le 142.
     let mut de_la_tranche_1: Option<Cotisation> = None;
-    // La deduction forfaitaire specifique de la paie, que le seuil d'un taux reduit retranche (`au_dela_du_seuil`).
+    // La deduction forfaitaire specifique de la paie, que le seuil d'un taux reduit retranche de la remuneration avant
+    // l'abattement, frais reintegres compris (`au_dela_du_seuil`, `DeductionForfaitaire::avant_abattement`).
     let deduction = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
+    let avant_abattement = p.deduction_forfaitaire.as_ref().map_or(p.brut, |d| d.avant_abattement(p.brut));
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, deduction, p.heures_travaillees, n)).transpose()? == Some(false) {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), avant_abattement, deduction, p.heures_travaillees, n)).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;
@@ -2409,6 +2411,19 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, periode: &Per
         if !deduction.est_nul() {
             f.ecrire_code(AutreElementDeRevenuBrut::DeductionForfaitaireSpecifique)?;
             f.add(droit::rubrique!("S21.G00.54.002"), ms(deduction, signe));
+            f.add(droit::rubrique!("S21.G00.54.003"), debut.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.54.004"), fin.jjmmaaaa());
+            f.add_opt(droit::rubrique!("S21.G00.54.005"), e.numero.clone())?;
+        }
+        // « 35 - Parts des frais professionnels reintegrees dans l'assiette de contribution du fait de l'application
+        // d'une DFS » (`atelier/reference/norme-dsn/texte/bloc-S21.G00.54.txt`, l. 39-43 : « aux seuls frais exoneres mais reintegres a l'assiette avant
+        // abattement en vertu de la regle de non cumul ») : ceux que la paie a reintegres
+        // (`calcul::DeductionForfaitaire::frais_reintegres`), par contrat comme le type 10. Le guide Urssaf du 04/06/2026
+        // (`editeur-dsn/guide-urssaf-regularisation.txt`, l. 1440-1459) recompose le brut par « 51 de type 001 + 54 de
+        // type 10 − 54 de type 35 ».
+        if let Some(reintegres) = d.frais_reintegres {
+            f.ecrire_code(AutreElementDeRevenuBrut::FraisReintegresDfs)?;
+            f.add(droit::rubrique!("S21.G00.54.002"), ms(reintegres, signe));
             f.add(droit::rubrique!("S21.G00.54.003"), debut.jjmmaaaa());
             f.add(droit::rubrique!("S21.G00.54.004"), fin.jjmmaaaa());
             f.add_opt(droit::rubrique!("S21.G00.54.005"), e.numero.clone())?;
