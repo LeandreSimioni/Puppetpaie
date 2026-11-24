@@ -44,7 +44,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "titre, repris (un historique est repris : le guide se replie), gestes (importer ; importation-apercu, sous « Avancé »), editeur_titre, importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire, sous natures_titre et natures_note : pour chaque salarié, natures (les natures proposées) et le geste enregistrer (importation-nature : ses cases, la nature à choisir parmi celles proposées, chacune avec les cases de ce qu'elle demande, qu'elle ouvre (ouvre) ; ses phrases) ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
+        rend: "titre, repris (un historique est repris : le guide se replie), gestes (importer ; importation-apercu, sous « Avancé »), editeur_titre, importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire, sous natures_titre et natures_note : pour chaque salarié, le geste enregistrer (importation-nature : ses cases, la nature à choisir parmi celles proposées (ses choix), chacune avec les cases de ce qu'elle demande, qu'elle ouvre (ouvre) ; ses phrases) ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,

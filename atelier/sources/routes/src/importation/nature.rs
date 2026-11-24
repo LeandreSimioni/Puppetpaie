@@ -373,8 +373,8 @@ pub(crate) fn salaries_a_dire(importes: &[Importe]) -> R<Vec<IdSalarie>> {
 }
 
 /// Les salaries dont des contrats repris attendent leur nature : `[{salarie, nom, contrats, du, au, en_cours, suite,
-/// natures: [{cle, libelle}], enregistrer}]`, dans l'ordre des cles ; ce que chaque nature demande, ce sont les cases que
-/// son choix ouvre dans `enregistrer`. `en_cours` : il est paye le dernier mois repris, son
+/// enregistrer}]`, dans l'ordre des cles ; les natures proposees sont les choix de la case `nature` d'`enregistrer`, et
+/// ce que chacune demande, les cases que son choix ouvre. `en_cours` : il est paye le dernier mois repris, son
 /// contrat court peut-etre encore (`suite` : le mois qui suit). CE QUE LA DERNIERE DSN REPRISE DECLARE DU CONTRAT NE SE
 /// DEMANDE PAS (`DeclareParLaDsn`) : la nature qu'elle declare est la seule proposee, et chaque nature ne demande que ce
 /// qu'elle ne declare pas ; `importation-nature` le prend sur elle.
@@ -434,7 +434,6 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
         };
         out.push(ADire {
             enregistrer: geste_de_la_nature(&salarie, &proposees, numero_ou)?,
-            natures: proposees.iter().map(|(x, _)| NatureProposee { cle: x.cle, libelle: x.libelle.clone() }).collect(),
             salarie,
             nom,
             contrats: c.nombre,
@@ -463,8 +462,7 @@ pub(crate) struct ADire {
     /// Paye le dernier mois repris : son contrat court peut-etre encore (`suite` : le mois qui suit).
     pub(crate) en_cours: bool,
     pub(crate) suite: Option<String>,
-    pub(crate) natures: Vec<NatureProposee>,
-    /// Le geste qui dit sa nature (`geste_de_la_nature`).
+    /// Le geste qui dit sa nature (`geste_de_la_nature`) : les natures proposees sont les choix de sa case `nature`.
     pub(crate) enregistrer: GesteDeLaNature,
     pub(crate) dit: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -543,13 +541,6 @@ fn geste_de_la_nature(salarie: &IdSalarie, natures: &[(&droit::natures::Nature, 
     Ok(GesteDeLaNature::avec_cases(crate::catalogue::Route::ImportationNature, NatureDuSalarie { salarie: salarie.clone() }, ENREGISTRER, cases, valeurs, choix).disant(phrases))
 }
 
-/// Une nature de permanent qui peut se dire ; ce qu'elle demande d'un contrat qui court encore, ce sont les cases que
-/// son choix ouvre dans le geste qui la dit (`geste_de_la_nature`).
-#[derive(Debug, serde::Serialize)]
-pub(crate) struct NatureProposee {
-    pub(crate) cle: droit::natures::NatureDeContrat,
-    pub(crate) libelle: String,
-}
 
 fn refus(m: impl Into<String>) -> socle::echec::Echec {
     erreur(Classe::Refuse, m)
