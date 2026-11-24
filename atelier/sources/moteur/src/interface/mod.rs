@@ -730,12 +730,12 @@ impl Fenetre {
         ok
     }
 
-    /// Fermer, ou redemarrer pour la mise a jour : un envoi parti en fond va d'abord au bout (`EnvoisEnFond::attendre`),
-    /// jamais coupe au milieu, et la version neuve ne s'installe qu'apres lui.
-    fn fermer_le_logiciel(&self) {
-        for e in routes::envois_en_fond::tous() {
-            e.attendre();
-        }
+    /// FERMER LE LOGICIEL : par son bouton, pour redemarrer a la mise a jour, ou par la croix de la fenetre Tauri
+    /// (`fenetre/src/main.rs`) -- un seul chemin. Un envoi parti en fond va d'abord au bout
+    /// (`envois_en_fond::fermer_apres_les_envois`, que le bandeau dit), jamais coupe au milieu, et la version neuve ne
+    /// s'installe qu'apres lui.
+    pub fn fermer_le_logiciel(&self) {
+        routes::envois_en_fond::fermer_apres_les_envois();
         if let Some(f) = tenu(&self.fermer).as_ref() {
             f();
         }

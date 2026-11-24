@@ -372,8 +372,8 @@ pub(crate) struct Bilan {
 }
 
 /// OU EN EST LE MOIS, le cadre que la page pose sous lui : son titre, le dernier fait du mois tel que l'Historique le dit
-/// (la derniere ligne du journal de ce mois, son acte et ce qui en est revenu : `historique_mois::acte`,
-/// `envois::etats::resume`), et la prochaine etape, telle que la colonne des etapes la montre (la premiere case a faire
+/// (la derniere ligne du journal de ce mois, son acte et ce qui en est revenu : `historique_mois::fait_du_journal`), et
+/// la prochaine etape, telle que la colonne des etapes la montre (la premiere case a faire
 /// de l'etape suivante, sinon la premiere qui attend : `phrase_du_groupe`). Lu de l'etat du mois, jamais de la page : il
 /// est juste apres reouverture, et le meme en ligne de commande. Ce qui part en fond s'y ajoute a la lecture
 /// (`etat_garde::DuMois::envois`).
@@ -391,11 +391,7 @@ impl OuEnEstLeMois {
     fn de(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], etapes: &[Etape]) -> OuEnEstLeMois {
         let du_mois: Vec<&envois::journal::Ligne> = envois::journal::filtrer(lignes, None, Some(mois), None).collect();
         // Le plus recent ; a la meme heure, le reel devant son test (l'ordre de l'Historique).
-        let dernier = du_mois.iter().max_by(|a, b| (a.quand(), a.mode()).cmp(&(b.quand(), b.mode()))).map(|l| {
-            let recus = etats::contrats_recus(lignes);
-            let avenants = etats::avenants_par_contrat(lignes);
-            format!("{} : {}.", crate::historique_mois::acte(ctx, l), etats::resume(Some(l), &recus, &avenants))
-        });
+        let dernier = du_mois.iter().max_by(|a, b| (a.quand(), a.mode()).cmp(&(b.quand(), b.mode()))).map(|l| crate::historique_mois::fait_du_journal(ctx, l, lignes));
         let groupes = || etapes.iter().flat_map(|e| e.groupes.iter().map(move |g| (e, g)));
         let a_faire = groupes().find(|(e, g)| e.suivante && matches!(g.etat, EtatCase::AFaire | EtatCase::Refuse)).and_then(|(_, g)| g.phrase.clone());
         let attend = groupes().find(|(_, g)| g.etat == EtatCase::EnAttente).and_then(|(_, g)| g.phrase.clone());

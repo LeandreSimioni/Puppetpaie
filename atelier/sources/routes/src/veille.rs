@@ -98,6 +98,9 @@ pub struct DitDuBandeau {
     /// Les envois partis en fond (`envois_en_fond::EnvoisEnFond::dits`) : en cours, au bout, ou echoues avec le geste
     /// qui les refait.
     envois: Vec<crate::envois_en_fond::EnvoiDit>,
+    /// Le logiciel se ferme des qu'un envoi en cours est au bout (`envois_en_fond::fermer_apres_les_envois`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fermeture: Option<&'static str>,
     retours: Option<String>,
     fictive: Option<&'static str>,
     horloge: Option<String>,
@@ -113,6 +116,7 @@ pub fn dit_du_bandeau(
     a_poser: Vec<APoser>,
     sauvegarde_souci: Option<String>,
     envois: Vec<crate::envois_en_fond::EnvoiDit>,
+    fermeture: bool,
     dans: Option<std::time::Duration>,
     fictive: bool,
 ) -> DitDuBandeau {
@@ -144,6 +148,7 @@ pub fn dit_du_bandeau(
         a_poser,
         sauvegarde_souci,
         envois,
+        fermeture: fermeture.then_some("PuppetPaie se fermera dès que l'envoi en cours sera parti."),
         retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),
         fictive: fictive.then_some("compagnie fictive : pas de sauvegarde, pourquoi ?"),
         horloge: horloge.map(|n| format!("pendant votre absence, la compagnie a travaillé ({}) : voir", n)),

@@ -226,6 +226,19 @@ pub fn tous() -> Vec<Arc<EnvoisEnFond>> {
     tenu(&PAR_COMPAGNIE).iter().map(|(_, e)| e.clone()).collect()
 }
 
+/// Le logiciel se ferme (`fermer_apres_les_envois`) : le bandeau dit qu'il attend la fin d'un envoi.
+static FERMETURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// FERMER LE LOGICIEL, OU REDEMARRER POUR LA MISE A JOUR, par son bouton ou par la croix de la fenetre : un envoi parti
+/// en fond va d'abord au bout, jamais coupe au milieu ; le bandeau le dit tant qu'il attend (`DitDuBandeau::fermeture`).
+/// Chaque transport a son delai : l'attente a une fin.
+pub fn fermer_apres_les_envois() {
+    FERMETURE.store(true, Ordering::SeqCst);
+    for e in tous() {
+        e.attendre();
+    }
+}
+
 /// LA COMPAGNIE S'EN VA (supprimee, deplacee) : ses envois, retires, pour qu'on les attende.
 pub fn lacher(racine: &std::path::Path) -> Option<Arc<EnvoisEnFond>> {
     let c = cle(racine);
@@ -322,6 +335,11 @@ impl EnvoisEnFond {
     /// Une route servie en fond est-elle en vol (partie ou non encore) ?
     pub fn en_vol(&self) -> bool {
         *tenu(&self.en_vol) > 0
+    }
+
+    /// Le logiciel attend-il, pour se fermer, un envoi de cette compagnie (`fermer_apres_les_envois`) ?
+    pub fn fermeture_attend(&self) -> bool {
+        FERMETURE.load(Ordering::SeqCst) && self.en_vol()
     }
 
     /// ATTENDRE QUE TOUT SOIT AU BOUT : fermer le logiciel ou lacher la compagnie ne coupe aucun envoi au milieu. Chaque

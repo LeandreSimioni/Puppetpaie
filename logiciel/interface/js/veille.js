@@ -75,6 +75,8 @@ function dessinerVeille(v) {
   // LES ENVOIS EN COURS, dits par le moteur, comme l'étape d'un relevé ; le bandeau les suit jusqu'au bout.
   const enCours = envois.filter((e) => e.etat === "en_cours")
     .map((e) => `<span class="veille-etape">${echapper(e.phrase)}</span>`);
+  // LE LOGICIEL SE FERME dès que l'envoi est parti (la croix, le bouton, la mise à jour) : le moteur le dit.
+  if (v?.dit?.fermeture) enCours.push(`<b>${echapper(v.dit.fermeture)}</b>`);
   if (enCours.length) suivreLesEtapes();
 
   if (v.en_cours) {
@@ -182,6 +184,8 @@ function suivreLesEtapes() {
     } catch (x) { direLeRefusDuSuivi("veille_etape", x.message); }
     SUIVI_ETAPES = null;
     if (!e) return;
+    // La fermeture attend un envoi : le bandeau se relit une fois pour le dire.
+    if (e.fermeture && !VEILLE?.dit?.fermeture) { suivreVeille(); return; }
     if (e.en_cours || e.sauvegarde_en_cours || e.envoi_en_cours || RELEVE_DEMANDE) {
       const el = document.querySelector("#veille-texte .veille-etape");
       if (el && e.etape) el.textContent = e.etape;

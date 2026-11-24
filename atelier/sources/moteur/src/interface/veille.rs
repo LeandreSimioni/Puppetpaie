@@ -47,6 +47,8 @@ pub struct EtapeDeLaVeille {
     pub etape: Option<String>,
     /// Un envoi parti en fond n'est pas au bout : la page suit le bandeau jusqu'a ce qu'il le soit.
     pub envoi_en_cours: bool,
+    /// Le logiciel attend cet envoi pour se fermer : la page relit le bandeau, qui le dit.
+    pub fermeture: bool,
 }
 
 impl Veille {
@@ -81,7 +83,7 @@ impl Veille {
         } else {
             None
         };
-        EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, envoi_en_cours: self.envois.en_cours() }
+        EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, envoi_en_cours: self.envois.en_cours(), fermeture: self.envois.fermeture_attend() }
     }
 
     /// L'etat de la veille : la trace du dernier passage relue (une trace qui ne se lit pas se dit dans `erreur`).
@@ -109,7 +111,7 @@ impl Veille {
         let erreur = [tenu(&self.erreur).clone(), illisible, marqueur, coffre, jeton].into_iter().flatten().next();
         let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, .. } = self.etape();
         EtatDeLaVeille {
-            dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, self.envois.dits(), self.prochain_dans(), fictive),
+            dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, self.envois.dits(), self.envois.fermeture_attend(), self.prochain_dans(), fictive),
             // Sans fil, le tour qui reste du est un passage en cours pour la page : elle le suit, et sa demande le fait
             // (`suivie`).
             en_cours: en_cours || self.du.load(Ordering::SeqCst),

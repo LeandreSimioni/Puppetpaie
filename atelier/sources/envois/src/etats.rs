@@ -517,7 +517,33 @@ fn pluriel(n: usize) -> &'static str {
 /// journal le note recu (`contrats_recus`) ; un avenant, quand sa propre note le dit (`avenants_par_contrat`) -- les
 /// memes lectures que l'etat de l'engagement.
 pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
-    let Some(ligne) = ligne else { return "pas encore envoyé".into() };
+    match ligne {
+        Some(l) => resume_en_parties(l, recus, avenants).ecrit(),
+        None => "pas encore envoyé".into(),
+    }
+}
+
+/// LA PHRASE D'UN ENVOI, EN SES PARTIES (`resume_en_parties`) : quand il est parti (`le` : « le 24/11/2026 à 16:25 », « en
+/// TEST le … »), ce que dit son depart (`prefixe` : « envoyé le … »), et ce qui en est revenu (`suite`), s'il y a lieu.
+/// L'Historique la lit entiere (`ecrit`) ; le cadre du mois, apres l'acte qui dit deja le depart (`le` et `suite`).
+pub struct ResumeDUnEnvoi {
+    pub le: String,
+    pub prefixe: String,
+    pub suite: Option<String>,
+}
+
+impl ResumeDUnEnvoi {
+    /// « envoyé le … — tous revenus signés (2) ».
+    pub fn ecrit(&self) -> String {
+        match &self.suite {
+            Some(s) => format!("{} — {}", self.prefixe, s),
+            None => self.prefixe.clone(),
+        }
+    }
+}
+
+/// `resume`, en ses parties.
+pub fn resume_en_parties(ligne: &Ligne, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> ResumeDUnEnvoi {
     let (quand, le) = match ligne.mode() {
         Mode::Test => {
             let quand = format!("en TEST le {}", ligne.quand().dit());
@@ -526,7 +552,7 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
         Mode::Reel => (ligne.quand().dit(), format!("le {}", ligne.quand().dit())),
     };
     if !ligne.accepte() {
-        return format!("envoi du {} refusé au dépôt — {}", quand, ligne.reponse());
+        return ResumeDUnEnvoi { prefixe: format!("envoi du {}", quand), le, suite: Some(format!("refusé au dépôt — {}", ligne.reponse())) };
     }
     // Une ligne qui a une remise la dit ; une autre n'en a pas (`Ligne::remise`) : son acte se dit (`mot_de_l_acte`).
     let parti = match ligne.remise() {
@@ -534,7 +560,7 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
         None => mot_de_l_acte(ligne.acte()),
     };
     let prefixe = format!("{} {}", parti, le);
-    match ligne {
+    let suite: Option<String> = match ligne {
         Ligne::ContratSignature(e) => {
             let n = e.detail.contrats.len();
             let revenus = e
@@ -551,28 +577,28 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
                 })
                 .count();
             if n == 0 {
-                prefixe
+                None
             } else if revenus == n {
-                format!("{} — {}", prefixe, if n == 1 { "revenu signé".to_string() } else { format!("tous revenus signés ({})", n) })
+                Some(if n == 1 { "revenu signé".to_string() } else { format!("tous revenus signés ({})", n) })
             } else if revenus > 0 {
-                format!("{} — {} contrat{} sur {} revenu{} signé{}", prefixe, revenus, pluriel(revenus), n, pluriel(revenus), pluriel(revenus))
+                Some(format!("{} contrat{} sur {} revenu{} signé{}", revenus, pluriel(revenus), n, pluriel(revenus), pluriel(revenus)))
             } else {
-                format!("{} — pas encore revenu signé", prefixe)
+                Some("pas encore revenu signé".to_string())
             }
         }
-        Ligne::Documents(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) => prefixe,
-        Ligne::DossierSalarie(_) => format!("{} — pas encore de retour", prefixe),
-        Ligne::FicheDemande(e) if e.retours.is_empty() => format!("{} — pas encore de retour", prefixe),
-        Ligne::FicheDemande(_) => format!("{} — retour reçu", prefixe),
-        Ligne::Dsn(e) => resume_des_retours(&prefixe, &le, &e.retours),
-        Ligne::Dpae(e) => resume_des_retours(&prefixe, &le, &e.retours),
-    }
+        Ligne::Documents(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) => None,
+        Ligne::DossierSalarie(_) => Some("pas encore de retour".to_string()),
+        Ligne::FicheDemande(e) if e.retours.is_empty() => Some("pas encore de retour".to_string()),
+        Ligne::FicheDemande(_) => Some("retour reçu".to_string()),
+        Ligne::Dsn(e) => Some(resume_des_retours(&e.retours)),
+        Ligne::Dpae(e) => Some(resume_des_retours(&e.retours)),
+    };
+    ResumeDUnEnvoi { le, prefixe, suite }
 }
 
-/// Ce que les comptes rendus d'une DSN ou d'une DPAE disent, a la suite de `prefixe` (`le_dit` : quand elle est partie,
-/// en mots).
-fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) -> String {
-    let Some(dernier) = retours.last() else { return format!("{} — pas encore de retour", prefixe) };
+/// Ce que les comptes rendus d'une DSN ou d'une DPAE disent, a la suite de son depart.
+fn resume_des_retours(retours: &[RetourOrganisme]) -> String {
+    let Some(dernier) = retours.last() else { return "pas encore de retour".to_string() };
     let refus: Vec<&RetourOrganisme> = retours.iter().filter(|r| r.ko()).collect();
     let certificat = retours.iter().rev().find(|r| r.nature_retour == NatureDuRetour::CertificatDpae);
     if !refus.is_empty() && certificat.is_none() {
@@ -583,7 +609,7 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
             }
         }
         let suite = if motifs.is_empty() { String::new() } else { format!(" : {}", motifs.join(" ; ")) };
-        return format!("envoyé {} — REFUSÉ{}", le_dit, suite);
+        return format!("REFUSÉ{}", suite);
     }
     if let Some(c) = certificat {
         let (mut dossiers, mut existantes): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
@@ -594,26 +620,26 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
                 EtatDeLaDpae::Refusee { .. } => {}
             }
         }
-        let mut fin = " — certificat de conformité reçu : passée".to_string();
+        let mut fin = "certificat de conformité reçu : passée".to_string();
         if !dossiers.is_empty() {
             fin.push_str(&format!(" (dossier{} {})", pluriel(dossiers.len()), dossiers.join(", ")));
         }
         if !existantes.is_empty() {
             fin.push_str(&format!(" ; déjà existante à l'Urssaf, rien de créé : {}", existantes.join(", ")));
         }
-        return format!("{}{}", prefixe, fin);
+        return fin;
     }
     if retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some(Verdict::Ok)) {
         let apres = retours.iter().filter(|r| !matches!(r.nature_retour, NatureDuRetour::AccuseDEnregistrement | NatureDuRetour::CertificatDeConformite)).count();
         let suite = if apres > 0 { format!(" ; {} compte{}-rendu{} d'organismes reçu{}", apres, pluriel(apres), pluriel(apres), pluriel(apres)) } else { String::new() };
-        return format!("{} — bilan OK, aucune anomalie{}", prefixe, suite);
+        return format!("bilan OK, aucune anomalie{}", suite);
     }
     // Le retour se dit par son libelle, sinon sa nature.
     let choix = match dernier.libelle.as_str() {
         "" => dernier.nature_retour.code(),
         l => l,
     };
-    format!("{} — {}", prefixe, choix)
+    choix.to_string()
 }
 
 // ------------------------------------------------------ la repetition avant l'acte

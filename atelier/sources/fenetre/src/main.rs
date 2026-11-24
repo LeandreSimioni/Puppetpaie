@@ -137,6 +137,8 @@ fn main() -> std::process::ExitCode {
         }
     }));
 
+    // LA CROIX FERME PAR LE CHEMIN DU BOUTON (`Fenetre::fermer_le_logiciel`) : un envoi en fond va d'abord au bout.
+    let pour_la_croix = fenetre.clone();
     let resultat = tauri::Builder::default()
         .setup(move |app| {
             if APPLICATION.set(app.handle().clone()).is_err() {
@@ -185,7 +187,16 @@ fn main() -> std::process::ExitCode {
                 let WindowEvent::CloseRequested { api, .. } = evenement else { return };
                 let mut etat = fermeture.lock().unwrap();
                 match *etat {
-                    Fermeture::Libre | Fermeture::Remise => {}
+                    // La fenetre reste le temps qu'un envoi en fond aille au bout (le bandeau le dit), puis le
+                    // logiciel se ferme ; sur un fil a part : la fenetre continue de se dessiner pendant l'attente.
+                    Fermeture::Libre | Fermeture::Remise => {
+                        api.prevent_close();
+                        let f = pour_la_croix.clone();
+                        if std::thread::Builder::new().spawn(move || f.fermer_le_logiciel()).is_err() {
+                            eprintln!("Le fil de la fermeture ne demarre pas : la fenetre attend ici la fin des envois, figee.");
+                            pour_la_croix.fermer_le_logiciel();
+                        }
+                    }
                     Fermeture::Tenue => match page.eval("window.fenetrePuppetPaie && window.fenetrePuppetPaie.fermer()") {
                         Ok(()) => {
                             api.prevent_close();
