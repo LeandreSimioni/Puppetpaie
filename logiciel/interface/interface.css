@@ -1044,7 +1044,6 @@ pre.reponse {
 .carte-nom { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; row-gap: 0; min-width: 0; }
 .carte-nom b { max-width: 100%; }
 /* UN ENGAGEMENT VALIDÉ DONT LA PAIE S'EST RECALCULÉE D'ELLE-MÊME : la carte dit quand et pourquoi. */
-.carte-recalcul { grid-column: 1 / -1; margin-top: 4px; }
 .engagement:not(.validee) .etats-qui { display: none; }
 
 /* L'ENGAGEMENT VALIDÉ, EN UNE LIGNE D'AGENDA -- voir peindreCarte().

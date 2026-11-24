@@ -481,7 +481,8 @@ function dessinerLaLigne(div) {
   const ligne = div._ligne, p = div._paie;
   const q = p ? p.quand : null;
   const pourquoi = [pourQuoi(ligne), p && p.paye_dit, ligne.repris_dit].filter(Boolean).join(" · ");
-  const detail = [p && p.bulletin_dit, ligne.numero_dit, ligne.validee_dit].filter(Boolean).join(" · ");
+  // Le recalcul (« Recalculé le 24/11/2026 : taux de PAS reçu. ») se lit au survol, avec le reste du détail (ticket 642).
+  const detail = [p && p.bulletin_dit, ligne.numero_dit, ligne.validee_dit, ligne.recalcul].filter(Boolean).join(" · ");
   div.innerHTML = `
     <div class="e-resume">
       <div class="carte-quand"${q ? ` title="${echapper(q.titre)}"` : ""}>
@@ -490,7 +491,7 @@ function dessinerLaLigne(div) {
         <span class="discret">${echapper(pourquoi)}</span></div>
       <div class="carte-actes">${bandeauEtats(ligne, false)}</div>
       <div class="carte-net" title="net payé">${p ? echapper(netPaye(p.net_paye)) : ""}</div>
-      ${recalculDe(ligne)}${versionsDe(ligne)}
+      ${versionsDe(ligne)}
       <span class="carte-modifier"><button class="lien carte-imprevu" title="Imprévu" aria-label="Un imprévu">&hellip;</button></span>
     </div>
     <div class="e-imprevus"></div>`;
