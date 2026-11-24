@@ -74,7 +74,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::PoserIdentite,
-        geste: "Poser la signature, le cachet ou le logo (une image PNG, JPEG ou SVG), gardée telle quelle ou allégée au poids visé.",
+        geste: "Poser la signature, le cachet ou le logo (PNG, JPEG, SVG), gardé ou allégé.",
         charge: &ChargePoser::CHARGE,
         exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","allegement":"alleger","poids":20}"#,
         rend: IDENTITE_REND,
