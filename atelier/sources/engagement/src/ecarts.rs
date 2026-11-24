@@ -297,10 +297,6 @@ pub struct Comparaison {
     pub taux_atmp: Option<OrigineDuTauxAtmp>,
     /// Les ecarts ; `Err` : la paie ne se compare pas, et pourquoi.
     pub ecarts: Result<Vec<Ecart>, NonComparee>,
-    /// La paie ne s'est pas comparee parce que le calcul a refuse la saisie (une configuration a completer, l'effectif
-    /// de l'entreprise...) ou que le logiciel ne livre pas de quoi la calculer (`RienDeLivre`) : elle se compare de
-    /// nouveau quand la compagnie s'ouvre. Les autres raisons tiennent aux pieces importees et ne changent pas.
-    pub a_refaire: bool,
     /// Les libelles de cotisation du bulletin que la table ne rattache a aucune cotisation : non compares.
     pub non_rattachees: Vec<String>,
     /// Les ecarts connus de l'ancien logiciel sur lesquels la paie retombe exactement (`ecarts_connus`) : ce ne sont
@@ -309,6 +305,14 @@ pub struct Comparaison {
     /// Les annees dont la comparaison a pris l'effectif que les paies reprises proposent, la compagnie ne l'ayant pas dit
     /// (`Contexte::avec_les_effectifs_proposes`) ; vide : celui de la compagnie, ou aucun.
     pub effectif_propose: Vec<socle::mois::Annee>,
+}
+
+impl Comparaison {
+    /// LA PAIE NE S'EST PAS COMPAREE ET SE COMPARE DE NOUVEAU quand la compagnie s'ouvre : ce que sa sorte dit
+    /// (`SorteDeNonComparaison::se_recompare`), et rien d'autre.
+    pub fn a_refaire(&self) -> bool {
+        self.ecarts.as_ref().err().is_some_and(|n| n.sorte.se_recompare())
+    }
 }
 
 /// UNE PAIE IMPORTEE QUI NE SE COMPARE PAS : la sorte de sa raison (`SorteDeNonComparaison`, ce qui la regroupe d'une
@@ -348,6 +352,22 @@ pub enum SorteDeNonComparaison {
 }
 
 impl SorteDeNonComparaison {
+    /// UNE SORTE, UN COMPORTEMENT : la paie se compare de nouveau a chaque ouverture, d'ou que vienne son refus, sauf
+    /// quand ce sont les pieces qui ne refont pas la saisie (elles ne changent pas : une piece neuve est une autre
+    /// paie). Ses rapports deja notes ne se renotent pas (`import::ecarts`, le registre des rapports notes).
+    pub fn se_recompare(self) -> bool {
+        match self {
+            SorteDeNonComparaison::PiecesInsuffisantes => false,
+            SorteDeNonComparaison::RienDeLivre
+            | SorteDeNonComparaison::SpectacleNonReconnu
+            | SorteDeNonComparaison::EffectifAbsent
+            | SorteDeNonComparaison::TauxAtmpAbsent
+            | SorteDeNonComparaison::CaseDeLaCompagnie
+            | SorteDeNonComparaison::SaisieRefusee
+            | SorteDeNonComparaison::Panne => true,
+        }
+    }
+
     /// Son code, tel que le genre de l'incident l'ecrit.
     pub fn code(self) -> &'static str {
         match self {
@@ -482,12 +502,12 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
                 }
                 suivi = Suivi { connus, ..refait };
             }
-            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, sorte, non_rattachees, connus, effectif_propose, appliques: _ } = suivi;
+            let Suivi { statut, cadre, taux_atmp, rien_de_livre, sorte, non_rattachees, connus, effectif_propose, appliques: _ } = suivi;
             if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
                 return None;
             }
             let ecarts = ecarts.map_err(|raison| NonComparee { sorte: SorteDeNonComparaison::du_refus(&raison, rien_de_livre, sorte), raison });
-            Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees, connus, effectif_propose })
+            Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, non_rattachees, connus, effectif_propose })
         })
         .collect()
 }
@@ -519,7 +539,6 @@ struct Suivi {
     statut: Option<droit::fiche::Statut>,
     cadre: Option<bool>,
     taux_atmp: Option<OrigineDuTauxAtmp>,
-    a_refaire: bool,
     /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre`).
     rien_de_livre: bool,
     /// La sorte de raison que l'endroit d'un refus dit (`a_refaire`, `refusee`, `non_reconnu`) ; aucune : un refus que
@@ -559,10 +578,9 @@ fn refaire<'a>(
     let annee = mois.annee();
     let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?.avec_les_taux_appliques(appliques.to_vec());
     // CE QUE LE LOGICIEL NE LIVRE PAS (le bareme de l'annee, la couche de la convention), avant toute autre raison : une
-    // version suivante peut l'apporter, la paie se compare de nouveau a l'ouverture suivante (`a_refaire`), et
-    // `comparer` dit si elle compte.
+    // version suivante peut l'apporter, la paie se compare de nouveau a l'ouverture suivante (sa sorte, `RienDeLivre`),
+    // et `comparer` dit si elle compte.
     if let Err(rien) = ctx.de_quoi_calculer(&fin).map_err(|m| a_refaire(c, m))? {
-        c.a_refaire = true;
         c.rien_de_livre = true;
         return Err(rien.into());
     }
@@ -645,7 +663,7 @@ fn refaire<'a>(
     //   et l'engagement court se juge sur le debut et la fin du contrat ; le minimum conventionnel et le bareme se
     //   lisent au premier jour, qui est le debut de la periode. Le debut et les jours qui le suivent en tiennent lieu.
     // Sans ce nombre, une periode de plus d'un jour ne dit pas combien : la paie ne se compare pas.
-    let mensuelle = nature.proprietes()?.mensuelle();
+    let mensuelle = nature.proprietes().map_err(|m| refusee(c, m))?.mensuelle();
     if jours.is_empty() && !mensuelle {
         if let Some(contrat) = p.periode.and_then(|o| o.fermee()) {
             // Les jours de la periode, du premier au dernier.
@@ -800,7 +818,7 @@ fn refaire<'a>(
             saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
         }
     }
-    let paie = saisie.paies.into_iter().next().ok_or_else(|| refus("le calcul ne rend aucune paie"))?;
+    let paie = saisie.paies.into_iter().next().ok_or_else(|| refusee(c, refus("le calcul ne rend aucune paie")))?;
     let garanties = crate::calcul::garanties_de_prevoyance(&ctx, &paie).map_err(|m| refusee(c, m))?;
     Ok(Refaite { paie, garanties, atmp_lu, cotisations })
 }
@@ -1097,16 +1115,15 @@ fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
     (leur - notre).rapport(notre).map(|e| e.a_decimales(4))
 }
 
-/// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau ; sa sorte, par la classe du refus
+/// Une raison de non-comparaison venue du calcul : sa sorte, par la classe du refus
 /// (`SorteDeNonComparaison::du_calcul`, et `du_refus` pour l'effectif et le taux AT/MP).
 fn a_refaire(c: &mut Suivi, raison: Echec) -> Echec {
-    c.a_refaire = true;
     c.sorte = Some(SorteDeNonComparaison::du_calcul(&raison));
     raison
 }
 
-/// Une ligne de la saisie refaite que sa porte refuse (sa rubrique, sa forme, ses garanties) : le calcul refuse ce que
-/// les pieces ont donne. Les pieces ne changent pas : la paie ne se compare pas de nouveau.
+/// Ce que le calcul refuse de la saisie que les pieces ont donnee (une ligne que sa porte refuse : sa rubrique, sa
+/// forme, ses garanties ; une nature sans proprietes ; aucune paie rendue) : `SaisieRefusee`.
 fn refusee(c: &mut Suivi, raison: Echec) -> Echec {
     c.sorte = Some(SorteDeNonComparaison::SaisieRefusee);
     raison
@@ -1115,7 +1132,6 @@ fn refusee(c: &mut Suivi, raison: Echec) -> Echec {
 /// Le spectacle de la paie qui ne se reconnait pas (aucune fiche ne le porte, ou son titre en designe plusieurs) : la
 /// paie se comparera de nouveau quand une seule le portera.
 fn non_reconnu(c: &mut Suivi, raison: Echec) -> Echec {
-    c.a_refaire = true;
     c.sorte = Some(SorteDeNonComparaison::SpectacleNonReconnu);
     raison
 }

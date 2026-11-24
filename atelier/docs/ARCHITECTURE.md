@@ -2956,7 +2956,9 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   date de la période. Rien ne change dans l'engagement importé. Les écarts partent chez l'éditeur comme un incident de
   fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart ; son genre ne nomme que la cause,
   des codes du logiciel : la cotisation, la grandeur et le logiciel d'un écart, la sorte de raison d'une paie non
-  comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; ce qui distingue deux
+  comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; une sorte a un seul
+  comportement : la paie se compare de nouveau à chaque ouverture, sauf quand ce sont les pièces qui ne refont pas la
+  saisie, `SorteDeNonComparaison::se_recompare`, `Comparaison::a_refaire` ; ce qui distingue deux
   rapports d'une cause est dans leur détail, signé, et le registre `journal/ecarts-import-notes.json` garde les
   signatures notées ; une compagnie déjà posée, dont ce registre n'existe pas encore, renote une fois ses rapports sous
   leur genre par cause, et c'est voulu : le filet les regroupe désormais par cause), sans rien afficher ni demander :
