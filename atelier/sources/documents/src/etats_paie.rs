@@ -531,7 +531,7 @@ pub struct LivreDePaie {
     pub format: FormatDExport,
     #[serde(serialize_with = "crate::tableaux_export::nom_du_fichier")]
     pub fichier: Option<PathBuf>,
-    /// Ce que le livre dit, dont chaque paie reprise qu'il ne compte pas (`engagement::etats::PaieDeCote::phrase`).
+    /// Ce que le livre dit, dont chaque paie qu'il ne compte pas (`engagement::etats::PaieDeCote::phrase`).
     pub avertissements: Vec<String>,
 }
 
@@ -568,7 +568,7 @@ fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option
 }
 
 /// Les lignes du livre pour un mois (`engagement::etats::paies_du_mois` : les paies ecrites des engagements valides, puis
-/// celles que l'import a lues), ce qu'il a fallu taire, si ses numeros de contrat sont tous ecrits, et les paies reprises
+/// celles que l'import a lues), ce qu'il a fallu taire, si ses numeros de contrat sont tous ecrits, et les paies
 /// qu'il ne compte pas (`engagement::etats::PaieDeCote`, en phrases). Un montant que les pieces d'une paie importee ne
 /// disent pas reste vide (`PaieDuMois`) ; aucun numero n'est invente.
 fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engagement::departs::Departs) -> R<(Vec<LigneLivre>, Vec<String>, bool, Vec<engagement::etats::PaieDeCote>)> {
@@ -667,7 +667,7 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
     Ok(livre_lu(ctx, d)?.0)
 }
 
-/// Le livre de paie (`livre_de_paie`), et les paies reprises qu'il ne compte pas (`engagement::etats::PaieDeCote`,
+/// Le livre de paie (`livre_de_paie`), et les paies qu'il ne compte pas (`engagement::etats::PaieDeCote`,
 /// que ses avertissements disent chacune).
 fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::etats::PaieDeCote>)> {
     let quand = PeriodeDemandee::des_trois(

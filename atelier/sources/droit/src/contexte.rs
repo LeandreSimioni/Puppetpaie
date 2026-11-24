@@ -935,7 +935,7 @@ AT/MP, que lui seul ne peut pas connaitre.",
 
 /// LE TAUX AT/MP DU SIEGE QUE LA PILE EMPILEE N'A PAS (`Contexte::empiler`, `taux_atmp_manque`) : toute paie calculee ici
 /// le cotise, la pile qui la calcule le refuse en disant ce qu'il faut saisir. Seule la pile d'une paie importee s'en
-/// passe (`Contexte::bareme_des_taux_lus`).
+/// passe (`Contexte::bareme_lu`).
 fn exiger_le_taux_atmp(pile: &Pile) -> R<()> {
     match &pile.taux_atmp_manque {
         Some(pourquoi) => Err(pourquoi.clone()),
@@ -1812,11 +1812,12 @@ impl Contexte {
         Ok(self.pile_lue(jour, &self.entreprise_au(jour))?.pile.clone())
     }
 
-    /// LE BAREME D'UNE PAIE IMPORTEE A CE JOUR (`bareme`, sauf ce qu'il demande pour un taux) : ses taux se lisent sur ses
-    /// pieces (`bareme::EntrepriseLue::taux_lus`), la pile ne fait que ranger ses bases. Le taux AT/MP que l'ancien
-    /// logiciel a applique, la compagnie n'a pas a le dire pour qu'on lise ce qu'il a paye.
-    pub fn bareme_des_taux_lus(&self, jour: &Jour) -> R<Arc<Pile>> {
-        Ok(self.pile_lue_de(jour, &self.entreprise_au(jour), true)?.pile.clone())
+    /// LE BAREME A CE JOUR DE LA COMPAGNIE TELLE QUE LA PILE LA LIT (`entreprise_lue`) : `bareme`, et, pour une paie
+    /// importee (`bareme::EntrepriseLue::taux_lus` : ses taux se lisent sur ses pieces, la pile ne fait que ranger ses
+    /// bases), sans le taux AT/MP du siege, que l'ancien logiciel a applique : la compagnie n'a pas a le dire pour qu'on
+    /// lise ce qu'il a paye.
+    pub fn bareme_lu(&self, jour: &Jour, lue: &crate::bareme::EntrepriseLue) -> R<Arc<Pile>> {
+        Ok(self.pile_lue_de(jour, &lue.fiche, lue.taux_lus)?.pile.clone())
     }
 
     /// LA COMPAGNIE TELLE QUE LA PILE DU BAREME LA LIT a `jour` (`bareme::bareme_applique`) : sa fiche a ce jour, et son

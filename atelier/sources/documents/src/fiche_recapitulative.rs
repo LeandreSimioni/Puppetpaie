@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use droit::fiche::Lue as _;
 use serde::Serialize;
 
 use crate::etats_paie::{self, cumul_de, cumuls_par, Demande, LigneLivre, Periode};
@@ -38,8 +39,8 @@ pub struct CoutsDeLAnnee {
     pub spectacles: Vec<(String, Cout)>,
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub salaries: Vec<(String, Cout)>,
-    /// Les paies reprises que le cout ne compte pas (`etats_paie::livre_des_etats`) : la nature de leur contrat reste a
-    /// dire.
+    /// Les paies que le cout ne compte pas (`etats_paie::livre_des_etats`, `engagement::etats::PaieDeCote`), chacune avec
+    /// ce qui lui manque.
     #[serde(skip)]
     pub non_comptees: Vec<engagement::etats::PaieDeCote>,
 }
@@ -58,8 +59,8 @@ pub struct Cout {
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     pub prevu: Montant,
     pub incomplet: bool,
-    /// Les paies du salarie que le cout ne compte pas (`engagement::etats::PaieDeCote`) : sa ligne les dit. Vide pour un
-    /// spectacle : elles se disent sur leur salarie.
+    /// Les paies de ce salarie, ou de ce spectacle, que le cout ne compte pas (`engagement::etats::PaieDeCote`) : sa ligne
+    /// les dit.
     #[serde(skip)]
     pub de_cote: Vec<engagement::etats::PaieDeCote>,
 }
@@ -122,15 +123,23 @@ impl<'a> Recapitulatifs<'a> {
         };
         out.spectacles = couts(&|l| Some(l.spectacle.clone()).filter(|s| !s.is_empty()));
         out.salaries = couts(&|l| Some(l.cle_salarie.to_string()));
-        // Chaque paie mise de cote, sur la ligne de son salarie ; un salarie dont aucune paie ne se compte a la sienne.
-        for d in &out.non_comptees {
-            let Some(cle) = d.salarie.as_ref().map(|c| c.to_string()) else { continue };
-            match out.salaries.iter_mut().find(|(k, _)| *k == cle) {
+        // Chaque paie mise de cote, sur la ligne de son salarie et sur celle de son spectacle (sous son titre, la cle des
+        // lignes du livre) ; celui dont aucune paie ne se compte a la sienne.
+        fn poser(lignes: &mut Vec<(String, Cout)>, cle: String, d: &engagement::etats::PaieDeCote) {
+            match lignes.iter_mut().find(|(k, _)| *k == cle) {
                 Some((_, c)) => c.de_cote.push(d.clone()),
-                None => out.salaries.push((
+                None => lignes.push((
                     cle,
                     Cout { bulletins: 0, brut: Montant::ZERO, charges: Montant::ZERO, cout: Montant::ZERO, prevu: Montant::ZERO, incomplet: false, de_cote: vec![d.clone()] },
                 )),
+            }
+        }
+        for d in &out.non_comptees {
+            if let Some(cle) = &d.salarie {
+                poser(&mut out.salaries, cle.to_string(), d);
+            }
+            if let Some(titre) = d.spectacle.as_ref().and_then(|s| self.ctx.spectacles.get(s)).and_then(|f| f.titre.dite()).filter(|t| !t.is_empty()) {
+                poser(&mut out.spectacles, titre.clone(), d);
             }
         }
         Ok(out)

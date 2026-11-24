@@ -4526,7 +4526,12 @@ fn echeance_mois_suivant(mois: Mois, jour: u32) -> Jour {
 /// regularise et le nominatif (`bar_du`) passent par elle. (La pile
 /// d'un salarie, `bareme::bareme_applique`, surcharge de meme par l'etablissement du salarie.)
 fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &Nic, mois: Mois) -> R<Pile> {
-    bareme::surcharger((*ctx.bareme(&mois.premier_jour())?).clone(), ent, nic)
+    let pile = bareme::surcharger((*ctx.bareme(&mois.premier_jour())?).clone(), ent, nic)?;
+    // Un etablissement dont la fiche ne dit aucune ligne AT/MP : la DSN ne declare rien sans elle (`surcharger` la note).
+    match (&pile.taux_atmp, &pile.taux_atmp_manque) {
+        (None, Some(manque)) => Err(manque.clone()),
+        _ => Ok(pile),
+    }
 }
 
 /// LE BLOC 40 DECLARE du contrat de `p` (regle 4 : il se lit, il ne se recalcule pas), pour le bloc Changements contrat

@@ -1303,21 +1303,22 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
         None => return Ok(bar),
     };
     // Le taux de l'etablissement, lu par la meme regle que celui de la compagnie (`taux_atmp_de_l_annee`), en
-    // Alsace-Moselle d'apres SON code postal ; ce qui manque, `bareme_atmp` le refuse en le disant.
-    let Some(dit) = e.taux_atmp.as_ref().filter(|t| !t.est_vide()) else {
-        return Err(socle::fichiers::manque("taux_atmp"));
-    };
+    // Alsace-Moselle d'apres SON code postal ; ce qui manque, `bareme_atmp` le refuse en le disant (la pile d'une paie
+    // importee, qui ne le pose pas, ne le demande pas : `EntrepriseLue::taux_lus`).
     let nom = match e.libelle.remplie().filter(|l| !l.trim().is_empty()) {
         Some(libelle) => libelle,
         None => e.nic.ecrite("nic")?,
     };
-    (bar.taux_atmp, bar.taux_atmp_manque) = match taux_atmp_de_l_annee(dit, bar.annee, Some(&bar), en_alsace_moselle(e.code_postal.portee())) {
-        Some(Ok(t)) => (Some(t), None),
-        Some(Err(m)) => (
-            Some(crate::fiche::TauxAtmp { code_risque: dit.code_risque.clone(), ..crate::fiche::TauxAtmp::default() }),
-            Some(m.reformuler(|p| format!("Établissement « {} » : {}", nom, p))),
-        ),
-        None => (None, None),
+    (bar.taux_atmp, bar.taux_atmp_manque) = match e.taux_atmp.as_ref().filter(|t| !t.est_vide()) {
+        None => (None, Some(socle::fichiers::manque("taux_atmp"))),
+        Some(dit) => match taux_atmp_de_l_annee(dit, bar.annee, Some(&bar), en_alsace_moselle(e.code_postal.portee())) {
+            Some(Ok(t)) => (Some(t), None),
+            Some(Err(m)) => (
+                Some(crate::fiche::TauxAtmp { code_risque: dit.code_risque.clone(), ..crate::fiche::TauxAtmp::default() }),
+                Some(m.reformuler(|p| format!("Établissement « {} » : {}", nom, p))),
+            ),
+            None => (None, None),
+        },
     };
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).

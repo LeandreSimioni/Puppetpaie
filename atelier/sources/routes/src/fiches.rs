@@ -1891,21 +1891,24 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
         total += x.cout;
         phrases.push(format!("{} : {} ({}, brut {})", nom, euros(x.cout), bulletins(x), euros(x.brut)));
     }
-    // Ce que le cout ne compte pas (`engagement::etats::PaieDeCote`) se dit a sa suite, court : leur nombre, et les
-    // contrats ; la ligne de chaque salarie dit les siennes, et ce qui leur manque.
+    // Ce que le cout ne compte pas (`engagement::etats::PaieDeCote`) se dit a sa suite, court : leur nombre et les
+    // contrats ; la ligne de chaque salarie dit les siennes et ce qui leur manque. Une paie dont l'engagement ne dit pas
+    // le salarie n'a pas de ligne : elle se dit ici, entiere.
     let mut contrats: Vec<&str> = Vec::new();
     for n in &couts.non_comptees {
         if !contrats.contains(&n.qui.as_str()) {
             contrats.push(n.qui.as_str());
         }
     }
+    let sans_salarie: String = couts.non_comptees.iter().filter(|n| n.salarie.is_none()).map(|n| format!(" {}", n.phrase())).collect();
     let non_comptees: String = match couts.non_comptees.len() {
         0 => String::new(),
         n => format!(
-            " {} non comptée{} (dites sur chaque salarié) : {}.",
+            " {} non comptée{} : {}.{}",
             socle::ecran::compte(n, "paie", "paies"),
             if n > 1 { "s" } else { "" },
-            contrats.join(", ")
+            contrats.join(", "),
+            sans_salarie
         ),
     };
     let phrase = socle::phrase!(

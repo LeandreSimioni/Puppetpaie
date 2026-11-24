@@ -523,8 +523,8 @@ enum Lire {
 }
 
 /// `validees_du_mois_parmi`, et les paies mises de cote (`Lire::CeQuiSeLit`) : celle d'un engagement valide qui ne se
-/// calcule pas faute d'une case (`Echec::dit_un_manque`) n'entre ni dans la saisie rendue ni dans les paies, et se dit a
-/// part ; une panne remonte toujours. Les paies a venir se calculent d'un calcul du mois ; s'il refuse un manque, chaque
+/// calcule pas faute d'une case (`Echec::manque_une_case`), ou dont le recalcul du mois a garde le refus
+/// (`Valide::refus`), n'entre ni dans la saisie rendue ni dans les paies, et se dit a part ; tout autre refus remonte. Les paies a venir se calculent d'un calcul du mois ; s'il refuse un manque, chaque
 /// salarie se calcule seul (`calculer_les_rangs` ne lit que les engagements de son salarie), et seul celui a qui la case
 /// manque est mis de cote.
 fn validees_lues(
@@ -548,7 +548,7 @@ fn validees_lues(
     if !a_venir.is_empty() {
         match calculer_les_rangs(ctx, mois, &a_venir) {
             Ok(v) => calculees.extend(a_venir.iter().copied().zip(v.into_iter().map(Ok))),
-            Err(e) if lire == Lire::CeQuiSeLit && e.dit_un_manque() => {
+            Err(e) if lire == Lire::CeQuiSeLit && e.manque_une_case() => {
                 let mut salaries: Vec<Option<IdSalarie>> = Vec::new();
                 let salarie_de = |i: &RangDansLeMois| i.dans(&data.engagements).and_then(|x| x.salarie.clone());
                 for i in &a_venir {
@@ -560,7 +560,7 @@ fn validees_lues(
                     let siens: Vec<RangDansLeMois> = a_venir.iter().copied().filter(|i| salarie_de(i) == s).collect();
                     match calculer_les_rangs(ctx, mois, &siens) {
                         Ok(v) => calculees.extend(siens.iter().copied().zip(v.into_iter().map(Ok))),
-                        Err(e) if e.dit_un_manque() => calculees.extend(siens.iter().map(|i| (*i, Err(e.clone())))),
+                        Err(e) if e.manque_une_case() => calculees.extend(siens.iter().map(|i| (*i, Err(e.clone())))),
                         Err(e) => return Err(e),
                     }
                 }
@@ -570,6 +570,22 @@ fn validees_lues(
     }
     for (i, e) in RangDansLeMois::de_chacun(&etats) {
         let Some(v) = e.valide().filter(|v| garder(v)) else { continue };
+        let de_cote_pour = |pourquoi: &Echec| PaieDeCote {
+            mois,
+            salarie: v.objet.carte().salarie.clone(),
+            spectacle: v.objet.carte().spectacle.clone(),
+            qui: qui_de(ctx, &v.objet),
+            pourquoi: PourquoiDeCote::Calcul(pourquoi.phrase.clone()),
+        };
+        // Le refus que le recalcul du mois a garde (`Valide::refus`), tel qu'il est ne : la paie ne s'est pas ecrite.
+        let refus_garde = match (&v.refus, calculees.contains_key(&i)) {
+            (Some(r), false) if v.paie_ecrite(mois)?.is_none() => Some(r.clone()),
+            _ => None,
+        };
+        if let (Some(r), Lire::CeQuiSeLit) = (&refus_garde, lire) {
+            de_cote.push(de_cote_pour(r));
+            continue;
+        }
         let paie = match calculees.remove(&i) {
             Some(Ok(p)) => Valide { en_cours: Some((mois, Arc::new(p))), ..v.clone() }.paie(ctx, &data, i),
             Some(Err(pourquoi)) => Err(pourquoi),
@@ -577,13 +593,8 @@ fn validees_lues(
         };
         let paie = match paie {
             Ok(p) => p,
-            Err(pourquoi) if lire == Lire::CeQuiSeLit && pourquoi.dit_un_manque() => {
-                // Le refus du calcul tel qu'il est ne : `Valide::paie` le redit avec le contrat, que `PaieDeCote` nomme deja.
-                let raison = match (&v.refus, v.paie_ecrite(mois)?) {
-                    (Some(r), None) => r.phrase.clone(),
-                    _ => pourquoi.phrase,
-                };
-                de_cote.push(PaieDeCote { mois, salarie: v.objet.carte().salarie.clone(), qui: qui_de(ctx, &v.objet), pourquoi: PourquoiDeCote::Calcul(raison) });
+            Err(pourquoi) if lire == Lire::CeQuiSeLit && pourquoi.manque_une_case() => {
+                de_cote.push(de_cote_pour(&pourquoi));
                 continue;
             }
             Err(pourquoi) => return Err(pourquoi),
@@ -603,6 +614,9 @@ pub struct PaieDeCote {
     /// Le salarie du contrat (la cle de sa fiche) ; `None` : l'engagement ne le dit pas. Un calcul d'un salarie qui a
     /// besoin de cette paie refuse pour lui seul, en la nommant.
     pub salarie: Option<IdSalarie>,
+    /// Le spectacle de la paie (la cle de sa fiche) ; `None` : rien ne le designe (un permanent, une paie reprise dont
+    /// aucune fiche ne porte le spectacle). Le cout de ce spectacle la dit.
+    pub spectacle: Option<droit::contexte::IdSpectacle>,
     /// Le contrat, tel qu'une phrase le nomme (`qui_de`).
     pub qui: String,
     pub pourquoi: PourquoiDeCote,

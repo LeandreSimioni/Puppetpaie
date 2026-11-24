@@ -1349,6 +1349,13 @@ pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<PaieImportee>, Vec<cr
             true => a_dire.push(crate::etats::PaieDeCote {
                 mois,
                 salarie: i.carte().salarie.clone(),
+                // Le spectacle que sa paie designe ; un manque (aucune fiche ne le porte encore) le laisse vide, comme
+                // dans la paie rangee (`Importe::paie`).
+                spectacle: match i.paies().get(&mois).map(|p| i.spectacle_de(ctx, p)).transpose() {
+                    Ok(s) => s.flatten(),
+                    Err(e) if e.dit_un_manque() => None,
+                    Err(e) => return Err(e),
+                },
                 qui: crate::etats::qui_de(ctx, &i.objet),
                 pourquoi: crate::etats::PourquoiDeCote::NatureADire,
             }),
