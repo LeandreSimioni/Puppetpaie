@@ -831,9 +831,9 @@ fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, 
     } else if r.arret == Some(ArretDeLaRestauration::AutorisationPerdue) {
         encarts.push(Encart::de(EtatDEcran::AFaire, "L'autorisation Google ne vaut plus", format!("{} fichier(s) sont revenus, puis Google a refusé l'autorisation. {} Ce qui est revenu reste ici.", r.redescendus.len(), RELIER_PUIS_REPRENDRE)));
     } else if r.arret == Some(ArretDeLaRestauration::RefusDeGoogle) {
-        // La cause, en mots : la ligne du fichier sur lequel elle s'est arretee (`Restauration::a_retenter`).
-        let cause = r.a_retenter.last().map(|l| format!(" ({})", l)).unwrap_or_default();
-        encarts.push(Encart::de(EtatDEcran::AFaire, "Google a refusé de continuer", format!("{} fichier(s) sont revenus, puis Google a refusé{}. Ce qui est revenu reste ici ; « Reprendre », plus tard, continue où elle en était.", r.redescendus.len(), cause)));
+        // La ligne du fichier sur lequel elle s'est arretee nomme un chemin : elle reste dans `a_retenter`, pour qui lit
+        // la reponse, et l'ecran le dit en mots.
+        encarts.push(Encart::de(EtatDEcran::AFaire, "Google a refusé de continuer", format!("{} fichier(s) sont revenus, puis Google a refusé de continuer. Ce qui est revenu reste ici ; « Reprendre », plus tard, continue où elle en était.", r.redescendus.len())));
     } else if r.arret == Some(ArretDeLaRestauration::VerrouPerdu) {
         encarts.push(Encart::de(EtatDEcran::AFaire, "Un autre geste a pris la main", format!("{} fichier(s) sont revenus, puis un autre geste a pris ce dossier : celle-ci s'est arrêtée. Relire la liste.", r.redescendus.len())));
     } else if !r.a_retenter.is_empty() {
