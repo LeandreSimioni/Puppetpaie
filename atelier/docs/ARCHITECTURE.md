@@ -1292,7 +1292,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
 | ce que l'import a repris (rien, des pièces sans DSN avec les années de leurs paies et les natures à dire, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
 | ce qu'une DSN pourrait donner à la configuration, après un import sans DSN (la phrase, et les lignes) | `declarations::demarrage::ParUneDsn` | `declarations/src/demarrage.rs` |
-| valeur proposée (ce que le moteur propose dans la case d'une ligne de « Pour démarrer », à valider ou à corriger : un texte, un jour ; écrite comme la case la tient, dite dans la phrase) | `declarations::demarrage::ValeurProposee` | `declarations/src/demarrage.rs` |
+| valeur proposée (ce que le moteur propose dans la case d'une ligne de « Pour démarrer », à valider ou à corriger : un texte, un jour ; écrite comme la case la tient, dite dans la phrase, une fois : celle que `trouver` dit déjà, avec ce qui la fonde, ne s'y redit pas) | `declarations::demarrage::ValeurProposee` | `declarations/src/demarrage.rs` |
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |

@@ -76,23 +76,24 @@ pub struct Manque {
 
 /// UNE VALEUR QUE LE MOTEUR PROPOSE pour la case d'une ligne, que la compagnie valide ou corrige : elle s'ecrit comme la
 /// case la tient, la page en remplit la case (un texte ; un jour en AAAA-MM-JJ), et se dit dans la phrase de la ligne
-/// (`dite` : un jour en JJ/MM/AAAA). Le code d'une case `choix` (`Choix`) ne se dit pas : la phrase de la ligne nomme
-/// deja le choix par son libelle.
+/// (`dite` : un jour en JJ/MM/AAAA). Une valeur que `trouver` dit deja avec ce qui la fonde (`DejaDite` : le code d'une
+/// case `choix`, que `trouver` nomme par son libelle ; le titre que les bulletins de l'ancien logiciel portent) ne se
+/// redit pas : elle se dit une fois.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum ValeurProposee {
     Texte(String),
     Jour(Jour),
-    Choix(String),
+    DejaDite(String),
 }
 
 impl ValeurProposee {
-    /// Ce que la phrase en dit ; `None` : le code d'un choix, que la phrase dit deja par son libelle.
+    /// Ce que la phrase en dit ; `None` : une valeur que `trouver` dit deja.
     fn dite(&self) -> Option<String> {
         match self {
             ValeurProposee::Texte(t) => Some(t.clone()),
             ValeurProposee::Jour(j) => Some(j.jj_mm_aaaa()),
-            ValeurProposee::Choix(_) => None,
+            ValeurProposee::DejaDite(_) => None,
         }
     }
 }
@@ -397,7 +398,8 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         );
         l.spectacle = Some(cle.clone());
         l.qui = Some(format!("Numéro d'objet {}", objet));
-        l.propose = propose.map(ValeurProposee::Texte);
+        // Le titre propose se dit dans `trouver`, avec la case et le numero d'objet d'ou il vient : une fois.
+        l.propose = propose.map(ValeurProposee::DejaDite);
         out.push(l);
     }
     // La licence d'entrepreneur de spectacles : la DSN l'ecrit dans chaque contrat (S21.G00.40.049) et refuse sans elle
@@ -565,7 +567,7 @@ fn abattements_a_dire(ctx: &Contexte) -> R<Vec<Manque>> {
         let (propose, trouver) = match professions.as_deref() {
             None => (None, format!("{} ; le logiciel n'a pas la déduction forfaitaire spécifique de {} : dites la profession du salarié, si la compagnie l'abat ; {}.", debut, an, option)),
             Some([]) => (None, format!("{} : aucune profession n'a ce taux en {} ; dites la sienne, si la compagnie l'abat ; {}.", debut, an, option)),
-            Some([(p, libelle)]) => (Some(ValeurProposee::Choix(p.to_string())), format!("{} : en {}, c'est le taux de la profession « {} ». Validez-la ou corrigez-la ; {}.", debut, an, libelle, option)),
+            Some([(p, libelle)]) => (Some(ValeurProposee::DejaDite(p.to_string())), format!("{} : en {}, c'est le taux de la profession « {} ». Validez-la ou corrigez-la ; {}.", debut, an, libelle, option)),
             Some(plusieurs) => (
                 None,
                 format!(
