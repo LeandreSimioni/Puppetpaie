@@ -42,11 +42,11 @@ use documents::ecrire_documents::Reserves;
 use documents::SorteDePieceProduite;
 
 fn info(texte: impl Into<String>) -> Avis {
-    Avis { info: true, texte: texte.into() }
+    Avis::de(texte.into(), true)
 }
 
 fn avertissement(texte: impl Into<String>) -> Avis {
-    Avis { info: false, texte: texte.into() }
+    Avis::de(texte.into(), false)
 }
 
 fn os(chemin: &Path, e: std::io::Error) -> Echec {

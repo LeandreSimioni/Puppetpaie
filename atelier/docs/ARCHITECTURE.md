@@ -1300,6 +1300,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
+| lien vers le texte qu'une phrase nomme, rendu à côté d'elle et jamais dedans (son libellé, son adresse) : celui de la convention que l'avis du minimum conventionnel renvoie à vérifier (`engagement::Avis`, son adresse `convention`) | `LienDuTexte` | `routes/src/mois.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |

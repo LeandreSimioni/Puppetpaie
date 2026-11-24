@@ -354,6 +354,11 @@ function peindreLeContrat(div) {
     p.contrat.sans_paie ? ` · ${aideDe("sans_cachet")}` : ""}`;
 }
 
+/** Un avis de la paie (`AvisVu`) : sa phrase, et à côté le lien vers le texte qu'elle renvoie à vérifier, que le moteur
+ *  rend à part (`lien` : libellé, adresse) ; il s'ouvre à côté, comme les autres liens de la page. */
+const avisDeLaPaie = (a) => `${echapper(a.texte)}${a.lien
+  ? ` <a class="lien" href="${echapper(a.lien.adresse)}" target="_blank" rel="noopener">${echapper(a.lien.libelle)}</a>` : ""}`;
+
 /** Sous les cases : ce qui manque à l'engagement, ou ce que le moteur a compris de lui, son net, son brut et son coût, et
  *  ce qu'il en dit (`apercu`, la paie de son identité). */
 function peindreLaPaie(div) {
@@ -375,8 +380,8 @@ function peindreLaPaie(div) {
       ${p.net_paye != null ? `<span class="e-cout">Net payé <b>${echapper(euros(p.net_paye))}</b></span>` : ""}
       <span class="e-cout">Brut <b>${echapper(euros(p.brut))}</b></span>
       <span class="e-cout">Coût employeur <b>${echapper(euros(p.cout_employeur))}</b></span></p>
-    ${p.avertissements.map((a) => `<div class="encart attention">${echapper(a)}</div>`).join("")}
-    ${p.informations.map((a) => `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
+    ${p.avertissements.map((a) => `<div class="encart attention">${avisDeLaPaie(a)}</div>`).join("")}
+    ${p.informations.map((a) => `<div class="encart info">${avisDeLaPaie(a)}</div>`).join("")}
     ${(p.a_dire || []).map((m) => `<div class="encart info">${echapper(m.trouver)}
       <button type="button" class="lien" data-manque-champ="${echapper(m.champ)}" data-manque-onglet="${echapper(m.onglet)}"
         data-manque-fiche="salarie" data-manque-cle="${echapper(m.salarie)}">${echapper(m.ou)}</button></div>`).join("")}

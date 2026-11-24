@@ -980,9 +980,13 @@ fn ligne_de_l_unite(unite: Unite) -> Option<CodeDeRubrique> {
 // ------------------------------------------------------------------ les deux lectures
 
 /// Une lecture, pas un verdict : la phrase renvoie au texte qu'elle nomme pour qu'on verifie. Elle s'affiche : elle le
-/// nomme en mots, jamais par son adresse (`routes::affiche::defaut`).
-fn a_verifier(phrase: String) -> Avis {
-    Avis { info: true, texte: format!("{} Nous avons pu passer à côté d'un cas qui change ce minimum : vérifiez-le sur le texte de la convention.", phrase) }
+/// nomme en mots ; l'adresse de la convention (`lien` de la table) va a part (`Avis::convention`).
+fn a_verifier(t: &Table, idcc: &Idcc, phrase: String) -> Avis {
+    Avis {
+        info: true,
+        texte: format!("{} Nous avons pu passer à côté d'un cas qui change ce minimum : vérifiez-le sur le texte de la convention.", phrase),
+        convention: t.convention(idcc).and_then(|c| c.lien.clone()),
+    }
 }
 
 
@@ -1138,6 +1142,8 @@ pub(crate) fn cachet_de_repetition(ctx: &Contexte, paie: &Paie) -> R<Option<Mini
 /// par ligne fautive, qui dit le paye, le minimum, et la grille lue.
 pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
     let avis = avec_cx(ctx, paie, |cx| {
+        let t = cx.t;
+        let idcc = cx.idcc;
         let qui = crate::qui_de(cx.fiche)?;
         let texte_source = cx.texte_de_la_grille()?;
         let mut avis = Vec::new();
@@ -1149,6 +1155,8 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 if paye < p.montant {
                     let dits = if services == 1 { "1 service".to_string() } else { format!("{} services", services) };
                     avis.push(a_verifier(
+                        t,
+                        idcc,
                         format!(
                             "{}, {} : {} pour une journée de répétition ({} à {}). Notre lecture de la convention donne un minimum conventionnel de {} par jour, pour 1 ou 2 services ({} ; {}).",
                             qui,
@@ -1175,6 +1183,8 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 let unite = if p.par == Par::Heure { "l'heure" } else { "le service" };
                 if paye < p.montant {
                     avis.push(a_verifier(
+                        t,
+                        idcc,
                         format!(
                             "{}, {} : {} {}. Notre lecture de la convention donne un minimum conventionnel de {} {} ({} ; {}).",
                             qui,
@@ -1210,6 +1220,8 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             };
             if paye < p.montant {
                 avis.push(a_verifier(
+                    t,
+                    idcc,
                     format!(
                         "{}, {} : {} {}. Notre lecture de la convention donne un minimum conventionnel de {} ({} ; {}).",
                         qui,
@@ -1253,6 +1265,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
         }
         avis.push(Avis {
             info: false,
+            convention: None,
             texte: format!(
                 "{}, {} : {} pour {} h. Le SMIC est de {} de l'heure au {} : il fallait {}, il manque {}. À corriger avant de déclarer (le SMIC vaut pour tous, art. L. 3231-2).",
                 qui,
