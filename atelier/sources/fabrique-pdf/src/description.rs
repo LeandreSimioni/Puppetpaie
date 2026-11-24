@@ -146,10 +146,13 @@ pub struct Police {
     pub couleur: Rvb,
 }
 
+/// Le logo, en haut à droite : son fichier, sa taille posée (dans le carré de la largeur dite, proportions gardées), à
+/// `marge_haut` du haut de la page et son bord droit à `marge_droite` de celui de la page.
 #[derive(Debug, Clone)]
 pub struct Logo {
     pub chemin: PathBuf,
     pub largeur: Mesure,
+    pub hauteur: Mesure,
     pub marge_haut: Mesure,
     pub marge_droite: Mesure,
 }
@@ -306,6 +309,7 @@ pub struct BlocEtiquete {
 pub struct Resolue {
     pub page: Page,
     pub police: Police,
+    /// Le logo de chaque page, sans style ; un style le pose en tête de chacun de ses documents (`style_contrat::blocs`).
     pub logo: Option<Logo>,
     /// Sans lui, le PDF n'a pas de titre.
     pub titre: Option<String>,
@@ -749,9 +753,8 @@ fn lire_repere(r: &Option<f::Repere>, nom: &str, police: &Police) -> Result<Opti
     }))
 }
 
-/// La page : celle que la description dit, sinon celle du style (sous son logo, s'il en a un : `logo`, sa hauteur posée) ;
-/// une description sans l'une ni l'autre se refuse.
-fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>, logo: Option<Mesure>) -> Result<Page, Refus> {
+/// La page : celle que la description dit, sinon celle du style ; une description sans l'une ni l'autre se refuse.
+fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>) -> Result<Page, Refus> {
     let brute = match (p, style) {
         (Some(p), _) => Page {
             largeur: p.largeur,
@@ -761,7 +764,7 @@ fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>, logo: 
             bas: p.marges.bas,
             gauche: p.marges.gauche,
         },
-        (None, Some(_)) => style_contrat::page(logo),
+        (None, Some(_)) => style_contrat::page(),
         (None, None) => return refus("description : sans \"style\", elle dit sa \"page\""),
     };
     let page = Page {
@@ -795,9 +798,9 @@ fn lire_police(p: &Option<f::Police>, style: Option<style_contrat::Variante>) ->
     })
 }
 
-/// Valide une description : ce que la mise en page emploie. `hauteur_du_logo` : celle du logo lu, à sa largeur (le haut
-/// de la page d'un style se calcule sous lui).
-pub fn resoudre(d: &f::Description, hauteur_du_logo: Option<Mesure>) -> Result<Resolue, Refus> {
+/// Valide une description : ce que la mise en page emploie. `taille_du_logo` : celle du logo lu dans son carré (largeur,
+/// hauteur), quand la description en a un (la tête des documents d'un style se pose à côté de lui).
+pub fn resoudre(d: &f::Description, taille_du_logo: Option<(Mesure, Mesure)>) -> Result<Resolue, Refus> {
     // Le 3 est le numéro de la fabrique (`--version`) : une description qui le porte est celle
     // du format 2, avec `largeur_max` en plus. Les trois se lisent de la même façon.
     if !d.format.d_un_document() {
@@ -812,16 +815,21 @@ pub fn resoudre(d: &f::Description, hauteur_du_logo: Option<Mesure>) -> Result<R
         f::Style::Avenant => style_contrat::Variante::Avenant,
         f::Style::Attestation => style_contrat::Variante::Attestation,
     });
-    let page = lire_page(&d.page, style, hauteur_du_logo)?;
+    let page = lire_page(&d.page, style)?;
     let police = lire_police(&d.police, style)?;
-    let logo = match &d.logo {
-        Some(l) => Some(Logo {
-            largeur: strictement_positif(l.largeur, "largeur", "logo")?,
-            marge_haut: positif_ou_nul(l.marge_haut, "marge_haut", "logo")?,
-            marge_droite: positif_ou_nul(l.marge_droite, "marge_droite", "logo")?,
-            chemin: l.chemin.clone(),
-        }),
-        None => None,
+    let logo = match (&d.logo, taille_du_logo) {
+        (Some(l), Some((largeur, hauteur))) => {
+            strictement_positif(l.largeur, "largeur", "logo")?;
+            Some(Logo {
+                largeur,
+                hauteur,
+                marge_haut: positif_ou_nul(l.marge_haut, "marge_haut", "logo")?,
+                marge_droite: positif_ou_nul(l.marge_droite, "marge_droite", "logo")?,
+                chemin: l.chemin.clone(),
+            })
+        }
+        (None, None) => None,
+        (Some(_), None) | (None, Some(_)) => return defaut("description : le logo et sa taille lue ne vont pas ensemble"),
     };
     if d.documents.is_empty() {
         return refus("description : la liste \"documents\" est vide");
@@ -834,7 +842,7 @@ pub fn resoudre(d: &f::Description, hauteur_du_logo: Option<Mesure>) -> Result<R
             f::Document::Modele(mb) => {
                 let ou = if plusieurs { format!("document {}", n + 1) } else { "document".to_string() };
                 let prefixe = if plusieurs { format!("document {}, ", n + 1) } else { String::new() };
-                let (blocs, titre) = lire_modele(mb, d.format, style, &ou, prefixe, titre_modele.is_none())?;
+                let (blocs, titre) = lire_modele(mb, d.format, style, (&page, logo.as_ref()), &ou, prefixe, titre_modele.is_none())?;
                 if titre_modele.is_none() {
                     titre_modele = titre;
                 }
@@ -872,7 +880,7 @@ pub fn resoudre(d: &f::Description, hauteur_du_logo: Option<Mesure>) -> Result<R
     Ok(Resolue {
         page,
         police,
-        logo,
+        logo: if style.is_some() { None } else { logo },
         // Sans titre dit, celui du premier modèle (`texte_brut`, sans gras).
         titre: d.titre.clone().or(titre_modele),
         documents,
@@ -882,10 +890,12 @@ pub fn resoudre(d: &f::Description, hauteur_du_logo: Option<Mesure>) -> Result<R
 }
 
 /// Un document modèle mis en page selon le style : ses blocs, et son titre (`texte_brut`, sans gras) si `veut_titre`.
+/// `page` : sa page, et le logo qui se pose en tête du document.
 fn lire_modele(
     mb: &f::Modele,
     format: NumeroDuFormat,
     style: Option<style_contrat::Variante>,
+    (page, logo): (&Page, Option<&Logo>),
     ou: &str,
     prefixe: String,
     veut_titre: bool,
@@ -972,6 +982,8 @@ fn lire_modele(
         signature: mb.signature.as_deref(),
         modifications: &modifications,
         signature_employeur: mb.signature_employeur.as_deref(),
+        page,
+        logo,
     };
     let titre = match (veut_titre, &m.titre) {
         (true, Some(t)) => Some(modele::texte_brut(t, valeurs)?),

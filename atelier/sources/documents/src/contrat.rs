@@ -26,8 +26,9 @@ use crate::marqueurs::{pour_la_fabrique, ModeleLu, Valeurs};
 use droit::marqueurs::Marqueur;
 
 
-/// Une description de documents modeles : le format, le style (sa page, qui laisse la place du logo), le logo de la
-/// compagnie, en haut a droite, son bord droit sur celui du texte (`style_contrat::LOGO_LARGEUR`), et ses documents.
+/// Une description de documents modeles : le format, le style (sa page et sa police), le logo de la compagnie, en tete
+/// de chaque document, en haut a droite a cote du titre, son bord droit sur celui du texte, dans un carre de
+/// `style_contrat::LOGO_LARGEUR`, et ses documents.
 pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Document>) -> R<Description> {
     Ok(Description {
         format: FORMAT,
