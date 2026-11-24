@@ -143,11 +143,10 @@ const LECTURES_OUVERTURE: [(Route, &str); 4] = [
     (Route::ConseilDuJour, r#"{"decalage": 0}"#),
 ];
 
-/// Le fichier de l'etat de l'OUVERTURE, a la racine de la compagnie : le seul etat qui s'ecrit.
-pub(crate) const OUVERTURE_ECRITE: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("ouverture.etat.json");
-
+/// Le fichier de l'etat de l'OUVERTURE, a la racine de la compagnie (`socle::fichiers::ETAT_DE_L_OUVERTURE`) : le seul
+/// etat qui s'ecrit.
 fn chemin(racine: &Path) -> PathBuf {
-    racine.join(OUVERTURE_ECRITE)
+    racine.join(socle::fichiers::ETAT_DE_L_OUVERTURE)
 }
 
 // ------------------------------------------------------------------------------------------------- les cles
@@ -327,7 +326,7 @@ const HORS_DE_L_ECRAN: [CheminRelatif; 9] = [
     compagnie::problemes::SIGNALEMENTS,
     compagnie::incidents::INCIDENTS,
     // Le tableau de l'administrateur (`administrateur.rs`) : le resume de la compagnie que l'accueil lit.
-    crate::gestes::administrateur::TABLEAU,
+    socle::fichiers::TABLEAU_GARDE,
 ];
 
 /// L'empreinte de tout ce dont l'etat d'un mois (`Some`) ou de l'ouverture (`None`) est tire, au jour `jour`
@@ -689,7 +688,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: Empreinte) -> R<E
 /// LE TABLEAU DE L'ADMINISTRATEUR pour cette compagnie (`config/.tableau.json`) : le garde s'il porte l'empreinte
 /// d'aujourd'hui de toute la compagnie (celle de l'ouverture), sinon refait.
 fn tableau_juste(ctx: &Contexte) -> R<Garde> {
-    let f = crate::gestes::administrateur::TABLEAU.dans(&ctx.racine);
+    let f = socle::fichiers::TABLEAU_GARDE.dans(&ctx.racine);
     if f.is_file() {
         let empreinte = empreinte_de(&ctx.racine, None, ctx.aujourdhui);
         match socle::forme::lire_fichier::<TableauCompagnie>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {

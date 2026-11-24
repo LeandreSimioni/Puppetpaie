@@ -987,7 +987,13 @@ fn adresses_de_l_autorisation() -> R<envois::google_autorisation::Adresses> {
 /// le code au moteur, qui scelle le jeton. Rend l'adresse du compte lie. La page et `moteur route` l'appellent pareil.
 fn google_autoriser(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<String> {
     exiger_mot_de_passe(&ctx.racine, mdp, GESTE_GOOGLE_LIER)?;
-    let (application, _) = identifiants(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?;
+    lier_google(&ctx.racine)
+}
+
+/// L'AUTORISATION DE GOOGLE, SCELLEE SOUS `racine` (`config/google-jeton.bin`) : celle d'une compagnie (`google-autoriser`),
+/// ou celle de l'accueil, sous l'installation (`drive-lier`, `accueil::drive`). Rend l'adresse du compte lie.
+pub(crate) fn lier_google(racine: &Path) -> R<String> {
+    let (application, _) = identifiants(racine).map_err(|e| e.reclasser(Classe::Refuse))?;
     let dire_url = |u: &socle::garde_reseau::Url| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         if let Err(e) = compagnie::poste::ouvrir_adresse(u) {
@@ -995,7 +1001,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<St
         }
     };
     let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation()?,envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
-    sceller_le_jeton(&ctx.racine, &jeton)
+    sceller_le_jeton(racine, &jeton)
 }
 
 /// Le jeton que l'autorisation a obtenu (`google_autorisation::autoriser`) et l'adresse du compte, dans un seul fichier

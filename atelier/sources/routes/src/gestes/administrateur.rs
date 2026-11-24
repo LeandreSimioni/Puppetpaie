@@ -40,7 +40,6 @@
 
 use socle::date::Jour;
 use socle::echec::Classe;
-use socle::fichiers::CheminRelatif;
 use crate::enveloppe::{Options, Phrase};
 use std::path::{Path, PathBuf};
 
@@ -64,8 +63,6 @@ use socle::mois::Mois;
 
 /// Le registre de l'administrateur, a la racine de l'installation.
 pub const FICHIER: &str = "administrateur.json";
-/// Le dernier tableau connu d'une compagnie (hors de l'empreinte des etats des mois : `etat_garde::HORS_DE_L_ECRAN`).
-pub const TABLEAU: CheminRelatif = CheminRelatif::du_moteur("config/.tableau.json");
 
 /// Ce que le registre dit de lui-meme, a qui l'ouvre.
 const QUOI_DU_REGISTRE: &str = "Les compagnies que gere l'administrateur de ce logiciel : un seul mot de passe les ouvre toutes. Aucun secret ici.";
@@ -794,7 +791,7 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     }
     declarations.sort_by_key(|d| cle_d_urgence(d.en_retard, &d.butoir));
     let t = TableauCompagnie { le: ctx.aujourdhui, declarations, empreinte };
-    socle::ecriture::ecrire_json(&TABLEAU.dans(&ctx.racine), &t, 2)?;
+    socle::ecriture::ecrire_json(&socle::fichiers::TABLEAU_GARDE.dans(&ctx.racine), &t, 2)?;
     Ok(t)
 }
 
@@ -951,7 +948,7 @@ pub(crate) fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
     let par = rattachees(inst)?
         .into_iter()
         .map(|r| {
-            let f = TABLEAU.dans(&r);
+            let f = socle::fichiers::TABLEAU_GARDE.dans(&r);
             let t = if f.is_file() { socle::forme::lire_fichier(&f, "Le tableau gardé de la compagnie ne se lit pas.") } else { Err(socle::echec::refus("Pas encore lu : le tableau se fait.")) };
             (r, t)
         })

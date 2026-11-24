@@ -447,7 +447,8 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     Ok(out)
 }
 
-/// DEPOSER LES DOCUMENTS D'UN MOIS DANS LE DRIVE (`archivage::archiver`) : `PuppetPaie/<mois>` du compte lie. Une
+/// DEPOSER LES DOCUMENTS D'UN MOIS DANS LE DRIVE (`archivage::archiver`) : `PuppetPaie/<la compagnie>/archives/<mois>`
+/// du compte lie. Une
 /// compagnie fictive joue le depot (`archivage::DriveJoue`) : la meme liste, rien ne part.
 fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     use crate::gestes::archivage;
@@ -455,9 +456,9 @@ fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     let mut drive_joue = archivage::DriveJoue;
     let client: Option<&mut dyn envois::drive::Drive> = if joue { Some(&mut drive_joue) } else { None };
     let r = archivage::archiver(&ctx.racine, charge.mois, compagnie::sauvegarde::RACINE_DRIVE, client).map_err(|e| e.echec)?;
-    let dossier = format!("{}/{}", r.racine_drive, r.mois);
+    let dossier = format!("{}/{}/{}/{}", r.racine_drive, r.compagnie, compagnie::sauvegarde::ARCHIVES, r.mois);
     // Le dossier du Drive tel que l'écran le dit : ses dossiers séparés comme les places de l'écran.
-    let ou = format!("{} › {}", r.racine_drive, r.mois);
+    let ou = format!("{} › {} › {} › {}", r.racine_drive, r.compagnie, compagnie::sauvegarde::ARCHIVES, r.mois);
     let phrase = if joue {
         socle::phrase!("Compagnie fictive : rien ne part au Drive. {} fichier(s) iraient dans le dossier {}.", r.fichiers.len(), ou)
     } else {

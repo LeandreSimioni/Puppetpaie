@@ -1,11 +1,13 @@
-//! La restauration du dossier prive depuis le Drive (`moteur restaurer`) : le retour de `sauvegarde.rs`.
+//! La restauration d'une compagnie depuis le Drive : le retour de `sauvegarde.rs`. UN SEUL CHEMIN : la reprise d'une
+//! compagnie a l'accueil (`routes::accueil::drive`) et `moteur restaurer` l'appellent pareil.
 //!
 //! Aucun depot Git ne porte les donnees de la compagnie (regle 9) : la sauvegarde Drive est la seule copie de `prive/`
 //! hors du poste ; sans retour, ce n'est pas une copie.
 //!
 //! CE QU'ELLE FAIT, dans cet ordre, et rien n'est ecrit avant la troisieme etape :
-//! 1. elle retrouve `<racine_drive>/sauvegarde` dans le Drive du compte relie, SANS RIEN Y CREER (`Drive::sous_dossiers`,
-//!    pas `Drive::chemin`), et en fait l'inventaire complet : chaque fichier, son empreinte (`md5Checksum`), son dossier ;
+//! 1. elle prend l'arbre du dossier choisi dans la vue du Drive (`sur_le_drive`) : `sauvegarde/` du dossier d'une
+//!    compagnie, ou l'ancien dossier commun lui-meme ; SANS RIEN Y CREER (`Drive::sous_dossiers`, pas `Drive::chemin`),
+//!    elle en fait l'inventaire complet : chaque fichier, son empreinte (`md5Checksum`), son dossier ;
 //! 2. elle compare le dossier local a cet inventaire (voir « un dossier qui n'est pas vide ») ;
 //! 3. elle redescend ce qui manque, fichier par fichier : le contenu recu est compare a l'empreinte que Drive publie AVANT
 //!    d'etre ecrit (un `.part`, renomme ensuite : un fichier coupe en route n'a jamais le nom du vrai) ;
@@ -34,7 +36,8 @@ use std::path::{Path, PathBuf};
 
 use crate::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
-use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, DossierDuDrive, Index, DOSSIER_DRIVE};
+use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, DossierDuDrive, Index, SAUVEGARDE};
+use crate::sur_le_drive::{DossierVu, GenreDuDossier};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::Octets;
 
@@ -66,7 +69,7 @@ impl Restauration {
     pub fn resume(&self) -> String {
         let mut t = format!("Restauration : {} fichier(s) redescendu(s), {}, {} deja la.", self.redescendus.len(), self.octets, self.deja_la);
         if self.hors_ligne {
-            t.push_str(" Hors connexion en route : relancer `moteur restaurer` reprend ou elle en est.");
+            t.push_str(" Hors connexion en route : relancer la restauration reprend ou elle en est.");
         } else if !self.incidents.is_empty() {
             t.push_str(&format!(" {} incident(s).", self.incidents.len()));
         }
@@ -134,7 +137,7 @@ fn dans(dossier: &Option<CheminRelatif>, nom: NomDeFichier) -> CheminRelatif {
 
 /// Le seul dossier de ce nom sous `parent`, sans rien creer. `Ok(None)` s'il n'y en a pas ; un refus s'il y en a deux.
 fn le_dossier(client: &mut dyn Drive, parent: &IdDrive, nom: &str, chemin: &str) -> Result<Option<IdDrive>, ErreurGoogle> {
-    let trouves: Vec<IdDrive> = client.sous_dossiers(parent)?.into_iter().filter(|(n, _)| n == nom).map(|(_, i)| i).collect();
+    let trouves: Vec<IdDrive> = client.sous_dossiers(parent)?.into_iter().filter(|d| d.nom == nom).map(|d| d.id).collect();
     match trouves.len() {
         0 => Ok(None),
         1 => Ok(trouves.into_iter().next()),
@@ -145,11 +148,13 @@ fn le_dossier(client: &mut dyn Drive, parent: &IdDrive, nom: &str, chemin: &str)
     }
 }
 
-/// `restaurer` : rend `cible` tel que la sauvegarde `racine_drive` du Drive le porte. Rend le compte rendu, n'imprime rien.
+/// `restaurer` : rend `cible` tel que le dossier `depuis` (de la vue du Drive, sous la racine `racine_drive`) le porte.
+/// Rend le compte rendu, n'imprime rien.
 ///
-/// Un `Err` est un refus : rien n'a ete ecrit (sauvegarde introuvable ou ambigue, reseau tombe pendant l'inventaire,
-/// dossier local qui n'est pas vide). Un incident en route (un fichier) n'arrete pas les autres et laisse l'index juste.
-pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Result<Restauration, ErreurGoogle> {
+/// Un `Err` est un refus : rien n'a ete ecrit (sauvegarde introuvable ou ambigue, dossier qui n'est pas une sauvegarde,
+/// reseau tombe pendant l'inventaire, dossier local qui n'est pas vide). Un incident en route (un fichier) n'arrete pas
+/// les autres et laisse l'index juste.
+pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &mut dyn Drive) -> Result<Restauration, ErreurGoogle> {
     let compte = client.compte();
     let mut resultat = Restauration {
         cible: cible.to_path_buf(),
@@ -163,20 +168,26 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         hors_ligne: false,
     };
 
-    // 1. L'inventaire du Drive, sans rien y creer.
-    let absente = || {
-        ErreurGoogle::nouvelle(
-            socle::echec::Classe::SauvegardeAbsente,
-            format!(
-                "Pas de sauvegarde dans le Drive{} : le dossier {} est introuvable. Le compte relie est-il celui de la \
-                 compagnie ? Seuls les dossiers crees par PuppetPaie, avec la meme application Google, sont visibles.",
-                compte.as_deref().map(|c| format!(" de {}", c)).into_iter().collect::<String>(),
-                DossierDuDrive::de(racine_drive, None)
-            ),
-        )
+    // 1. L'inventaire du Drive, sans rien y creer : l'arbre du dossier choisi.
+    let chemin = format!("{}/{}/{}", racine_drive, depuis.nom, SAUVEGARDE);
+    let (sauvegarde_id, compagnie) = match &depuis.genre {
+        GenreDuDossier::Compagnie(_) => {
+            let arbre = le_dossier(client, &depuis.id, SAUVEGARDE, &chemin)?.ok_or_else(|| {
+                ErreurGoogle::nouvelle(
+                    socle::echec::Classe::SauvegardeAbsente,
+                    format!("Le dossier « {} » du Drive n'a pas encore de sauvegarde ({} est introuvable) : rien n'a été redescendu.", depuis.nom, chemin),
+                )
+            })?;
+            (arbre, Some(depuis.id.clone()))
+        }
+        GenreDuDossier::AncienneSauvegarde => (depuis.id.clone(), None),
+        GenreDuDossier::Ancien => {
+            return Err(ErreurGoogle::nouvelle(
+                socle::echec::Classe::SauvegardeAbsente,
+                format!("Le dossier « {} » du Drive n'est pas la sauvegarde d'une compagnie : rien n'a été redescendu.", depuis.nom),
+            ))
+        }
     };
-    let racine_id = le_dossier(client, &IdDrive::RACINE, racine_drive, racine_drive)?.ok_or_else(absente)?;
-    let sauvegarde_id = le_dossier(client, &racine_id, DOSSIER_DRIVE, &DossierDuDrive::de(racine_drive, None).to_string())?.ok_or_else(absente)?;
 
     let mut distants: BTreeMap<CheminRelatif, Entree> = BTreeMap::new();
     let mut dossiers: BTreeMap<Option<CheminRelatif>, IdDrive> = BTreeMap::new();
@@ -201,8 +212,8 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             distants.insert(relatif, Entree { id: d.id, md5: d.md5, dossier: dossier.clone() });
         }
         let mut par_nom: BTreeMap<String, Vec<IdDrive>> = BTreeMap::new();
-        for (nom, i) in client.sous_dossiers(&id)? {
-            par_nom.entry(nom).or_default().push(i);
+        for d in client.sous_dossiers(&id)? {
+            par_nom.entry(d.nom).or_default().push(d.id);
         }
         for (nom, ids) in par_nom {
             if let Some(n) = nom_sur(&nom) {
@@ -285,7 +296,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         let recue = EmpreinteMd5::des_octets(&contenu);
         if recue != *attendue {
             resultat.incidents.push(format!(
-                "{} : l'empreinte ne colle pas (le Drive annonce {}, le contenu recu donne {}) : rien n'est ecrit. Relancer `moteur restaurer`.",
+                "{} : l'empreinte ne colle pas (le Drive annonce {}, le contenu recu donne {}) : rien n'est ecrit. Relancer la restauration.",
                 relatif, attendue, recue
             ));
             continue;
@@ -313,14 +324,20 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         fichiers.insert(relatif.clone(), *etat);
         if let Some(d) = distants.get(relatif) {
             if let Some(id) = dossiers.get(&d.dossier) {
-                index_dossiers.insert(DossierDuDrive::de(racine_drive, d.dossier.as_ref()), id.clone());
+                index_dossiers.insert(DossierDuDrive::de(d.dossier.as_ref()), id.clone());
             }
         }
+    }
+    // Restauree de l'ancien dossier commun, la compagnie n'a pas de dossier a elle : sa sauvegarde suivante le cree, et
+    // l'index n'en garde aucun dossier.
+    if compagnie.is_none() {
+        index_dossiers.clear();
     }
     let maintenant = socle::temps::secondes();
     let index = Index {
         quand: maintenant.a_la_minute(),
         racine_drive: racine_drive.to_string(),
+        compagnie,
         dossiers: index_dossiers,
         fichiers,
         derniere_complete: None,

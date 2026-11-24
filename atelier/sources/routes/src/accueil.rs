@@ -17,6 +17,7 @@
 //! marqueur, sa tuile) : `compagnie::installation`. Le dossier portable complete (`compagnie::maj::PortableComplete`, la
 //! route `portable-completer`) se dit ici (`Dite`).
 
+pub mod drive;
 pub mod suppression;
 
 use std::path::{Path, PathBuf};
@@ -62,6 +63,46 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 120,
+        ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::DriveCompagnies,
+        geste: "Dire les compagnies que le Drive lié à l'accueil porte, et le geste qui reprend chacune.",
+        charge: &crate::SansCharge::CHARGE,
+        exemple: r#"{}"#,
+        rend: "phrase, encarts, rangs : le compte Google de l'accueil (le lier), puis chaque compagnie du Drive (sa dernière sauvegarde, son volume) et le geste qui la reprend ; un Drive qui ne se lit pas se dit en encart",
+        refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
+        acte: Acte::Lit,
+        phrase: 120,
+        ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::DriveLier,
+        geste: "Lier un compte Google à l'accueil, pour reprendre une compagnie de son Drive.",
+        charge: &crate::SansCharge::CHARGE,
+        exemple: r#"{}"#,
+        rend: "compte : l'adresse du compte Google lié, phrase ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
+        refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
+        acte: Acte::Ecrit,
+        phrase: 120,
+        ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::DriveReprendre,
+        geste: "Ramener sur ce poste une compagnie du Drive lié à l'accueil.",
+        charge: &drive::ChargeReprendre::CHARGE,
+        exemple: r#"{"dossier":"cie-essai"}"#,
+        rend: "id, nom, chemin (le --racine de ses routes), redescendus, incidents (les fichiers qui ne sont pas revenus), a_faire (ce qui reste à faire pour son coffre), phrase",
+        refus: &[
+            Refus { classe: Classe::Refuse, corriger: "lier d'abord le Drive, ou un dossier que drive-compagnies montre ; rien n'est repris" },
+            Refus { classe: Classe::DossierNonVide, corriger: "la compagnie de ce poste qui porte déjà cette identité diffère de sa sauvegarde ; rien n'est écrit" },
+            OPERATION,
+        ],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
+        acte: Acte::Ecrit,
+        phrase: 200,
         ecran: ECRAN,
     },
     Fiche {
@@ -404,6 +445,18 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
                 Some(false) | None => administrateur::tableau(o, &inst, c.relever == Some(true))?,
             };
             en_json(tableau)
+        }
+        Route::DriveCompagnies => {
+            let super::SansCharge {} = charge.lire()?;
+            en_json(drive::compagnies(&inst)?)
+        }
+        Route::DriveLier => {
+            let super::SansCharge {} = charge.lire()?;
+            en_json(drive::lier(&inst)?)
+        }
+        Route::DriveReprendre => {
+            let c: drive::ChargeReprendre = charge.lire()?;
+            en_json(drive::reprendre(&inst, &c.dossier)?)
         }
         Route::Basculer => {
             compagnie::bridage::basculer_de(&inst)?;

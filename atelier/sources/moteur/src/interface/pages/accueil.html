@@ -98,6 +98,13 @@
   .avis-ajouter .venue.choisie { box-shadow:inset 3px 0 0 var(--accent); }
   .avis-ajouter form label { display:block; margin-top:8px; font-weight:bold; }
   .avis-ajouter form input { margin-top:4px; font-weight:normal; }
+  /* Reprendre une compagnie de son Drive : l'ecran que la route rend, rang par rang. */
+  .reprise-drive .encart { margin:0 0 10px; font-size:12.5px; }
+  .reprise-drive .rang { border:1px solid var(--bord); border-radius:4px; padding:9px 12px; margin:0 0 8px; }
+  .reprise-drive .rang b { display:block; }
+  .reprise-drive .rang span { display:block; color:var(--discret); font-size:12.5px; }
+  .reprise-drive .rang button { width:auto; margin-top:8px; padding:6px 14px; }
+  .reprise-drive .rang .note { color:var(--discret); font-size:12px; margin:6px 0 0; }
   /* Au deblocage, les compagnies creees en demo a garder. */
   .a-garder { list-style:none; margin:0 0 12px; padding:0; }
   .a-garder li { padding:4px 0; }
@@ -421,6 +428,80 @@
     CATALOGUE = Object.fromEntries(r.resultat.routes.map((f) => [f.nom, f]));
     dessinerLesAvances();
   });
+</script>
+<script>
+  /* REPRENDRE UNE COMPAGNIE DE SON DRIVE (« + », « De mon Drive ») : la page pose l'écran que `drive-compagnies` rend
+     (ses encarts, ses rangs, ce que chacun dit, et ses gestes, avec ce que leur route rend en `phrases`), et fait le
+     geste qu'on clique, sa route et sa charge telles quelles. Ce qu'une route rend se montre ; une compagnie reprise
+     (son `id`) s'ouvre par le bouton qui suit. */
+  (function () {
+    const bouton = document.getElementById("venue-de-mon-drive");
+    const zone = document.getElementById("venue-drive");
+    if (!bouton || !zone) return;
+    zone.addEventListener("mousedown", (e) => e.stopPropagation());
+    const choix = document.getElementById("choix-venue");
+    const montrerLesVenues = (oui) => {
+      choix.querySelectorAll(".venue").forEach((b) => { b.hidden = !oui; });
+      document.getElementById("venue-barre").hidden = !oui;
+      zone.hidden = oui;
+    };
+    const retour = `<div class="barre"><button type="button" class="second" data-retour>Retour</button></div>`;
+    const brancherLeRetour = () => { zone.querySelector("[data-retour]").onclick = () => montrerLesVenues(true); };
+    function poser(d) {
+      const rangs = d.rangs || [];
+      zone.innerHTML = `<p><b>${echapper(d.phrase)}</b></p>
+        ${(d.encarts || []).map((e) => `<p class="encart" style="color:${echapper(e.couleur)}">${e.titre ? `<b>${echapper(e.titre)}</b> ` : ""}${echapper(e.phrase)}</p>`).join("")}
+        ${rangs.map((g, i) => `<div class="rang">
+          <b>${echapper(g.titre)}</b>
+          ${g.dit.map((l) => `<span>${echapper(l)}</span>`).join("")}
+          <span>${echapper(g.pastille.mots)}${g.etat ? " — " + echapper(g.etat) : ""}</span>
+          ${g.gestes.map((x, j) => `${x.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
+            <button type="button" data-rang="${i}" data-geste="${j}">${echapper(x.libelle)}</button>`).join("")}
+        </div>`).join("")}
+        <p class="erreur" id="drive-erreur"></p>${retour}`;
+      brancherLeRetour();
+      zone.querySelectorAll("button[data-geste]").forEach((b) => {
+        const g = rangs[+b.dataset.rang].gestes[+b.dataset.geste];
+        b.onclick = () => faire(g, b);
+      });
+    }
+    async function faire(g, b) {
+      const libelle = b.textContent;
+      b.disabled = true;
+      b.textContent = `${libelle}…`;
+      const r = await appel(g.route, g.charge);
+      if (!r.ok) {
+        b.disabled = false;
+        b.textContent = libelle;
+        document.getElementById("drive-erreur").textContent = r.refus.phrase;
+        return;
+      }
+      if (r.resultat.id) { montrerLaReprise(r.resultat); return; }
+      dessiner();
+    }
+    /* Ce que la reprise rend : sa phrase, les fichiers qui ne sont pas revenus, ce qui reste à faire pour son coffre ;
+       puis la compagnie s'ouvre. */
+    function montrerLaReprise(x) {
+      zone.innerHTML = `<p><b>${echapper(x.phrase)}</b></p>
+        ${[...x.incidents, ...x.a_faire].map((l) => `<p class="discret">${echapper(l)}</p>`).join("")}
+        <p class="erreur" id="drive-erreur"></p>
+        <div class="barre"><button type="button" data-ouvrir>Ouvrir ${echapper(x.nom)}</button></div>`;
+      zone.querySelector("[data-ouvrir]").onclick = async () => {
+        const r = await window.pywebview.api.choisir(x.id);
+        if (!r.ok) document.getElementById("drive-erreur").textContent = r.refus.phrase;
+      };
+    }
+    async function dessiner() {
+      zone.innerHTML = `<p class="discret">…</p>${retour}`;
+      brancherLeRetour();
+      const r = await appel("drive-compagnies", {});
+      if (!r.ok) { zone.innerHTML = `<p class="erreur">${echapper(r.refus.phrase)}</p>${retour}`; brancherLeRetour(); return; }
+      poser(r.resultat);
+    }
+    bouton.onclick = () => { montrerLesVenues(false); dessiner(); };
+    // Le « + » rouvre toujours sur les chemins.
+    document.querySelector(".ajouter").addEventListener("click", () => montrerLesVenues(true));
+  })();
 </script>
 <!-- Le pied : l'indicateur de la mise a jour a gauche ; l'auteur a droite (de la route `compagnies`). -->
 <div class="pied" id="pied"></div>

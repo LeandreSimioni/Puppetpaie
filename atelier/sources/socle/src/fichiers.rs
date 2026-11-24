@@ -1040,6 +1040,12 @@ pub const MARQUEUR_COPIE: NomDeFichier = NomDeFichier::du_moteur("COPIE-DE-DEVEL
 pub const JETON_GOOGLE: CheminRelatif = CheminRelatif::du_moteur("config/google-jeton.bin");
 pub const TRACE_DE_L_OUVERTURE: CheminRelatif = CheminRelatif::du_moteur("config/.ouverture.json");
 pub const ETAPE_DE_L_OUVERTURE: CheminRelatif = CheminRelatif::du_moteur("config/.ouverture-etape.json");
+/// L'etat garde de l'ouverture, a la racine de la compagnie (`routes::etat_garde`) : un cache du poste, qui porte ses
+/// chemins absolus.
+pub const ETAT_DE_L_OUVERTURE: NomDeFichier = NomDeFichier::du_moteur("ouverture.etat.json");
+/// Le dernier tableau de l'administrateur connu d'une compagnie (`routes::gestes::administrateur`) : un cache de
+/// l'installation du poste.
+pub const TABLEAU_GARDE: CheminRelatif = CheminRelatif::du_moteur("config/.tableau.json");
 
 /// Le modele `nom` (gabarit de contrat, de DPAE, de certificat) : celui de la compagnie (son dossier `gabarits`),
 /// a defaut celui du poste (`poste`), a defaut celui livre avec le logiciel (`donnees/modeles/`). Une compagnie qui

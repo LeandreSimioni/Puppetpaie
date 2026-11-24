@@ -588,6 +588,10 @@ un libellé, chacun sa forme.
 | nom d'un fichier d'export | `documents::etats_paie::NomDExport` | `documents/src/etats_paie.rs` |
 | chemin d'un texte déposé | `droit::source::CheminDepose` | `droit/src/source.rs` |
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
+| identité d'une compagnie sur le Drive | `compagnie::sauvegarde::IdentiteSurLeDrive` | `compagnie/src/sauvegarde.rs` |
+| marque du dossier d'une compagnie dans le Drive | `envois::drive::MarqueDuDossier` | `envois/src/drive.rs` |
+| sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
+| dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
 | titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
@@ -937,9 +941,19 @@ un libellé, chacun sa forme.
 - **chemin d'un texte déposé** : le fichier d'une source, depuis la racine du dépôt, sous `atelier/reference/` (ou le mode
   d'emploi), suivi pour un article d'un entrepôt de la DILA de son code (`…/articles.jsonl.gz#travail`) ; que portent une
   `Source` et les titres de la banque des conseils.
-- **dossier de la sauvegarde dans le Drive** : la racine du Drive de la compagnie, `sauvegarde`, puis le dossier de la
+- **dossier de la sauvegarde dans le Drive** : sous le dossier de la compagnie, `sauvegarde`, puis le dossier de la
   compagnie qu'il tient, écrit avec des barres droites ; une seule construction (`DossierDuDrive::segments`, que le
-  Drive parcourt, et `de`, qui les joint), pour la sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`).
+  Drive parcourt, et `de`, qui les joint), pour la sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`, avec le dossier de la compagnie, `compagnie`).
+- **identité d'une compagnie sur le Drive** : ce qui marque le dossier d'une compagnie sous `PuppetPaie/` sans dépendre
+  de son nom : `siret:<14 chiffres>` quand sa fiche dit son SIRET à sa première sauvegarde, sinon `cie:<32 hexadécimaux>`
+  tiré au hasard ; gardée dans `config/drive.json`, qui part avec la sauvegarde, et elle ne change plus. La sauvegarde
+  et l'archivage retrouvent leur dossier par elle (`sauvegarde::dossier_de_la_compagnie`).
+- **marque du dossier d'une compagnie** : ses propriétés privées à l'application (`appProperties`) : l'identité, la date
+  de la dernière sauvegarde qui a envoyé quelque chose, le volume ; telle que Drive la rend, du texte, que
+  `sur_le_drive` lit en ses types (ce qui ne s'en lit pas se dit, sans fermer la vue).
+- **dossier vu** : un dossier sous la racine du Drive, tel que la vue le montre (`sur_le_drive::voir`) : le dossier d'une
+  compagnie, l'ancienne sauvegarde commune (`sauvegarde`), ou un dossier d'une ancienne version ; ce que la vue du Drive,
+  la reprise à l'accueil, la suppression et `moteur restaurer` lisent.
 - **entrée mise de côté au tri d'un import** : une entrée d'archive dont le nom ne fait pas un chemin sous l'archive
   (`..`, `:`, un chemin absolu, rien qui reste), un fichier du disque dont le nom n'est pas un `NomDeFichier`, ou une
   entrée, d'archive ou du disque, qui ne se lit pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le

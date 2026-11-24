@@ -63,6 +63,7 @@ mod historique;
 pub mod documents;
 mod dossier_salarie;
 pub mod coffre;
+mod drive;
 mod engagement;
 mod contrats;
 mod modeles_contrat;
@@ -314,6 +315,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
         _ if dans(crate::gestes::organismes::ROUTES) => crate::gestes::organismes::route(&porte, charge),
         _ if dans(coffre::ROUTES) => coffre::route(&porte, charge),
+        _ if dans(drive::ROUTES) => drive::route(&porte, charge),
         _ if dans(filet::ROUTES) => filet::route(&porte, charge),
         _ if dans(import::ROUTES) => import::route(&porte, charge),
         _ if dans(archives::ROUTES) => archives::route(&porte, charge),

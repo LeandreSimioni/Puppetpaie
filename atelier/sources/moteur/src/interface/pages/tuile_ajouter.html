@@ -17,7 +17,14 @@
         <b>D'un logiciel pr&eacute;c&eacute;dent</b>
         <span>{{P:precedent}}</span>
       </button>
+      <!-- REPRENDRE UNE COMPAGNIE DE SON DRIVE : l'ecran que la route `drive-compagnies` rend (le compte Google de
+           l'accueil, puis chaque compagnie du Drive et son geste), dessine dans `#venue-drive`. -->
+      <button type="button" class="venue" id="venue-de-mon-drive">
+        <b>De mon Drive</b>
+        <span>{{P:drive}}</span>
+      </button>
     </div>
+    <div id="venue-drive" class="reprise-drive" hidden></div>
     <form id="choix-venue-nom" hidden>
       <label>Nom de la compagnie <input placeholder="Nom de la compagnie" autocomplete="off"></label>
       <p class="erreur" id="venue-erreur"></p>

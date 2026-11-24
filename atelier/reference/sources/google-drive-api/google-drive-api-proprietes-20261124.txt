@@ -1,0 +1,610 @@
+Skip to main content
+
+[Google Workspace]
+
+-   []Workspace
+
+Home Google Drive All products
+
+-   Google Workspace apps
+-   
+    Admin console
+-   
+    Cloud Search
+-   
+    Gmail
+-   
+    Google Calendar
+-   
+    Google Chat
+-   
+    Google Classroom
+-   
+    Google Docs
+-   
+    Google Drive
+
+-    
+-   
+    Google Forms
+-   
+    Google Keep
+-   
+    Google Meet
+-   
+    Google Sheets
+-   
+    Google Sites
+-   
+    Google Slides
+-   
+    Google Tasks
+-   
+    Google Vault
+
+-   Extend, automate & share
+-   
+    Add-ons
+-   
+    Apps Script
+-   
+    Chat apps
+-   
+    Drive apps
+-   
+    Marketplace
+
+Resources
+
+-   Tools
+-   
+    Admin console
+-   
+    Apps Script dashboard
+-   
+    Google Cloud console
+-   
+    APIs Explorer
+-   
+    Card Builder
+
+-   Training & support
+-   
+    How to get started
+-   
+    Codelabs
+-   
+    Developer support
+
+-   Community
+-   
+    Developer community
+-   
+    Discord server
+-   
+    Developer forums
+-   
+    YouTube
+-   
+    X (Twitter)
+-   
+    GitHub (googleworkspace)
+
+-   Updates
+-   
+    Release notes
+-   
+    Developer Previews
+-   
+    Newsletter
+-   
+    Blog
+
+[]
+
+/
+
+-   English
+-   Deutsch
+-   Español
+-   Español – América Latina
+-   Français
+-   Indonesia
+-   Italiano
+-   Polski
+-   Português – Brasil
+-   Tiếng Việt
+-   Türkçe
+-   Русский
+-   עברית
+-   العربيّة
+-   فارسی
+-   हिंदी
+-   বাংলা
+-   ภาษาไทย
+-   中文 – 简体
+-   中文 – 繁體
+-   日本語
+-   한국어
+
+Sign in
+
+-   Google Drive
+
+Overview Guides Reference MCP server Samples Support
+
+[Google Workspace]
+
+-   []Workspace
+
+-    Home
+-    Google Drive
+    -    Overview
+    -    Guides
+    -    Reference
+    -    MCP server
+    -    Samples
+    -    Support
+-    All products
+    -    More
+-    Resources
+    -    More
+
+-   Get started
+
+-   Drive API overview
+
+-   Get started with Google Workspace
+
+-   Configure OAuth consent
+
+-   Drive API
+
+-   Choose scopes
+
+-   
+    Quickstarts
+
+    -   JavaScript
+    -   Go
+    -   Java
+    -   Node.js
+    -   Python
+    -   Python codelab
+
+-   
+    Manage files and folders
+
+    -   Overview
+
+    -   Create and manage files
+
+    -   Upload file data
+
+    -   Download and export files
+
+    -   Manage file revisions
+
+    -   Manage long-running operations
+
+    -   Create and populate folders
+
+    -   Trash or delete files and folders
+
+    -   Search for files and folders
+
+    -   
+        Manage permissions and sharing
+
+        -   Share files, folders, and drives
+        -   Manage pending access proposals
+        -   Manage approvals
+        -   Manage folders with limited and expansive access
+        -   Transfer file ownership
+        -   Protect file content from modification
+        -   Access link-shared files using resource keys
+
+    -   
+        Work with app and file data
+
+        -   Store application-specific data
+        -   Manage file metadata
+        -   Add custom file properties
+
+    -   Manage comments and replies
+
+    -   Create a shortcut to a Drive file
+
+    -   Create a shortcut file to app content
+
+-   
+    Gather user information
+
+    -   Return user info
+
+-   
+    Handle changes
+
+    -   Overview
+    -   Identify which change log to track
+    -   Track changes for users & shared drives
+    -   Retrieve changes
+    -   Receive notifications for resource changes
+
+-   
+    Work with events from Drive
+
+    -   Overview
+    -   Subscribe to events using the Google Workspace Events API
+
+-   
+    Integrate with the Drive UI
+
+    -   Overview
+    -   Configure a Drive UI integration
+    -   Integrate with Drive UI's "New" button
+    -   Integrate with Drive UI's "Open with" context menu
+
+-   
+    Integrate Drive widgets into your web app
+
+    -   Display the Google Picker
+    -   Add the "Save to Drive" button
+    -   Add the "Share" button
+
+-   
+    Integrate with shared drives
+
+    -   Overview
+    -   Implement shared drive support
+    -   Manage shared drives
+    -   Search for shared drives
+
+-   
+    Manage labels
+
+    -   Overview
+    -   Set label field
+    -   Unset label field
+    -   Remove label
+    -   List labels from file
+    -   Return specific labels from file
+    -   Search by label or field
+
+-   
+    Techniques and best practices
+
+    -   Return specific fields
+    -   Improve performance
+
+-   
+    Troubleshoot
+
+    -   Resolve errors
+    -   Troubleshoot authentication & authorization
+
+-   
+    Publish your Drive app
+
+    -   Use Google Drive brand
+    -   Market & publicize your app
+    -   Publish your Drive app
+
+-   
+    Migrate to Drive API v3
+
+    -   Migration guide
+    -   Comparison guide
+    -   Comparison reference
+    -   Guide to Drive API v2
+
+-   Drive Activity API
+
+-   Overview
+
+-   Data model
+
+-   Make requests
+
+-   Install a client library
+
+-   Migrate from v1
+
+-   
+    Quickstarts
+
+    -   JavaScript
+    -   Google Apps Script
+    -   Go
+    -   Java
+    -   Node.js
+    -   Python
+
+-   
+    Troubleshoot
+
+    -   Troubleshoot authentication & authorization
+
+-   Drive Labels API
+
+-   Overview
+
+-   Label lifecycle
+
+-   Set up scopes & admin access
+
+-   
+    Quickstarts
+
+    -   Python
+    -   Node.js
+
+-   Create & publish a label
+
+-   Update a label
+
+-   Disable, enable & delete labels
+
+-   Search labels
+
+-   
+    Troubleshoot
+
+    -   Troubleshoot authentication & authorization
+
+-   Google Picker API
+
+-   Overview
+
+-   Integrate the Google Picker into web apps
+
+-   Integrate the Google Picker into desktop and mobile apps
+
+-   
+    Code sample
+
+    -   Use Google Picker API features in web apps
+    -   Use the Google Picker web component
+
+-   Extend & automate
+
+-   Add-ons
+
+-   Apps Script
+
+-    Google Workspace apps
+-    Admin console
+-    Cloud Search
+-    Gmail
+-    Google Calendar
+-    Google Chat
+-    Google Classroom
+-    Google Docs
+-    Google Drive
+-     
+-    Google Forms
+-    Google Keep
+-    Google Meet
+-    Google Sheets
+-    Google Sites
+-    Google Slides
+-    Google Tasks
+-    Google Vault
+-    Extend, automate & share
+-    Add-ons
+-    Apps Script
+-    Chat apps
+-    Drive apps
+-    Marketplace
+
+-    Tools
+-    Admin console
+-    Apps Script dashboard
+-    Google Cloud console
+-    APIs Explorer
+-    Card Builder
+-    Training & support
+-    How to get started
+-    Codelabs
+-    Developer support
+-    Community
+-    Developer community
+-    Discord server
+-    Developer forums
+-    YouTube
+-    X (Twitter)
+-    GitHub (googleworkspace)
+-    Updates
+-    Release notes
+-    Developer Previews
+-    Newsletter
+-    Blog
+
+-   Home
+
+-   
+
+    Google Workspace
+
+-   
+
+    Google Drive
+
+-   
+
+    Guides
+
+Send feedback
+
+Add custom file properties  Stay organized with collections   Save and categorize content based on your preferences. 
+
+Custom file properties are key-value pairs used to store custom metadata for a Google Drive file (such as tags), IDs from other data stores, information shared between workflow applications, and so on. For example, you can add file properties to all documents generated by the sales department in Q1.
+
+To add properties visible to all applications, use the properties field of the files resource. To add properties restricted to your app, use the appProperties field of the files resource.
+
+Note: If you're using the older version of Google Drive API (v2), utilize the properties resource to add properties to your app using properties.insert. For a complete list of differences between versions, see the Drive API v2 & v3 comparison reference.
+
+Properties can also be used in search expressions.
+
+This is the structure of a typical property that might be used to store a Drive file's database ID on the file.
+
+Drive API v3
+
+    "appProperties": {
+      "additionalID": "ID",
+    }
+
+Drive API v2
+
+    {
+      'key':        'additionalID',
+      'value':      'ID',
+      'visibility': 'PRIVATE'
+    }
+
+Working with custom file properties
+
+The section explains how to perform some custom file property-related tasks that affect all applications.
+
+Note: The Google Drive UI doesn't include a built-in way for you to edit custom properties.
+
+Add or update custom file properties
+
+To add or update properties visible to all applications, use the files.update method to set the properties field of the files resource.
+
+    PATCH https://www.googleapis.com/drive/v3/files/FILE_ID
+
+    {
+      "properties": {
+        "name": "wrench",
+        "mass": "1.3kg",
+        "count": "3"
+      }
+    }
+
+You can also add a custom property to a file using the advanced Drive service in Google Apps Script. For more information, see Adding custom properties.
+
+Get or list custom file properties
+
+To view properties visible to all applications, use the files.get method to retrieve the custom file properties for the file.
+
+    GET https://www.googleapis.com/drive/v3/files/FILE_ID?fields=properties
+
+The response consists of a properties object that contains a collection of key-value pairs.
+
+    {
+      "properties": {
+        "name": "wrench",
+        "mass": "1.3kg",
+        "count": "3"
+      }
+    }
+
+Delete custom file properties
+
+To delete property values visible to all applications, use the files.update method to set the properties field of the files resource to null.
+
+    PATCH https://www.googleapis.com/drive/v3/files/FILE_ID
+
+    {
+      "name": null
+    }
+
+To view the change, call the files.get method to retrieve the properties object for the file.
+
+    {
+      "properties": {
+        "mass": "1.3kg",
+        "count": "3"
+      }
+    }
+
+Limits of custom file properties
+
+Custom properties have the following limits:
+
+-   Maximum of 100 custom properties per file, totaled from all sources.
+-   Maximum of 30 public properties per file, totaled from all sources.
+-   Maximum of 30 private properties per file from any one application.
+-   Maximum of 124 bytes per property string (including both key and value) in UTF-8 encoding. For example, a property with a key that's 10 characters long can only have 114 characters in the value. Similarly, a property that requires 100 characters for the value can use up to 24 characters for the key.
+
+For more information, see the files resource. For Drive API v2, see the properties resource.
+
+Access private custom file properties
+
+You can only retrieve private properties using the appProperties field through an authenticated request that uses an access token obtained with an OAuth 2.0 client ID. You cannot use an API key to retrieve private properties.
+
+Send feedback
+
+Except as otherwise noted, the content of this page is licensed under the Creative Commons Attribution 4.0 License, and code samples are licensed under the Apache 2.0 License. For details, see the Google Developers Site Policies. Java is a registered trademark of Oracle and/or its affiliates.
+
+Last updated 2026-11-07 UTC.
+
+Need to tell us more?
+
+[[["Easy to understand","easyToUnderstand","thumb-up"],["Solved my problem","solvedMyProblem","thumb-up"],["Other","otherUp","thumb-up"]],[["Missing the information I need","missingTheInformationINeed","thumb-down"],["Too complicated / too many steps","tooComplicatedTooManySteps","thumb-down"],["Out of date","outOfDate","thumb-down"],["Samples / code issue","samplesCodeIssue","thumb-down"],["Other","otherDown","thumb-down"]],["Last updated 2026-11-07 UTC."],[],[]]
+
+-   Engage
+
+    -   Google AI Forum
+    -   Google Developer Program
+    -   Google Developer Groups
+    -   Google Developer Experts
+    -   Accelerators
+    -   Google Cloud & NVIDIA
+
+-   Connect
+
+    -   Blog
+    -   Bluesky
+    -   Instagram
+    -   LinkedIn
+    -   X (Twitter)
+    -   YouTube
+
+-   Build
+
+    -   Android
+    -   Chrome
+    -   Firebase
+    -   Google AI Studio
+    -   Google Antigravity
+    -   Google Cloud
+    -   Google Play
+    -   View all
+
+[Google Developers]
+
+-   Android
+-   Chrome
+-   Firebase
+-   Google Cloud Platform
+-   Google AI
+-   All products
+
+-   Terms
+-   Privacy
+-   Manage cookies
+
+-   English
+-   Deutsch
+-   Español
+-   Español – América Latina
+-   Français
+-   Indonesia
+-   Italiano
+-   Polski
+-   Português – Brasil
+-   Tiếng Việt
+-   Türkçe
+-   Русский
+-   עברית
+-   العربيّة
+-   فارسی
+-   हिंदी
+-   বাংলা
+-   ภาษาไทย
+-   中文 – 简体
+-   中文 – 繁體
+-   日本語
+-   한국어

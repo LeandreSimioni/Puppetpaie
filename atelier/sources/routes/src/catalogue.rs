@@ -116,6 +116,11 @@ routes! {
         MotDePasseRetirer = "mot-de-passe-retirer",
         GoogleAutoriser = "google-autoriser",
         GoogleOublier = "google-oublier",
+        DriveEtat = "drive-etat",
+        DriveSupprimer = "drive-supprimer",
+        DriveCompagnies = "drive-compagnies",
+        DriveLier = "drive-lier",
+        DriveReprendre = "drive-reprendre",
         AdministrateurEtat = "administrateur-etat",
         AdministrateurRattacher = "administrateur-rattacher",
         AdministrateurDetacher = "administrateur-detacher",
@@ -287,6 +292,7 @@ pub enum Place {
     ModelesContrat,
     Identite,
     Coffre,
+    Drive,
     Import,
     Historique,
     Exports,
@@ -306,6 +312,7 @@ impl Place {
             Place::ModelesContrat => "Configuration › Modèles de contrat",
             Place::Identite => "Configuration › Signature & tampon",
             Place::Coffre => "Configuration › Mots de passe",
+            Place::Drive => "Configuration › Le Drive",
             Place::Import => "Configuration › Reprendre l'historique",
             Place::Historique => "Historique",
             Place::Exports => "Exports",
@@ -910,7 +917,7 @@ fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
-pub const FICHES: [&[Fiche]; 31] = [
+pub const FICHES: [&[Fiche]; 32] = [
     crate::engagement::ROUTES,
     crate::etat_garde::ROUTES,
     crate::mois::ROUTES,
@@ -923,6 +930,7 @@ pub const FICHES: [&[Fiche]; 31] = [
     crate::depots::ROUTES,
     crate::documents::ROUTES,
     crate::coffre::ROUTES,
+    crate::drive::ROUTES,
     crate::import::ROUTES,
     crate::archives::ROUTES,
     crate::libelles_courts::ROUTES,

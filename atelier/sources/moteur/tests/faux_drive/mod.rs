@@ -1,16 +1,17 @@
 //! Un faux Drive en memoire (le trait `drive::Drive`), pour `fichiers/sauvegarde.rs`, `fichiers/archivage.rs`, `ouverture.rs` et
 //! `routes/ouverture.rs`.
 //!
-//! AUCUN RESEAU : il ne tient que des dossiers et des fichiers en memoire, et un journal des appels. Il ne PEUT pas
-//! supprimer (le trait n'en a pas). Comme le vrai client : `lister` rend les FICHIERS d'un dossier par nom (le dernier
-//! de deux homonymes gagne), jamais les sous-dossiers ; `televerser` remplace le fichier `connu` ou en cree un nouveau
-//! (un homonyme reste, rien n'est cherche par nom). Pour `fichiers/restauration.rs` : `sous_dossiers` rend les dossiers
-//! d'un dossier (`root` compris), homonymes compris, sans rien creer ; `telecharger` rend le contenu tel qu'il est tenu.
+//! AUCUN RESEAU : il ne tient que des dossiers (et leur marque) et des fichiers en memoire, et un journal des appels.
+//! Comme le vrai client : `lister` rend les FICHIERS d'un dossier par nom (le dernier de deux homonymes gagne), jamais les
+//! sous-dossiers ; `televerser` remplace le fichier `connu` ou en cree un nouveau (un homonyme reste, rien n'est cherche
+//! par nom) ; `sous_dossiers` rend les dossiers d'un dossier (`root` compris), homonymes compris, avec leur marque, sans
+//! rien creer ; `telecharger` rend le contenu tel qu'il est tenu ; un dossier mis a la corbeille n'est plus en place, ni
+//! ce qu'il porte, et ne se liste plus.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use envois::drive::{Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
+use envois::drive::{Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle, IdDrive, MarqueDuDossier, SousDossier};
 
 pub struct FichierDrive {
     pub id: IdDrive,
@@ -33,6 +34,10 @@ pub struct FauxDrive {
     pub compte: Option<String>,
     /// id -> (parent, chemin complet depuis la racine)
     dossiers: Vec<(IdDrive, IdDrive, String)>,
+    /// La marque de chaque dossier qui en porte une.
+    pub marques: BTreeMap<IdDrive, MarqueDuDossier>,
+    /// Les dossiers mis a la corbeille.
+    pub corbeille: Vec<IdDrive>,
     pub fichiers: Vec<FichierDrive>,
     /// Chaque appel, en une ligne : `chemin a/b`, `lister a/b`, `televerser a/b/nom connu=ID|-`.
     pub journal: Vec<String>,
@@ -67,7 +72,7 @@ impl FauxDrive {
     /// Un fichier deja la (hors de toute sauvegarde) : dans le dossier `chemin` (cree au besoin).
     pub fn deposer(&mut self, chemin: &str, nom: &str, contenu: &[u8], avec_md5: bool) -> IdDrive {
         let segments: Vec<&str> = chemin.split('/').collect();
-        let parent = self.chemin(&segments).unwrap();
+        let parent = self.chemin(&IdDrive::RACINE, &segments).unwrap();
         let id = self.prochain("F");
         let md5 = avec_md5.then(|| EmpreinteMd5::des_octets(contenu));
         self.fichiers.push(FichierDrive { id: id.clone(), parent, nom: nom.into(), md5, contenu: contenu.to_vec() });
@@ -118,6 +123,29 @@ impl FauxDrive {
         self.journal.iter().filter(|l| l.starts_with(debut)).count()
     }
 
+    /// `id` est-il a la corbeille, lui ou un dossier qui le porte ?
+    fn jete(&self, id: &IdDrive) -> bool {
+        let mut i = id.clone();
+        loop {
+            if self.corbeille.contains(&i) {
+                return true;
+            }
+            match self.dossiers.iter().find(|(d, _, _)| *d == i) {
+                Some((_, p, _)) => i = p.clone(),
+                None => return false,
+            }
+        }
+    }
+
+    /// Le chemin du dossier `id` (vide pour la racine du compte).
+    fn chemin_ou_racine(&self, id: &IdDrive) -> String {
+        if *id == IdDrive::RACINE {
+            String::new()
+        } else {
+            self.chemin_de(id)
+        }
+    }
+
     fn panne(&self, operation: &str, cle: &str) -> Option<ErreurGoogle> {
         self.pannes.iter().find(|p| p.operation == operation && cle.contains(&p.motif)).map(|p| p.erreur.clone())
     }
@@ -133,20 +161,20 @@ impl Drive for FauxDrive {
         self.compte.clone()
     }
 
-    fn chemin(&mut self, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
-        let cle = noms.join("/");
+    fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
+        let mut complet = self.chemin_ou_racine(depuis);
+        let cle = if complet.is_empty() { noms.join("/") } else { format!("{}/{}", complet, noms.join("/")) };
         self.journal.push(format!("chemin {}", cle));
         if let Some(e) = self.panne("chemin", &cle) {
             return Err(e);
         }
-        let mut parent = IdDrive::RACINE;
-        let mut complet = String::new();
+        let mut parent = depuis.clone();
         for nom in noms {
             if !complet.is_empty() {
                 complet.push('/');
             }
             complet.push_str(nom);
-            parent = match self.dossiers.iter().find(|(_, p, c)| *p == parent && *c == complet) {
+            parent = match self.dossiers.iter().find(|(i, p, c)| *p == parent && *c == complet && !self.corbeille.contains(i)) {
                 Some((i, _, _)) => i.clone(),
                 None => {
                     let id = self.prochain("D");
@@ -202,7 +230,7 @@ impl Drive for FauxDrive {
         Ok(Depose { id: Some(id.clone()), nom: Some(nom), lien: Some(lien(&id)), remplace: false })
     }
 
-    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle> {
+    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<SousDossier>, ErreurGoogle> {
         let chemin = if *parent == IdDrive::RACINE { IdDrive::RACINE.to_string() } else { self.chemin_de(parent) };
         self.journal.push(format!("sous_dossiers {}", chemin));
         if let Some(e) = self.panne("sous_dossiers", &chemin) {
@@ -211,9 +239,45 @@ impl Drive for FauxDrive {
         Ok(self
             .dossiers
             .iter()
-            .filter(|(_, p, _)| p == parent)
-            .map(|(i, _, c)| (c.rsplit('/').next().unwrap_or(c).to_string(), i.clone()))
+            .filter(|(i, p, _)| p == parent && !self.jete(i))
+            .map(|(i, _, c)| SousDossier { nom: c.rsplit('/').next().unwrap_or(c).to_string(), id: i.clone(), marque: self.marques.get(i).cloned().unwrap_or_default() })
             .collect())
+    }
+
+    fn creer_dossier(&mut self, nom: &str, parent: &IdDrive, marque: &MarqueDuDossier) -> Result<IdDrive, ErreurGoogle> {
+        let base = self.chemin_ou_racine(parent);
+        let complet = if base.is_empty() { nom.to_string() } else { format!("{}/{}", base, nom) };
+        self.journal.push(format!("creer_dossier {}", complet));
+        let id = self.prochain("D");
+        self.dossiers.push((id.clone(), parent.clone(), complet));
+        self.marques.insert(id.clone(), marque.clone());
+        Ok(id)
+    }
+
+    fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle> {
+        self.journal.push(format!("marquer {}", self.chemin_de(id)));
+        let m = self.marques.entry(id.clone()).or_default();
+        if marque.compagnie.is_some() {
+            m.compagnie = marque.compagnie.clone();
+        }
+        if marque.derniere.is_some() {
+            m.derniere = marque.derniere.clone();
+        }
+        if marque.octets.is_some() {
+            m.octets = marque.octets.clone();
+        }
+        Ok(())
+    }
+
+    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle> {
+        self.journal.push(format!("en_place {}", self.chemin_de(id)));
+        Ok(!self.jete(id))
+    }
+
+    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
+        self.journal.push(format!("corbeille {}", self.chemin_de(id)));
+        self.corbeille.push(id.clone());
+        Ok(())
     }
 
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {

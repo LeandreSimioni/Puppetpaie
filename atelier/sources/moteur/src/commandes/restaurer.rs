@@ -1,5 +1,7 @@
-//! `moteur restaurer [DOSSIER] [--racine-drive NOM] [--json]` : redescendre le dossier prive du Drive. La decision est
-//! dans `restauration.rs` ; ici, l'affichage.
+//! `moteur restaurer [DOSSIER] [--racine-drive NOM] [--dossier-drive ID] [--json]` : redescendre une compagnie du
+//! Drive. La decision est dans `restauration.rs`, le meme chemin que la reprise a l'accueil (`routes::accueil::drive`) ;
+//! ici, l'affichage. `--dossier-drive` nomme le dossier de la compagnie (son identifiant, tel que `drive-etat` ou
+//! `drive-compagnies` le rend) ; sans lui, le seul dossier qui se reprend sous la racine.
 //!
 //! Le Drive est celui que la compagnie de ce poste a relie (dans la fenetre, Configuration > Mots de passe > Lier le Drive) : le client lit son jeton dans le dossier
 //! des donnees du poste. `DOSSIER` est ou ecrire ; par defaut, ce meme dossier des donnees (le cas d'un poste neuf : relier le
@@ -14,12 +16,12 @@ use super::actes::refuser_si_pas_redirige;
 use super::actes::Organisme;
 use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
-use compagnie::{restauration, sauvegarde};
+use compagnie::{restauration, sauvegarde, sur_le_drive};
 
 pub static SPEC: Spec = Spec {
     commande: "restaurer",
     positionnels: &[Pos::facultatif("dossier", None)],
-    options: &[Opt::avec_defaut("racine-drive", sauvegarde::RACINE_DRIVE), Opt::drapeau("json")],
+    options: &[Opt::avec_defaut("racine-drive", sauvegarde::RACINE_DRIVE), Opt::valeur("dossier-drive"), Opt::drapeau("json")],
 };
 
 /// Ce que `moteur restaurer --json` ecrit d'un refus : sa classe et sa phrase.
@@ -72,10 +74,33 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
         Ok(c) => c,
         Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
+    // LE DOSSIER DU DRIVE : celui que `--dossier-drive` nomme ; sans lui, le seul qui se reprend sous la racine. Plusieurs :
+    // la commande ne choisit pas, elle les dit.
+    let vus = match sur_le_drive::voir(&mut client, racine_drive) {
+        Ok(v) => v,
+        Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
+    };
+    let depuis = match args.texte("dossier-drive").filter(|d| !d.is_empty()) {
+        Some(d) => match envois::drive::IdDrive::lire(d).map_err(envois::drive::ErreurGoogle::from).and_then(|id| sur_le_drive::le_dossier(vus, &id, racine_drive)) {
+            Ok(v) => v,
+            Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
+        },
+        None => {
+            let mut a_reprendre: Vec<sur_le_drive::DossierVu> = vus.into_iter().filter(sur_le_drive::DossierVu::se_reprend).collect();
+            match a_reprendre.len() {
+                0 => return refus(Some(socle::echec::Classe::SauvegardeAbsente), &format!("Aucune sauvegarde de compagnie sous {} dans le Drive lié : le compte relié est-il celui de la compagnie ? Seuls les dossiers créés par PuppetPaie, avec la même application Google, sont visibles.", racine_drive)),
+                1 => a_reprendre.remove(0),
+                _ => {
+                    let liste: Vec<String> = a_reprendre.iter().map(|v| format!("  {} : --dossier-drive {}", v.nom, v.id)).collect();
+                    return refus(Some(socle::echec::Classe::SauvegardeAmbigue), &format!("Plusieurs compagnies dans le Drive : dire laquelle.\n{}", liste.join("\n")));
+                }
+            }
+        }
+    };
     if !json {
-        dire!("Restauration de Drive/{} vers {}", sauvegarde::DossierDuDrive::de(racine_drive, None), cible.display());
+        dire!("Restauration de Drive/{}/{} vers {}", racine_drive, depuis.nom, cible.display());
     }
-    let r = match restauration::restaurer(&cible, racine_drive, &mut client) {
+    let r = match restauration::restaurer(&cible, &depuis, racine_drive, &mut client) {
         Ok(r) => r,
         Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };

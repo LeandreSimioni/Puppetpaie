@@ -42,8 +42,41 @@ struct FichierDrive {
     type_mime: Option<String>,
     #[serde(rename = "webViewLink")]
     lien: Option<Url>,
+    /// Ce que l'application a pose sur un dossier (`appProperties`) ; absent : rien.
+    #[serde(rename = "appProperties", default)]
+    marque: Option<MarqueDuDossier>,
+    /// A la corbeille, lui ou un dossier qui le porte.
+    trashed: Option<bool>,
 }
 impl socle::forme::ReponseDUnTiers for FichierDrive {}
+
+/// LA MARQUE QUE PUPPETPAIE POSE SUR LE DOSSIER D'UNE COMPAGNIE DANS LE DRIVE, ses proprietes privees a l'application
+/// (`appProperties` : « To add properties restricted to your app, use the appProperties field of the files resource »,
+/// au plus 124 octets par propriete, cle et valeur comprises :
+/// `atelier/reference/sources/google-drive-api/google-drive-api-proprietes-20261124.txt`, « Limits of custom file
+/// properties »). Telle que Drive la rend : du texte, que `compagnie::sauvegarde` lit en ses types (une marque qui ne se
+/// lit pas se dit, elle ne ferme pas la liste). Une cle qu'une autre version y poserait est ignoree a la porte.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct MarqueDuDossier {
+    /// L'identite de la compagnie (`compagnie::sauvegarde::IdentiteSurLeDrive`, ecrite).
+    #[serde(rename = "puppetpaie_compagnie", default, skip_serializing_if = "Option::is_none")]
+    pub compagnie: Option<String>,
+    /// La derniere sauvegarde qui a envoye quelque chose (`AAAA-MM-JJTHH:MM`, heure de Paris).
+    #[serde(rename = "puppetpaie_derniere", default, skip_serializing_if = "Option::is_none")]
+    pub derniere: Option<String>,
+    /// Ce que la compagnie sauvegarde pese, en octets, a cette sauvegarde.
+    #[serde(rename = "puppetpaie_octets", default, skip_serializing_if = "Option::is_none")]
+    pub octets: Option<String>,
+}
+impl socle::forme::ReponseDUnTiers for MarqueDuDossier {}
+
+/// UN SOUS-DOSSIER, tel que `Drive::sous_dossiers` le rend : son nom, son identifiant, sa marque (vide : aucune).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SousDossier {
+    pub nom: String,
+    pub id: IdDrive,
+    pub marque: MarqueDuDossier,
+}
 
 /// Le `md5Checksum` d'un fichier : Google dit l'absence par un texte vide comme en omettant la cle ; c'est la meme.
 fn md5_ou_absent<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<EmpreinteMd5>, D::Error> {
@@ -189,13 +222,26 @@ impl Listage {
     }
 }
 
-/// Ce qui part pour creer un dossier (`files.create`) : son nom, son type, son parent.
+/// Ce qui part pour creer un dossier (`files.create`) : son nom, son type, son parent, et sa marque s'il en porte une.
 #[derive(Serialize)]
 struct DossierACreer<'a> {
     name: &'a str,
     #[serde(rename = "mimeType")]
     type_mime: &'a str,
     parents: [&'a str; 1],
+    #[serde(rename = "appProperties", skip_serializing_if = "Option::is_none")]
+    marque: Option<&'a MarqueDuDossier>,
+}
+
+/// Ce qui part pour changer un dossier (`files.update`) : sa marque, ou sa mise a la corbeille (« set the boolean trashed
+/// field to true » : `atelier/reference/sources/google-drive-api/google-drive-api-corbeille-20261124.txt`, « Move a
+/// file to the trash »).
+#[derive(Serialize)]
+struct DossierAChanger<'a> {
+    #[serde(rename = "appProperties", skip_serializing_if = "Option::is_none")]
+    marque: Option<&'a MarqueDuDossier>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trashed: Option<bool>,
 }
 
 /// Les metadonnees d'un premier depot (`files.create`, `multipart`) : le nom et le parent.
@@ -324,12 +370,14 @@ pub struct Depose {
     pub remplace: bool,
 }
 
-/// Ce que la sauvegarde et l'archivage demandent a Drive.
+/// Ce que la sauvegarde, l'archivage, la restauration et la vue du Drive demandent a Drive. La seule suppression est
+/// `mettre_a_la_corbeille`, que seul le geste « Supprimer » d'un dossier appelle (`routes::drive`) : la sauvegarde,
+/// l'archivage et la restauration n'effacent jamais rien.
 pub trait Drive {
     /// `Client.compte` : l'adresse du compte autorise, lue sans reseau.
     fn compte(&self) -> Option<String>;
-    /// `Client.chemin` : cree au besoin toute une suite de dossiers et rend le dernier.
-    fn chemin(&mut self, noms: &[&str]) -> Result<IdDrive, ErreurGoogle>;
+    /// `Client.chemin` : sous `depuis`, cree au besoin toute une suite de dossiers et rend le dernier.
+    fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle>;
     /// `Client.lister` : les FICHIERS deja deposes dans un dossier, par nom ; les sous-dossiers
     /// sont ecartes.
     fn lister(&mut self, parent: &IdDrive) -> Result<BTreeMap<String, Distant>, ErreurGoogle>;
@@ -340,13 +388,21 @@ pub trait Drive {
     /// celle de la comparaison des empreintes.
     /// Un fichier disparu entre-temps est un `FichierAbsent`.
     fn televerser(&mut self, fichier: &Path, parent: &IdDrive, nom: Option<&str>, connu: Option<&Distant>) -> Result<Depose, ErreurGoogle>;
-    /// Les SOUS-DOSSIERS d'un dossier, `(nom, identifiant)`, dans l'ordre ou Drive les rend, homonymes compris (la
-    /// restauration les refuse plutot que d'en choisir un). Ne cree rien : c'est ce qui distingue la recherche de la
-    /// restauration de `chemin`, qui cree ce qui manque.
-    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle>;
+    /// Les SOUS-DOSSIERS d'un dossier, chacun son nom, son identifiant et sa marque, dans l'ordre ou Drive les rend,
+    /// homonymes compris (la restauration les refuse plutot que d'en choisir un). Ne cree rien : c'est ce qui distingue
+    /// la recherche de `chemin`, qui cree ce qui manque.
+    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<SousDossier>, ErreurGoogle>;
     /// Le contenu d'un fichier, tel que Drive le sert (`alt=media`). La restauration le compare a `md5Checksum` avant
     /// d'ecrire quoi que ce soit.
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle>;
+    /// Cree le dossier `nom` sous `parent`, avec sa marque, et rend son identifiant.
+    fn creer_dossier(&mut self, nom: &str, parent: &IdDrive, marque: &MarqueDuDossier) -> Result<IdDrive, ErreurGoogle>;
+    /// Pose sur le dossier `id` ce que `marque` dit ; une cle qu'elle ne dit pas reste telle quelle.
+    fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle>;
+    /// Le dossier `id` est-il en place : il existe, et ni lui ni un dossier qui le porte n'est a la corbeille ?
+    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle>;
+    /// Met `id` (un dossier : tout ce qu'il porte) a la corbeille de Google, d'ou on le sort pendant 30 jours.
+    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle>;
 }
 
 /// Les trois adresses que le client appelle. Les vraies par defaut ; la preuve pointe sur un
@@ -478,10 +534,23 @@ impl Client {
         if let Some(premier) = trouves.files.first() {
             return premier.id();
         }
-        let corps = socle::json_ascii::dumps(&DossierACreer { name: nom, type_mime: DOSSIER_DRIVE, parents: [parent.texte()] }, None, false, false);
+        self.creer(nom, parent, None)
+    }
+
+    /// Cree le dossier `nom` sous `parent`, avec sa marque s'il en porte une.
+    fn creer(&mut self, nom: &str, parent: &IdDrive, marque: Option<&MarqueDuDossier>) -> Result<IdDrive, ErreurGoogle> {
+        let corps = socle::json_ascii::dumps(&DossierACreer { name: nom, type_mime: DOSSIER_DRIVE, parents: [parent.texte()], marque }, None, false, false);
         let url = self.adresses.fichiers.clone();
         let cree: FichierDrive = self.appel(&url, Some(corps.as_bytes()), Some("application/json"), None)?;
         cree.id()
+    }
+
+    /// Change `id` (`files.update`, PATCH de ses metadonnees) : `changement` dit quoi.
+    fn changer(&mut self, id: &IdDrive, changement: &DossierAChanger<'_>) -> Result<(), ErreurGoogle> {
+        let corps = socle::json_ascii::dumps(changement, None, false, false);
+        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "id".into())])));
+        let _: FichierDrive = self.appel(&url, Some(corps.as_bytes()), Some("application/json"), Some("PATCH"))?;
+        Ok(())
     }
 }
 
@@ -543,8 +612,8 @@ impl Drive for Client {
         self.compte.clone()
     }
 
-    fn chemin(&mut self, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
-        let mut parent = IdDrive::RACINE;
+    fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
+        let mut parent = depuis.clone();
         for nom in noms {
             parent = self.dossier(nom, &parent)?;
         }
@@ -617,13 +686,13 @@ impl Drive for Client {
         Ok(depose_de(r))
     }
 
-    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle> {
+    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<SousDossier>, ErreurGoogle> {
         let mut dossiers = Vec::new();
         let mut page: Option<String> = None;
         loop {
             let mut champs = vec![
                 ("q", format!("'{}' in parents and mimeType = '{}' and trashed = false", parent, DOSSIER_DRIVE)),
-                ("fields", "nextPageToken,files(id,name)".to_string()),
+                ("fields", "nextPageToken,files(id,name,appProperties)".to_string()),
                 ("pageSize", "200".to_string()),
             ];
             if let Some(p) = &page {
@@ -632,7 +701,7 @@ impl Drive for Client {
             let url = self.adresses.fichiers.joindre(&format!("?{}", encoder(&champs)));
             let r: Listage = self.appel(&url, None, None, None)?;
             for f in &r.files {
-                dossiers.push((f.nom()?, f.id()?));
+                dossiers.push(SousDossier { nom: f.nom()?, id: f.id()?, marque: f.marque.clone().unwrap_or_default() });
             }
             page = r.suite();
             if page.is_none() {
@@ -646,6 +715,29 @@ impl Drive for Client {
         // fabrique pas un chemin d'URL avec ce qu'un serveur a rendu.
         let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("alt", "media".into())])));
         self.appel_brut(&url, None, None, None)
+    }
+
+    fn creer_dossier(&mut self, nom: &str, parent: &IdDrive, marque: &MarqueDuDossier) -> Result<IdDrive, ErreurGoogle> {
+        self.creer(nom, parent, Some(marque))
+    }
+
+    fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle> {
+        self.changer(id, &DossierAChanger { marque: Some(marque), trashed: None })
+    }
+
+    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle> {
+        // `trashed` : « Whether the file was trashed, either explicitly or from a trashed parent folder »
+        // (`google-drive-api-corbeille-20261124.txt`, « Determine a trashed file's properties »). Un 404 : il n'existe plus.
+        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "id,trashed".into())])));
+        match self.appel::<FichierDrive>(&url, None, None, None) {
+            Ok(f) => Ok(f.trashed != Some(true)),
+            Err(e) if e.statut == Some(ureq::http::StatusCode::NOT_FOUND) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
+        self.changer(id, &DossierAChanger { marque: None, trashed: Some(true) })
     }
 }
 

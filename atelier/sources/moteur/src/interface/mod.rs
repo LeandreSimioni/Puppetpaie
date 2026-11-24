@@ -1513,4 +1513,5 @@ const PHRASES_DE_L_ACCUEIL: &[(&str, &str)] = &[
     ("neuve", "Elle commence ses paies ici : vous la configurez, puis vous engagez vos salariés."),
     ("precedent", "Vous faisiez vos paies ailleurs : vous mettez dans un dossier ce que votre ancien logiciel vous a laissé (bulletins, déclarations), et PuppetPaie se paramètre avec."),
     ("zero", "Remettre à zéro : tout ce qui a été fait ici s'efface"),
+    ("drive", "PuppetPaie l'a sauvegardée dans votre Drive : elle revient sur ce poste, telle qu'elle y est."),
 ];
