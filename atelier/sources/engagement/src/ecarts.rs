@@ -1124,7 +1124,6 @@ fn non_reconnu(c: &mut Suivi, raison: Echec) -> Echec {
 /// reconnait, et ses rapports ne repartent pas.
 pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> EmpreinteCourte {
     let brut = imp.objet().carte();
-    let paie = PaieVersee { importe_le: None, abattement: None, ..p.clone() };
-    let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, paie));
+    let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, p.graine()));
     Empreinte::des_octets(graine.as_bytes()).courte()
 }

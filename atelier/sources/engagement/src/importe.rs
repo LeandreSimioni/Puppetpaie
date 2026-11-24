@@ -383,6 +383,199 @@ pub struct BulletinSource {
     pub contrat: Option<NumeroContrat>,
 }
 
+/// CE QUI RECONNAIT UNE PAIE VERSEE d'une comparaison a l'autre, la seule chose que son empreinte signe
+/// (`ecarts::empreinte`) : la liste fixe de ce que les pieces en disaient quand l'empreinte est nee, ecrite comme elle
+/// l'etait, sans la date de l'import (ecrite `null`). Un champ que l'import ajoute ensuite a la paie, ou a ses lignes,
+/// n'y entre jamais : une paie rangee avant garde son empreinte quand une reimportation la complete. La paie s'y
+/// decompose champ par champ : un champ neuf de la paie doit y etre ecarte par son nom.
+#[derive(Serialize)]
+pub struct GraineDUnePaie {
+    contrat: CleDePaieVersee,
+    nir: Option<droit::fiche::Nir>,
+    numero_objet: Option<NumeroObjetSpectacle>,
+    periode: Option<socle::date::PeriodeOuverte>,
+    quotite: Option<droit::natures::QuotiteDuContrat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    motif_recours: Option<droit::natures::MotifDeRecours>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nature: Option<NatureDeContrat>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    brut: Option<Montant>,
+    nets: GraineDesNets,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_a_payer: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_avant_impot: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_social: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cotisations_salariales: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cotisations_patronales: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cout_employeur: Option<Montant>,
+    verse_le: Option<Jour>,
+    depose_le: Option<Jour>,
+    fichier: Option<NomDeFichier>,
+    #[serde(serialize_with = "bases_en_texte::serialize")]
+    bases: BTreeMap<BaseAssujettie, Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    heures: Option<Heures>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    duree_du_travail: Option<Heures>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cachets: Option<Cachets>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    jours: Option<Jours>,
+    spectacle: Option<String>,
+    analytique: Option<String>,
+    lignes: Vec<GraineDUneLigne>,
+    dates: Vec<socle::date::Periode>,
+    cotisations: Option<Vec<GraineDUneCotisation>>,
+    emploi_imprime: Option<droit::emplois::EmploiEngagement>,
+    bulletin: Option<GraineDuBulletin>,
+    /// La date de l'import ne reconnait pas la paie : la graine l'ecrit `null`, toujours.
+    importe_le: (),
+}
+
+/// Les nets d'une paie, dans sa graine (`GraineDUnePaie`).
+#[derive(Serialize)]
+struct GraineDesNets {
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_imposable: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_verse: Option<Montant>,
+    taux_pas: Option<droit::pas::TauxDePas>,
+    type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
+    identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pas: Option<Montant>,
+}
+
+/// Une ligne de remuneration, dans la graine de sa paie (`GraineDUnePaie`) : sans les heures qu'elle imprime, que
+/// l'import lui a ajoutees ensuite.
+#[derive(Serialize)]
+struct GraineDUneLigne {
+    libelle: String,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant: Option<Montant>,
+    soumis: bool,
+    rubrique: Option<droit::catalogue::CodeDeRubrique>,
+    paiement: Option<crate::ligne::PaiementDeLigne>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    heures: Option<socle::grandeurs::HeuresParUnite>,
+}
+
+/// Une ligne de cotisation, dans la graine de sa paie (`GraineDUnePaie`).
+#[derive(Serialize)]
+struct GraineDUneCotisation {
+    famille: Option<droit::forme_bareme::FamilleDeCotisation>,
+    libelle: String,
+    cotisation: Option<crate::ecarts::RegroupementDeComparaison>,
+    base: Option<crate::calcul::BaseDeCotisation>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    taux_employeur: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant_employeur: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    taux_salarie: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant_salarie: Option<Montant>,
+    hors_total: bool,
+}
+
+/// Le bulletin d'une paie, dans sa graine (`GraineDUnePaie`).
+#[derive(Serialize)]
+struct GraineDuBulletin {
+    fichier: NomDeFichier,
+    page: u64,
+    logiciel: Option<LogicielDUnBulletin>,
+    numero: Option<String>,
+    contrat: Option<NumeroContrat>,
+}
+
+impl PaieVersee {
+    /// SA GRAINE (`GraineDUnePaie`) : ce qui la reconnait, champ par champ ; ce que l'import lui ajoute ensuite
+    /// (`abattement`, les heures que ses lignes impriment) et la date de l'import en sont ecartes.
+    pub fn graine(&self) -> GraineDUnePaie {
+        let PaieVersee {
+            contrat,
+            nir,
+            numero_objet,
+            periode,
+            quotite,
+            motif_recours,
+            nature,
+            brut,
+            nets: Nets { net_imposable, net_verse, taux_pas, type_pas, identifiant_pas, pas },
+            net_a_payer,
+            net_avant_impot,
+            net_social,
+            cotisations_salariales,
+            cotisations_patronales,
+            cout_employeur,
+            verse_le,
+            depose_le,
+            fichier,
+            bases,
+            heures,
+            duree_du_travail,
+            abattement: _,
+            cachets,
+            jours,
+            spectacle,
+            analytique,
+            lignes,
+            dates,
+            cotisations,
+            emploi_imprime,
+            bulletin,
+            importe_le: _,
+        } = self.clone();
+        let ligne = |l: LigneImprimee| {
+            let LigneImprimee { libelle, montant, soumis, rubrique, paiement, heures, heures_imprimees: _ } = l;
+            GraineDUneLigne { libelle, montant, soumis, rubrique, paiement, heures }
+        };
+        let cotisation = |c: CotisationImprimee| {
+            let CotisationImprimee { famille, libelle, cotisation, base, taux_employeur, montant_employeur, taux_salarie, montant_salarie, hors_total } = c;
+            GraineDUneCotisation { famille, libelle, cotisation, base, taux_employeur, montant_employeur, taux_salarie, montant_salarie, hors_total }
+        };
+        GraineDUnePaie {
+            contrat,
+            nir,
+            numero_objet,
+            periode,
+            quotite,
+            motif_recours,
+            nature,
+            brut,
+            nets: GraineDesNets { net_imposable, net_verse, taux_pas, type_pas, identifiant_pas, pas },
+            net_a_payer,
+            net_avant_impot,
+            net_social,
+            cotisations_salariales,
+            cotisations_patronales,
+            cout_employeur,
+            verse_le,
+            depose_le,
+            fichier,
+            bases,
+            heures,
+            duree_du_travail,
+            cachets,
+            jours,
+            spectacle,
+            analytique,
+            lignes: lignes.into_iter().map(ligne).collect(),
+            dates,
+            cotisations: cotisations.map(|cs| cs.into_iter().map(cotisation).collect()),
+            emploi_imprime,
+            bulletin: bulletin.map(|BulletinSource { fichier, page, logiciel, numero, contrat }| GraineDuBulletin { fichier, page, logiciel, numero, contrat }),
+            importe_le: (),
+        }
+    }
+}
+
 droit::cle_opaque! {
     /// LE LOGICIEL DE PAIE D'UN BULLETIN IMPORTE, reconnu a sa signature : une cle de `logiciels` de la table de lecture
     /// des bulletins (`bulletins-lecture-base.json`). Une cle du logiciel (`droit::cle_opaque!`) ; aucun : un autre
