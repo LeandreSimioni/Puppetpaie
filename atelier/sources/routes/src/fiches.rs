@@ -1333,11 +1333,21 @@ impl ReleveFiches {
 
 /// L'avertissement d'une reponse venue d'une autre adresse que celle de la demande, retenue comme si elle venait de
 /// celle-ci : les deux adresses, pour que l'administrateur verifie que c'est bien la personne.
-fn d_une_autre_adresse(venue_de: &str, demande_a: &droit::fiche::Courriel) -> String {
+fn d_une_autre_adresse(venue_de: &droit::fiche::Courriel, demande_a: &droit::fiche::Courriel) -> String {
     format!(
         "Attention : la réponse est arrivée de {} et non de {}, l'adresse de la demande ; elle est retenue comme si elle venait de {} : vérifier que c'est bien la personne.",
         venue_de, demande_a, demande_a
     )
+}
+
+/// UNE REPONSE ARRIVEE pour une demande de fiche, avant que la releve n'en retienne une : son identifiant dans la boite,
+/// le message tel qu'il est arrive, son texte, sa date et l'adresse d'ou elle vient.
+struct ReponseArrivee {
+    ident: String,
+    brut: Vec<u8>,
+    texte: String,
+    quand: Moment,
+    venue_de: droit::fiche::Courriel,
 }
 
 /// Cherche les reponses aux demandes de fiche et cree chaque fiche.
@@ -1385,9 +1395,10 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         };
         // UNE REPONSE D'UNE AUTRE ADRESSE (un alias, une autre boite de la personne) porte le code de la demande : elle est
         // retenue comme si elle venait de l'adresse de la demande, et la note de la fiche dit les deux adresses. Une
-        // reponse de l'adresse de la demande passe avant elle.
-        let mut retenu: Option<(String, Vec<u8>, String, Moment)> = None;
-        let mut d_une_autre: Option<(String, Vec<u8>, String, Moment, String)> = None;
+        // reponse de l'adresse de la demande passe avant elle. Une seule reponse est retenue par demande ; chacune des
+        // autres le dit dans un incident.
+        let mut de_la_demande: Vec<ReponseArrivee> = Vec::new();
+        let mut d_ailleurs: Vec<ReponseArrivee> = Vec::new();
         for ident in identifiants {
             if a.est_a_nous(&ident) {
                 continue;
@@ -1424,21 +1435,46 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 continue;
             }
             let quand = lecture::date_de(&m, socle::temps::secondes().a_la_seconde());
-            if de != *a.adresse {
-                if d_une_autre.is_none() {
-                    d_une_autre = Some((ident, brut.clone(), texte, quand, de));
+            // L'adresse d'ou elle vient, telle que le journal la garde (`RetourFiche::de`).
+            let venue_de = match droit::fiche::Courriel::lire(&de) {
+                Ok(c) => c,
+                Err(_) => {
+                    let (min, max) = droit::fiche::Courriel::LONGUEUR;
+                    r.incidents.push(format!(
+                        "Fiche {} : la réponse arrivée de « {} » le {} n'est pas retenue : cette adresse a {} caractères, une adresse de courriel en a de {} à {}.",
+                        code,
+                        de,
+                        quand.jour_de_paris().jj_mm_aaaa(),
+                        de.chars().count(),
+                        min,
+                        max
+                    ));
+                    continue;
                 }
-                continue;
+            };
+            let arrivee = ReponseArrivee { ident, brut, texte, quand, venue_de };
+            // Elle vient de l'adresse de la demande, a la lettre pres, ou d'ailleurs.
+            if de == *a.adresse {
+                de_la_demande.push(arrivee);
+            } else {
+                d_ailleurs.push(arrivee);
             }
-            // Elle vient de l'adresse de la demande, a la lettre pres.
-            retenu = Some((ident, brut.clone(), texte, quand));
-            break;
         }
-        let (ident, brut, texte, quand, venue_d) = match (retenu, d_une_autre) {
-            (Some((ident, brut, texte, quand)), _) => (ident, brut, texte, quand, None),
-            (None, Some((ident, brut, texte, quand, autre))) => (ident, brut, texte, quand, Some(autre)),
-            (None, None) => continue,
+        let mut arrivees = de_la_demande.into_iter().chain(d_ailleurs);
+        let Some(ReponseArrivee { ident, brut, texte, quand, venue_de }) = arrivees.next() else {
+            continue;
         };
+        for autre in arrivees {
+            r.incidents.push(format!(
+                "Fiche {} (demandée à {}) : la réponse arrivée de {} le {} n'est pas retenue : une autre réponse à cette demande l'a été, celle de {}.",
+                code,
+                a.adresse,
+                autre.venue_de,
+                autre.quand.jour_de_paris().jj_mm_aaaa(),
+                venue_de
+            ));
+        }
+        let venue_d_ailleurs = venue_de != a.adresse;
         // Le salarie se retrouve par l'adresse de la demande, d'ou qu'elle vienne.
         let de = a.adresse.clone();
         let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
@@ -1494,9 +1530,9 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         // cree, mais elle est arrivee : la demande se ferme sur elle, gardee comme piece, et l'incident ne revient pas a
         // chaque releve. Une nouvelle demande se fait si besoin.
         if nom.trim().is_empty() {
-            r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree, la demande est close : en refaire une si besoin.", code, de));
-            if let Some(autre) = &venue_d {
-                r.incidents.push(format!("Fiche {} : {}", code, d_une_autre_adresse(autre, &de)));
+            r.incidents.push(format!("Fiche {} : la réponse de {} ne porte ni nom ni prénom lisible ; rien n'est créé, la demande est close : en refaire une si besoin.", code, venue_de));
+            if venue_d_ailleurs {
+                r.incidents.push(format!("Fiche {} : {}", code, d_une_autre_adresse(&venue_de, &de)));
             }
             let retour = journal::RetourFiche {
                 code: code.clone(),
@@ -1506,7 +1542,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 erreurs: None,
                 quand,
                 qui: qui.to_string(),
-                de: Some(de.clone()),
+                de: Some(venue_de.clone()),
                 message: Some(ident.clone()),
                 reponse: "reponse sans nom lisible : rien n'est cree".to_string(),
             };
@@ -1514,8 +1550,8 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             continue;
         }
         let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
-        if let Some(autre) = &venue_d {
-            note.push_str(&format!(" {}", d_une_autre_adresse(autre, &de)));
+        if venue_d_ailleurs {
+            note.push_str(&format!(" {}", d_une_autre_adresse(&venue_de, &de)));
         }
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
@@ -1566,7 +1602,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             erreurs: Some(erreurs),
             quand,
             qui: qui.to_string(),
-            de: Some(de.clone()),
+            de: Some(venue_de.clone()),
             message: Some(ident.clone()),
             reponse: format!("fiche {} par courriel", if existante.is_some() { "completee" } else { "creee" }),
         };

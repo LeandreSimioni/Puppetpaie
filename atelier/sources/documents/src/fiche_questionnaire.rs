@@ -219,11 +219,8 @@ pub struct QuestionDeclaree {
     /// L'aide courte, sous la case (`""` : aucune).
     pub aide: &'static str,
     pub forme: FormeDeReponse,
-    /// La reponse « je n'en ai pas » et ce que la page en dit : elle s'ecrit `aucun`. `None` : la question n'en a pas.
-    pub aucun: Option<&'static str>,
-    /// « Je n'en ai pas » est coche a l'ouverture de la page : c'est l'usage (pas de nom d'usage, pas de nom de scene,
-    /// le bulletin que l'employeur donne d'ordinaire) ; la personne le decoche pour repondre. Sans `aucun`, rien.
-    pub aucun_coche: bool,
+    /// La reponse « je n'en ai pas » que la question propose (elle s'ecrit `aucun`). `None` : la question n'en a pas.
+    pub aucun: Option<AucunPropose>,
     /// Le jeton du remplissage automatique du navigateur (l'attribut `autocomplete` du WHATWG, « Autofill ») qui dit ce
     /// que la case demande ; `None` : aucun jeton ne le dit, et le navigateur ne propose rien.
     pub autocomplete: Option<&'static str>,
@@ -243,6 +240,27 @@ pub struct QuestionDeclaree {
     /// Elle ne se pose qu'a un salarie dont la fiche dit deja cette case (l'accord a la deduction forfaitaire, a qui
     /// exerce une profession qui y ouvre droit).
     pourvu: Option<CaseSalarie>,
+}
+
+/// LA REPONSE « JE N'EN AI PAS » QU'UNE QUESTION PROPOSE : ce que la page en dit, et si elle est cochee a l'ouverture.
+#[derive(Debug, Clone, Copy)]
+pub struct AucunPropose {
+    pub libelle: &'static str,
+    /// Cochee a l'ouverture de la page : c'est l'usage (pas de nom d'usage, pas de nom de scene, le bulletin que
+    /// l'employeur donne d'ordinaire) ; la personne la decoche pour repondre.
+    pub coche: bool,
+}
+
+impl AucunPropose {
+    /// Proposee, et a cocher par la personne.
+    const fn a_cocher(libelle: &'static str) -> Option<AucunPropose> {
+        Some(AucunPropose { libelle, coche: false })
+    }
+
+    /// Proposee, et cochee d'avance : l'usage.
+    const fn cochee(libelle: &'static str) -> Option<AucunPropose> {
+        Some(AucunPropose { libelle, coche: true })
+    }
 }
 
 /// La cle de la ligne du code, la derniere de la reponse.
@@ -294,7 +312,6 @@ impl Question {
             aide,
             forme,
             aucun: None,
-            aucun_coche: false,
             autocomplete: None,
             si_aucun: None,
             facultative: false,
@@ -310,13 +327,11 @@ impl Question {
             Question::Prenom => QuestionDeclaree { autocomplete: Some("given-name"), ..q("prenom", "Prénom", "Le premier prénom de ton état civil, avec ses accents.", F::Texte, CaseSalarie::PrenomAffichage) },
             Question::Nom => QuestionDeclaree { autocomplete: Some("family-name"), ..q("nom", "Nom de famille", "Ton nom de naissance, comme sur ta pièce d'identité.", F::Texte, CaseSalarie::NomAffichage) },
             Question::NomUsage => QuestionDeclaree {
-                aucun: Some("Je n'en ai pas"),
-                aucun_coche: true,
+                aucun: AucunPropose::cochee("Je n'en ai pas"),
                 ..q("nom_usage", "Nom d'usage", "Seulement si tu portes un autre nom que ton nom de naissance (celui d'un conjoint, par exemple).", F::Texte, CaseSalarie::NomUsage)
             },
             Question::Pseudonyme => QuestionDeclaree {
-                aucun: Some("Je n'en ai pas"),
-                aucun_coche: true,
+                aucun: AucunPropose::cochee("Je n'en ai pas"),
                 ..q("pseudonyme", "Nom de scène", "Le nom sous lequel tu joues, s'il n'est pas le tien.", F::Texte, CaseSalarie::Pseudonyme)
             },
             Question::Naissance => QuestionDeclaree { autocomplete: Some("bday"), ..q("naissance", "Date de naissance", "", F::Date, CaseSalarie::DateNaissance) },
@@ -326,7 +341,7 @@ impl Question {
             Question::PaysNaissance => q("pays_naissance", "Pays de naissance", "", F::PaysDeNaissance, CaseSalarie::PaysNaissance),
             Question::Nationalite => q("nationalite", "Nationalité", "Le pays dont tu as la nationalité.", F::PaysDeNationalite, CaseSalarie::CodeNationaliteDsn),
             Question::Nir => QuestionDeclaree {
-                aucun: Some("Je n'ai pas de numéro de sécurité sociale"),
+                aucun: AucunPropose::a_cocher("Je n'ai pas de numéro de sécurité sociale"),
                 ..q("nir", "Numéro de sécurité sociale", "Les 15 chiffres de ta carte Vitale ou de ton attestation de droits.", F::Nir, CaseSalarie::Nir)
             },
             // Sans NIR, la DPAE porte le sexe (C_SEXE_SAL, obligatoire : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`,
@@ -337,7 +352,7 @@ impl Question {
             // DSN aussi (S21.G00.30.014, « Pour les personnes nées à l'étranger, renseigner 99 », l. 279-294 du bloc 30) :
             // « aucun » (ne hors de France) s'ecrit 99.
             Question::DepartementNaissance => QuestionDeclaree {
-                aucun: Some("Je suis né ou née hors de France"),
+                aucun: AucunPropose::a_cocher("Je suis né ou née hors de France"),
                 si_aucun: Some(Question::Nir),
                 ..q("departement_naissance", "Département de naissance", "Deux caractères, comme 75 ou 2A.", F::Departement, CaseSalarie::DepartementNaissance)
             },
@@ -347,12 +362,12 @@ impl Question {
             Question::Iban => q("iban", "IBAN", "Le compte où ton employeur verse ton salaire : sur ton relevé d'identité bancaire (RIB).", F::Iban, CaseSalarie::Banque),
             Question::Bic => q("bic", "BIC", "Sur le même RIB, 8 ou 11 caractères.", F::Bic, CaseSalarie::Banque),
             Question::CongesSpectacles => QuestionDeclaree {
-                aucun: Some("Je n'ai pas de numéro Congés Spectacles"),
+                aucun: AucunPropose::a_cocher("Je n'ai pas de numéro Congés Spectacles"),
                 ..q("conges_spectacles", "Numéro Congés Spectacles", "Le numéro que la caisse des Congés Spectacles (Audiens) t'a donné.", F::Texte, CaseSalarie::NumCongesSpectacles)
             },
             Question::Anniversaire => QuestionDeclaree {
                 facultative: true,
-                aucun: Some("Je n'en ai pas"),
+                aucun: AucunPropose::a_cocher("Je n'en ai pas"),
                 ..q(
                     "anniversaire",
                     "Date anniversaire de tes droits France Travail",
@@ -409,8 +424,7 @@ impl Question {
                 )
             },
             Question::ModeleBulletin => QuestionDeclaree {
-                aucun: Some("Celui que ton employeur donne d'ordinaire"),
-                aucun_coche: true,
+                aucun: AucunPropose::cochee("Celui que ton employeur donne d'ordinaire"),
                 ..q(
                     "modele_bulletin",
                     "Ton bulletin de paie",
@@ -549,7 +563,7 @@ struct QuestionPubliee {
     choix: Option<Vec<ChoixPublie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     aucun: Option<&'static str>,
-    /// « Je n'en ai pas » coche a l'ouverture (`QuestionDeclaree::aucun_coche`).
+    /// « Je n'en ai pas » coche a l'ouverture (`AucunPropose::coche`).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     aucun_coche: bool,
     /// Le jeton du remplissage automatique (`QuestionDeclaree::autocomplete`).
@@ -610,8 +624,8 @@ pub fn formulaire_publie(exemple: Option<&ExempleDfs>) -> R<FormulairePublie> {
                 aide: d.aide,
                 forme: d.forme.nom(),
                 choix: d.forme.choix()?,
-                aucun: d.aucun,
-                aucun_coche: d.aucun.is_some() && d.aucun_coche,
+                aucun: d.aucun.map(|a| a.libelle),
+                aucun_coche: d.aucun.is_some_and(|a| a.coche),
                 autocomplete: d.autocomplete,
                 si_aucun: d.si_aucun.map(|p| p.declaree().cle),
                 facultative: d.facultative,
@@ -723,7 +737,7 @@ pub fn a_recopier(code: &CodeDeDemande, questions: &[Question], exemple: Option<
             dit.push_str(&format!(" {}", d.aide));
         }
         if let Some(a) = d.aucun {
-            dit.push_str(&format!(" « {} » : {}.", AUCUN, a.to_lowercase()));
+            dit.push_str(&format!(" « {} » : {}.", AUCUN, a.libelle.to_lowercase()));
         }
         if let Some(p) = d.si_aucun {
             dit.push_str(&format!(" Seulement si {} est « {} ».", p.declaree().cle, AUCUN));

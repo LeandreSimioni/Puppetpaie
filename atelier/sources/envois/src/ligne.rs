@@ -837,7 +837,9 @@ pub struct RetourFiche {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: socle::paris::Moment,
     pub qui: String,
-    /// L'adresse d'ou la reponse est venue (`courriel_lecture::Expediteur::Adresse`, la seule retenue).
+    /// L'adresse d'ou la reponse est vraiment venue (`courriel_lecture::Expediteur::Adresse`, la seule retenue) : celle
+    /// de la demande (`DetailFiche::adresse`), ou une autre (un alias de la personne), la reponse etant alors retenue
+    /// comme si elle venait de celle de la demande.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub de: Option<Courriel>,
     /// L'identifiant de la reponse dans la boite (son UID IMAP) : celui d'un message recu, pas un `Message-ID`.
