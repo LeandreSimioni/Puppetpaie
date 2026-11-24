@@ -227,10 +227,13 @@ function boiteSignalement() {
       SG_ENVOI = { id: r.id, deja: !!r.deja };
       $("sg-resultat").innerHTML = departDuMessage(r.signalements.find((s) => s.id === r.id));
       $("sg-messages").innerHTML = vosMessages(r.signalements);
-      ["sg-voir", "sg-reduire", "sg-ajout"].forEach((id) => { $(id).hidden = true; });
-      envoyer.hidden = true;
-      texte.readOnly = true;
-      $("sg-vignettes").querySelectorAll(".sg-retirer").forEach((b) => { b.hidden = true; });
+      // PARTI, IL EST DANS « VOS MESSAGES » : la case se vide pour un message neuf, et le merci s'efface dès qu'on écrit.
+      rendre();
+      texte.value = "";
+      captures.length = 0;
+      dessinerVignettes();
+      texte.addEventListener("input", () => { $("sg-resultat").hidden = true; }, { once: true });
+      texte.focus();
       suivreLesMessages(boite, Date.now());
     } catch (e) { rendre(); montrerErreur(e.message); }
   };

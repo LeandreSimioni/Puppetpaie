@@ -566,7 +566,7 @@ pub fn noter_retour_illisible(racine: &Path, p: &envois::retours::PieceIllisible
     if lignes(&chemin(racine))?.iter().any(|l| l.empreinte == empreinte(LOGICIEL, &ou, quoi)) {
         return Ok(());
     }
-    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &p.echec.phrase, detail: (), trace: None, sans_contexte: true }).map(|_| ())
+    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &p.echec.phrase, detail: &p.echec.a_part, trace: None, sans_contexte: true }).map(|_| ())
 }
 
 /// UN RETOUR QUE L'ORGANISME A RETIRE : son telechargement a rendu HTTP 410 (guide de l'API DSN v6.9, § 9.1.7 « Codes
@@ -583,7 +583,7 @@ pub fn noter_retour_retire(racine: &Path, nature: envois::retours::NatureDuRetou
     if lignes(&chemin(racine))?.iter().any(|l| l.empreinte == empreinte(LOGICIEL, &ou, quoi)) {
         return Ok(());
     }
-    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &echec.phrase, detail: (), trace: None, sans_contexte: true }).map(|_| ())
+    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &echec.phrase, detail: &echec.a_part, trace: None, sans_contexte: true }).map(|_| ())
 }
 
 /// Le meme incident revu dans ce delai se compte dans sa ligne (`noter`).
