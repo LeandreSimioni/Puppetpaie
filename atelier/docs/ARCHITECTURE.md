@@ -1366,6 +1366,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json`), ce qu'il constate (le taux d'une part, un `CeQuiDiffere`, appliqué et du texte ; ou une cotisation que le bulletin imprime à tort et que le moteur ne calcule pas, avec son effet sur ce que la paie a cotisé : une déduction ou une cotisation de plus), et l'écart connu constaté sur une paie importée (la paie, ce que la compagnie et le salarié ont cotisé de plus ou de moins que le texte ; il est aussi sa note dans `journal/ecarts-connus.json`) | `EcartConnu`, `Constat`, `EffetSurLaPaie`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
 | taux appliqué par un ancien logiciel (la cotisation, la part du barème, le taux du texte et celui appliqué, que la pile d'une paie porte en mémoire pour refaire une paie importée qui retombe sur ses écarts connus) | `TauxApplique` | `droit/src/contexte.rs` |
 | revue des paies importées pas encore comparées (les rapports à noter au journal des incidents, les paies qui ne sont plus à comparer, les écarts connus constatés : ce que `import::ecarts::noter` écrit) | `Revue` | `import/src/ecarts.rs` |
+| registre des écarts d'import tel qu'il se lit (les paies comparées, les rapports notés, les écarts connus constatés : ce qu'il garde, ou illisible, un registre dont on ne sait rien, qui n'est pas un registre vide ; la carte d'une paie importée lit ainsi ses écarts connus) | `RegistreLu` | `import/src/ecarts.rs` |
 | paie importée qui ne se compare pas (la sorte de sa raison, tirée de l'endroit et de la classe du refus, jamais de sa phrase, et le refus qui la dit ; la sorte fait le genre de son incident, sans aucune valeur du cas) | `NonComparee`, `SorteDeNonComparaison` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
@@ -2965,7 +2966,12 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   ils ne désignent personne (ni nom, NIR, naissance, adresse, ni salaire ou montant d'une paie ; seulement la
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
-  caviardage. Une paie se compare une fois. **Les écarts connus des anciens logiciels** (`ecarts-connus-base.json`,
+  caviardage. Une paie se compare une fois. Un des trois registres (les paies comparées, les rapports notés, les
+  écarts connus) qui ne se lit pas est un registre dont on ne sait rien, pas un registre vide (`import::ecarts::
+  RegistreLu`) : il ne ferme rien, ne se réécrit pas, un incident le dit une fois par ouverture ; illisible, le
+  premier ne dit d'aucune paie qu'elle est comparée, le second d'aucun rapport qu'il est noté, et la carte d'une paie
+  importée dit en mots que l'explication de ses écarts connus ne se lit pas. Les écarts connus se gardent dès qu'ils
+  sont constatés, la paie fût-elle comparée avec l'effectif seulement proposé. **Les écarts connus des anciens logiciels** (`ecarts-connus-base.json`,
   `engagement::ecarts_connus` ; Léandre, 23/11/2026 : « on ne relève plus les défauts déjà relevés ») : un taux qu'un
   ancien logiciel a appliqué autrement que le texte, déjà relevé, avec la source du taux du texte. Une part qui retombe
   exactement sur une ligne (le taux du bulletin est celui appliqué quand le nôtre est celui du texte ; son montant est le

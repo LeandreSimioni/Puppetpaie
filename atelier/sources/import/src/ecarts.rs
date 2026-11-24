@@ -238,10 +238,42 @@ pub fn ecarts_connus_notes(racine: &Path) -> R<Vec<EcartConnuConstate>> {
     socle::forme::lire_fichier(&p, "Le registre des écarts connus des paies importées ne se lit pas : le signaler au développeur.")
 }
 
-/// UN REGISTRE DES ECARTS D'IMPORT QUI NE SE LIT PAS (`journal/ecarts-connus.json`, `journal/ecarts-import-notes.json`) :
-/// il ne ferme rien (« Le logiciel est doux ») ; l'editeur le sait par un incident de fonctionnement, dont le genre nomme
-/// le registre et rien de la compagnie. Un incident qui ne se note pas se dit sur la sortie d'erreur.
-pub fn noter_registre_illisible(racine: &Path, registre: &str, e: &socle::echec::Echec) {
+/// UN REGISTRE DES ECARTS D'IMPORT TEL QU'IL SE LIT (`journal/ecarts-import.json`, `ecarts-import-notes.json`,
+/// `ecarts-connus.json`) : ce qu'il garde (`Lu` ; absent, il ne garde rien), ou un registre qui ne se lit pas et dont on
+/// ne sait rien (`Illisible`), qui n'est pas un registre vide : ce qui le lit le dit, ne le reecrit pas (ce qu'il garde
+/// se perdrait), et ne ferme rien d'autre (« Le logiciel est doux »).
+pub enum RegistreLu<T> {
+    Lu(T),
+    Illisible(socle::echec::Echec),
+}
+
+impl<T> RegistreLu<T> {
+    fn de(lu: R<T>) -> RegistreLu<T> {
+        match lu {
+            Ok(v) => RegistreLu::Lu(v),
+            Err(e) => RegistreLu::Illisible(e),
+        }
+    }
+
+    /// Le meme registre, illisible : un incident le dit a l'editeur (`noter_registre_illisible`, nomme par `registre`).
+    fn dit_a_l_editeur(self, racine: &Path, registre: &str) -> RegistreLu<T> {
+        if let RegistreLu::Illisible(e) = &self {
+            noter_registre_illisible(racine, registre, e);
+        }
+        self
+    }
+}
+
+/// LES ECARTS CONNUS CONSTATES SUR LES PAIES IMPORTEES, tels que leur registre se lit (`ecarts_connus_notes`), pour la
+/// carte d'une paie importee (`mois`) : l'incident d'un registre illisible se note une fois, a l'ouverture (`noter`).
+pub fn ecarts_connus_lus(racine: &Path) -> RegistreLu<Vec<EcartConnuConstate>> {
+    RegistreLu::de(ecarts_connus_notes(racine))
+}
+
+/// UN REGISTRE DES ECARTS D'IMPORT QUI NE SE LIT PAS (`RegistreLu::Illisible`) : l'editeur le sait par un incident de
+/// fonctionnement, dont le genre nomme le registre et rien de la compagnie. Un incident qui ne se note pas se dit sur la
+/// sortie d'erreur.
+fn noter_registre_illisible(racine: &Path, registre: &str, e: &socle::echec::Echec) {
     #[derive(Serialize)]
     struct Illisible<'a> {
         registre: &'a str,
@@ -256,9 +288,11 @@ pub fn noter_registre_illisible(racine: &Path, registre: &str, e: &socle::echec:
 }
 
 /// Le nom du registre des ecarts connus, tel que l'incident qui le dit illisible le nomme.
-pub const REGISTRE_DES_CONNUS: &str = "journal/ecarts-connus.json";
+const REGISTRE_DES_CONNUS: &str = "journal/ecarts-connus.json";
 /// Le nom du registre des rapports notes, de meme.
-pub const REGISTRE_DES_NOTES: &str = "journal/ecarts-import-notes.json";
+const REGISTRE_DES_NOTES: &str = "journal/ecarts-import-notes.json";
+/// Le nom du registre des paies comparees, de meme.
+const REGISTRE_DES_COMPAREES: &str = "journal/ecarts-import.json";
 
 /// LA REVUE DES PAIES IMPORTEES PAS ENCORE COMPAREES (`rapports`), ce que `noter` ecrit : les rapports a noter au journal
 /// des incidents, les empreintes des paies qui ne sont plus a comparer (le registre des paies comparees), et les ecarts
@@ -269,20 +303,25 @@ pub struct Revue {
     pub connus: Vec<EcartConnuConstate>,
 }
 
-/// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, les empreintes des
+/// Les rapports des paies importees de la compagnie que le registre `deja` ne dit pas deja comparees, les empreintes des
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
-/// refusee se compare de nouveau la fois suivante), et les ecarts connus constates sur celles-ci.
-pub fn rapports(ctx: &Contexte) -> R<Revue> {
+/// refusee se compare de nouveau la fois suivante), et les ecarts connus constates. UN REGISTRE ILLISIBLE ne dit
+/// d'aucune paie qu'elle est deja comparee : toutes se comparent.
+fn rapports(ctx: &Contexte, deja: &RegistreLu<BTreeSet<EmpreinteCourte>>) -> R<Revue> {
     let importes = engagement::importe::tous(&ctx.racine)?;
-    let deja = comparees(&ctx.racine)?;
-    let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
+    let comparee = |e: &EmpreinteCourte| match deja {
+        RegistreLu::Lu(s) => s.contains(e),
+        RegistreLu::Illisible(_) => false,
+    };
+    let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &comparee)).collect();
     // UNE PAIE COMPAREE AVEC CE QUI N'EST QUE PROPOSE (l'effectif d'une annee que la compagnie n'a pas dit :
     // `Comparaison::effectif_propose`) n'entre pas au registre pour de bon : elle se compare de nouveau tant que la
-    // compagnie n'a pas ecrit sa valeur, et ses rapports deja notes ne se notent pas deux fois (leur registre). Ses ecarts
-    // connus se gardent avec sa comparaison definitive.
+    // compagnie n'a pas ecrit sa valeur, et ses rapports deja notes ne se notent pas deux fois (leur registre).
     let pour_de_bon = |c: &&Comparaison| !c.a_refaire() && c.effectif_propose.is_empty();
     let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(pour_de_bon).map(|c| c.empreinte.clone()).collect();
-    let connus = comparaisons.iter().filter(pour_de_bon).flat_map(|c| c.connus.iter().cloned()).collect();
+    // LES ECARTS CONNUS se gardent des qu'ils sont constates, la paie fut-elle comparee avec ce qui n'est que propose :
+    // leur registre est a part de celui des paies comparees, et la carte de la paie les montre.
+    let connus = comparaisons.iter().flat_map(|c| c.connus.iter().cloned()).collect();
     Ok(Revue { rapports: rapports_de(ctx, &comparaisons)?, faites, connus })
 }
 
@@ -417,25 +456,26 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
     if engagement::importe::tous(racine)?.is_empty() {
         return Ok(0);
     }
-    let Revue { rapports, mut faites, connus } = rapports(ctx)?;
-    // UN REGISTRE DES RAPPORTS NOTES ILLISIBLE ne ferme pas la comparaison : les rapports se notent (le journal des
-    // incidents compte ses doublons), le registre illisible reste tel quel pour qu'on le lise, et un incident le dit.
-    let lisible = match signatures_notees(racine) {
-        Ok(s) => Some(s),
-        Err(e) => {
-            noter_registre_illisible(racine, REGISTRE_DES_NOTES, &e);
-            None
-        }
-    };
-    let mut signees = lisible.clone().unwrap_or_default();
-    let avant = signees.len();
+    // LES TROIS REGISTRES, lus une fois : un registre illisible (`RegistreLu::Illisible`) ne ferme rien, ne se reecrit
+    // pas, et un incident le dit, une fois par ouverture.
+    let comparees = RegistreLu::de(comparees(racine)).dit_a_l_editeur(racine, REGISTRE_DES_COMPAREES);
+    let signees = RegistreLu::de(signatures_notees(racine)).dit_a_l_editeur(racine, REGISTRE_DES_NOTES);
+    let connus_notes = ecarts_connus_lus(racine).dit_a_l_editeur(racine, REGISTRE_DES_CONNUS);
+    let Revue { rapports, mut faites, connus } = rapports(ctx, &comparees)?;
+    // Les signatures des rapports notes ici. UN REGISTRE DES RAPPORTS NOTES ILLISIBLE ne dit d'aucun rapport qu'il est
+    // deja note : tous se notent (le journal des incidents compte ses doublons).
+    let mut neuves: BTreeSet<EmpreinteCourte> = BTreeSet::new();
     let mut notes = 0;
     for r in rapports {
         // CE QUI RECONNAIT UN RAPPORT DEJA NOTE : la signature de ce qu'il dit en entier (son resume et son detail), que
         // le registre des rapports notes garde ; le genre ne dit que la cause, pour que le serveur regroupe sous un meme
         // ticket tous les rapports d'une cause, d'une compagnie a l'autre.
         let signature = Empreinte::des_octets(format!("{}|{}", r.resume, socle::ecriture::json_en_ligne(&r.detail)).as_bytes()).courte();
-        if signees.contains(&signature) {
+        let deja_notee = match &signees {
+            RegistreLu::Lu(s) => s.contains(&signature),
+            RegistreLu::Illisible(_) => false,
+        };
+        if deja_notee || neuves.contains(&signature) {
             continue;
         }
         let detail = DetailSigne { signature: signature.clone(), detail: &r.detail };
@@ -443,36 +483,33 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
         match incidents::noter(racine, &note) {
             Ok(Some(_)) => {
                 notes += 1;
-                signees.insert(signature);
+                neuves.insert(signature);
             }
             Ok(None) => {}
             Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", e.phrase),
         }
     }
-    if lisible.is_some() && signees.len() > avant {
-        socle::ecriture::ecrire_json(&registre_des_notes(racine), &signees, 0)?;
+    if let (RegistreLu::Lu(mut s), false) = (signees, neuves.is_empty()) {
+        s.extend(neuves);
+        socle::ecriture::ecrire_json(&registre_des_notes(racine), &s, 0)?;
     }
     // Les ecarts connus constates, avant le registre qui dit leurs paies comparees : une paie qui les a constates ne se
-    // compare plus, ils se gardent. Leur registre illisible ne se reecrit pas (ce qu'il garde se perdrait) : ces paies-la
-    // restent a comparer, et un incident le dit.
-    if !connus.is_empty() {
-        match ecarts_connus_notes(racine) {
-            Ok(mut notes_connus) => {
-                for k in connus {
-                    if !notes_connus.contains(&k) {
-                        notes_connus.push(k);
-                    }
+    // compare plus, ils se gardent. Leur registre illisible : ces paies-la restent a comparer.
+    match connus_notes {
+        RegistreLu::Lu(mut notes_connus) => {
+            let avant = notes_connus.len();
+            for k in connus {
+                if !notes_connus.contains(&k) {
+                    notes_connus.push(k);
                 }
+            }
+            if notes_connus.len() > avant {
                 socle::ecriture::ecrire_json(&registre_des_connus(racine), &notes_connus, 2)?;
             }
-            Err(e) => {
-                noter_registre_illisible(racine, REGISTRE_DES_CONNUS, &e);
-                faites.retain(|f| !connus.iter().any(|k| k.paie == *f));
-            }
         }
+        RegistreLu::Illisible(_) => faites.retain(|f| !connus.iter().any(|k| k.paie == *f)),
     }
-    if !faites.is_empty() {
-        let mut toutes = comparees(racine)?;
+    if let (RegistreLu::Lu(mut toutes), false) = (comparees, faites.is_empty()) {
         toutes.extend(faites);
         socle::ecriture::ecrire_json(&registre(racine), &toutes, 0)?;
     }
