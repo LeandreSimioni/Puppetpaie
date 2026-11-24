@@ -1542,6 +1542,108 @@ impl<'de> Deserialize<'de> for LigneDonnee {
     }
 }
 
+/// Elle s'ecrit comme elle se lit : chaque cle qu'elle dit, ses grandeurs en nombre (une route qui rend la charge
+/// d'`enregistrer-saisie`, `carte::Changement::qui_font`).
+impl Serialize for LigneDonnee {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        /// Un nombre, ou `null`.
+        struct Nombre<'a, G>(&'a Option<G>);
+        impl<G: socle::grandeurs::Grandeur> Serialize for Nombre<'_, G> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                socle::grandeurs::ecrit::nombre_json::option::serialize(self.0, s)
+            }
+        }
+        let mut m = s.serialize_map(None)?;
+        if let Some(x) = &self.rubrique {
+            m.serialize_entry(Cle::Rubrique.nom(), x)?;
+        }
+        if let Some(x) = &self.quantite {
+            m.serialize_entry(Cle::Quantite.nom(), x)?;
+        }
+        if let Some(x) = &self.taux {
+            m.serialize_entry(Cle::Taux.nom(), &Nombre(x))?;
+        }
+        if let Some(x) = &self.heures {
+            m.serialize_entry(Cle::Heures.nom(), &Nombre(x))?;
+        }
+        if let Some(x) = &self.base {
+            m.serialize_entry(Cle::Base.nom(), &Nombre(x))?;
+        }
+        if let Some(x) = &self.taux_majoration {
+            m.serialize_entry(Cle::TauxMajoration.nom(), &Nombre(x))?;
+        }
+        if let Some(x) = &self.montant {
+            m.serialize_entry(Cle::Montant.nom(), &Nombre(x))?;
+        }
+        if let Some(x) = &self.genre {
+            m.serialize_entry(Cle::Genre.nom(), x)?;
+        }
+        if let Some(x) = &self.territoire {
+            m.serialize_entry(Cle::Territoire.nom(), x)?;
+        }
+        if let Some(x) = &self.cases {
+            m.serialize_entry(Cle::Cases.nom(), x)?;
+        }
+        if let Some(x) = &self.lieu {
+            m.serialize_entry(Cle::Lieu.nom(), x)?;
+        }
+        if let Some(x) = &self.dates {
+            m.serialize_entry(Cle::Dates.nom(), x)?;
+        }
+        if let Some(x) = &self.planning {
+            m.serialize_entry(Cle::Planning.nom(), x)?;
+        }
+        m.end()
+    }
+}
+
+impl LignePaie {
+    /// LA LIGNE TELLE QU'UN APPELANT LA DONNE (`LigneDonnee`), celle que sa porte range en elle (`LigneDonnee::ranger`) :
+    /// chaque cle de sa forme, et une cle facultative (`Cle::facultative`) seulement quand elle dit quelque chose. Une
+    /// ligne que le moteur pose (composee, retenue ou indemnite d'un arret, maintien) ne se donne pas : `None`.
+    pub fn donnee(&self) -> Option<LigneDonnee> {
+        let texte = |x: &Option<String>| x.clone().map(Some);
+        let jours = |x: &Vec<DateDeLigne>| (!x.is_empty()).then(|| x.clone());
+        Some(match self {
+            LignePaie::Unites(l) => LigneDonnee {
+                rubrique: Some(l.rubrique.clone()),
+                quantite: Some(l.quantite),
+                taux: Some(l.taux),
+                lieu: texte(&l.lieu),
+                dates: jours(&l.dates),
+                planning: jours(&l.planning),
+                ..LigneDonnee::default()
+            },
+            LignePaie::UnitesEtHeures(l) => LigneDonnee {
+                rubrique: Some(l.rubrique.clone()),
+                quantite: Some(l.quantite),
+                taux: Some(l.taux),
+                heures: Some(l.heures),
+                lieu: texte(&l.lieu),
+                dates: jours(&l.dates),
+                planning: jours(&l.planning),
+                ..LigneDonnee::default()
+            },
+            LignePaie::Frais(l) => LigneDonnee {
+                rubrique: Some(l.rubrique.clone()),
+                quantite: Some(l.quantite),
+                taux: Some(l.taux),
+                territoire: l.territoire.clone().map(Some),
+                cases: (!l.cases.is_empty()).then(|| l.cases.clone()),
+                lieu: texte(&l.lieu),
+                dates: jours(&l.dates),
+                planning: jours(&l.planning),
+                ..LigneDonnee::default()
+            },
+            LignePaie::Pourcentage(l) => LigneDonnee { rubrique: Some(l.rubrique.clone()), base: Some(l.base), taux_majoration: Some(l.taux_majoration), ..LigneDonnee::default() },
+            LignePaie::Montant(l) => LigneDonnee { rubrique: Some(l.rubrique.clone()), montant: Some(l.montant), ..LigneDonnee::default() },
+            LignePaie::AvantageEnNature(l) => LigneDonnee { rubrique: Some(l.rubrique.clone()), montant: Some(l.montant), genre: Some(l.genre.clone()), ..LigneDonnee::default() },
+            LignePaie::Composee(_) | LignePaie::RetenueArret(_) | LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => return None,
+        })
+    }
+}
+
 impl LigneDonnee {
     /// Les cles qu'elle dit, dans l'ordre de `Cle`.
     fn dites(&self) -> Vec<Cle> {

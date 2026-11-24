@@ -286,10 +286,14 @@ async function changer(div, changements) {
   noteSaisie("Enregistrement…");
   let r;
   try {
-    // La carte visée se lit à son tour : une carte neuve écrite par l'appel d'avant a désormais son identité.
-    r = await aSonTour(() => api("enregistrer-saisie", { mois, changements,
-      carte: div.dataset.engagement ? { ecrite: JSON.parse(div.dataset.engagement) }
-        : div._copie ? { copie: div._copie } : { neuve: div._carte.nature } }));
+    // La carte visée se lit à son tour : une carte neuve écrite par l'appel d'avant a désormais son identité. Une carte
+    // proposée pas encore écrite s'écrit par le geste que sa route a rendu (`enregistrer`), ses changements d'abord.
+    r = await aSonTour(() => {
+      if (div.dataset.engagement) return api("enregistrer-saisie", { mois, changements, carte: { ecrite: JSON.parse(div.dataset.engagement) } });
+      const g = div._proposee;
+      if (g) return api(g.route, { ...g.charge, changements: g.charge.changements.concat(changements) });
+      return api("enregistrer-saisie", { mois, changements, carte: { neuve: div._carte.nature } });
+    });
   } catch (e) {
     noteSaisie("Non enregistré — " + e.message);
     dire(e.message, "erreur");
@@ -297,6 +301,7 @@ async function changer(div, changements) {
     return;
   }
   div.dataset.engagement = JSON.stringify(r.engagement);
+  div._proposee = null;
   div._carte = r.brouillon;
   div._aCompleter = r.a_completer;
   // Un engagement auquel il manque un fait s'enregistre aussi : sa carte dit ce qui manque, et la ligne d'état le rappelle.
@@ -732,14 +737,18 @@ document.getElementById("ajouter-engagement").onclick = () => {
 };
 
 /** « COPIER POUR UN AUTRE SALARIÉ » (`copier` de la ligne d'un engagement, route `etat-par-engagement`) : la route du
- *  geste rend la copie, sans son salarié ; une carte neuve s'ouvre, remplie de ce qu'elle rend, et rien ne s'écrit avant
- *  sa première case changée, que le moteur écrit sur la copie (`carte: {copie}` de `enregistrer-saisie`). */
+ *  geste rend la carte proposée, sans son salarié, et le geste qui l'écrit (`enregistrer`) ; une carte neuve s'ouvre,
+ *  remplie de ce qu'elle rend, et rien ne s'écrit avant sa première case changée, qui part avec ce geste. Le mois quitté
+ *  pendant la lecture : la carte ne s'ouvre pas dans un autre mois, et la page le dit. */
 async function copierLEngagement(geste) {
   let r;
   try { r = await api(geste.route, geste.charge); } catch (e) { dire(e.message, "erreur"); return; }
-  if (MOIS_AFFICHE !== geste.charge.mois) return;
+  if (MOIS_AFFICHE !== geste.charge.mois) {
+    dire(`${r.phrase} Elle ne s'ouvre pas ici : l'écran a quitté le mois de l'engagement. Revenez-y et copiez de nouveau.`, "erreur");
+    return;
+  }
   const div = carteDEngagement(r.brouillon, null);
-  div._copie = r.copie;
+  div._proposee = r.enregistrer;
   document.getElementById("engagements").appendChild(div);
   noteSaisie(r.phrase);
   div.scrollIntoView({ block: "center" });

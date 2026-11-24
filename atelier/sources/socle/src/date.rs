@@ -182,6 +182,13 @@ impl Duree<EnJours> {
     }
 }
 
+/// Une duree en jours s'ecrit en case comme son fichier l'ecrit (`Duree::ecrite_en_jours`) : un nombre de jours.
+impl crate::ecriture::EcritureDeCase for Duree<EnJours> {
+    fn ecrire_la_case<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Duree::ecrite_en_jours(self, s)
+    }
+}
+
 impl Duree<EnMois> {
     /// `n` mois de calendrier, qu'un texte fixe.
     pub const fn mois(n: u32) -> Duree<EnMois> {

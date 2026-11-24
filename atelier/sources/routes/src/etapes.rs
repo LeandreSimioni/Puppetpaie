@@ -229,7 +229,8 @@ pub(crate) enum ChargeDuGeste {
     Annee(ChargeAnnee),
     Faite(crate::rappels::ChargeFaite),
     Piece(crate::documents::ChargePiecePartie),
-    Copie(crate::mois::ChargeCopier),
+    Proposee(crate::mois::ChargeCarteProposee),
+    Carte(crate::mois::ChargeCase),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -268,7 +269,8 @@ charge_du_geste! {
     ChargeAnnee => Annee,
     crate::rappels::ChargeFaite => Faite,
     crate::documents::ChargePiecePartie => Piece,
-    crate::mois::ChargeCopier => Copie,
+    crate::mois::ChargeCarteProposee => Proposee,
+    crate::mois::ChargeCase => Carte,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
@@ -1369,7 +1371,7 @@ impl<'a> LigneDePage<'a> {
             numero_dit: v.numero.as_ref().map(|n| format!("contrat n° {}", n)),
             copier: action(
                 Route::CopierEngagement,
-                crate::mois::ChargeCopier { mois, engagement: l.engagement.clone() },
+                crate::mois::ChargeCarteProposee { mois, engagement: l.engagement.clone() },
                 Some(Route::EnregistrerSaisie),
                 "Copier pour un autre salarié".into(),
             ),
