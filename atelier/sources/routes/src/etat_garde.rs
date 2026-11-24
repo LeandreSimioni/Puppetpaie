@@ -105,7 +105,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les quatre étapes du mois : DPAE, Contrats, DSN, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux) ; ou_en_est, le cadre sous le mois (titre, dernier : le dernier fait du mois et ce qui en est revenu, prochaine : la prochaine étape et son échéance) ; envois (ce qui part en fond de ce mois : en cours, parti, ou échoué et le geste qui le refait)",
+        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux ; une étape d'où un envoi part en fond dit « en cours d'envoi » à la place de son geste) ; ou_en_est, le cadre sous le mois (titre, dernier : l'encart du dernier fait du mois et de ce qui en est revenu, dans son ton, prochaine : la prochaine étape et son échéance) ; envois (ce qui part en fond de ce mois : etat et phrase, en cours, parti, ou échoué et le geste qui le refait ; avertissements)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -478,7 +478,7 @@ impl Serialize for ALaPage<'_> {
 #[derive(Serialize)]
 struct DuMois<'a> {
     #[serde(flatten)]
-    bilan: &'a Bilan,
+    bilan: std::borrow::Cow<'a, Bilan>,
     mot_de_passe_pose: bool,
     envois: Vec<crate::envois_en_fond::EnvoiDit>,
 }
@@ -489,10 +489,25 @@ impl Dite for DuMois<'_> {
     }
 }
 
+/// Le mois tel que la page le lit : un envoi de ce mois en cours, son etape le dit a la place de son geste
+/// (`Bilan::pendant_l_envoi`) ; le bilan garde n'en change pas.
 fn du_mois<'a>(racine: &Path, bilan: &'a Bilan) -> R<DuMois<'a>> {
     let pose = compagnie::coffre::Coffre::du_poste(racine)
         .ouverture_exigee()?;
-    let envois = crate::envois_en_fond::de_la_compagnie(racine).dits_du_mois(bilan.mois());
+    let Some(registre) = crate::envois_en_fond::existants(racine)? else {
+        return Ok(DuMois { bilan: std::borrow::Cow::Borrowed(bilan), mot_de_passe_pose: pose, envois: Vec::new() });
+    };
+    let en_cours = registre.en_cours_du_mois(bilan.mois());
+    let bilan = if en_cours.is_empty() {
+        std::borrow::Cow::Borrowed(bilan)
+    } else {
+        let mut b = bilan.clone();
+        for (etape, phrase) in &en_cours {
+            b.pendant_l_envoi(*etape, phrase);
+        }
+        std::borrow::Cow::Owned(b)
+    };
+    let envois = registre.dits_du_mois(bilan.mois());
     Ok(DuMois { bilan, mot_de_passe_pose: pose, envois })
 }
 

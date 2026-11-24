@@ -89,7 +89,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes et leurs fautes.",
         charge: &CHARGE_FICHE,
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}],"changees":["titre"]}"#,
-        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander, ou sans_geste, ce qui le remplace : la demande en cours d'envoi, la boîte à lier) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -282,7 +282,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
         Route::CompagnieSupprimer => {
             let r: crate::accueil::suppression::Suppression =
-                crate::accueil::suppression::route(&ctx.racine, charge.lire()?, charge.mot_de_passe(), &|_| {}).map_err(|m| m.reclasser(Classe::Refuse))?;
+                crate::accueil::suppression::route(&ctx.racine, charge.lire()?, charge.mot_de_passe(), &|_| Ok(())).map_err(|m| m.reclasser(Classe::Refuse))?;
             en_json(r)
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
@@ -1366,7 +1366,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
     let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
     let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur, questions: Some(envoyees.clone()) };
     // Sa demande se refait depuis la fiche, d'ou elle est partie.
-    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: format!("Demande de fiche à {}", adresse), mois: None, refaire: None }))?;
+    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: format!("Demande de fiche à {}", adresse), place: crate::envois_en_fond::PlaceDeLEnvoi::FicheNeuve, refaire: None, avertissements: Vec::new() }))?;
     if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e.phrase, demande(None, None), None)))?;
         return Err(e);

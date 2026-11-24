@@ -315,15 +315,13 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
     })
 }
 
-/// LE FAIT QU'UNE LIGNE DU JOURNAL DIT, en une phrase : son acte, quand il est parti, et ce qui en est revenu
-/// (« Avenants envoyés à la signature le 24/11/2026 à 16:25 : tous revenus signés (2). ») ; le cadre du mois
-/// (`etapes::OuEnEstLeMois`) le dit de sa derniere ligne.
-pub(crate) fn fait_du_journal(ctx: &Contexte, l: &Ligne, lignes: &[Ligne]) -> String {
-    let r = etats::resume_en_parties(l, &etats::contrats_recus(lignes), &etats::avenants_par_contrat(lignes));
-    match r.suite {
-        Some(s) => format!("{} {} : {}.", acte(ctx, l), r.le, s),
-        None => format!("{} {}.", acte(ctx, l), r.le),
-    }
+/// LE FAIT QU'UNE LIGNE DU JOURNAL DIT, en une phrase (`envois::etats::fait` : son acte, quand il est parti, et ce qui en
+/// est revenu), dans le ton de ce qui en est revenu : refuse au depot ou par un retour, en rouge ; sinon, fait. Le cadre
+/// du mois (`etapes::OuEnEstLeMois`) le dit de sa derniere ligne.
+pub(crate) fn fait_du_journal(ctx: &Contexte, l: &Ligne, lignes: &[Ligne]) -> crate::Encart {
+    let phrase = etats::fait(&acte(ctx, l), l, &etats::contrats_recus(lignes), &etats::avenants_par_contrat(lignes));
+    let ton = if !l.accepte() || etats::refuse_par_un_retour(l) { socle::ecran::EtatDEcran::Refuse } else { socle::ecran::EtatDEcran::Fait };
+    crate::Encart::de(ton, String::new(), phrase)
 }
 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
@@ -335,10 +333,11 @@ pub(crate) fn acte(ctx: &Contexte, l: &Ligne) -> String {
         Ligne::ContratSignature(e) => {
             let piece = if e.detail.acte == Some(envois::journal::ActeDuContrat::Avenant) { "Avenant" } else { "Contrat" };
             // « Avenants envoyés à la signature » : la piece et son depart s'accordent au nombre de ce que la ligne porte.
-            let s = if e.detail.contrats.len() > 1 { "s" } else { "" };
+            let (s, place) = if e.detail.contrats.len() > 1 { ("s", etats::PlaceDeLaRemise::RecitPluriel) } else { ("", etats::PlaceDeLaRemise::Recit) };
+            let remis = etats::mot_de_la_remise(Some(e.detail.remise), place);
             match e.detail.remise {
-                documents::ModeDeRemise::Imprime => format!("{}{} imprimé{}, à remettre en main propre", piece, s, s),
-                documents::ModeDeRemise::Courriel => format!("{}{} envoyé{} à la signature", piece, s, s),
+                documents::ModeDeRemise::Imprime => format!("{}{} {}, à remettre en main propre", piece, s, remis),
+                documents::ModeDeRemise::Courriel => format!("{}{} {}", piece, s, remis),
             }
         }
         Ligne::ContratContresigne(e) => format!("Contrat contresigné renvoyé — {}", qui_du_contrat(ctx, &e.detail.nom, &e.detail.salarie)),

@@ -637,7 +637,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let versions = envois::journal::versions_des_contrats(ctx, &contrats, &departs)?;
     let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
     crate::envois_en_fond::partir(ctx, || {
-        Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: contrats_et_avenants(contrats.len(), d.avenants_ensuite), mois: Some(mois), refaire: Some(crate::etapes::refaire_la_signature(mois)) })
+        Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: contrats_et_avenants(contrats.len(), d.avenants_ensuite), place: crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois, etape: crate::etapes::QuelleEtape::Signature }, refaire: Some(crate::etapes::refaire_la_signature(mois)), avertissements: Vec::new() })
     })?;
     let partis = match envoi::envoyer_suivi(&messages, &expediteur, client, Some(&mut identifiants), None) {
         Ok(p) => p,
@@ -1171,7 +1171,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
         let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
         crate::envois_en_fond::partir(ctx, || {
             let n = par_salarie.iter().map(|(_, aa)| aa.len()).sum();
-            Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: contrats_et_avenants(0, n), mois: Some(mois), refaire: Some(crate::etapes::refaire_la_signature(mois)) })
+            Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: contrats_et_avenants(0, n), place: crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois, etape: crate::etapes::QuelleEtape::Signature }, refaire: Some(crate::etapes::refaire_la_signature(mois)), avertissements: Vec::new() })
         })?;
         let partis_ici = match envoi::envoyer_suivi(std::slice::from_ref(&message), &expediteur, client, Some(&mut identifiants), None) {
             Ok(p) => p,

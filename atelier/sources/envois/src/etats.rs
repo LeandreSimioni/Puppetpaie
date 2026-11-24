@@ -189,11 +189,13 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 // -------------------------------------------------------------- les contrats
 
 /// OU SE DIT LA REMISE : dans une phrase (la reponse d'une route, la phrase d'un envoi du journal), ou dans le recit de
-/// ce qui est parti (l'Historique du mois, les pieces d'un contrat).
+/// ce qui est parti (l'Historique du mois, les pieces d'un contrat), au singulier ou, pour plusieurs pieces parties
+/// ensemble, au pluriel (« Avenants envoyés à la signature »).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaceDeLaRemise {
     Phrase,
     Recit,
+    RecitPluriel,
 }
 
 /// LE MOT DE LA REMISE d'une piece partie, a sa place : « imprimé » ; par courriel, « envoyé » dans une phrase,
@@ -204,8 +206,10 @@ pub enum PlaceDeLaRemise {
 pub fn mot_de_la_remise(par: Option<ModeDeRemise>, place: PlaceDeLaRemise) -> &'static str {
     match (par, place) {
         (Some(ModeDeRemise::Imprime), PlaceDeLaRemise::Phrase | PlaceDeLaRemise::Recit) => "imprimé",
+        (Some(ModeDeRemise::Imprime), PlaceDeLaRemise::RecitPluriel) => "imprimés",
         (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Phrase) => "envoyé",
         (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Recit) => "envoyé à la signature",
+        (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::RecitPluriel) => "envoyés à la signature",
     }
 }
 
@@ -525,16 +529,16 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
 
 /// LA PHRASE D'UN ENVOI, EN SES PARTIES (`resume_en_parties`) : quand il est parti (`le` : « le 24/11/2026 à 16:25 », « en
 /// TEST le … »), ce que dit son depart (`prefixe` : « envoyé le … »), et ce qui en est revenu (`suite`), s'il y a lieu.
-/// L'Historique la lit entiere (`ecrit`) ; le cadre du mois, apres l'acte qui dit deja le depart (`le` et `suite`).
-pub struct ResumeDUnEnvoi {
-    pub le: String,
-    pub prefixe: String,
-    pub suite: Option<String>,
+/// L'Historique la lit entiere (`ecrit`, par `resume`) ; le cadre du mois, apres l'acte qui dit deja le depart (`fait`).
+struct ResumeDUnEnvoi {
+    le: String,
+    prefixe: String,
+    suite: Option<String>,
 }
 
 impl ResumeDUnEnvoi {
     /// « envoyé le … — tous revenus signés (2) ».
-    pub fn ecrit(&self) -> String {
+    fn ecrit(&self) -> String {
         match &self.suite {
             Some(s) => format!("{} — {}", self.prefixe, s),
             None => self.prefixe.clone(),
@@ -542,8 +546,19 @@ impl ResumeDUnEnvoi {
     }
 }
 
+/// LE FAIT D'UNE LIGNE DU JOURNAL, en une phrase : son acte `acte` (que dit l'appelant : « Avenants envoyés à la
+/// signature »), quand il est parti, et ce qui en est revenu (« Avenants envoyés à la signature le 24/11/2026 à 16:25 :
+/// tous revenus signés (2). »).
+pub fn fait(acte: &str, ligne: &Ligne, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
+    let r = resume_en_parties(ligne, recus, avenants);
+    match r.suite {
+        Some(s) => format!("{} {} : {}.", acte, r.le, s),
+        None => format!("{} {}.", acte, r.le),
+    }
+}
+
 /// `resume`, en ses parties.
-pub fn resume_en_parties(ligne: &Ligne, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> ResumeDUnEnvoi {
+fn resume_en_parties(ligne: &Ligne, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> ResumeDUnEnvoi {
     let (quand, le) = match ligne.mode() {
         Mode::Test => {
             let quand = format!("en TEST le {}", ligne.quand().dit());

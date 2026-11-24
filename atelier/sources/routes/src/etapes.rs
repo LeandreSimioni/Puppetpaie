@@ -380,10 +380,14 @@ pub(crate) struct Bilan {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct OuEnEstLeMois {
     titre: String,
+    /// Le dernier fait, dans le ton de ce qui en est revenu (`historique_mois::fait_du_journal`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    dernier: Option<String>,
+    dernier: Option<crate::Encart>,
     #[serde(skip_serializing_if = "Option::is_none")]
     prochaine: Option<String>,
+    /// L'etape d'ou vient `prochaine` : un envoi en cours de cette etape la dit a sa place (`Bilan::pendant_l_envoi`).
+    #[serde(skip)]
+    prochaine_de: Option<QuelleEtape>,
 }
 
 impl OuEnEstLeMois {
@@ -393,14 +397,14 @@ impl OuEnEstLeMois {
         // Le plus recent ; a la meme heure, le reel devant son test (l'ordre de l'Historique).
         let dernier = du_mois.iter().max_by(|a, b| (a.quand(), a.mode()).cmp(&(b.quand(), b.mode()))).map(|l| crate::historique_mois::fait_du_journal(ctx, l, lignes));
         let groupes = || etapes.iter().flat_map(|e| e.groupes.iter().map(move |g| (e, g)));
-        let a_faire = groupes().find(|(e, g)| e.suivante && matches!(g.etat, EtatCase::AFaire | EtatCase::Refuse)).and_then(|(_, g)| g.phrase.clone());
-        let attend = groupes().find(|(_, g)| g.etat == EtatCase::EnAttente).and_then(|(_, g)| g.phrase.clone());
-        let prochaine = match (a_faire, attend) {
-            (Some(p), _) => Some(format!("Prochaine étape — {}.", p)),
-            (None, Some(p)) => Some(format!("En attente — {}.", p)),
-            (None, None) => None,
+        let a_faire = groupes().find(|(e, g)| e.suivante && matches!(g.etat, EtatCase::AFaire | EtatCase::Refuse)).and_then(|(e, g)| g.phrase.clone().map(|p| (e.cle, p)));
+        let attend = groupes().find(|(_, g)| g.etat == EtatCase::EnAttente).and_then(|(e, g)| g.phrase.clone().map(|p| (e.cle, p)));
+        let (prochaine, prochaine_de) = match (a_faire, attend) {
+            (Some((e, p)), _) => (Some(format!("Prochaine étape — {}.", p)), Some(e)),
+            (None, Some((e, p))) => (Some(format!("En attente — {}.", p)), Some(e)),
+            (None, None) => (None, None),
         };
-        OuEnEstLeMois { titre: format!("Où en est {}", mois.libelle(Graphie::Accentuee)), dernier, prochaine }
+        OuEnEstLeMois { titre: format!("Où en est {}", mois.libelle(Graphie::Accentuee)), dernier, prochaine, prochaine_de }
     }
 }
 
@@ -447,6 +451,21 @@ impl Bilan {
     /// Le mois du bilan.
     pub(crate) fn mois(&self) -> Mois {
         self.mois
+    }
+
+    /// UN ENVOI DE CE MOIS EST EN COURS depuis l'etape `etape` (`envois_en_fond`, la fenetre) : chaque case de l'etape
+    /// qui a un geste dit `phrase` (« 2 contrats en cours d'envoi… ») a la place de ce geste, et la prochaine etape aussi
+    /// quand c'est elle ; un second clic ne refait pas partir ce qui part.
+    pub(crate) fn pendant_l_envoi(&mut self, etape: QuelleEtape, phrase: &str) {
+        for e in self.etapes.iter_mut().filter(|e| e.cle == etape) {
+            for g in e.groupes.iter_mut().filter(|g| g.action.is_some() && g.etat != EtatCase::Fait) {
+                let colonnes = std::mem::take(&mut g.colonnes);
+                *g = Groupe { colonnes, ..Groupe::de(EtatCase::EnAttente, None, String::new(), phrase.to_string(), g.echeance.clone(), None) };
+            }
+        }
+        if self.ou_en_est.prochaine_de == Some(etape) {
+            self.ou_en_est.prochaine = Some(format!("En cours — {}", phrase));
+        }
     }
 }
 

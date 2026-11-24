@@ -166,15 +166,19 @@ pub fn dans_la_fenetre(o: &Options, route: Route, charge: &Charge) -> Reponse {
     remettre_le_fil();
     match rendu {
         Ok(rep) => rep,
-        Err(panique) => {
-            let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
-                (Some(s), _) => format!(" ({})", s),
-                (None, Some(s)) => format!(" ({})", s),
-                (None, None) => String::new(),
-            };
-            Reponse::de(route, Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée{}.", route, pourquoi))))
-        }
+        Err(panique) => Reponse::de(route, Err(route_tombee(route, panique.as_ref()))),
     }
+}
+
+/// UNE ROUTE TOMBEE (une panique gardee : `dans_la_fenetre`, `envois_en_fond::EnvoisEnFond::servir`) : un defaut du
+/// logiciel, qui dit la route et ce que la panique a dit, quand elle a dit un texte.
+pub(crate) fn route_tombee(route: Route, panique: &(dyn std::any::Any + Send)) -> Echec {
+    let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
+        (Some(s), _) => format!(" ({})", s),
+        (None, Some(s)) => format!(" ({})", s),
+        (None, None) => String::new(),
+    };
+    erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée{}.", route, pourquoi))
 }
 
 /// `moteur route [--racine R] [--date D]` : la demande lue en sa forme (`Demande::lire`), sans ses secrets

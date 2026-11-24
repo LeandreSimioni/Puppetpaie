@@ -744,8 +744,9 @@ async function boiteAvenant(mois, salarie, debut, numero) {
   });
 }
 
-/** OÙ EN EST LE MOIS, sous lui, tel que `etat-du-mois` le rend : son dernier fait (`ou_en_est.dernier`), ce qui en part
- *  en fond (`envois` : en cours, parti, ou échoué et le geste qui le refait), et la prochaine étape. */
+/** OÙ EN EST LE MOIS, sous lui, tel que `etat-du-mois` le rend : son dernier fait (`ou_en_est.dernier`, un encart dans
+ *  le ton que la route lui donne), ce qui en part en fond (`envois` : en cours, parti, ou échoué et le geste qui le
+ *  refait ; ce qu'il avertit), et la prochaine étape. */
 function dessinerOuEnEst(e, mois) {
   const cible = document.getElementById("resultat");
   const o = e.ou_en_est;
@@ -755,9 +756,10 @@ function dessinerOuEnEst(e, mois) {
   cible.innerHTML = `
     <div class="carte" style="margin-top:20px">
       <h2>${echapper(o.titre)}</h2>
-      ${o.dernier ? `<div class="encart bien">${echapper(o.dernier)}</div>` : ""}
+      ${encart(o.dernier)}
       ${envois.map((x, i) => `<div class="encart ${ENCART[x.etat]}">${echapper(x.phrase)}${x.refaire
-        ? ` <button class="lien" data-refaire-mois="${i}">${echapper(x.refaire.libelle)}</button>` : ""}</div>`).join("")}
+        ? ` <button class="lien" data-refaire-mois="${i}">${echapper(x.refaire.libelle)}</button>` : ""}${
+        x.avertissements.map((a) => `<div>${echapper(a)}</div>`).join("")}</div>`).join("")}
       ${o.prochaine ? `<p><b>${echapper(o.prochaine)}</b></p>` : ""}
     </div>`;
   cible.querySelectorAll("[data-refaire-mois]").forEach((b) => {

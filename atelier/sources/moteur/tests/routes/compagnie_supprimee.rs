@@ -32,7 +32,9 @@ fn poste(inst: &Path) -> Poste {
     Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::piece::Zone::lue("2026-10-22T10:00:00", socle::piece::format::InstantIso).valeur().unwrap() }
 }
 
-fn sans_rien(_: &Path) {}
+fn sans_rien(_: &Path) -> socle::echec::R<()> {
+    Ok(())
+}
 
 #[test]
 fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
@@ -57,7 +59,10 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
     let appele = Cell::new(false);
     // Sans mot de passe : personne pour le taper ici, refuse ; un mauvais, refuse. Rien n'est efface.
     for m in [None, Some(""), Some("pas-le-bon-1")].map(|m| m.map(socle::secret::Secret::nouveau)) {
-        assert!(supprimer(&i, &b, m.as_ref(), &p, &|_| appele.set(true)).is_err(), "{:?}", m);
+        assert!(supprimer(&i, &b, m.as_ref(), &p, &|_| {
+            appele.set(true);
+            Ok(())
+        }).is_err(), "{:?}", m);
         assert!(!appele.get() && b.join("config/entreprise.json").is_file(), "{:?} : rien n'est efface", m);
         assert!(administrateur::est_rattachee(&i, &b).unwrap());
     }
@@ -65,7 +70,10 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
     let c = ajouter_venant(&i, "Compagnie C", Venue::Neuve).unwrap().racine;
     assert!(supprimer(&i, &c, Some(&admin()), &p, &sans_rien).is_err() && c.is_dir());
 
-    assert_eq!(supprimer(&i, &b, Some(&admin()), &p, &|_| appele.set(true)).unwrap(), "Compagnie B");
+    assert_eq!(supprimer(&i, &b, Some(&admin()), &p, &|_| {
+            appele.set(true);
+            Ok(())
+        }).unwrap(), "Compagnie B");
     assert!(appele.get() && !b.exists());
     assert!(liste_de(&i).unwrap().iter().all(|x| x.racine != b), "la tuile a disparu");
     assert_eq!(administrateur::rattachees(&i).unwrap(), vec![a.clone()], "le registre l'oublie");

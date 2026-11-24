@@ -200,9 +200,9 @@ charge! {
 charge! {
     /// La charge de `compagnies-garder` : les compagnies a garder, et celles a supprimer.
     #[derive(Debug)]
-    struct ChargeGarder {
-        garder: Vec<IdDeCompagnie> = dit("À garder", "les identifiants des compagnies à garder (elles deviennent réelles)"),
-        ne_pas_garder: Vec<IdDeCompagnie> = dit("À supprimer", "les identifiants des compagnies à supprimer"),
+    pub struct ChargeGarder {
+        pub garder: Vec<IdDeCompagnie> = dit("À garder", "les identifiants des compagnies à garder (elles deviennent réelles)"),
+        pub ne_pas_garder: Vec<IdDeCompagnie> = dit("À supprimer", "les identifiants des compagnies à supprimer"),
     }
 }
 
@@ -392,7 +392,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::CompagniesGarder => {
             let c: ChargeGarder = charge.lire()?;
             let poste = administrateur::Poste::de_ce_poste();
-            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(|e| e.reclasser(Classe::Refuse))?;
+            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| Ok(())).map_err(|e| e.reclasser(Classe::Refuse))?;
             let erreurs: String = reponse.erreurs.iter().map(|e| format!(" {}", e)).collect();
             let phrase = socle::phrase!("{} compagnie(s) gardée(s), {} supprimée(s).{}", reponse.gardees.len(), reponse.supprimees.len(), erreurs);
             en_json(Gardees { phrase, reponse })

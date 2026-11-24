@@ -265,6 +265,7 @@ pub trait Dite: Serialize {
 #[derive(Clone, Debug)]
 pub struct Rendu {
     objet: Objet,
+    phrase: Phrase,
     phrases: PhrasesRendues,
 }
 
@@ -290,7 +291,7 @@ impl Rendu {
             return Err(erreur(Classe::DefautDuLogiciel, SANS_PHRASE));
         }
         let phrases = objet.lire(&[], "Défaut du logiciel : une phrase que la route rend n'est pas un texte.").map_err(|m| m.reclasser(Classe::DefautDuLogiciel))?;
-        Ok(Rendu { objet, phrases })
+        Ok(Rendu { objet, phrase: ecrite.phrase, phrases })
     }
 
     /// Les phrases qu'il porte, a toute profondeur (`PhrasesRendues`).
@@ -438,7 +439,15 @@ impl Refus {
 #[derive(Clone, Debug)]
 pub struct Reponse {
     ecrit: bool,
-    issue: Result<Objet, Refus>,
+    issue: Result<Rendue, Refus>,
+}
+
+/// CE QU'UNE REPONSE RENDUE PORTE : l'objet de la route, et sa phrase, lue une fois a la porte (`Rendu::de`, ou la
+/// relecture d'une reponse gardee) ; on ne la relit plus ensuite.
+#[derive(Clone, Debug)]
+struct Rendue {
+    objet: Objet,
+    phrase: Phrase,
 }
 
 /// La reponse telle qu'elle s'ecrit (`Reponse::en_json`).
@@ -473,7 +482,10 @@ impl<'de> Deserialize<'de> for Reponse {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Reponse, D::Error> {
         let r = ReponseLue::deserialize(d)?;
         let issue = match (r.ok, r.resultat, r.refus) {
-            (true, Some(o), None) => Ok(o),
+            (true, Some(objet), None) => {
+                let lue: PhraseDuRendu = objet.lire_cles(&["phrase"], "Une réponse rendue porte sa phrase.").map_err(|e| serde::de::Error::custom(e.phrase))?;
+                Ok(Rendue { objet, phrase: lue.phrase })
+            }
             (false, None, Some(refus)) => Err(refus),
             _ => return Err(serde::de::Error::custom("une réponse rendue porte son résultat (un objet), une réponse refusée son refus, et rien d'autre")),
         };
@@ -491,14 +503,14 @@ impl Reponse {
     /// La reponse de la route `route` servie : ce qu'elle a rendu, ou son refus ; `au_journal`, si elle a ecrit au
     /// journal des envois (`envois::journal::ecritures_du_fil`).
     pub fn du_geste(route: Route, rendu: R<Rendu>, au_journal: bool) -> Reponse {
-        Reponse::issue_de(route, rendu.map(|r| r.objet).map_err(|e| Refus::de(Some(route), e)), au_journal)
+        Reponse::issue_de(route, rendu.map(|r| Rendue { objet: r.objet, phrase: r.phrase }).map_err(|e| Refus::de(Some(route), e)), au_journal)
     }
 
     /// L'issue `issue` de la route `route`, et si elle a pu ecrire (`ecrit`) : la page oublie alors ce qu'elle garde de
     /// la compagnie, et c'est tout ce que cela coute. Toute route dont la fiche ecrit ou engage, quelle que soit son
     /// issue (elle a pu ecrire avant de refuser, ou de tomber) ; et une lecture qui a ecrit au journal des envois
     /// (`au_journal` : un releve qui range des retours).
-    fn issue_de(route: Route, issue: Result<Objet, Refus>, au_journal: bool) -> Reponse {
+    fn issue_de(route: Route, issue: Result<Rendue, Refus>, au_journal: bool) -> Reponse {
         Reponse { ecrit: au_journal || super::est_une_ecriture(route), issue }
     }
 
@@ -522,7 +534,7 @@ impl Reponse {
     /// Ce que la route a rendu, s'il y a lieu.
     fn resultat(&self) -> Option<&Objet> {
         match &self.issue {
-            Ok(v) => Some(v),
+            Ok(v) => Some(&v.objet),
             Err(Refus { .. }) => None,
         }
     }
@@ -532,11 +544,16 @@ impl Reponse {
         self.issue.as_ref().err()
     }
 
+    /// CE QUE LA REPONSE DIT, en une phrase : celle du rendu, ou le refus ; sans rien relire.
+    pub(crate) fn issue_dite(&self) -> Result<&Phrase, &Refus> {
+        self.issue.as_ref().map(|r| &r.phrase)
+    }
+
     /// LE RENDU LU EN SA FORME `T` (ce qu'une route rend, relu par le moteur qui l'a demandee : la fenetre, le banc), ou
     /// le refus. Un rendu qui n'a pas la forme attendue est un defaut du logiciel.
     pub fn lire<T: DeserializeOwned>(&self) -> Result<T, Refus> {
         match &self.issue {
-            Ok(o) => o.lire(&[], "Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, m.reclasser(Classe::DefautDuLogiciel))),
+            Ok(o) => o.objet.lire(&[],"Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, m.reclasser(Classe::DefautDuLogiciel))),
             Err(r) => Err(r.clone()),
         }
     }
@@ -546,7 +563,7 @@ impl Reponse {
     /// rendu qui ne les porte pas en leur forme est un defaut du logiciel.
     pub(crate) fn lire_cles<T: DeserializeOwned>(&self, cles: &[&str]) -> Result<T, Refus> {
         match &self.issue {
-            Ok(o) => o.lire_cles(cles, "Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, m.reclasser(Classe::DefautDuLogiciel))),
+            Ok(o) => o.objet.lire_cles(cles,"Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, m.reclasser(Classe::DefautDuLogiciel))),
             Err(r) => Err(r.clone()),
         }
     }
@@ -575,7 +592,7 @@ impl Reponse {
                     None => format!("Refus : {}\n", r.phrase),
                 };
             }
-            Ok(r) => r,
+            Ok(r) => &r.objet,
         };
         /// Ce que `--texte` lit d'un rendu : sa phrase, et les lignes de sa liste `phrases` quand il en porte une.
         #[derive(Deserialize)]

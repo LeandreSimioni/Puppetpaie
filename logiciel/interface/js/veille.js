@@ -129,9 +129,12 @@ function dessinerVeille(v) {
     `${echapper(a.phrase)} <button class="lien" data-aller>${echapper(a.geste)}</button>`);
   // UN ENVOI QUI N'EST PAS ALLÉ AU BOUT : ce qui a échoué, et le geste qui le refait (la boîte d'où il est parti).
   envois.forEach((e, i) => {
-    if (e.etat !== "echoue") return;
-    afaire.push(`${echapper(e.phrase)}${e.refaire
-      ? ` <button class="lien" data-refaire="${i}">${echapper(e.refaire.libelle)}</button>` : ""}`);
+    if (e.etat === "echoue") {
+      afaire.push(`${echapper(e.phrase)}${e.refaire
+        ? ` <button class="lien" data-refaire="${i}">${echapper(e.refaire.libelle)}</button>` : ""}`);
+    }
+    // CE QUE L'ENVOI AVERTIT (un salarié sans courriel, la boîte qui envoie), que le moteur dit avec lui.
+    e.avertissements.forEach((a) => afaire.push(echapper(a)));
   });
   if (d) [...d.manquants, ...d.incidents].forEach((x) => afaire.push(echapper(x)));
   if (v.erreur) afaire.push(echapper(v.erreur));

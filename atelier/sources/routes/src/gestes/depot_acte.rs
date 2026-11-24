@@ -217,13 +217,12 @@ fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLu
     Ok(true)
 }
 
-/// CE QUI PART D'UN DEPOT REEL (`envois_en_fond::partir`) : `quoi`, du mois `mois`, et le depot du fichier `chemin`,
-/// rouvert s'il n'est pas alle au bout ; le fichier s'y designe dans la compagnie, comme la charge de `deposer` le nomme,
-/// et par son chemin entier quand il est ailleurs (`depots::resoudre` lit l'un et l'autre).
-fn ce_qui_part(ctx: &Contexte, chemin: &Path, sorte: crate::depots::Quoi, mois: Mois, quoi: String) -> crate::envois_en_fond::EnvoiQuiPart {
-    let fichier = chemin.strip_prefix(&ctx.racine).unwrap_or(chemin).to_path_buf();
-    let d = crate::depots::Designation { quoi: sorte, ..crate::depots::Designation::du_fichier(fichier) };
-    crate::envois_en_fond::EnvoiQuiPart { quoi, mois: Some(mois), refaire: Some(crate::etapes::refaire_le_depot(d)) }
+/// CE QUI PART D'UN DEPOT REEL (`envois_en_fond::partir`) : `quoi`, a sa place `place`, et le depot du fichier `chemin`,
+/// rouvert s'il n'est pas alle au bout ; le fichier s'y designe par le chemin meme qui part (`depots::resoudre` le lit tel
+/// quel).
+fn ce_qui_part(chemin: &Path, sorte: crate::depots::Quoi, place: crate::envois_en_fond::PlaceDeLEnvoi, quoi: String) -> crate::envois_en_fond::EnvoiQuiPart {
+    let d = crate::depots::Designation { quoi: sorte, ..crate::depots::Designation::du_fichier(chemin.to_path_buf()) };
+    crate::envois_en_fond::EnvoiQuiPart { quoi, place, refaire: Some(crate::etapes::refaire_le_depot(d)), avertissements: Vec::new() }
 }
 
 /// Depose une DSN. La seule sortie du moteur qui declare quelque chose.
@@ -423,8 +422,13 @@ pub fn deposer_dsn_dans(
     .map(|o| o.and_then(|c| Some(c).max(apercu.ordre)));
     // LE DEPOT REEL PART (`envois_en_fond`) ; un essai se suit dans sa boite, qui en attend le compte rendu.
     if mode == Mode::Reel {
-        let quoi = if apercu.est_signalement() { "Signalement" } else { "DSN" };
-        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(ctx, &chemin, crate::depots::Quoi::Dsn, le_mois, format!("{} {}", quoi, socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
+        // Un signalement part d'un imprevu, pas de l'etape DSN du mois : son geste reste a sa place.
+        let (quoi, place) = if apercu.est_signalement() {
+            ("Signalement", crate::envois_en_fond::PlaceDeLEnvoi::Ailleurs)
+        } else {
+            ("DSN", crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dsn })
+        };
+        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dsn, place, format!("{} {}", quoi, socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
     }
     let parti = ordre_test.and_then(|ordre_test| {
         let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
@@ -550,7 +554,7 @@ pub(crate) fn deposer_dpae_avec(
     };
     let mut suites = Suites::default();
     if mode == Mode::Reel {
-        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(ctx, &chemin, crate::depots::Quoi::Dpae, le_mois, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
+        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dpae, crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dpae }, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
     }
     let fait = envois::depot_acte::deposer_dpae(ctx, &porte, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
     let faites = crate::gestes::suites::faire(ctx, suites)?;
