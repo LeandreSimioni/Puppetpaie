@@ -376,7 +376,11 @@ function brancherLesCases(bloc, o = {}) {
       const f = x.files && x.files[0];
       if (!f) return;
       const l = new FileReader();
-      l.onload = () => { x.dataset.contenu = String(l.result).split(",").pop(); };
+      // Lu, il le dit (`case-lue`) : l'aperçu d'un geste attend ses octets (`montrerLApercu`).
+      l.onload = () => {
+        x.dataset.contenu = String(l.result).split(",").pop();
+        x.dispatchEvent(new Event("case-lue", { bubbles: true }));
+      };
       l.onerror = () => dire(String(l.error), "erreur");
       l.readAsDataURL(f);
     };
@@ -782,16 +786,50 @@ function casesDuGeste(g, o = {}) {
 
 // Un choix qui ouvre des cases change : son bloc se redessine avec les cases que le choix fait ouvre, chaque case
 // gardant ce qu'on y a tapé, même fermée puis rouverte (`tape`) ; une case fermée n'est pas dans la page, et ne part
-// donc pas dans la charge.
+// donc pas dans la charge. Une case fichier ne se redessine pas avec son fichier : elle reste telle quelle, choisie.
 document.addEventListener("change", (ev) => {
   const bloc = ev.target.closest && ev.target.closest("[data-ouvre-geste]");
   const geste = bloc && GESTES_QUI_OUVRENT.get(bloc.dataset.ouvreGeste);
   const c = geste && ev.target.closest(".case[data-cle]");
   if (!c || !clesQuiOuvrent(geste.g).includes(c.dataset.cle)) return;
   geste.tape = { ...geste.tape, ...lireLesCases(bloc) };
+  const fichiers = [...bloc.querySelectorAll(".case[data-cle]")].filter((x) => x.querySelector(':scope > input[type="file"][data-case]'));
   bloc.innerHTML = casesOuvertes(geste.g, { ...geste.g.valeurs, ...geste.tape }, geste.o);
+  fichiers.forEach((x) => {
+    const neuve = bloc.querySelector(`.case[data-cle="${CSS.escape(x.dataset.cle)}"]`);
+    if (neuve) neuve.replaceWith(x);
+  });
   brancherLesCases(bloc);
 });
+
+/** L'APERÇU D'UN GESTE (`apercu` : la lecture que la route nomme avec lui) : à chaque case changée de `bloc` (un
+ *  fichier, une fois lu), la lecture reçoit la charge en cours, celle que le geste enverrait, et ce qu'elle rend se
+ *  pose dans `cible`, sous les cases : ses phrases, puis l'image qu'elle montre (`media`, `image` en base64), qui
+ *  s'ouvre en grand d'un clic ; un refus s'y dit. Tant qu'une case que la lecture exige (sa fiche) est vide, rien ne se
+ *  montre ; seule la dernière réponse se pose. */
+function montrerLApercu(bloc, g, cible) {
+  let numero = 0;
+  const montrer = async () => {
+    const n = ++numero;
+    const charge = chargeDuGeste(bloc, g) || g.charge;
+    if (CATALOGUE[g.apercu].charge.some((c) => c.obligatoire && charge[c.nom] == null)) { cible.innerHTML = ""; return; }
+    let r;
+    try { r = await api(g.apercu, charge); } catch (e) {
+      if (n === numero) cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
+      return;
+    }
+    if (n !== numero) return;
+    cible.innerHTML = `${phrasesDe(r).map((p) => `<p class="note">${echapper(p)}</p>`).join("")}${r.image && r.media
+      ? `<img src="data:${echapper(r.media)};base64,${echapper(r.image)}" alt="">` : ""}`;
+    const img = cible.querySelector("img");
+    if (img) img.onclick = () => montrerEnGrand(img.src, img.alt);
+  };
+  // Après le changement entier : le bloc des cases qu'un choix ouvre se redessine d'abord (plus haut, sur `document`).
+  const ensuite = () => setTimeout(montrer);
+  bloc.addEventListener("change", ensuite);
+  bloc.addEventListener("case-lue", ensuite);
+  montrer();
+}
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */
 function chargeDuGeste(bloc, g) {
@@ -851,12 +889,14 @@ async function faireLeGeste(g, entete, apres, bouton) {
     <h3>${echapper(g.libelle)}${entete.titre ? ` — ${echapper(entete.titre)}` : ""}</h3>
     ${entete.dit ? `<p class="discret">${echapper(entete.dit)}</p>` : ""}
     <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
+    ${g.apercu ? `<div id="geste-apercu" class="geste-apercu"></div>` : ""}
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
       <button class="${classeDuGeste({ ...g, rang: "principal" })}" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
+  if (g.apercu) montrerLApercu(bloc, g, document.getElementById("geste-apercu"));
   // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface) ; une case que
   // la route exige, vide, retient le geste et le dit sur elle.
   const enregistrer = async () => {

@@ -186,3 +186,10 @@ pub fn alleger(octets: &[u8], largeur_points: Mesure, objectif: usize) -> Result
         resolution = plus_bas;
     }
 }
+
+/// CE QUE `octets` (PNG, JPEG ou SVG) PESE DANS CHAQUE DOCUMENT qui l'imprime sur `largeur_points` : ce que la fabrique
+/// en ecrit (`dessin::Image`), ramenee a la resolution d'impression et comprimee comme le PDF l'ecrit. Une image qui ne
+/// se lit pas est un refus, celui-la meme que la fabrique opposerait au document.
+pub fn poids_dans_un_document(octets: &[u8], largeur_points: Mesure) -> Result<usize, Refus> {
+    crate::dessin::Image::lire(octets, largeur_points, false)?.poids_ecrit()
+}

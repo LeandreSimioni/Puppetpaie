@@ -271,7 +271,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         ("enregistrer-fiche", svoboda),
         // La signature de l'employeur, sans laquelle aucun contrat ne part se faire signer (l'exemple de
         // `demander-signature`).
-        ("poser-identite", json!({"quoi": "signature", "contenu": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTIgMTUgQzEwIDIgMjAgMjAgNzggNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIi8+PC9zdmc+", "poids": 20})),
+        ("poser-identite", json!({"quoi": "signature", "contenu": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTIgMTUgQzEwIDIgMjAgMjAgNzggNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIi8+PC9zdmc+", "allegement": "garder"})),
         // Le metier cree (CIE-1) que modifie l'exemple de `metier-modifie`, qui se joue ainsi seul.
         ("metier-cree", json!({"copie_de": "MAR010", "libelle": "Marionnettiste principal", "cadre": "non_cadre"})),
     ] {
