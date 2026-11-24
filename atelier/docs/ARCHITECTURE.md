@@ -1206,6 +1206,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | où une case de fiche renvoie, rendu sous elle (le sous-onglet des métiers, ou la case d'une autre fiche : l'option de la déduction forfaitaire de l'entreprise) | `routes::fiches::RenvoiDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | ce qui se fait depuis la fiche d'un salarié enregistré, dans son en-tête (sa clé, d'où ses imprévus et ses droits se lisent, et le geste vers ses documents) | `routes::fiches::SalarieDeLEntete` | `routes/src/fiches/rendue.rs` |
 | fiche d'un salarié neuf à faire remplir par la personne, dans son en-tête (ce que la demande fait, son geste `fiche-demander` ou ce qui lui manque, la demande du mot de passe) | `routes::fiches::InvitationDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| ce que les cases de la demande de fiche montrent d'abord (le courriel que la fiche dit déjà) | `routes::fiches::ValeursDeLaDemande` | `routes/src/fiches/rendue.rs` |
 | charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge (`{}`) | `routes::SansCharge` | `routes/src/lib.rs` |
 | ce que le moteur sait de plus sur les cases d'une fiche qu'on saisit (celles de l'entreprise, celles d'un salarié) | `routes::fiches::Completer` | `routes/src/fiches/rendue.rs` |
 | listes que la fiche d'un salarié offre, lues une fois par réponse (les pays de naissance et de nationalité, les métiers, ce que l'entreprise dit de la déduction forfaitaire) | `routes::fiches::ListesDuSalarie` | `routes/src/fiches/rendue.rs` |
