@@ -511,9 +511,14 @@ struct Etape {
 /// jusqu'a la suivante, ou jusqu'a ce que le passage la finisse.
 fn dire_l_etape(ctx: &Contexte, r: &mut Ouverture, etape: &str) -> R<()> {
     r.finir_l_etape();
-    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)?;
+    ecrire_l_etape(&ctx.racine, etape)?;
     r.en_cours = Some((etape.to_string(), std::time::Instant::now()));
     Ok(())
+}
+
+/// L'etape `etape` ecrite pour la veille qui la lit (`etape_en_cours`).
+fn ecrire_l_etape(racine: &Path, etape: &str) -> R<()> {
+    socle::ecriture::ecrire_json(&chemin_etape(racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)
 }
 
 fn finir_les_etapes(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
@@ -684,20 +689,58 @@ const VERSION_DU_CALCUL: &str = ".version-du-calcul.json";
 /// (`engagement::etats::corriger_les_mois_finis`) : une decision de l'editeur y refait la paie d'un mois, en
 /// rectificatif ; puis plus rien jusqu'a la version suivante. La marque ne s'ecrit qu'apres un passage entier : un
 /// passage interrompu se refait.
-fn passer_la_version(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
+///
+/// DEUX CHEMINS L'APPELLENT, et elle seule prend en compte une version : la route `ouverture` (`dire` y entre dans son
+/// etape), et, au lancement de la fenetre, la file des etats de chaque compagnie tenue a jour, avant ses etats
+/// (`etat_garde::Cle::VersionDuCalcul`, `dire_l_etape_seule`) : du calcul local, ni coffre ni reseau. L'un pendant
+/// l'autre (le lancement qui passe, le clic qui lance la veille) : le verrou de la version (`VERROU_DE_LA_VERSION`) n'en
+/// laisse passer qu'un ; l'autre ne fait rien, il ne reecrit pas ce que le premier ecrit. L'etape dite s'efface avant que
+/// le verrou se rende : celui qui le prend ensuite ecrit la sienne.
+pub(crate) fn passer_la_version(ctx: &Contexte, dire: impl FnOnce() -> R<()>) -> R<()> {
     let marque = VersionDuCalcul { version: format!("{}+{}", compagnie::maj::courante(&compagnie::maj::dossier_installe()?)?, engagement::empreinte::MOTEUR) };
     let p = ctx.racine.join(socle::fichiers::CONFIG).join(VERSION_DU_CALCUL);
-    if p.exists() {
-        let lue: VersionDuCalcul = socle::forme::lire_fichier(&p, "La version qui a passé sur les mois finis ne se lit pas.")?;
-        if lue.version == marque.version {
-            return Ok(());
-        }
+    if deja_passee(&p, &marque)? {
+        return Ok(());
     }
-    dire_l_etape(ctx, r, "Prise en compte de la mise à jour…")?;
-    let departs = envois::journal::lu(&ctx.racine)?.departs;
-    engagement::etats::corriger_les_mois_finis(ctx, &departs)?;
-    socle::ecriture::ecrire_json(&p, &marque, 1).map_err(|m| m.reclasser(socle::echec::Classe::Disque))?;
-    Ok(())
+    let qui = socle::verrou::marque("mise a jour", socle::processus::numero(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
+    let _verrou = match socle::verrou::Verrou::prendre(&VERROU_DE_LA_VERSION.dans(&ctx.racine), &qui, socle::verrou::DELAI_VERROU).map_err(|m| m.reclasser(socle::echec::Classe::Disque))? {
+        Ok(v) => v,
+        Err(socle::verrou::Verrouille { .. }) => return Ok(()),
+    };
+    // Celui qui tenait le verrou vient peut-etre de finir.
+    if deja_passee(&p, &marque)? {
+        return Ok(());
+    }
+    dire()?;
+    let passe = envois::journal::lu(&ctx.racine)
+        .and_then(|j| engagement::etats::corriger_les_mois_finis(ctx, &j.departs))
+        .and_then(|_| socle::ecriture::ecrire_json(&p, &marque, 1).map_err(|m| m.reclasser(socle::echec::Classe::Disque)));
+    let efface = socle::fichiers::effacer(&chemin_etape(&ctx.racine));
+    passe.and(efface)
+}
+
+/// La marque `p` dit-elle deja la version `marque` ?
+fn deja_passee(p: &Path, marque: &VersionDuCalcul) -> R<bool> {
+    if !p.exists() {
+        return Ok(false);
+    }
+    let lue: VersionDuCalcul = socle::forme::lire_fichier(p, "La version qui a passé sur les mois finis ne se lit pas.")?;
+    Ok(lue.version == marque.version)
+}
+
+/// L'etape d'une prise en compte de la mise a jour, a la route `ouverture` comme a la file des etats
+/// (`etat_garde::FileDesEtats::phrase`).
+pub(crate) const PRISE_EN_COMPTE: &str = "Prise en compte de la mise à jour…";
+
+/// LE VERROU DE LA VERSION (`passer_la_version`) : un seul passage a la fois sur les mois finis d'une compagnie. Tenu au
+/// plus le temps d'un passage ; un verrou abandonne (le logiciel arrete en route) se leve passe `DELAI_VERROU`, et le
+/// passage se refait (la marque n'a pas ete ecrite).
+const VERROU_DE_LA_VERSION: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/.version-du-calcul.verrou");
+
+/// L'etape de la prise en compte, ecrite seule, hors d'un passage de la route `ouverture` (la file des etats) : la veille
+/// qui tourne pendant ce temps la lit (`etape_en_cours`).
+pub(crate) fn dire_l_etape_seule(racine: &Path) -> R<()> {
+    ecrire_l_etape(racine, PRISE_EN_COMPTE)
 }
 
 /// La version qui a passe sur les mois finis (`config/.version-du-calcul.json`) : le numero et la marque du code.
@@ -884,7 +927,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     }
 
     // UNE VERSION QUI CALCULE AUTREMENT passe une fois sur les mois finis, avant le present.
-    if let Err(e) = passer_la_version(ctx, &mut r) {
+    if let Err(e) = passer_la_version(ctx, || dire_l_etape(ctx, &mut r, PRISE_EN_COMPTE)) {
         r.incidents.push(format!("Mois finis : {}", nomme(&ctx.racine, &e)));
     }
     r.finir_l_etape();

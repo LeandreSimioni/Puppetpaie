@@ -126,6 +126,9 @@ const OUVERTURE: &str = "ouverture";
 /// rattachee (`administrateur::tableau_compagnie`), sous l'empreinte de l'ouverture (toute la compagnie).
 const TABLEAU: &str = "tableau";
 
+/// La cle de la PRISE EN COMPTE D'UNE MISE A JOUR dans la file (`gestes::ouverture::passer_la_version`).
+const VERSION_DU_CALCUL: &str = "version-du-calcul";
+
 /// Ce que la page lit en s'ouvrant, hors de l'ecran d'un mois (`js/demarrage.js`) : la route et sa charge. Chacune est
 /// rendue telle quelle (resultat ou refus), au format d'une reponse de la page. Le mois a ouvrir y est aussi, lu en sa
 /// forme (`etapes::le_mois_a_ouvrir`). Ce qui vit dans la memoire de la fenetre (la veille, la mise a jour) et ce que
@@ -148,29 +151,34 @@ fn chemin(racine: &Path) -> PathBuf {
 
 // ------------------------------------------------------------------------------------------------- les cles
 
-/// LA CLE D'UN ETAT GARDE : un mois, l'ouverture de la compagnie, ou le tableau de l'administrateur.
-/// Elle s'ecrit (le banc la nomme ainsi dans son scenario) `ouverture`, `tableau` ou un mois AAAA-MM.
+/// LA CLE D'UN TRAVAIL DE LA FILE : l'etat garde d'un mois, de l'ouverture de la compagnie, ou le tableau de
+/// l'administrateur ; et, avant eux, la prise en compte d'une mise a jour (`VersionDuCalcul`, au lancement de la
+/// fenetre : `FileDesEtats::prendre_en_compte_la_mise_a_jour`), qui ne garde rien.
+/// Elle s'ecrit (le banc la nomme ainsi dans son scenario) `ouverture`, `tableau`, `version-du-calcul` ou un mois
+/// AAAA-MM.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(from = "CleEcrite")]
 pub enum Cle {
     Mois(Mois),
     Ouverture,
     Tableau,
+    VersionDuCalcul,
 }
 
 /// La cle telle qu'elle s'ecrit : un nom, ou un mois.
 #[derive(Deserialize)]
-#[serde(untagged, expecting = "le mois de l'état (AAAA-MM), « ouverture » ou « tableau »")]
+#[serde(untagged, expecting = "le mois de l'état (AAAA-MM), « ouverture », « tableau » ou « version-du-calcul »")]
 enum CleEcrite {
     Nommee(CleNommee),
     Mois(Mois),
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 enum CleNommee {
     Ouverture,
     Tableau,
+    VersionDuCalcul,
 }
 
 impl From<CleEcrite> for Cle {
@@ -179,18 +187,20 @@ impl From<CleEcrite> for Cle {
             CleEcrite::Mois(m) => Cle::Mois(m),
             CleEcrite::Nommee(CleNommee::Ouverture) => Cle::Ouverture,
             CleEcrite::Nommee(CleNommee::Tableau) => Cle::Tableau,
+            CleEcrite::Nommee(CleNommee::VersionDuCalcul) => Cle::VersionDuCalcul,
         }
     }
 }
 
 impl Cle {
     /// LA ROUTE QUE CET ETAT SERT DANS LA FENETRE, sans passer par la porte : l'ecran d'un mois (`mois`), l'ouverture
-    /// (`demarrage`), le tableau de l'administrateur. Le barrage d'une valeur a saisir de nouveau la lit
-    /// (`service::contexte_de_la_route`).
+    /// (`demarrage`), le tableau de l'administrateur. La prise en compte d'une mise a jour sert l'ouverture : tant
+    /// qu'une valeur attend d'etre saisie de nouveau, elle ne se fait pas, comme a la route `ouverture`. Le barrage
+    /// d'une valeur a saisir de nouveau la lit (`service::contexte_de_la_route`).
     fn route(self) -> Route {
         match self {
             Cle::Mois(_) => Route::Mois,
-            Cle::Ouverture => Route::Demarrage,
+            Cle::Ouverture | Cle::VersionDuCalcul => Route::Demarrage,
             Cle::Tableau => Route::AdministrateurTableau,
         }
     }
@@ -208,6 +218,7 @@ impl std::fmt::Display for Cle {
             Cle::Mois(m) => write!(f, "{}", m),
             Cle::Ouverture => f.write_str(OUVERTURE),
             Cle::Tableau => f.write_str(TABLEAU),
+            Cle::VersionDuCalcul => f.write_str(VERSION_DU_CALCUL),
         }
     }
 }
@@ -410,12 +421,14 @@ struct EtatDeLOuverture {
 /// `administrateur::tableau_compagnie`) : son jour, ses declarations, l'empreinte de la compagnie qu'il a lue.
 use crate::gestes::administrateur::TableauCompagnie;
 
-/// Un etat garde : d'un mois, de l'ouverture, ou le tableau de l'administrateur (sa forme est la sienne).
+/// Un etat garde : d'un mois, de l'ouverture, ou le tableau de l'administrateur (sa forme est la sienne) ; ou la mise a
+/// jour prise en compte, qui ne garde rien.
 #[derive(Clone)]
 enum Garde {
     Mois(Arc<EtatDuMois>),
     Ouverture(Arc<EtatDeLOuverture>),
     Tableau(Arc<TableauCompagnie>),
+    VersionDuCalcul,
 }
 
 impl Garde {
@@ -684,6 +697,20 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
     Ok(Garde::Tableau(Arc::new(crate::gestes::administrateur::tableau_compagnie(ctx)?)))
 }
 
+/// LA MISE A JOUR PRISE EN COMPTE sur les mois finis de la compagnie (`gestes::ouverture::passer_la_version`), avant
+/// ses etats : ce qu'elle reecrit les changerait. Une version deja passee ne fait rien. L'etape se dit a la veille qui
+/// tournerait pendant ce temps ; un refus se note (le fil tourne en fond, aucun ecran ne l'attend), la compagnie
+/// s'ouvre comme sans lui, et la route `ouverture` reprend la prise en compte au clic.
+fn version_prise(ctx: &Contexte) -> R<Garde> {
+    match crate::gestes::ouverture::passer_la_version(ctx, || crate::gestes::ouverture::dire_l_etape_seule(&ctx.racine)) {
+        Ok(()) => Ok(Garde::VersionDuCalcul),
+        Err(e) => {
+            noter("la prise en compte de la mise à jour ne s'est pas faite", &e);
+            Err(e)
+        }
+    }
+}
+
 /// Refait l'etat de `cle` (un mois, ou l'ouverture, qui s'ecrit ; le tableau, s'il n'est plus juste). Ce qui se lit
 /// peut ecrire (une paie validee qui se recalcule d'elle-meme quand on la lit, `engagement::etats::du_mois`) :
 /// l'empreinte d'apres n'est alors plus celle d'avant, et un second passage, sans recalcul cette fois, la retrouve.
@@ -691,6 +718,7 @@ fn refaire(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
     for passage in 1..=2 {
         let mois = match cle {
             Cle::Tableau => return tableau_juste(ctx),
+            Cle::VersionDuCalcul => return version_prise(ctx),
             Cle::Mois(m) => Some(m),
             Cle::Ouverture => None,
         };
@@ -1045,7 +1073,8 @@ impl FileDesEtats {
     }
 
     /// Le dernier etat connu de `cle`, JUSTE OU NON : celui de l'ouverture, ecrit (`ouverture_ecrite`) ; celui d'un mois,
-    /// que la file garde en memoire depuis son dernier passage. Aucun pour le tableau (`tableau_juste` le lit).
+    /// que la file garde en memoire depuis son dernier passage. Aucun pour le tableau (`tableau_juste` le lit), ni pour
+    /// la mise a jour (`passer_la_version` lit sa marque).
     fn connu(&self, cle: Cle, jour: &Jour) -> Option<(Garde, bool)> {
         match cle {
             Cle::Ouverture => ouverture_ecrite(&self.racine).map(|e| {
@@ -1060,7 +1089,7 @@ impl FileDesEtats {
                 let juste = e.empreinte == empreinte_de(&self.racine, Some(m), *jour);
                 Some((Garde::Mois(e), juste))
             }
-            Cle::Tableau => None,
+            Cle::Tableau | Cle::VersionDuCalcul => None,
         }
     }
 
@@ -1085,7 +1114,7 @@ impl FileDesEtats {
         // Un autre etat, ou un refus : rien ne passe devant ; le refus est le rendu garde ci-dessous avec son passage.
         let ouvre = rendu.iter().find_map(|g| match g {
             Garde::Ouverture(o) => o.ouvre,
-            Garde::Mois(_) | Garde::Tableau(_) => None,
+            Garde::Mois(_) | Garde::Tableau(_) | Garde::VersionDuCalcul => None,
         });
         if let (true, Some(m)) = (e.affiche.is_none(), ouvre) {
             Self::inscrire(&mut e, Cle::Mois(m), true);
@@ -1144,16 +1173,24 @@ impl FileDesEtats {
         let n = e.numero;
         e.voulu.insert(cle, n);
         let deja = e.attente.iter().position(|m| *m == cle);
+        if let Some(i) = deja.filter(|_| devant) {
+            e.attente.remove(i);
+        }
+        // LA MISE A JOUR A PRENDRE EN COMPTE reste en tete : ce qu'elle reecrit changerait l'etat qu'on ferait avant elle.
+        let tete = usize::from(cle != Cle::VersionDuCalcul && e.attente.front() == Some(&Cle::VersionDuCalcul));
         match (deja, devant) {
-            (Some(i), true) => {
-                e.attente.remove(i);
-                e.attente.push_front(cle);
-            }
+            (_, true) => e.attente.insert(tete, cle),
             (Some(_), false) => {}
-            (None, true) => e.attente.push_front(cle),
             (None, false) => e.attente.push_back(cle),
         }
         n
+    }
+
+    /// AU LANCEMENT DE LA FENETRE (`interface::Fenetre::prechauffer`) : la mise a jour se prend en compte sur les mois
+    /// finis de la compagnie avant tout etat (`Cle::VersionDuCalcul`, en tete de sa file et qui y reste) ; une version
+    /// deja passee ne coute que la lecture de sa marque.
+    pub fn prendre_en_compte_la_mise_a_jour(&self) {
+        self.demander(Cle::VersionDuCalcul, true);
     }
 
     /// TOUS LES MOIS SUIVIS A VERIFIER (au lancement, apres une ecriture, a l'ouverture, apres un tour de veille) : le mois
@@ -1302,6 +1339,7 @@ impl FileDesEtats {
         match self.verrou().en_cours {
             Some(Cle::Ouverture) => Phrase::fixe("Lecture de la compagnie : sa configuration, ses échéances, ses rappels…"),
             Some(Cle::Tableau) => Phrase::fixe("Tableau des déclarations de la compagnie…"),
+            Some(Cle::VersionDuCalcul) => Phrase::fixe(crate::gestes::ouverture::PRISE_EN_COMPTE),
             Some(Cle::Mois(m)) => socle::phrase!("Calcul de {}…", m.libelle(socle::mois::Graphie::Accentuee)),
             None => Phrase::fixe("Préparation de l'écran…"),
         }

@@ -4068,7 +4068,11 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
 - **Toutes les compagnies tenues à jour dès le lancement** (`Fenetre::prechauffer`, `etat_garde::Fil`) : chaque vraie
   compagnie de l'installation (pas les fictives) reçoit sa file des états sur **un seul fil de calcul** pour toute la
   fenêtre, la dernière ouverte d'abord (la date de son `journal/interface.log`), puis chacune son tour ; la compagnie
-  choisie passe devant dès son choix (pendant qu'on tape son mot de passe). L'état d'ouverture, le tableau (compagnie de
+  choisie passe devant dès son choix (pendant qu'on tape son mot de passe). La mise à jour s'y prend en compte d'abord,
+  en tête de chaque file (`FileDesEtats::prendre_en_compte_la_mise_a_jour`, la même `passer_la_version` que la route
+  `ouverture`, qui ne fait plus rien ensuite) : le jour d'une mise à jour, les paies des mois finis se réécrivent avant
+  que les états se fassent ; un seul passage à la fois (`config/.version-du-calcul.verrou` : l'autre ne fait rien), et
+  un refus se note, la route `ouverture` la reprenant au clic. L'état d'ouverture, le tableau (compagnie de
   l'administrateur, sous l'empreinte de l'ouverture) et les mois se refont en fond ; ouvrir sert un état frais sans
   attendre ; minuit passé, tout se revérifie. **Avant le mot de passe, du calcul local seulement** : le fil est marqué
   (`fil_de_fond`), et `garde_reseau` y refuse toute sortie, le coffre y refuse la clé du poste et toute dérivation de mot
