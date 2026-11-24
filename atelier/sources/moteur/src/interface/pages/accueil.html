@@ -461,8 +461,8 @@
 <script>
   /* REPRENDRE UNE COMPAGNIE DE SON DRIVE (« + », « De mon Drive ») : l'écran que rend la route de sa place (sa fiche,
      `routeQuiRend`), posé par le dessinateur du logiciel (`poserLEcranRendu`), ses gestes et leurs boîtes compris. Après
-     un geste, l'écran qu'il rend se pose (la fin d'une reprise), sinon l'écran se relit ; quand la route nomme une
-     compagnie à ouvrir (`ouvrir`, le geste « Ouvrir la compagnie »), la fenêtre l'ouvre, comme une tuile. `dire` : la
+     un geste, la page fait ce que sa réponse dit (`apres`) : poser l'écran qu'elle rend (la fin d'une reprise), relire
+     l'écran, ou ouvrir la compagnie qu'elle nomme (le geste « Ouvrir la compagnie »), comme une tuile. `dire` : la
      ligne où la page montre la phrase d'une route. */
   function dire(texte, type) {
     const el = document.getElementById("venue-drive-dit");
@@ -482,15 +482,15 @@
       zone.hidden = oui;
     };
     document.getElementById("venue-drive-retour").onclick = () => montrerLesVenues(true);
+    // Ce que la page fait de la réponse d'un geste, la route le dit (`apres`, `routes::ecran::ApresLeGeste`).
     async function apres(r) {
-      if (r && r.ouvrir) {
+      if (r.apres === "ouvrir") {
         const o = await window.pywebview.api.choisir(r.ouvrir);
         if (!o.ok) dire(o.refus.phrase, "erreur");
         return;
       }
-      // Un geste qui rend un écran (la fin d'une reprise : `drive-reprendre`) le pose à la place, par le même dessinateur ;
-      // ses gestes (ouvrir la compagnie, continuer la reprise) repassent ici.
-      if (r && (r.rangs || r.encarts)) { poserLEcranRendu(ecran, r, apres); return; }
+      // Un écran (la fin d'une reprise) se pose à la place, par le même dessinateur ; ses gestes repassent ici.
+      if (r.apres === "poser_l_ecran") { poserLEcranRendu(ecran, r, apres); return; }
       dessiner();
     }
     async function dessiner() {

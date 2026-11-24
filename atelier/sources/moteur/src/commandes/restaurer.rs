@@ -7,7 +7,8 @@
 //! des donnees du poste. `DOSSIER` est ou ecrire ; par defaut, ce meme dossier des donnees (le cas d'un poste neuf : relier le
 //! Drive, puis restaurer). Dans `moteur-atelier`, hors compagnie fictive, la commande exige le faux Google, comme `sauvegarder`.
 //!
-//! Codes : 0 tout est revenu ; 1 des incidents (un fichier, une empreinte) ; 2 un refus, rien n'a ete ecrit.
+//! Codes : 0 tout est revenu ; 1 des fichiers a retenter (relancer la commande) ou qui ne descendront pas ainsi ; 2 un
+//! refus, rien n'a ete ecrit.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -103,10 +104,15 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     }
     let r = match restauration::restaurer(&cible, &depuis, racine_drive, &mut client) {
         Ok(r) => r,
+        Err(e) if e.echec.classe == Some(socle::echec::Classe::DossierNonVide) => {
+            return refus(e.echec.classe, &format!("{}\nRestaurer dans un dossier vide, ou mettre ces fichiers de cote, puis relancer.", e.echec.en_lignes()));
+        }
         Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
-    let reste = restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&cible));
-    let ok = r.incidents.is_empty();
+    // Le coffre ne se met de cote que s'il vient de descendre du Drive (`OrigineDuCoffre`) : jamais celui qui etait la.
+    let coffre = compagnie::coffre::Coffre::du_poste(&cible);
+    let reste = restauration::a_faire(&coffre, r.origine_du_coffre(&coffre));
+    let ok = r.complete() && r.incidents.is_empty();
     let code = if ok { ExitCode::SUCCESS } else { ExitCode::FAILURE };
     if json {
         dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok, resultat: r.dite(reste) }));
@@ -118,6 +124,9 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     dire!("\n{}", r.resume());
     if r.ecartes > 0 {
         dire!("{} fichier(s) du Drive laisse(s) la-bas : ce que la sauvegarde n'envoie pas.", r.ecartes);
+    }
+    for i in &r.a_retenter {
+        dire!("  ! a retenter : {}", i);
     }
     for i in &r.incidents {
         dire!("  ! {}", i);

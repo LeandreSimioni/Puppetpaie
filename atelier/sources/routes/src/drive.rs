@@ -40,7 +40,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::DriveSupprimer,
-        geste: "Mettre un dossier du Drive à la corbeille de Google, avec le mot de passe du logiciel.",
+        geste: "Mettre un dossier du Drive à la corbeille, avec le mot de passe du logiciel.",
         charge: &ChargeSupprimer::CHARGE,
         exemple: r#"{"dossier":"essai"}"#,
         rend: "dossier (son nom), phrase",

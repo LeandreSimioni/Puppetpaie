@@ -233,6 +233,12 @@ fn fiche(racine: &Path) -> R<droit::fiche::ChampsEntreprise> {
     Ok(f.au(&droit::contexte::jour_reel()))
 }
 
+/// La fiche Entreprise de `racine` se lit-elle ? (Absente, elle ne se lit pas.) Une reprise du Drive n'est au bout que
+/// si elle se lit (`routes::accueil::drive`).
+pub fn fiche_se_lit(racine: &Path) -> bool {
+    fiche(racine).is_ok()
+}
+
 /// Un texte de la fiche, s'il dit quelque chose.
 fn dit(t: Option<&str>) -> Option<String> {
     t.filter(|s| !s.is_empty()).map(String::from)
@@ -624,8 +630,9 @@ fn dossiers_retenus(dossier: &Path, garder: impl Fn(&Path) -> bool) -> R<Vec<Pat
     Ok(v)
 }
 
-/// Le dossier `d` porte-t-il la marque d'une reprise du Drive pas finie (`restauration::RepriseEnCours`) ?
-fn en_reprise(d: &Path) -> bool {
+/// Le dossier `d` porte-t-il la marque d'une reprise du Drive pas finie (`restauration::RepriseEnCours`) ? Lisible ou
+/// non : tant qu'elle est la, le dossier n'est pas une compagnie, et aucune route ne s'y sert (`routes::service`).
+pub fn en_reprise(d: &Path) -> bool {
     crate::restauration::REPRISE_EN_COURS.dans(d).is_file()
 }
 

@@ -33,8 +33,8 @@
 //! UNE REPRISE A L'ACCUEIL (`routes::accueil::drive`) se fait toujours dans un dossier neuf, qu'elle marque d'abord
 //! (`RepriseEnCours`, `config/reprise-en-cours.json`, propre au poste : il ne monte pas) ; tant qu'elle est la, le dossier
 //! n'est pas une compagnie du poste (`installation::liste_de`) ; coupee, elle se relance dans ce meme dossier, et dans
-//! aucun autre ; allee au bout, elle efface sa marque. Le coffre revenu que rien n'ouvrira ici se met de cote
-//! (`ranger_le_coffre`), et ce qu'il reste a faire se dit (`a_faire`).
+//! aucun autre ; allee au bout (`Restauration::complete`), elle efface sa marque. Le coffre descendu du Drive que rien
+//! n'ouvrira ici se met de cote (`ranger_le_coffre`, `OrigineDuCoffre`), et ce qu'il reste a faire se dit (`a_faire`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -109,7 +109,14 @@ pub struct Restauration {
     pub octets: Octets,
     /// Dans le Drive, mais de ce que la sauvegarde n'envoie jamais : pas redescendus.
     pub ecartes: usize,
+    /// CE QUI NE DESCENDRA JAMAIS PAR CETTE VOIE, quelle que soit la tentative : deux dossiers ou deux fichiers de meme
+    /// nom au meme endroit du Drive, un nom impossible ici, un document sans empreinte (un document Google), un fichier
+    /// deja la qu'elle garde tel quel. Un fichier par ligne.
     pub incidents: Vec<String>,
+    /// CE QUI N'EST PAS DESCENDU POUR UNE RAISON PASSAGERE : Google qui n'a pas rendu le contenu (un 429, un 5xx, un delai,
+    /// la connexion), un contenu dont l'empreinte ne colle pas, une ecriture que le disque a refusee. Une nouvelle
+    /// restauration du meme dossier le retente. Un fichier par ligne.
+    pub a_retenter: Vec<String>,
     /// Le reseau est tombe en route : arretee. La relancer reprend.
     pub hors_ligne: bool,
 }
@@ -119,10 +126,31 @@ impl Restauration {
         let mut t = format!("Restauration : {} fichier(s) redescendu(s), {}, {} deja la.", self.redescendus.len(), self.octets, self.deja_la);
         if self.hors_ligne {
             t.push_str(" Hors connexion en route : relancer la restauration reprend ou elle en est.");
-        } else if !self.incidents.is_empty() {
-            t.push_str(&format!(" {} incident(s).", self.incidents.len()));
+        } else if !self.a_retenter.is_empty() {
+            t.push_str(&format!(" {} fichier(s) a retenter : relancer la restauration les retente.", self.a_retenter.len()));
+        }
+        if !self.incidents.is_empty() {
+            t.push_str(&format!(" {} fichier(s) qui ne descendront pas ainsi.", self.incidents.len()));
         }
         t
+    }
+
+    /// LA RESTAURATION A-T-ELLE TOUT REDESCENDU ? Chaque fichier est la, sauf ceux qui ne descendront jamais par cette
+    /// voie (`incidents`) : ni connexion tombee, ni fichier a retenter.
+    pub fn complete(&self) -> bool {
+        !self.hors_ligne && self.a_retenter.is_empty()
+    }
+
+    /// D'OU VIENT LE COFFRE `coffre` de la compagnie restauree : descendu du Drive dans cette restauration meme, ou dans
+    /// le dossier d'une reprise pas finie (`RepriseEnCours` : ce dossier neuf ne porte que ce qui est venu du Drive) ;
+    /// sinon il etait la, et c'est peut-etre le coffre vivant d'une compagnie.
+    pub fn origine_du_coffre(&self, coffre: &Coffre) -> OrigineDuCoffre {
+        let chemin = coffre.chemin();
+        if self.redescendus.iter().any(|f| f.relatif.dans(&self.cible) == chemin) || crate::installation::en_reprise(&self.cible) {
+            OrigineDuCoffre::DuDrive
+        } else {
+            OrigineDuCoffre::DejaLa
+        }
     }
 
     /// Ce que `moteur restaurer --json` rend : le compte rendu, et ce qu'il reste a faire a la main (`a_faire`).
@@ -136,10 +164,21 @@ impl Restauration {
             octets: self.octets,
             ecartes: self.ecartes,
             incidents: self.incidents.clone(),
+            a_retenter: self.a_retenter.clone(),
             hors_ligne: self.hors_ligne,
             a_faire,
         }
     }
+}
+
+/// D'OU VIENT LE COFFRE QU'UNE RESTAURATION LAISSE (`Restauration::origine_du_coffre`) : seul un coffre descendu du Drive
+/// se met de cote (`ranger_le_coffre`) ; un coffre qui etait la n'est jamais deplace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrigineDuCoffre {
+    /// Descendu du Drive par cette restauration, ou dans le dossier d'une reprise pas finie.
+    DuDrive,
+    /// Il etait la avant elle.
+    DejaLa,
 }
 
 /// Le compte rendu d'une restauration, tel que `moteur restaurer --json` l'ecrit (`Restauration::dite`).
@@ -154,6 +193,7 @@ pub struct RestaurationDite {
     pub octets: Octets,
     pub ecartes: usize,
     pub incidents: Vec<String>,
+    pub a_retenter: Vec<String>,
     pub hors_ligne: bool,
     pub a_faire: Vec<String>,
 }
@@ -223,6 +263,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         octets: Octets::ZERO,
         ecartes: 0,
         incidents: Vec::new(),
+        a_retenter: Vec::new(),
         hors_ligne: false,
     };
 
@@ -314,9 +355,10 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         }
     }
     if !ecarts.is_empty() {
-        // La phrase dit le cas en mots ; le dossier et les fichiers, pour qui veut les voir, vont a part.
+        // La phrase dit le cas en mots ; le dossier et les fichiers, pour qui veut les voir, vont a part. Ce qui se fait
+        // ensuite, chaque appelant le dit (une reprise a l'accueil s'abandonne ; `moteur restaurer` se relance ailleurs).
         let phrase = format!(
-            "Le dossier où la compagnie doit revenir n'est pas vide : {} fichier(s) y sont déjà, et ne sont pas la copie du Drive. Rien n'a été redescendu, rien n'a été effacé. Restaurer dans un dossier vide, ou mettre ces fichiers de côté, puis relancer.",
+            "Le dossier où la compagnie doit revenir n'est pas vide : {} fichier(s) y sont déjà, et ne sont pas la copie du Drive. Rien n'a été redescendu, rien n'a été effacé.",
             ecarts.len()
         );
         let a_part = FichiersDejaLa { dossier: cible.to_path_buf(), fichiers: ecarts };
@@ -344,17 +386,18 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
             Ok(c) => c,
             Err(e) if e.injoignable => {
                 resultat.hors_ligne = true;
-                resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
+                resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
                 break;
             }
+            // Ce que Google n'a pas rendu cette fois (un 429, un 5xx, un delai, une autorisation a relier) : a retenter.
             Err(e) => {
-                resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
+                resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
                 continue;
             }
         };
         let recue = EmpreinteMd5::des_octets(&contenu);
         if recue != *attendue {
-            resultat.incidents.push(format!(
+            resultat.a_retenter.push(format!(
                 "{} : l'empreinte ne colle pas (le Drive annonce {}, le contenu recu donne {}) : rien n'est ecrit ici, il reste dans le Drive.",
                 relatif, attendue, recue
             ));
@@ -368,7 +411,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
                 verifies.insert(relatif.clone());
             }
             Ok(false) => resultat.incidents.push(format!("{} : il est apparu ici pendant la restauration, il est garde tel quel.", relatif)),
-            Err(e) => resultat.incidents.push(format!("{} : {}", relatif, e.phrase)),
+            Err(e) => resultat.a_retenter.push(format!("{} : {}", relatif, e.phrase)),
         }
     }
 
@@ -429,14 +472,23 @@ fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> socle::echec::R<bool>
 /// Le nom sous lequel un coffre revenu que ce poste n'ouvre pas est mis de cote, dans `config/` (`ranger_le_coffre`).
 pub const COFFRE_DE_L_ANCIEN_POSTE: &str = "coffre-de-l-ancien-poste";
 
+/// UN COFFRE MIS DE COTE PAR `ranger_le_coffre` (`config/coffre-de-l-ancien-poste.bin`, `-2`…) : propre au poste qui l'a
+/// mis de cote, il ne monte pas au Drive (`sauvegarde::ecarte`), et la restauration ne le compte pas comme un fichier
+/// present ici et absent du Drive.
+pub(crate) fn est_un_coffre_de_cote(relatif: &CheminRelatif) -> bool {
+    relatif.texte().strip_prefix("config/").is_some_and(|n| n.starts_with(COFFRE_DE_L_ANCIEN_POSTE) && n.ends_with(".bin") && !n.contains('/'))
+}
+
 /// LE COFFRE REVENU QUE CE POSTE N'OUVRE PAS, ET QUE RIEN N'OUVRIRA ICI : scelle par la seule cle de l'ancien poste, sans
 /// mot de passe du logiciel (`ouverture_exigee` faux, `ouvre_a_ce_poste` faux). Poser un mot de passe du logiciel se
 /// refuserait sur lui (`Coffre::poser_ouverture` l'ouvre d'abord : « Ce coffre ne s'ouvre pas ici ») ; il est donc mis
 /// de cote dans `config/` (`coffre-de-l-ancien-poste.bin`, `-2`… s'il y en a deja un), sans rien effacer, et la
-/// compagnie part sans coffre : son premier mot de passe du logiciel en fait un neuf. Rend vrai s'il a ete mis de cote.
-pub fn ranger_le_coffre(coffre: &Coffre) -> socle::echec::R<bool> {
+/// compagnie part sans coffre : son premier mot de passe du logiciel en fait un neuf. SEUL UN COFFRE DESCENDU DU DRIVE
+/// (`OrigineDuCoffre::DuDrive`) se met de cote : un coffre qui etait la est peut-etre le coffre vivant d'une compagnie,
+/// qu'un processus sans la cle du poste n'ouvre pas non plus. Rend vrai s'il a ete mis de cote.
+pub fn ranger_le_coffre(coffre: &Coffre, origine: OrigineDuCoffre) -> socle::echec::R<bool> {
     let chemin = coffre.chemin();
-    if !socle::fichiers::present(&chemin)? || coffre.ouverture_exigee()? || coffre.ouvre_a_ce_poste()? {
+    if origine == OrigineDuCoffre::DejaLa || !socle::fichiers::present(&chemin)? || coffre.ouverture_exigee()? || coffre.ouvre_a_ce_poste()? {
         return Ok(false);
     }
     let mut n = 1;
@@ -459,9 +511,9 @@ pub fn ranger_le_coffre(coffre: &Coffre) -> socle::echec::R<bool> {
 ///
 /// En mots, pour la personne : les gestes se nomment par l'endroit ou ils se font (Configuration › Mots de passe) ; leurs
 /// routes, la fiche de chaque route les dit. Un coffre revenu que rien n'ouvrira ici est d'abord mis de cote
-/// (`ranger_le_coffre`) : chaque ligne dit un geste qui se fait vraiment. Un coffre qui ne se lit pas se dit, en mots ; il
-/// n'est pas touche.
-pub fn a_faire(coffre: &Coffre) -> Vec<String> {
+/// (`ranger_le_coffre`, s'il est descendu du Drive : `origine`) : chaque ligne dit un geste qui se fait vraiment. Un coffre
+/// qui ne se lit pas se dit, en mots ; il n'est pas touche.
+pub fn a_faire(coffre: &Coffre, origine: OrigineDuCoffre) -> Vec<String> {
     let mut lignes = Vec::new();
     let a_poser = |manquants: &[&str]| -> String {
         SERVICES.iter().filter(|s| manquants.contains(&s.nom)).map(|s| s.libelle).collect::<Vec<_>>().join(", ")
@@ -469,7 +521,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
     let tous: Vec<&str> = SERVICES.iter().map(|s| s.nom).collect();
     const OU: &str = "Configuration › Mots de passe";
     const ILLISIBLE: &str = "Le coffre est revenu, mais il ne se lit pas sur ce poste : il est peut-être abîmé. Rien n'y est changé.";
-    let range = match ranger_le_coffre(coffre) {
+    let range = match ranger_le_coffre(coffre, origine) {
         Ok(r) => r,
         Err(e) if e.classe == Some(socle::echec::Classe::Disque) => {
             return vec!["Le coffre revenu ne s'ouvre pas ici, et le disque refuse de le mettre de côté : rien n'y est changé.".to_string()];
@@ -478,7 +530,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
     };
     if range {
         lignes.push(format!(
-            "Le coffre revenu ne s'ouvre pas ici : seul l'ancien poste l'ouvrait. Il est mis de côté, rien n'est effacé. Poser un mot de passe du logiciel, puis ceux des organismes ({}), dans {}.",
+            "Le coffre revenu ne s'ouvre pas ici : seul l'ancien poste l'ouvrait. Il est mis de côté sur ce poste seulement, sous le nom « coffre de l'ancien poste », rien n'est effacé ; il ne monte pas au Drive. Poser un mot de passe du logiciel, puis ceux des organismes ({}), dans {}.",
             a_poser(&tous),
             OU
         ));
@@ -504,7 +556,13 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
                 let porte = if poses.is_empty() { "aucun mot de passe d'organisme".to_string() } else { poses.join(", ") };
                 if ici {
                     lignes.push(format!("Le coffre est revenu, et ce poste l'ouvre. Il porte : {}.", porte));
-                } else if avec_mot_de_passe {
+                } else if !avec_mot_de_passe {
+                    // Il etait la avant la restauration : il n'est pas deplace (`ranger_le_coffre`).
+                    lignes.push(format!(
+                        "Le coffre de ce dossier, qui y était déjà, ne s'ouvre pas sur ce poste et n'a pas de mot de passe du logiciel : seul le poste qui l'a fait l'ouvre. Rien n'y est changé. Il porte : {}.",
+                        porte
+                    ));
+                } else {
                     lignes.push(format!(
                         "Le coffre est revenu ; il porte : {}. Ce poste ne l'ouvre pas seul (la clé de l'ancien poste ne voyage pas) : le mot de passe du logiciel de cette compagnie, oui. Dans {}, « Changer… » le mot de passe du logiciel (l'actuel, puis le nouveau, qui peut être le même) l'attache à ce poste.",
                         porte,

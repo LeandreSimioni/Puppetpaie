@@ -122,6 +122,7 @@ routes! {
         DriveLier = "drive-lier",
         DriveReprendre = "drive-reprendre",
         DriveOublier = "drive-oublier",
+        DriveAbandonner = "drive-abandonner",
         CompagnieOuvrir = "compagnie-ouvrir",
         AdministrateurEtat = "administrateur-etat",
         AdministrateurRattacher = "administrateur-rattacher",

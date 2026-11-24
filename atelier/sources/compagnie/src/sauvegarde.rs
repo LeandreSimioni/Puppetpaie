@@ -56,6 +56,8 @@ const PREFIXE_IDENTITE: &str = "cie:";
 /// - le journal des incidents de ce poste, dont chaque ligne porte la machine qui l'a ecrite (`incidents::INCIDENTS`) ;
 /// - le journal de la fenetre de ce poste (`installation::JOURNAL_INTERFACE`) ;
 /// - la marque d'une reprise du Drive pas finie sur ce poste (`restauration::REPRISE_EN_COURS`) ;
+/// - (par `ecarte`) le coffre revenu que ce poste a mis de cote (`restauration::est_un_coffre_de_cote`) : seul ce poste
+///   le garde, la copie du Drive est celle du coffre de la compagnie ;
 /// - les etats de la machine : l'index de la sauvegarde, la trace et l'etape de l'ouverture, l'etat garde de l'ouverture
 ///   (ses chemins absolus), le tableau garde de l'administrateur de l'installation, les verrous.
 fn chemins_exclus() -> [CheminRelatif; 11] {
@@ -329,12 +331,13 @@ pub struct Etat {
     pub mtime: Moment,
 }
 
-/// Un chemin exclu (depuis la racine de la compagnie), un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin
-/// relatif (le nom du fichier compris). La restauration s'en sert aussi : elle ne redescend que ce que la sauvegarde
-/// envoie.
+/// Un chemin exclu (depuis la racine de la compagnie), un coffre mis de cote par ce poste
+/// (`restauration::est_un_coffre_de_cote`), un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif (le
+/// nom du fichier compris). La restauration s'en sert aussi : elle ne redescend que ce que la sauvegarde envoie, et ne
+/// compte pas ce qui est ecarte parmi ce qui est deja la.
 pub(crate) fn ecarte(relatif: &CheminRelatif) -> bool {
     let nom = relatif.nom();
-    chemins_exclus().contains(relatif) || SUFFIXES_EXCLUS.iter().any(|s| nom.texte().ends_with(s)) || relatif.texte().split('/').any(|n| DOSSIERS_EXCLUS.contains(&n))
+    chemins_exclus().contains(relatif) || crate::restauration::est_un_coffre_de_cote(relatif) || SUFFIXES_EXCLUS.iter().any(|s| nom.texte().ends_with(s)) || relatif.texte().split('/').any(|n| DOSSIERS_EXCLUS.contains(&n))
 }
 
 /// Les entrees (fichiers et liens, pas les dossiers) sous `dossier`, relatives a `racine`. Un dossier lien n'est pas

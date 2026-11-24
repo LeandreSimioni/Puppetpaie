@@ -596,6 +596,8 @@ un libellé, chacun sa forme.
 | corbeille du Drive, à part du client | `envois::drive::Corbeille` | `envois/src/drive.rs` |
 | reprise du Drive pas finie sur ce poste | `compagnie::restauration::RepriseEnCours` | `compagnie/src/restauration.rs` |
 | geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
+| provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
+| ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
 | titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
@@ -967,12 +969,22 @@ un libellé, chacun sa forme.
   dossier (`routes::drive`).
 - **reprise en cours** : la marque qu'une reprise du Drive à l'accueil pose d'abord dans le dossier neuf qu'elle remplit
   (`config/reprise-en-cours.json`, propre au poste) : de quel dossier du Drive il revient. Tant qu'elle est là, ce
-  dossier n'est pas une compagnie du poste (ni tuile, ni ouvert) ; les reprises commencées se cherchent par elle
-  (`installation::reprises_commencees`). Une reprise coupée, ou sans sa fiche Entreprise revenue, se continue dans ce
-  dossier, et dans aucun autre ; allée au bout, elle s'efface.
+  dossier n'est pas une compagnie du poste (ni tuile, ni ouvert, et aucune route ne s'y sert : `routes::service::contexte`) ;
+  les reprises commencées se cherchent par elle (`installation::reprises_commencees`), et chacune se voit à l'accueil,
+  que son dossier du Drive se voie ou non, avec le geste qui l'abandonne (son dossier sur ce poste s'efface ; le Drive
+  ne change pas). Une reprise coupée (la connexion, un fichier à retenter) se continue dans ce dossier, et dans aucun
+  autre ; allée au bout (`Restauration::complete`, la fiche Entreprise revenue et lisible), elle s'efface. Commencée
+  dans `fictives/`, elle reste une fictive ; dans `compagnies/`, une compagnie réelle.
+- **provenance du coffre** : un coffre qu'une restauration laisse est descendu du Drive (par elle, ou dans le dossier
+  d'une reprise), ou il était là. Seul le premier, s'il ne s'ouvre pas ici, se met de côté
+  (`config/coffre-de-l-ancien-poste.bin`, propre au poste : il ne monte pas au Drive) ; un coffre qui était là n'est
+  jamais déplacé.
+- **après un geste** : ce que la page fait de la réponse d'un geste, que la route dit (`apres`) : poser l'écran qu'elle
+  rend, relire l'écran, ou ouvrir la compagnie qu'elle nomme ; la page ne le devine pas à la forme de la réponse.
 - **geste d'un écran de la reprise du Drive** : ce que porte le geste d'un rang de l'accueil « De mon Drive », la charge
   de sa route et rien de plus : rien (lier, oublier le compte Google de l'accueil), un dossier du Drive (le reprendre),
-  une compagnie de ce poste (l'ouvrir). Le geste « Supprimer… » d'une compagnie porte la charge de `drive-supprimer`.
+  une compagnie de ce poste (l'ouvrir), le dossier d'une reprise pas finie (l'abandonner). Le geste « Supprimer… »
+  d'une compagnie porte la charge de `drive-supprimer`.
 - **marque du dossier d'une compagnie** : ses propriétés privées à l'application (`appProperties`) : l'identité, la date
   de la dernière sauvegarde qui a envoyé quelque chose, le volume ; telle que Drive la rend, du texte, que
   `sur_le_drive` lit en ses types (ce qui ne s'en lit pas se dit, sans fermer la vue).

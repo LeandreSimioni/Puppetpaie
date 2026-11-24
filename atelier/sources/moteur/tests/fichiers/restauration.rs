@@ -116,8 +116,11 @@ fn une_empreinte_qui_ne_colle_pas_n_ecrit_rien_de_ce_fichier() {
     let cible = base.join("cible");
     let vu = le_seul(&mut d);
     let r = restaurer(&cible, &vu, RD, &mut d).unwrap();
-    assert_eq!(r.incidents.len(), 1, "{:?}", r.incidents);
-    assert!(r.incidents[0].starts_with("paies/2026-06/dupont.json") && r.incidents[0].contains(&"0".repeat(32)), "le fichier et l'empreinte annoncee : {}", r.incidents[0]);
+    // Un contenu abime en route se retente : la restauration n'est pas complete, rien n'est perdu pour elle.
+    assert!(r.incidents.is_empty(), "{:?}", r.incidents);
+    assert_eq!(r.a_retenter.len(), 1, "{:?}", r.a_retenter);
+    assert!(r.a_retenter[0].starts_with("paies/2026-06/dupont.json") && r.a_retenter[0].contains(&"0".repeat(32)), "le fichier et l'empreinte annoncee : {}", r.a_retenter[0]);
+    assert!(!r.complete());
     assert_eq!(r.redescendus.len(), 6);
     // Ni le fichier, ni un `.part`, ni une ligne d'index.
     assert!(!cible.join("paies/2026-06/dupont.json").exists());

@@ -48,9 +48,15 @@ pub(crate) fn compagnie_nommee(o: &Options) -> bool {
     o.racine.is_some() || matches!(std::env::var("PUPPETPAIE_DONNEES"), Ok(e) if !e.is_empty())
 }
 
-/// La compagnie de la route, au jour de la route.
+/// La compagnie de la route, au jour de la route. UNE REPRISE DU DRIVE PAS FINIE N'EST PAS ENCORE UNE COMPAGNIE
+/// (`installation::en_reprise`) : aucune route ne s'y sert, sinon elle y ecrirait en passant et la suite de la reprise se
+/// refuserait (« dossier non vide ») ; c'est ici, la ou toute route prend sa compagnie, que cela se refuse.
 pub(crate) fn contexte(o: &Options) -> R<Contexte> {
-    Contexte::nouveau(&racine_de(o), o.date)
+    let racine = racine_de(o);
+    if compagnie::installation::en_reprise(&racine) {
+        return Err(socle::echec::erreur(socle::echec::Classe::Refuse, "Cette compagnie est en cours de reprise : finir ou abandonner la reprise d'abord."));
+    }
+    Contexte::nouveau(&racine, o.date)
 }
 
 /// LA COMPAGNIE QU'OUVRE LA ROUTE `route` (servie par la porte, `servir`, ou par l'etat garde de la fenetre,

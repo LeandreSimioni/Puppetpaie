@@ -314,6 +314,16 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             // Le compte Google de l'accueil : son application et son jeton vivent sous l'installation.
             Route::DriveLier => google_autoriser(&c, &compagnie::installation::IdDeCompagnie::installation_de(&c), f.nom(), exemple),
             Route::DriveReprendre => drive_reprendre(&c, exemple),
+            // Une reprise coupee, a abandonner : un dossier de l'installation qui ne porte que sa marque (illisible : elle
+            // s'abandonne de meme).
+            Route::DriveAbandonner => {
+                let coupee = c.parent().unwrap().join("ajoutee-reprise-coupee");
+                std::fs::create_dir_all(coupee.join("config")).unwrap();
+                std::fs::write(coupee.join("config/reprise-en-cours.json"), "{}").unwrap();
+                let r = route_avec(&c, f.nom(), exemple, "2026-11-02", &[(VARIABLE_ESSAIS, "exemple")]);
+                assert!(!coupee.exists(), "drive-abandonner : le dossier de la reprise est encore là : {}", r);
+                r
+            }
             // La suppression efface une compagnie ajoutee a part, pas celle des exemples.
             Route::CompagnieSupprimer => {
                 let autre = c.parent().unwrap().join("ajoutee-a-supprimer");
@@ -379,7 +389,8 @@ fn drive_reprendre(c: &Path, exemple: Value) -> Value {
             "/drive/v3/files" if q.contains("'racine-essai' in parents and mimeType") => dossiers(json!([{"id": "cie-essai", "name": "La Reprise d'essai", "appProperties": {"puppetpaie_compagnie": "cie:0123456789abcdef0123456789abcdef", "puppetpaie_derniere": "2026-11-01T10:00"}}])),
             "/drive/v3/files" if q.contains("'cie-essai' in parents and mimeType") => dossiers(json!([{"id": "sauvegarde-essai", "name": "sauvegarde"}])),
             "/drive/v3/files" if q.contains("'sauvegarde-essai' in parents and mimeType") => dossiers(json!([{"id": "config-essai", "name": "config"}])),
-            "/drive/v3/files" if q.contains("'config-essai' in parents and trashed") && !q.contains("mimeType") => {
+            // La liste des fichiers d'un dossier (`Drive::lister`) : sa requete ne filtre pas le type (ses `fields`, si).
+            "/drive/v3/files" if q.contains("'config-essai' in parents and trashed") => {
                 dossiers(json!([{"id": "entreprise-essai", "name": "entreprise.json", "md5Checksum": md5, "size": taille, "mimeType": "application/json"}]))
             }
             "/drive/v3/files" => dossiers(json!([])),
