@@ -41,23 +41,21 @@ pub enum Constat {
 
 /// CE QU'UNE COTISATION IMPRIMEE A TORT FAIT A CE QUE LA PAIE A COTISE, que la ligne connue dit et fonde (sa `source`) :
 /// une reduction ou une exoneration (`Deduction` : la mention « Exonérations et allègements de cotisations » de
-/// l'arrete du 25/02/2016, art. 4, la somme des reductions, deduite de ce qui est du), ou une cotisation de plus
-/// (`Cotisation`). Le montant que le bulletin imprime se prend en valeur absolue, compte de moins ou de plus selon
-/// lui : le signe qu'un ancien logiciel imprime ne le dit pas.
+/// l'arrete du 25/02/2016, art. 4, la somme des reductions, deduite de ce qui est du). Ce que le bulletin imprime
+/// compte de moins, quel que soit le signe que l'ancien logiciel lui donne.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffetSurLaPaie {
     Deduction,
-    Cotisation,
 }
 
 impl EffetSurLaPaie {
-    /// Ce que les montants `imprimes` ont fait cotiser de plus (positif) ou de moins (negatif).
+    /// Ce que les montants `imprimes` ont fait cotiser de plus (positif) ou de moins (negatif) : leur somme, signes
+    /// compris (une regularisation imprimee en sens contraire s'en retranche), puis son effet.
     pub fn ecart(self, imprimes: &mut dyn Iterator<Item = Montant>) -> Montant {
-        let total = imprimes.fold(Montant::ZERO, |a, m| a + m.abs());
+        let somme = imprimes.fold(Montant::ZERO, |a, m| a + m);
         match self {
-            EffetSurLaPaie::Deduction => -total,
-            EffetSurLaPaie::Cotisation => total,
+            EffetSurLaPaie::Deduction => -somme.abs(),
         }
     }
 }
@@ -85,7 +83,7 @@ impl TryFrom<ConstatEcrit> for Constat {
             (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, Some(applique), Some(texte), None) => Ok(Constat::Taux { grandeur: e.grandeur, applique, texte }),
             (CeQuiDiffere::AbsenteDuCalcul, None, None, Some(effet)) => Ok(Constat::AbsenteDuCalcul { effet }),
             (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, _, _, _) => Err(format!("un écart connu sur le {} dit le taux appliqué et celui du texte, et rien d'autre", e.grandeur.dite())),
-            (CeQuiDiffere::AbsenteDuCalcul, _, _, _) => Err("un écart connu sur une cotisation absente du calcul dit son effet (une déduction ou une cotisation), sans taux".to_string()),
+            (CeQuiDiffere::AbsenteDuCalcul, _, _, _) => Err("un écart connu sur une cotisation absente du calcul dit son effet (une déduction), sans taux".to_string()),
             (g, _, _, _) => Err(format!("un écart connu constate un taux, ou une cotisation absente du calcul, pas « {} »", g.code())),
         }
     }
