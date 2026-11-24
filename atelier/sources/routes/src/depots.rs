@@ -326,8 +326,8 @@ pub(crate) struct Dit<A> {
     demande: compagnie::demande::DemandeDuMotDePasse,
     encarts: Vec<Encart>,
     phrases: Vec<Phrase>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
+    avertissements: Vec<crate::mois::AvisVu>,
+    informations: Vec<crate::mois::AvisVu>,
     /// Les depots ouverts maintenant (`depots_ouverts`) : les gestes de la boite, le principal par son rang ; le reel
     /// sans test, a part.
     gestes: Vec<GesteDuDepot>,
@@ -811,8 +811,8 @@ mod tests_dpae_partielles {
 #[derive(Debug, Default)]
 pub struct DitALEcriture {
     phrase: Option<Phrase>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
+    avertissements: Vec<crate::mois::AvisVu>,
+    informations: Vec<crate::mois::AvisVu>,
 }
 
 /// LA DECLARATION QUE LA DESIGNATION DESIGNE (son chemin), et ce que son ecriture a dit. La DSN du mois (`quoi` : dsn,
@@ -1226,8 +1226,8 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
 /// ecriture a dit (ce que deux engagements disent pareil se dit une fois) ; les encarts de la boite et sa phrase.
 fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
     let (fichier, dit) = designee(ctx, &d)?;
-    let une_fois = |l: Vec<String>| {
-        let mut vus: Vec<String> = Vec::new();
+    let une_fois = |l: Vec<crate::mois::AvisVu>| {
+        let mut vus: Vec<crate::mois::AvisVu> = Vec::new();
         l.into_iter().filter(|x| if vus.contains(x) { false } else { vus.push(x.clone()); true }).collect::<Vec<_>>()
     };
     let (avertissements, informations) = (une_fois(dit.avertissements), une_fois(dit.informations));
@@ -1280,13 +1280,13 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
     lignes.extend(encarts.iter().map(|e| socle::phrase!("{}", e.en_ligne())));
     match &mut a {
         DepotApercu::Dsn(dit) => {
-            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x.texte())));
             lignes.extend(dit.reel_ferme.clone());
             dit.encarts = encarts;
             dit.phrases = lignes;
         }
         DepotApercu::Dpae(dit) => {
-            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x.texte())));
             lignes.extend(dit.reel_ferme.clone());
             dit.encarts = encarts;
             dit.phrases = lignes;

@@ -375,8 +375,8 @@ function peindreLaPaie(div) {
       ${p.net_paye != null ? `<span class="e-cout">Net payé <b>${echapper(euros(p.net_paye))}</b></span>` : ""}
       <span class="e-cout">Brut <b>${echapper(euros(p.brut))}</b></span>
       <span class="e-cout">Coût employeur <b>${echapper(euros(p.cout_employeur))}</b></span></p>
-    ${p.avertissements.map((a) => `<div class="encart attention">${echapper(a)}</div>`).join("")}
-    ${p.informations.map((a) => `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
+    ${p.avertissements.map((a) => `<div class="encart attention">${avisAvecLien(a)}</div>`).join("")}
+    ${p.informations.map((a) => `<div class="encart info">${avisAvecLien(a)}</div>`).join("")}
     ${(p.a_dire || []).map((m) => `<div class="encart info">${echapper(m.trouver)}
       <button type="button" class="lien" data-manque-champ="${echapper(m.champ)}" data-manque-onglet="${echapper(m.onglet)}"
         data-manque-fiche="salarie" data-manque-cle="${echapper(m.salarie)}">${echapper(m.ou)}</button></div>`).join("")}

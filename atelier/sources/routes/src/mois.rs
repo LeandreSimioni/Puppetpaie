@@ -79,7 +79,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &ChargeApercu::CHARGE,
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois, ses deux nombres (total_net, total_cout) et ce qu'ils disent (total_net_dit, total_cout_dit)",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide ; avertissements et informations : chacun son texte, et le lien vers le texte qu'il renvoie à vérifier, à part : libellé, adresse), les trois nombres de chaque carte, le mois, ses deux nombres (total_net, total_cout) et ce qu'ils disent (total_net_dit, total_cout_dit)",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -1980,6 +1980,46 @@ pub(crate) struct EmploiVu {
     cadre: bool,
 }
 
+/// UN AVIS DE LA PAIE TEL QUE LA CARTE LE MONTRE (`engagement::Avis`) : sa phrase, en mots, et a cote d'elle le lien vers
+/// le texte qu'elle renvoie a verifier, quand elle en a un.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct AvisVu {
+    texte: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lien: Option<LienDuTexte>,
+}
+
+impl AvisVu {
+    /// Une phrase que la vue ajoute, sans lien.
+    pub(crate) fn phrase(texte: String) -> AvisVu {
+        AvisVu { texte, lien: None }
+    }
+
+    pub(crate) fn de(a: &engagement::Avis) -> AvisVu {
+        AvisVu { texte: a.texte.clone(), lien: a.convention.clone().map(LienDuTexte::de_la_convention) }
+    }
+
+    /// Sa phrase seule, pour une ligne de `moteur route --texte`.
+    pub(crate) fn texte(&self) -> &str {
+        &self.texte
+    }
+}
+
+/// UN LIEN VERS LE TEXTE QU'UNE PHRASE NOMME, rendu a cote d'elle et jamais dedans (`affiche::defaut`) : son libelle,
+/// et l'adresse que la page ouvre dans le navigateur.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct LienDuTexte {
+    libelle: &'static str,
+    adresse: socle::garde_reseau::Url,
+}
+
+impl LienDuTexte {
+    /// Le texte d'une convention collective (`engagement::Avis::convention`).
+    fn de_la_convention(adresse: socle::garde_reseau::Url) -> LienDuTexte {
+        LienDuTexte { libelle: const { Affiche::new("Voir la convention") }.texte(), adresse }
+    }
+}
+
 /// UNE PAIE POUR L'ECRAN (`apercu`, `ajuster`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct VuePaie {
@@ -2028,8 +2068,8 @@ pub(crate) struct VuePaie {
     net_imposable: Montant,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     cout_employeur: Montant,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
+    avertissements: Vec<AvisVu>,
+    informations: Vec<AvisVu>,
     emploi: EmploiVu,
     /// Le conseil que la saisie appelle (`gestes::conseils::de_saisie`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2203,8 +2243,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         net_paye,
         net_imposable: p.net_imposable.au_centime(),
         cout_employeur: p.cout_employeur.au_centime(),
-        avertissements: p.avertissements.iter().filter(|a| !a.info).map(|a| a.texte.clone()).collect(),
-        informations: p.avertissements.iter().filter(|a| a.info).map(|a| a.texte.clone()).collect(),
+        avertissements: p.avertissements.iter().filter(|a| !a.info).map(AvisVu::de).collect(),
+        informations: p.avertissements.iter().filter(|a| a.info).map(AvisVu::de).collect(),
         emploi: EmploiVu { libelle: s.emploi.clone(), code_emploi_ft: s.code_emploi_ft.clone(), statut: s.statut.clone(), cadre: droit::bareme::est_cadre(s) },
         conseil: None,
         a_dire: None,
@@ -2321,8 +2361,8 @@ struct ParSalarie {
 struct PaieACompleter {
     a_completer: String,
     salarie: CleEcrite,
-    avertissements: [String; 0],
-    informations: [String; 0],
+    avertissements: [AvisVu; 0],
+    informations: [AvisVu; 0],
     contrat: EcritsSeuls,
     /// Ses bornes, lues de ce que sa carte dit ou de ses jours coches (`bornes_dites`, sans ses jours travailles que la
     /// paie seule connait) ; rien tant qu'elle ne dit pas son debut.
@@ -2358,7 +2398,7 @@ enum PaieVue {
 impl PaieVue {
     fn textes(&self) -> impl Iterator<Item = &String> {
         match self {
-            PaieVue::Calculee(v) => Some(v.avertissements.iter().chain(v.informations.iter())),
+            PaieVue::Calculee(v) => Some(v.avertissements.iter().chain(v.informations.iter()).map(|a| &a.texte)),
             PaieVue::ACompleter(_) => None,
         }
         .into_iter()
@@ -2385,8 +2425,8 @@ struct Calcul {
     total_net: Option<Montant>,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
+    avertissements: Vec<AvisVu>,
+    informations: Vec<AvisVu>,
 }
 
 /// L'APERCU (`apercu`) : le mois tel que l'ecran le montre, rien d'ecrit.
@@ -2407,9 +2447,11 @@ struct Apercu {
     total_cout_dit: &'static str,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
-    /// Ce que le moteur dit de chaque engagement (les encarts de sa carte), en phrases : le mois, puis ses paies.
+    avertissements: Vec<AvisVu>,
+    informations: Vec<AvisVu>,
+    /// Ce que le moteur dit de chaque engagement (les encarts de sa carte), en phrases : le mois, puis ses paies. Les
+    /// textes seuls, pour `moteur route --texte` ; le lien d'un avis est dans `avertissements` et `informations`, et dans
+    /// ceux de sa paie.
     phrases: Vec<String>,
 }
 
@@ -2437,7 +2479,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         None => socle::phrase!("{} : {}.", r.libelle, socle::ecran::compte(paies.len(), "paie", "paies")),
     };
     let mut phrases: Vec<String> = Vec::new();
-    for t in r.avertissements.iter().chain(r.informations.iter()).chain(paies.iter().flat_map(|p| p.paie.textes())) {
+    for t in r.avertissements.iter().chain(r.informations.iter()).map(|a| &a.texte).chain(paies.iter().flat_map(|p| p.paie.textes())) {
         if !phrases.contains(t) {
             phrases.push(t.clone());
         }
@@ -2499,7 +2541,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
         Some(qui) => format!("{} : {}", qui, quoi),
         None => quoi[..1].to_uppercase() + &quoi[1..],
     };
-    p.informations.push(format!("{}, le tarif de la convention collective {}.", quoi, idcc));
+    p.informations.push(AvisVu::phrase(format!("{}, le tarif de la convention collective {}.", quoi, idcc)));
     Ok(())
 }
 
@@ -2539,7 +2581,7 @@ fn dire_l_entree(ctx: &Contexte, mois: Mois, brut: &SaisieCarte, v: &mut VuePaie
             qui, le, numero
         )
     };
-    v.informations.insert(0, phrase);
+    v.informations.insert(0, AvisVu::phrase(phrase));
     let au_mois = v.nature.cle.proprietes()?.au_mois();
     if au_mois.is_some_and(|au| !declarations::demarrage::conges_repris(ctx, &au, &v.salarie.cle)) {
         let depuis = mois.premier_jour();
@@ -2647,7 +2689,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois, lignes: &R<LignesPreremplies>) ->
     }
     for (v, m) in vues.iter_mut().zip(&montrees) {
         if let Some(phrase) = m.recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul) {
-            v.informations.insert(0, phrase);
+            v.informations.insert(0, AvisVu::phrase(phrase));
         }
     }
     let total_cout = vues.iter().fold(Montant::ZERO, |t, v| t + v.cout_employeur).au_centime();
@@ -2675,7 +2717,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois, lignes: &R<LignesPreremplies>) ->
             }
         })
         .collect::<Vec<_>>();
-    let mut avertissements = archives_employees(&paies)?;
+    let mut avertissements: Vec<AvisVu> = archives_employees(&paies)?.into_iter().map(AvisVu::phrase).collect();
     let mut informations = Vec::new();
     for v in &vues {
         avertissements.extend(v.avertissements.iter().cloned());

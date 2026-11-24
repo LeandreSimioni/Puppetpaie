@@ -1223,6 +1223,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce que le contrat écrit d'un engagement appelle sur sa carte (contrat signé ici, modèles au choix, numéro à dire) | `routes::mois::ContratAppelle` | `routes/src/mois.rs` |
 | partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
 | clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le cadre qu'une carte disait de son métier, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
+| avis de la paie (sa phrase, s'il renseigne sans rien demander, et l'adresse de la convention qu'il renvoie à vérifier, à part de la phrase ; sa forme écrite, `AvisEcrit`, qui lit aussi l'adresse collée au bout de la phrase telle qu'elle s'écrivait ; sa forme rendue, `AvisVu`, sa phrase et son `LienDuTexte`) | `engagement::Avis` | `engagement/src/lib.rs` |
 | avenant d'un engagement (les termes qui changent à partir d'un jour, et ceux qui se retirent ; sa forme écrite, `AvenantEcrit`, dont chaque retiré, `Retire`, est un champ de la carte ou la clé gardée `cadre`) | `engagement::stock::Avenant` | `engagement/src/stock.rs` |
 | dernier jour engagé d'un spectacle (la fin la plus tardive des engagements actifs qui le nomment, importés compris, ou un contrat payé au mois sans fin qui le tient en cours ; seul le rangement des spectacles endormis le lit, `derniers_jours_engages`) | `engagement::stock::DernierJourEngage` | `engagement/src/stock.rs` |
 | ouverture d'une case (toujours, ou si un fait) | `engagement::carte::Ouverture` | `engagement/src/carte.rs` |
@@ -1300,6 +1301,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
+| lien vers le texte qu'une phrase nomme, rendu à côté d'elle et jamais dedans (son libellé, son adresse) : celui de la convention que l'avis du minimum conventionnel renvoie à vérifier (`engagement::Avis`, son adresse `convention`) | `LienDuTexte` | `routes/src/mois.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
