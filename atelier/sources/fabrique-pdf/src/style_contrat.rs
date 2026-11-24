@@ -7,7 +7,7 @@
 //! tout compte) ont le même papier, la même police et les mêmes titres : ce sont trois VARIANTES
 //! de la même mise en page (`Variante`), qui ne diffèrent que par ce qui suit le préambule.
 
-use crate::description::{Alignement, Bloc, BlocEtiquete, Morceau, Page, Police, Refus, Rvb, refus};
+use crate::description::{Alignement, Bloc, BlocEtiquete, Logo, Morceau, Page, Police, Refus, Rvb, defaut, refus};
 use crate::mesure;
 use crate::mesure::Mesure;
 use crate::modele::{self, Modele, Valeurs};
@@ -40,29 +40,19 @@ pub(crate) const TAILLE_SOUS_LIBELLE: Mesure = Mesure::entier(7);
 /// La phrase d'un contrat qui annule et remplace, quand le modèle n'a pas de clé `ANNULE:`.
 const ANNULE_DEFAUT: &str = "Le présent contrat annule et remplace le contrat n° {{remplace.numero}} du {{remplace.date}}, qui est réputé n'avoir jamais produit d'effet.";
 
-/// La marge du contrat : 15 mm, la même à gauche, à droite et en bas, et en haut quand il n'a pas de logo. Le contrat
-/// ordinaire d'un intermittent tient ainsi sur une page A4.
+/// La marge du contrat : 15 mm, la même des quatre côtés, logo ou non.
 pub const MARGE: Mesure = mesure!("42.5");
-/// Le logo du contrat, en haut à droite (`documents::contrat::enveloppe`) : 48 pt de large, son bord droit sur celui du
-/// texte, à 10 mm du haut de la page ; le texte commence 8 pt sous le logo, quelle que soit sa hauteur.
+/// Le logo du contrat (`documents::contrat::enveloppe`) : dans un carré de 48 pt, proportions gardées, en tête du
+/// document, en haut à droite, son bord droit sur celui du texte, à 10 mm du haut de la page, dans la marge du haut et
+/// à côté du titre (`en_tete`).
 pub const LOGO_LARGEUR: Mesure = Mesure::entier(48);
 pub const LOGO_HAUT: Mesure = mesure!("28.35");
+/// L'écart entre le logo et le texte, à sa gauche (le titre) comme dessous (ce qui suit le titre).
 const LOGO_ECART: Mesure = Mesure::entier(8);
 
-/// La page du contrat : A4 (595 x 842), ses marges (`MARGE`) ; avec un logo de hauteur `logo` (à la largeur où il se
-/// pose), le texte commence sous lui, jamais plus haut que la marge.
-pub fn page(logo: Option<Mesure>) -> Page {
-    Page {
-        largeur: Mesure::entier(595),
-        hauteur: Mesure::entier(842),
-        haut: match logo {
-            Some(h) => (LOGO_HAUT + h + LOGO_ECART).max(MARGE),
-            None => MARGE,
-        },
-        droite: MARGE,
-        bas: MARGE,
-        gauche: MARGE,
-    }
+/// La page du contrat : A4 (595 x 842), ses marges (`MARGE`).
+pub fn page() -> Page {
+    Page { largeur: Mesure::entier(595), hauteur: Mesure::entier(842), haut: MARGE, droite: MARGE, bas: MARGE, gauche: MARGE }
 }
 
 pub fn police() -> Police {
@@ -71,10 +61,11 @@ pub fn police() -> Police {
 
 /// Le corps du texte courant.
 const CORPS: Mesure = mesure!("7.5");
-/// L'espace sous un paragraphe du texte.
-const APRES_PARAGRAPHE: Mesure = mesure!("1.8");
+/// L'espace sous un paragraphe du texte. Lui et le suivant sont serrés pour que le contrat ordinaire d'un intermittent
+/// (le modèle par défaut, treize articles, ses signatures) tienne sur une page, logo compris.
+const APRES_PARAGRAPHE: Mesure = mesure!("1.5");
 /// L'espace au-dessus du titre d'un article.
-const AVANT_ARTICLE: Mesure = Mesure::entier(3);
+const AVANT_ARTICLE: Mesure = mesure!("2.5");
 
 /// Les trois mises en page (le `style` de la description : « contrat », « avenant »,
 /// « attestation »).
@@ -119,6 +110,10 @@ pub struct Contrat<'a> {
     /// L'image de la signature de l'employeur, posée en fin de document, à droite (attestation
     /// seulement : le certificat de travail s'établit signé ; le reçu, lui, se signe du salarié).
     pub signature_employeur: Option<&'a std::path::Path>,
+    /// La page du document.
+    pub page: &'a Page,
+    /// Le logo, posé en tête du document (`en_tete`) ; sans lui, rien en haut à droite.
+    pub logo: Option<&'a Logo>,
 }
 
 fn para(
@@ -242,6 +237,38 @@ fn signature_employeur(v: &Valeurs, image: &std::path::Path) -> Result<Bloc, Ref
     })
 }
 
+/// LA TETE DU DOCUMENT : son titre et son sous-titre (`tete`), et le logo en haut à droite, dans la marge du haut. Le
+/// titre commence à la marge, logo ou non, dans la largeur que le logo lui laisse ; ce qui suit ne descend que si le
+/// logo dépasse le titre et son sous-titre, jusqu'à `LOGO_ECART` sous lui.
+fn en_tete(tete: Vec<Bloc>, c: &Contrat) -> Result<Vec<Bloc>, Refus> {
+    let Some(logo) = c.logo else { return Ok(tete) };
+    let largeur = c.page.largeur_utile();
+    let Some(cote) = (logo.largeur + LOGO_ECART).sur(largeur) else {
+        return defaut("la page du contrat n'a aucune largeur pour son texte");
+    };
+    let sous_le_logo = (logo.marge_haut + logo.hauteur + LOGO_ECART - c.page.haut).max(Z);
+    let etiquetter = |blocs: Vec<Bloc>, col: usize| -> Vec<BlocEtiquete> {
+        blocs.into_iter().enumerate().map(|(j, bloc)| BlocEtiquete { etiquette: format!("tête, colonne {}, bloc {}", col, j + 1), bloc }).collect()
+    };
+    Ok(vec![
+        // Le premier bloc du document : il se pose sur sa première page, ses coordonnées sont celles de la page.
+        Bloc::ImageFixe {
+            chemin: logo.chemin.clone(),
+            x: c.page.largeur - logo.marge_droite - logo.largeur,
+            y: logo.marge_haut,
+            largeur: logo.largeur,
+            hauteur: logo.hauteur,
+            centree: false,
+        },
+        Bloc::Colonnes {
+            filet: None,
+            espace_avant: Z,
+            marge_interne_haut: Z,
+            colonnes: vec![(Mesure::UN - cote, etiquetter(tete, 1)), (cote, etiquetter(vec![Bloc::Espace(sous_le_logo)], 2))],
+        },
+    ])
+}
+
 /// Les blocs d'un document, dans l'ordre du modèle : titre, sous-titre, phrase d'annulation
 /// (contrat), préambule, [articles modifiés (avenant),] articles, mention finale, [cases de
 /// signature (contrat, avenant)]. `ou` préfixe les étiquettes d'erreur de mise en page
@@ -262,13 +289,14 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
             Ok(vec![para(modele::morceaux(texte, v, false)?, CORPS, COULEUR_TEXTE,Justifie, avant, APRES_PARAGRAPHE)])
         }
     };
-    let mut blocs = Vec::new();
+    let mut tete = Vec::new();
     if let Some(titre) = &m.titre {
-        blocs.push(para(modele::morceaux(titre, v, true)?, Mesure::entier(11), ROUGE, Gauche, Z, Mesure::UN));
+        tete.push(para(modele::morceaux(titre, v, true)?, Mesure::entier(11), ROUGE, Gauche, Z, Mesure::UN));
     }
     if let Some(soustitre) = m.soustitre.as_deref().filter(|s| !s.is_empty()) {
-        blocs.push(para(modele::morceaux(soustitre, v, false)?, mesure!("6.8"), GRIS, Justifie, Z, Mesure::entier(7)));
+        tete.push(para(modele::morceaux(soustitre, v, false)?, mesure!("6.8"), GRIS, Justifie, Z, Mesure::entier(7)));
     }
+    let mut blocs = en_tete(tete, c)?;
     if let Some((numero, date)) = c.remplace {
         let mut vr = v.clone();
         vr.insert("remplace.numero".to_string(), numero.to_string());
