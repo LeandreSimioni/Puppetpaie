@@ -1189,7 +1189,36 @@ table.compta tr.total-general td {
   justify-content: center;
   min-height: 90px;
 }
-.rang-apercu img { max-width: 100%; max-height: 120px; }
+.rang-apercu img { max-width: 100%; max-height: 120px; cursor: zoom-in; }
+
+/* Ce que l'aperçu d'un geste rend, sous les cases de sa boîte : ses phrases, puis l'image, sur fond blanc. */
+.geste-apercu:empty { display: none; }
+.geste-apercu { margin-top: 8px; }
+.geste-apercu img { display: block; max-width: 100%; max-height: 140px; background: var(--blanc); padding: 6px; cursor: zoom-in; }
+
+/* L'image d'un rang en grand : sur le meme fond blanc, par-dessus la page ; un clic la referme. */
+.image-en-grand {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+.image-en-grand img {
+  background: var(--blanc);
+  padding: 16px;
+  border-radius: 6px;
+  max-width: 90vw;
+  max-height: 90vh;
+  min-width: 40vw;
+  object-fit: contain;
+}
+
+/* Une case (ou une boite) sur laquelle on glisse un fichier qu'elle prend. */
+.depot-survole { outline: 2px dashed var(--apercu-bord); outline-offset: 2px; }
 
 /* Les soucis du bandeau au-dela du premier : derriere un clic. */
 .ennuis { display: inline; }

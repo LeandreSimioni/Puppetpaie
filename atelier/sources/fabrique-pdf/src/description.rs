@@ -749,8 +749,9 @@ fn lire_repere(r: &Option<f::Repere>, nom: &str, police: &Police) -> Result<Opti
     }))
 }
 
-/// La page : celle que la description dit, sinon celle du style ; une description sans l'une ni l'autre se refuse.
-fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>) -> Result<Page, Refus> {
+/// La page : celle que la description dit, sinon celle du style (sous son logo, s'il en a un : `avec_logo`) ; une
+/// description sans l'une ni l'autre se refuse.
+fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>, avec_logo: bool) -> Result<Page, Refus> {
     let brute = match (p, style) {
         (Some(p), _) => Page {
             largeur: p.largeur,
@@ -760,7 +761,7 @@ fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>) -> Res
             bas: p.marges.bas,
             gauche: p.marges.gauche,
         },
-        (None, Some(_)) => style_contrat::page(),
+        (None, Some(_)) => style_contrat::page(avec_logo),
         (None, None) => return refus("description : sans \"style\", elle dit sa \"page\""),
     };
     let page = Page {
@@ -810,7 +811,7 @@ pub fn resoudre(d: &f::Description) -> Result<Resolue, Refus> {
         f::Style::Avenant => style_contrat::Variante::Avenant,
         f::Style::Attestation => style_contrat::Variante::Attestation,
     });
-    let page = lire_page(&d.page, style)?;
+    let page = lire_page(&d.page, style, d.logo.is_some())?;
     let police = lire_police(&d.police, style)?;
     let logo = match &d.logo {
         Some(l) => Some(Logo {

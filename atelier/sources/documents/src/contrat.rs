@@ -14,7 +14,8 @@ use serde::Serialize;
 use socle::date::Jour;
 
 use crate::avenant::valeurs_de_la_paie;
-use crate::bulletin::{chemin_net, identite_de, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
+use crate::bulletin::{chemin_net, identite_de};
+use fabrique_pdf::style_contrat as mise_en_page;
 use fabrique_pdf::FORMAT;
 use droit::contexte::EntrepriseDuDocument;
 use engagement::calcul::Paie;
@@ -25,7 +26,8 @@ use crate::marqueurs::{pour_la_fabrique, ModeleLu, Valeurs};
 use droit::marqueurs::Marqueur;
 
 
-/// Une description de documents modeles : le format, le style, le logo de la compagnie, et ses documents.
+/// Une description de documents modeles : le format, le style (sa page, qui laisse la place du logo), le logo de la
+/// compagnie, en haut a droite, son bord droit sur celui du texte (`style_contrat::LOGO_LARGEUR`), et ses documents.
 pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Document>) -> Description {
     Description {
         format: FORMAT,
@@ -34,9 +36,9 @@ pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Docume
         style: Some(style),
         logo: identite_de(&ent.gabarits, "logo").map(|logo| forme::Logo {
             chemin: chemin_net(&logo),
-            largeur: LOGO_LARGEUR,
-            marge_haut: LOGO_MARGE_HAUT,
-            marge_droite: LOGO_MARGE_DROITE,
+            largeur: mise_en_page::LOGO_LARGEUR,
+            marge_haut: mise_en_page::LOGO_HAUT,
+            marge_droite: mise_en_page::MARGE,
         }),
         titre: None,
         documents,

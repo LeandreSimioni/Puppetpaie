@@ -1,6 +1,7 @@
 //! Configuration › Signature & tampon : la signature, le cachet et le logo de la compagnie, poses ou dessines. La route
 //! `identite` rend l'ecran tel qu'on le voit (`ecran::EcranRendu`) : un rang par image, ce qui s'y regarde (l'image que
-//! rend `identite-image`) et ses gestes (`poser-identite`, `retirer-identite`).
+//! rend `identite-image`) et ses gestes (`poser-identite`, `retirer-identite`). La boite qui pose une image montre,
+//! a chaque case changee, ce que l'image pesera gardee ou allegee (`identite-allegement`) : alleger est un choix.
 
 use std::path::{Path, PathBuf};
 
@@ -26,6 +27,9 @@ const QUOI_IDENTITE: Legende = dit("Signature, cachet ou logo", "l'image de l'id
 const IMAGES_ADMISES: &[&str] = &[FormatDImage::Png.mime(), FormatDImage::Jpeg.mime(), FormatDImage::Svg.mime()];
 
 const IDENTITE_REND: &str = "phrase, encarts (ce qui se pose, et comment), rangs : la signature, le tampon et le logo, chacun son titre, ce qu'il dit, sa pastille et son état, l'image qui s'y regarde (montre : la route et la charge qui la rendent, l'adresse de la fenêtre) et ses gestes";
+
+/// Le refus d'une image qui ne se pose pas : ce qu'il faut a la place.
+const POSABLE: Refus = Refus { classe: socle::echec::Classe::Refuse, corriger: "une image lisible (PNG, JPEG, SVG), de 2 Mo au plus, et le poids visé quand on l'allège" };
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const PLACE: Place = Place::Identite;
@@ -57,12 +61,24 @@ pub const ROUTES: &[Fiche] = &[
         ecran: Ecran::Lecture,
     },
     Fiche {
-        route: Route::PoserIdentite,
-        geste: "Poser la signature, le cachet ou le logo (une image PNG, JPEG ou SVG).",
+        route: Route::IdentiteAllegement,
+        geste: "Dire ce qu'une image à poser pèserait dans chaque document, gardée telle quelle ou allégée, sans rien poser.",
         charge: &ChargePoser::CHARGE,
-        exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","poids":20}"#,
+        exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","allegement":"alleger","poids":20}"#,
+        rend: "phrase (le poids de l'image reçue, ce qu'elle pèserait telle quelle dans chaque document, et allégée au poids visé quand on l'allège), media (son type), image (celle qui se poserait, en base64)",
+        refus: &[POSABLE, FORME, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
+        acte: Acte::Lit,
+        phrase: 0,
+        ecran: Ecran::Lecture,
+    },
+    Fiche {
+        route: Route::PoserIdentite,
+        geste: "Poser la signature, le cachet ou le logo (une image PNG, JPEG ou SVG), gardée telle quelle ou allégée au poids visé.",
+        charge: &ChargePoser::CHARGE,
+        exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","allegement":"alleger","poids":20}"#,
         rend: IDENTITE_REND,
-        refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "une image lisible (PNG, JPEG, SVG), de 2 Mo au plus" }, FORME, MANQUE],
+        refus: &[POSABLE, FORME, MANQUE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
@@ -89,16 +105,20 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::Identite => {
             let super::SansCharge {} = charge.lire()?;
             let identite = identite(ctx)?;
-            en_json(IdentiteDite { phrase: dire_l_identite(&identite), ecran: ecran_de_l_identite(ctx, &identite) })
+            en_json(IdentiteDite { phrase: dire_l_identite(&identite), ecran: ecran_de_l_identite(ctx, &identite)? })
         }
         Route::IdentiteImage => en_json(image(ctx, charge.lire()?)?),
+        Route::IdentiteAllegement => {
+            let a = a_poser(&charge.lire()?)?;
+            en_json(ImageDeLIdentite { phrase: socle::phrase!("{}", a.dit), media: a.format.mime().to_string(), image: socle::base64::ecrire(&a.octets) })
+        }
         Route::PoserIdentite => {
             let (identite, poids) = poser_identite(ctx, charge.lire()?)?;
-            en_json(IdentiteDite { phrase: socle::phrase!("Posé. {} {}", poids, dire_l_identite(&identite)), ecran: ecran_de_l_identite(ctx, &identite) })
+            en_json(IdentiteDite { phrase: socle::phrase!("Posé. {} {}", poids, dire_l_identite(&identite)), ecran: ecran_de_l_identite(ctx, &identite)? })
         }
         Route::RetirerIdentite => {
             let identite = retirer_identite(ctx, charge.lire()?)?;
-            en_json(IdentiteDite { phrase: socle::phrase!("Retiré. {}", dire_l_identite(&identite)), ecran: ecran_de_l_identite(ctx, &identite) })
+            en_json(IdentiteDite { phrase: socle::phrase!("Retiré. {}", dire_l_identite(&identite)), ecran: ecran_de_l_identite(ctx, &identite)? })
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
@@ -125,25 +145,45 @@ struct IdentiteDite {
 }
 
 /// L'ecran Signature & tampon : un rang par image, que designe son nom (`ChargeQuoi`), sans case ; les cases du geste
-/// qui pose montrent d'abord le poids vise (`ValeursDeLaPose`) et n'offrent aucun choix.
-type EcranDeLIdentite = EcranRendu<ChargeQuoi, CaseDeFiche, ValeursDeLaPose>;
+/// qui pose montrent d'abord ce que le moteur propose (`ValeursDeLaPose`) et offrent l'allegement (`ChoixDeLaPose`).
+type EcranDeLIdentite = EcranRendu<ChargeQuoi, CaseDeFiche, ValeursDeLaPose, ChoixDeLaPose>;
 
-/// Ce que montrent d'abord les cases du geste qui pose une image : le poids vise, que le moteur propose.
+/// Ce que montrent d'abord les cases du geste qui pose une image : l'allegement et le poids vise, que le moteur propose.
 #[derive(Debug, Clone, serde::Serialize)]
 struct ValeursDeLaPose {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    allegement: Option<Allegement>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "Octets::ecrite_en_ko_opt")]
     poids: Option<Octets>,
 }
 
+/// Ce qu'offre la case de l'allegement du geste qui pose une image : chacun de ses choix, alleger ouvrant le poids vise.
+#[derive(Debug, Clone, serde::Serialize)]
+struct ChoixDeLaPose {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    allegement: Vec<crate::ouverture::Choix>,
+}
+
+socle::noms_fermes! {
+    /// L'ALLEGEMENT D'UNE IMAGE A SA POSE : la garder telle qu'elle est recue, ou l'alleger au poids vise
+    /// (`fabrique_pdf::alleger::alleger`). Chaque document qui la porte part par courriel et se garde : c'est a la
+    /// personne de choisir, en voyant ce que chacun pese (`identite-allegement`).
+    Allegement, "Allègement" {
+        Garder = "garder" : "Garder l'original",
+        Alleger = "alleger" : "Alléger au poids visé",
+    }
+}
+
 charge! {
-    /// La charge de `poser-identite` : quoi, l'image en base64 (une adresse data: aussi), et le poids vise, lu en Ko tapes
-    /// (« 20,5 »).
+    /// La charge de `poser-identite` et de `identite-allegement` : quoi, l'image en base64 (une adresse data: aussi),
+    /// l'allegement, et le poids vise, lu en Ko tapes (« 20,5 »), quand on l'allege et seulement alors.
     #[derive(Debug, Clone)]
     struct ChargePoser {
         quoi: SorteDImage = QUOI_IDENTITE,
         contenu: String = dit("Image", "l'image en base64 (une adresse data: aussi)").fichier(IMAGES_ADMISES),
-        #[serde(deserialize_with = "Octets::ko")]
-        poids: Octets = dit("Poids visé en Ko", "le poids visé de l'image dans chaque document, en Ko (le geste de la route identite en propose un)"),
+        allegement: Allegement = dit("Allègement", "garder l'image telle quelle, ou l'alléger au poids visé (le geste de la route identite propose d'alléger)"),
+        #[serde(default, deserialize_with = "Octets::ko_opt")]
+        poids: Option<Octets> = dit("Poids visé en Ko", "le poids visé de l'image dans chaque document, en Ko, quand on l'allège (le geste de la route identite en propose un)"),
     }
 }
 
@@ -212,7 +252,17 @@ fn avant(f: &Path) -> R<()> {
     std::fs::rename(f, PathBuf::from(nom)).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(socle::echec::Classe::Disque))
 }
 
-fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> {
+/// UNE IMAGE RECUE, TELLE QU'ELLE SE POSERAIT : ses octets (l'original, ou l'image allegee), leur format, et ce que la
+/// phrase en dit (`dire_le_poids`).
+struct ImageAPoser {
+    octets: Vec<u8>,
+    format: FormatDImage,
+    dit: String,
+}
+
+/// L'image que la charge pose, gardee ou allegee comme elle le dit, et ce qu'elle pese : ce que `identite-allegement`
+/// montre et que `poser-identite` ecrit, le meme calcul pour les deux. Rien ne s'ecrit.
+fn a_poser(charge: &ChargePoser) -> R<ImageAPoser> {
     let quoi = charge.quoi;
     // Une adresse data: porte son en-tete avant la virgule ; le base64 seul n'en a pas.
     let utile = match charge.contenu.rsplit_once(',') {
@@ -227,21 +277,41 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     if recu > OCTETS_MAX {
         return Err(refus(format!("Le fichier fait {} ; la limite est de {}.", recu, OCTETS_MAX)));
     }
-    FormatDImage::des_octets(&octets).ok_or_else(|| {
+    let format = FormatDImage::des_octets(&octets).ok_or_else(|| {
         refus("Ce fichier n'est ni un PNG, ni un JPEG, ni un SVG (ses premiers octets ne sont ceux d'aucun des trois). Rien n'a ete ecrit.")
     })?;
-    // Le poids visé est dit par la charge : le geste le propose (`ValeursDeLaPose`), la personne le garde ou le change.
-    let objectif = charge.poids;
-    if objectif < Octets::en_ko(1) || objectif > OCTETS_MAX {
-        return Err(refus(format!("Le poids visé est un nombre de Ko, de 1 Ko à {} : {} ne l'est pas.", OCTETS_MAX, objectif)));
-    }
-    // L'image part dans chaque document qui la porte : elle est allégée avant d'être posée, à la largeur que les
-    // documents impriment (`documents::largeur_imprimee`) et au poids visé.
+    let illisible = |r| documents::fabrique::echec(r).reformuler(|p| format!("Le fichier n'est pas lisible : {}. Rien n'a ete ecrit.", p));
+    // Ce que chaque document en ecrit, a la largeur que les documents impriment (`documents::largeur_imprimee`) : la
+    // fabrique le ramene a la resolution d'impression, et le comprime.
     let largeur = quoi.largeur_imprimee();
-    let allegee = fabrique_pdf::alleger::alleger(&octets, largeur, objectif.en_usize())
-        .map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("Le fichier n'est pas lisible : {}. Rien n'a ete ecrit.", p)))?;
-    let poids = dire_le_poids(quoi, &allegee, objectif);
-    let (octets, format) = (allegee.octets, allegee.format);
+    let dans_un_document = |o: &[u8]| fabrique_pdf::alleger::poids_dans_un_document(o, largeur).map(Octets::de_longueur).map_err(illisible);
+    let tel_quel = dans_un_document(&octets)?;
+    match (charge.allegement, charge.poids) {
+        (Allegement::Garder, None) => Ok(ImageAPoser { dit: dire_le_poids(recu, tel_quel, None), octets, format }),
+        (Allegement::Garder, Some(_)) => Err(refus("Le poids visé ne vaut que pour alléger l'image : gardée telle quelle, elle n'en a pas. Rien n'a ete ecrit.")),
+        (Allegement::Alleger, None) => Err(refus("Alléger l'image demande le poids visé, en Ko. Rien n'a ete ecrit.")),
+        (Allegement::Alleger, Some(objectif)) => {
+            if objectif < Octets::en_ko(1) || objectif > OCTETS_MAX {
+                return Err(refus(format!("Le poids visé est un nombre de Ko, de 1 Ko à {} : {} ne l'est pas.", OCTETS_MAX, objectif)));
+            }
+            let a = fabrique_pdf::alleger::alleger(&octets, largeur, objectif.en_usize()).map_err(illisible)?;
+            let allegee = Allege { poids: dans_un_document(&a.octets)?, largeur: (!a.telle_quelle).then_some(a.largeur), objectif };
+            Ok(ImageAPoser { dit: dire_le_poids(recu, tel_quel, Some(allegee)), octets: a.octets, format: a.format })
+        }
+    }
+}
+
+/// Ce que l'allegement a donne : le poids de l'image allegee dans chaque document, sa largeur en pixels quand elle a ete
+/// ramenee (aucune : elle reste telle quelle, deja assez fine et assez legere), et le poids vise.
+struct Allege {
+    poids: Octets,
+    largeur: Option<u32>,
+    objectif: Octets,
+}
+
+fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> {
+    let quoi = charge.quoi;
+    let ImageAPoser { octets, format, dit: poids } = a_poser(&charge)?;
     let dossier = dossier_identite(ctx);
     creer_dossier(&dossier)?;
     // Les autres extensions s'en vont : une identite, un fichier.
@@ -269,24 +339,19 @@ fn nom_de(quoi: SorteDImage) -> &'static str {
     }
 }
 
-/// Ce que l'image posée pèsera dans chaque document, et pourquoi on l'a allégée.
-fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif: Octets) -> String {
-    let nom = nom_de(quoi);
-    let pourquoi = "Chaque document part par courriel et se garde : une image lourde l'alourdit chaque fois.";
-    let allegee = Octets::de(&a.octets);
-    let poids = if a.format == FormatDImage::Svg { format!("environ {}", allegee) } else { allegee.to_string() };
-    let mut dit = format!("{} pèsera {} dans chaque document qui le porte", nom, poids);
-    if quoi == SorteDImage::Signature {
-        dit = dit.replace("qui le porte", "qui la porte");
+/// Ce que l'image reçue pèse, ce qu'elle pèse telle quelle dans chaque document, et, allégée, ce qu'elle y pèse.
+fn dire_le_poids(recu: Octets, tel_quel: Octets, allegee: Option<Allege>) -> String {
+    let mut dit = format!("L'image reçue : {} ; telle quelle, {} dans chaque document qui la porte.", recu, tel_quel);
+    if let Some(Allege { poids, largeur, objectif }) = allegee {
+        match largeur {
+            None => dit.push_str(&format!(" Allégée au poids visé ({}) : rien ne change, l'alléger ne la rend pas plus légère.", objectif)),
+            Some(l) => dit.push_str(&format!(" Allégée au poids visé ({}) : {} dans chaque document, ramenée à {} pixels de large, ce que les documents impriment.", objectif, poids, l)),
+        }
+        if poids > objectif {
+            dit.push_str(&format!(" C'est plus que les {} visés : une image plus simple (moins de détails, moins de couleurs) serait plus légère.", objectif));
+        }
     }
-    if !a.telle_quelle {
-        dit.push_str(&format!(" (l'image reçue : {} ; ramenée à {} pixels de large, ce que les documents impriment)", Octets::de_longueur(a.avant), a.largeur));
-    }
-    dit.push('.');
-    if allegee > objectif {
-        dit.push_str(&format!(" C'est plus que les {} visés : une image plus simple (moins de détails, moins de couleurs) serait plus légère.", objectif));
-    }
-    format!("{} {}", dit, pourquoi)
+    format!("{} Chaque document part par courriel et se garde : une image lourde l'alourdit chaque fois.", dit)
 }
 
 fn retirer_identite(ctx: &Contexte, charge: ChargeQuoi) -> R<Identite> {
@@ -301,9 +366,17 @@ fn identite(ctx: &Contexte) -> R<Identite> {
     crate::ouverture::identite(ctx, &ctx.gabarits())
 }
 
-/// La pastille d'une image : la sienne, posee, ou celle que le logiciel dessine, faites ; rien de pose, a faire.
-fn pastille_de(e: &ImageIdentite) -> socle::ecran::Pastille {
-    socle::ecran::Pastille::de(if e.pose || e.automatique { socle::ecran::EtatDEcran::Fait } else { socle::ecran::EtatDEcran::AFaire }, mots_de(e))
+/// La pastille d'une image : la sienne, posee, ou celle que le logiciel dessine, faites ; rien de pose, a faire, sauf le
+/// logo, facultatif : sans lui, rien n'est imprime a sa place.
+fn pastille_de(quoi: SorteDImage, e: &ImageIdentite) -> socle::ecran::Pastille {
+    let etat = if e.pose || e.automatique {
+        socle::ecran::EtatDEcran::Fait
+    } else if quoi == SorteDImage::Logo {
+        socle::ecran::EtatDEcran::Information
+    } else {
+        socle::ecran::EtatDEcran::AFaire
+    };
+    socle::ecran::Pastille::de(etat, mots_de(e))
 }
 
 /// Ce que la pastille d'une image dit : la sienne, posee, celle que le logiciel dessine, ou rien de pose.
@@ -322,8 +395,32 @@ fn dire_l_identite(v: &Identite) -> Phrase {
     socle::phrase!("Signature : {} ; tampon : {} ; logo : {}.", mots_de(&v.signature), mots_de(&v.cachet), mots_de(&v.logo))
 }
 
+/// Les cases du geste qui pose une image : l'image, l'allegement, et le poids vise, qu'ouvre « alleger ».
+fn cases_de_la_pose() -> Vec<&'static str> {
+    vec![cle!(ChargePoser, contenu), cle!(ChargePoser, allegement), cle!(ChargePoser, poids)]
+}
+
+/// Ce que le geste qui pose une image propose : l'alleger, au poids vise ; la personne voit ce que chacun pese
+/// (`identite-allegement`) et choisit.
+const PROPOSE: ValeursDeLaPose = ValeursDeLaPose { allegement: Some(Allegement::Alleger), poids: Some(POIDS_VISE) };
+
+/// Les choix de l'allegement, ceux du type (`Allegement`), « alleger » ouvrant le poids vise.
+fn choix_de_la_pose() -> R<ChoixDeLaPose> {
+    let allegement = Allegement::TOUTES
+        .iter()
+        .map(|a| {
+            let c = crate::ouverture::Choix::de(a.nom(), socle::liste::ListeFermee::libelle(a)?);
+            Ok(match a {
+                Allegement::Garder => c,
+                Allegement::Alleger => c.ouvrant(vec![cle!(ChargePoser, poids)]),
+            })
+        })
+        .collect::<R<Vec<_>>>()?;
+    Ok(ChoixDeLaPose { allegement })
+}
+
 // Les mots de l'ecran, en constantes : un texte fautif ne compile pas (`Affiche::new`).
-const INTRO: &str = "Ce qui se pose sur les documents de la compagnie : PNG, JPEG ou SVG, 2 Mo au plus. Une image posée part dans chaque document qui la porte : le logiciel l'allège au poids visé.";
+const INTRO: &str = "Ce qui se pose sur les documents de la compagnie : PNG, JPEG ou SVG, 2 Mo au plus. Une image posée part dans chaque document qui la porte : la garder telle quelle, ou l'alléger au poids visé ; la boîte montre ce que chacune pèse.";
 const IMPORTER: Affiche = Affiche::new("Importer…");
 const MODIFIER: Affiche = Affiche::new("Modifier…");
 const RETIRER: Affiche = Affiche::new("Retirer");
@@ -333,7 +430,7 @@ const TAMPON_DU_LOGICIEL: Affiche = Affiche::new("Tampon du logiciel");
 /// son titre et ce qu'elle dit (ou elle va, ce qu'elle engage, et ce qui la contredit dans la fiche Entreprise), sa
 /// pastille et ce qui la suit (l'image posee, ou le tampon dessine), l'image qui se regarde, et ses gestes : la poser
 /// (ou la changer), et la retirer quand elle est posee (le tampon revient alors au dessin du logiciel).
-fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
+fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> R<EcranDeLIdentite> {
     let ou = |i: &ImageIdentite| if i.documents.is_empty() { String::new() } else { format!("Sur {}", i.documents.join(", ")) };
     let sig = &v.signature;
     let (nom, fonction) = match &sig.signataire {
@@ -345,7 +442,7 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
         (Some(n), None) => format!("La signature de {}", n),
         (None, _) => "La signature".to_string(),
     };
-    let mut dit = format!("{}. Elle engage la personne qui signe au nom de la compagnie.", ou(sig));
+    let mut dit = format!("{}. Elle engage la personne qui signe au nom de la compagnie ; sans elle, aucun contrat ne part se faire signer.", ou(sig));
     if nom.is_none() {
         dit.push_str(" La fiche Entreprise ne dit pas qui signe.");
     }
@@ -359,6 +456,7 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
     ];
     // Le tampon que le logiciel dessine ne se montre que si la fiche Entreprise lui donne de quoi le dessiner.
     let dessine = documents::cachet::svg(&ctx.entreprise).is_some();
+    let choix = choix_de_la_pose()?;
     let rangs = v.images().into_iter().zip(dits).map(|((quoi, e), (titre, dit))| {
         let designe = || ChargeQuoi { quoi };
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`) ; le tampon dessine, d'ou il vient.
@@ -375,18 +473,19 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
         } else {
             None
         };
-        let sans_valeur = || ValeursDeLaPose { poids: None };
         let mut gestes = Vec::new();
         if e.pose {
             let retirer = if e.automatique { TAMPON_DU_LOGICIEL } else { RETIRER };
-            gestes.push(GesteDeRoute::avec_cases(Route::RetirerIdentite, designe(), retirer, Vec::new(), sans_valeur(), super::SansCharge {}));
+            let rien = ValeursDeLaPose { allegement: None, poids: None };
+            gestes.push(GesteDeRoute::avec_cases(Route::RetirerIdentite, designe(), retirer, Vec::new(), rien, ChoixDeLaPose { allegement: Vec::new() }));
         }
         gestes.push(
-            GesteDeRoute::avec_cases(Route::PoserIdentite, designe(), if e.pose { MODIFIER } else { IMPORTER }, vec![cle!(ChargePoser, contenu), cle!(ChargePoser, poids)], ValeursDeLaPose { poids: Some(POIDS_VISE) }, super::SansCharge {})
-                .disant(vec![INTRO.to_string()]),
+            GesteDeRoute::avec_cases(Route::PoserIdentite, designe(), if e.pose { MODIFIER } else { IMPORTER }, cases_de_la_pose(), PROPOSE, choix.clone())
+                .disant(vec![INTRO.to_string()])
+                .montrant(Route::IdentiteAllegement),
         );
-        RangDeLEcran { titre, dit: vec![dit], pastille: pastille_de(e), etat, montre, gestes }
+        RangDeLEcran { titre, dit: vec![dit], pastille: pastille_de(quoi, e), etat, montre, gestes }
     });
     let intro = Encart::de(socle::ecran::EtatDEcran::Information, "", INTRO);
-    EcranRendu { encarts: vec![intro], rangs: rangs.collect(), cases: Vec::new(), historique: Vec::new(), enregistrer: None }
+    Ok(EcranRendu { encarts: vec![intro], rangs: rangs.collect(), cases: Vec::new(), historique: Vec::new(), enregistrer: None })
 }

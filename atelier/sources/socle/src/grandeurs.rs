@@ -1143,6 +1143,18 @@ impl Octets {
         }
     }
 
+    /// `ko`, facultatif : `#[serde(default, deserialize_with = "socle::grandeurs::Octets::ko_opt")]`.
+    pub fn ko_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Octets>, D::Error> {
+        /// Un poids lu par `ko`, la ou un champ ne se pose pas (un `Option`).
+        struct Lu(Octets);
+        impl<'de> serde::Deserialize<'de> for Lu {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lu, D::Error> {
+                Octets::ko(d).map(Lu)
+            }
+        }
+        <Option<Lu> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.0))
+    }
+
     /// ECRITE EN KO, facultative (`null` quand elle n'est pas dite) : `#[serde(serialize_with =
     /// "socle::grandeurs::Octets::ecrite_en_ko_opt")]`.
     pub fn ecrite_en_ko_opt<S: serde::Serializer>(o: &Option<Octets>, s: S) -> Result<S::Ok, S::Error> {

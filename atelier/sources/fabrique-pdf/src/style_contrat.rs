@@ -40,17 +40,24 @@ pub(crate) const TAILLE_SOUS_LIBELLE: Mesure = Mesure::entier(7);
 /// La phrase d'un contrat qui annule et remplace, quand le modèle n'a pas de clé `ANNULE:`.
 const ANNULE_DEFAUT: &str = "Le présent contrat annule et remplace le contrat n° {{remplace.numero}} du {{remplace.date}}, qui est réputé n'avoir jamais produit d'effet.";
 
-/// La page et la police du contrat : A4 (595 x 842, le format A4 de PyMuPDF, `paper_rect("A4")`), marges de
-/// la zone du chemin PyMuPDF — le haut laisse passer le logo — plus 7,5 pt à gauche et à droite
-/// (la marge du `<body>` HTML).
-pub fn page() -> Page {
+/// La marge du contrat : 15 mm, la même à gauche, à droite et en bas, et en haut quand il n'a pas de logo. Le contrat
+/// ordinaire d'un intermittent tient ainsi sur une page A4.
+pub const MARGE: Mesure = mesure!("42.5");
+/// Le logo du contrat, en haut à droite (`documents::contrat::enveloppe`) : 48 pt de large, son bord droit sur celui du
+/// texte, à 10 mm du haut de la page ; le texte commence 8 pt sous un logo carré.
+pub const LOGO_LARGEUR: Mesure = Mesure::entier(48);
+pub const LOGO_HAUT: Mesure = mesure!("28.35");
+const LOGO_ECART: Mesure = Mesure::entier(8);
+
+/// La page du contrat : A4 (595 x 842), ses marges (`MARGE`) ; avec un logo, le texte commence sous lui.
+pub fn page(avec_logo: bool) -> Page {
     Page {
         largeur: Mesure::entier(595),
         hauteur: Mesure::entier(842),
-        haut: Mesure::entier(106),
-        droite: mesure!("59.5"),
-        bas: Mesure::entier(46),
-        gauche: mesure!("59.5"),
+        haut: if avec_logo { LOGO_HAUT + LOGO_LARGEUR + LOGO_ECART } else { MARGE },
+        droite: MARGE,
+        bas: MARGE,
+        gauche: MARGE,
     }
 }
 
@@ -60,6 +67,10 @@ pub fn police() -> Police {
 
 /// Le corps du texte courant.
 const CORPS: Mesure = mesure!("7.5");
+/// L'espace sous un paragraphe du texte.
+const APRES_PARAGRAPHE: Mesure = mesure!("1.8");
+/// L'espace au-dessus du titre d'un article.
+const AVANT_ARTICLE: Mesure = Mesure::entier(3);
 
 /// Les trois mises en page (le `style` de la description : « contrat », « avenant »,
 /// « attestation »).
@@ -126,7 +137,7 @@ fn para(
 
 /// Une citation : le paragraphe en italique, en retrait de 12 pt (`.cite` de l'avenant).
 fn cite(morceaux: Vec<(String, bool)>) -> Bloc {
-    let mut b = para(morceaux, CORPS, COULEUR_TEXTE,Alignement::Justifie, Z, mesure!("2.6"));
+    let mut b = para(morceaux, CORPS, COULEUR_TEXTE,Alignement::Justifie, Z, APRES_PARAGRAPHE);
     if let Bloc::Paragraphe { morceaux, retrait, .. } = &mut b {
         for m in morceaux.iter_mut() {
             m.italique = true;
@@ -241,15 +252,15 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
         if attestation {
             Ok(modele::lignes_substituees(texte, v)?
                 .iter()
-                .map(|l| para(modele::morceaux_substitues(l, false), CORPS, COULEUR_TEXTE,Justifie, avant, mesure!("2.6")))
+                .map(|l| para(modele::morceaux_substitues(l, false), CORPS, COULEUR_TEXTE,Justifie, avant, APRES_PARAGRAPHE))
                 .collect())
         } else {
-            Ok(vec![para(modele::morceaux(texte, v, false)?, CORPS, COULEUR_TEXTE,Justifie, avant, mesure!("2.6"))])
+            Ok(vec![para(modele::morceaux(texte, v, false)?, CORPS, COULEUR_TEXTE,Justifie, avant, APRES_PARAGRAPHE)])
         }
     };
     let mut blocs = Vec::new();
     if let Some(titre) = &m.titre {
-        blocs.push(para(modele::morceaux(titre, v, true)?, Mesure::entier(11), ROUGE, Gauche, Mesure::entier(10), Mesure::UN));
+        blocs.push(para(modele::morceaux(titre, v, true)?, Mesure::entier(11), ROUGE, Gauche, Z, Mesure::UN));
     }
     if let Some(soustitre) = m.soustitre.as_deref().filter(|s| !s.is_empty()) {
         blocs.push(para(modele::morceaux(soustitre, v, false)?, mesure!("6.8"), GRIS, Justifie, Z, Mesure::entier(7)));
@@ -279,9 +290,9 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
         if let Some(phrase) = &modif.phrase {
             vm.insert("modification.phrase".to_string(), phrase.clone());
             let intitule = format!("Article {} \u{2014} {{{{modification.article}}}}", n);
-            blocs.push(para(modele::morceaux(&intitule, &vm, true)?, mesure!("7.7"), ROUGE, Gauche, mesure!("4.5"), Mesure::UN));
+            blocs.push(para(modele::morceaux(&intitule, &vm, true)?, mesure!("7.7"), ROUGE, Gauche, AVANT_ARTICLE, Mesure::UN));
             for b in m.modification.iter().filter(|b| b.contains("modification.phrase")) {
-                blocs.push(para(modele::morceaux(b, &vm, false)?, CORPS, COULEUR_TEXTE,Justifie, Z, mesure!("2.6")));
+                blocs.push(para(modele::morceaux(b, &vm, false)?, CORPS, COULEUR_TEXTE,Justifie, Z, APRES_PARAGRAPHE));
             }
             continue;
         }
@@ -289,7 +300,7 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
             "Article {} \u{2014} Modification de l'article {{{{modification.numero}}}} \u{ab} {{{{modification.article}}}} \u{bb}",
             n
         );
-        blocs.push(para(modele::morceaux(&intitule, &vm, true)?, mesure!("7.7"), ROUGE, Gauche, mesure!("4.5"), Mesure::UN));
+        blocs.push(para(modele::morceaux(&intitule, &vm, true)?, mesure!("7.7"), ROUGE, Gauche, AVANT_ARTICLE, Mesure::UN));
         for b in m.modification.iter().filter(|b| !b.contains("modification.phrase")) {
             // Un paragraphe qui porte l'ancien ou le nouveau texte se répète pour chaque
             // paragraphe cité ; les autres se posent une fois.
@@ -309,14 +320,14 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
                         blocs.push(cite(modele::morceaux(b, &vt, false)?));
                     }
                 }
-                None => blocs.push(para(modele::morceaux(b, &vm, false)?, CORPS, COULEUR_TEXTE,Justifie, Z, mesure!("2.6"))),
+                None => blocs.push(para(modele::morceaux(b, &vm, false)?, CORPS, COULEUR_TEXTE,Justifie, Z, APRES_PARAGRAPHE)),
             }
         }
     }
     for (titre, paragraphes) in m.articles.iter() {
         n += 1;
         let intitule = if attestation { titre.clone() } else { format!("Article {} \u{2014} {}", n, titre) };
-        blocs.push(para(modele::morceaux(&intitule, v, true)?, mesure!("7.7"), ROUGE, Gauche, mesure!("4.5"), Mesure::UN));
+        blocs.push(para(modele::morceaux(&intitule, v, true)?, mesure!("7.7"), ROUGE, Gauche, AVANT_ARTICLE, Mesure::UN));
         for b in paragraphes {
             blocs.extend(corps(b, v, Z)?);
         }

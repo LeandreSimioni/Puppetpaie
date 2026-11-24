@@ -154,6 +154,7 @@ routes! {
         CompagnieSupprimer = "compagnie-supprimer",
         Identite = "identite",
         IdentiteImage = "identite-image",
+        IdentiteAllegement = "identite-allegement",
         PoserIdentite = "poser-identite",
         RetirerIdentite = "retirer-identite",
         MetiersCatalogue = "metiers-catalogue",

@@ -1321,13 +1321,23 @@ pub(crate) struct GesteDeRoute<C, V = ValeursDeDepart, X = ChoixDesCases> {
     /// case, quand la route les rend avec le geste (une date par annee de la regularisation CASC-SVP) ; aucune : rien.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     parties: BTreeMap<&'static str, Vec<crate::fiches::PartieDeLaFiche>>,
+    /// LA LECTURE QUI MONTRE CE QUE LE GESTE FERAIT, tant que ses cases se saisissent (sa fiche : `Ecran::Lecture`) :
+    /// elle recoit la charge en cours, celle que le geste enverrait, et rend sa phrase et l'image qu'elle montre ; la
+    /// boite la pose sous les cases a chaque case changee (`js/avance.js`, `montrerLApercu`). Aucune : rien a montrer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apercu: Option<Route>,
 }
 
 impl<C, V, X> GesteDeRoute<C, V, X> {
     /// Le geste dont la boite fait saisir les cases `cases` de la fiche de sa route, montrant d'abord `valeurs`, et
     /// offrant `choix` aux cases qui se choisissent.
     pub(crate) fn avec_cases(route: Route, charge: C, libelle: Affiche, cases: Vec<&'static str>, valeurs: V, choix: X) -> GesteDeRoute<C, V, X> {
-        GesteDeRoute { route, charge, libelle: libelle.texte(), rang: RangDuGeste::Second, cases, valeurs, choix, phrases: Vec::new(), demande: None, parties: BTreeMap::new() }
+        GesteDeRoute { route, charge, libelle: libelle.texte(), rang: RangDuGeste::Second, cases, valeurs, choix, phrases: Vec::new(), demande: None, parties: BTreeMap::new(), apercu: None }
+    }
+
+    /// Le meme geste, sa boite montrant sous ses cases ce que la lecture `apercu` rend de la charge en cours.
+    pub(crate) fn montrant(self, apercu: Route) -> GesteDeRoute<C, V, X> {
+        GesteDeRoute { apercu: Some(apercu), ..self }
     }
 
     /// Le meme geste, le geste principal de son ecran (« Importer »).
@@ -1435,6 +1445,7 @@ impl<C> GesteDeRoute<C> {
             phrases: Vec::new(),
             demande: None,
             parties: BTreeMap::new(),
+            apercu: None,
         }
     }
 }
