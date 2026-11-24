@@ -790,6 +790,33 @@ pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<
     paies_validees_dont(ctx, mois, salarie, LectureDatee::Paies { mois, salarie: salarie.clone() }, &|_| Ok(true))
 }
 
+/// UN ENGAGEMENT VALIDE DE `mois` DU SALARIE `salarie` SE REGULARISE-T-IL SUR L'ANNEE (`droit::plafond::se_regularise`) ?
+/// Ce que lit la regularisation du plafond quand les paies de ce mois ne se calculent pas
+/// (`conges::plafonds_des_mois_anterieurs`) : un mois dont aucun engagement ne se regularise (un artiste, BOSS § 1250)
+/// n'entre dans aucun cumul, et son refus ne ferme pas les paies qui se regularisent. Sans paie : ses engagements tels
+/// que la saisie les dit (`engagements_de_la_saisie`), et le statut que leur paie lit, par le chemin meme du calcul
+/// (`calcul::calculer_periode` : le contexte a la fin de la periode, `calcul::fiche_de_l_engagement`, `calcul::statut_de`).
+/// Ce qui ne se lit pas jusqu'au statut refuse : on ne sait pas si la paie se regularise. La lecture notee est la saisie
+/// du salarie dans ce mois (`stock::cle_de_saisie`).
+pub(crate) fn un_engagement_se_regularise(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<bool> {
+    let Some(lue) = stock::vue_et_empreinte(&ctx.racine, mois)? else { return Ok(false) };
+    let vue = &lue.0;
+    socle::fichiers::noter_lecture(&stock::cle_de_saisie(mois, Some(salarie)), ValeurLue::Saisie(stock::empreinte_de_saisie(vue, Some(salarie))));
+    let siens = crate::saisie::VueDuMois {
+        engagements: vue.engagements.iter().filter(|c| c.salarie.as_ref() == Some(salarie) && c.valide.is_some()).cloned().collect(),
+        ..vue.clone()
+    };
+    let ctx = &ctx.du_mois(mois)?;
+    for eng in crate::engagements_de_la_saisie(ctx, &siens)? {
+        let ctx = &ctx.au(&eng.periode_payee()?.fin())?;
+        let sal = crate::calcul::fiche_de_l_engagement(ctx, &eng)?;
+        if droit::plafond::se_regularise(crate::calcul::statut_de(&sal)? == droit::fiche::Statut::Artiste) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// LES PAIES VALIDEES DE `mois` DU SALARIE `salarie` DONT LE CONTRAT N'EST PAS PAYE AU MOIS (ses contrats d'intermittent),
 /// telles que les relit l'annee de sa retraite complementaire (`conges::retraite_des_mois_anterieurs`) : une paie d'un
 /// CDI du meme salarie n'y entre pas, ne se lit ni ne se calcule, et son refus ne ferme pas celle d'un intermittent. La

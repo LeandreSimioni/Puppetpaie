@@ -899,7 +899,8 @@ pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalari
 /// `mois`, tous contrats confondus (BOSS, assiette generale, § 1230 : « y compris au titre de plusieurs contrats,
 /// successifs ou non »), chacune pour ce qu'elle a applique dans les assiettes qu'elle porte (`calcul::ajouter_a_l_annee` ;
 /// celle d'un artiste n'y entre pas). Elles se lisent toutes (`etats::paies_validees`), puisqu'un technicien intermittent
-/// et un salarie au mois font masse : une paie qui ne se lit pas refuse, le plafond se regularise sur toute l'annee.
+/// et un salarie au mois font masse : une paie qui se regularise et ne se lit pas refuse, le plafond se regularise sur
+/// toute l'annee ; un mois de paies d'artiste qui ne se calculent pas n'y apporte rien et ne ferme rien.
 ///
 /// UNE PAIE REPRISE D'UN ANCIEN LOGICIEL N'Y ENTRE PAS : la regularisation commence au premier mois paye ici (Leandre,
 /// 19/11/2026). INFERENCE, une approximation de la premiere annee : R. 242-2, II fait masse des sommes dues depuis « le
@@ -911,14 +912,23 @@ pub(crate) fn plafonds_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdS
     let mut annee = droit::plafond::AnneeAnterieure::debut();
     let cle = cle_de_fiche(ctx, cle)?;
     for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
-        // Les paies validees, de tout contrat ; les reprises n'entrent pas (ci-dessus).
-        let paies = crate::etats::paies_validees(ctx, m, &cle).map_err(|e| {
-            e.reformuler(|e| format!(
-                "Régularisation du plafond de {} : les paies de {} ne se lisent pas ({}). Le plafond se régularise sur toute \
-l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
-                cle, m, e
-            ))
-        })?;
+        // Les paies validees, de tout contrat ; les reprises n'entrent pas (ci-dessus). Un mois qui ne se calcule pas et
+        // dont aucun engagement ne se regularise (des paies d'artiste, BOSS § 1250) n'apporte rien au cumul : son refus
+        // reste le sien (`etats::un_engagement_se_regularise`). Un mois dont un engagement se regularise, ou dont on ne
+        // sait pas le dire, refuse par le refus de ses paies : la regularisation a besoin de leurs valeurs.
+        let paies = match crate::etats::paies_validees(ctx, m, &cle) {
+            Ok(paies) => paies,
+            Err(e) => {
+                if let Ok(false) = crate::etats::un_engagement_se_regularise(ctx, m, &cle) {
+                    continue;
+                }
+                return Err(e.reformuler(|e| format!(
+                    "Régularisation du plafond de {} : les paies de {} ne se lisent pas ({}). Le plafond se régularise sur \
+toute l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
+                    cle, m, e
+                )));
+            }
+        };
         for p in &paies {
             crate::calcul::ajouter_a_l_annee(&mut annee, p)?;
         }
