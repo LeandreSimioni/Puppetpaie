@@ -210,7 +210,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     let hauteur = sc::MENTION_HAUTEUR;
     // Le bord gauche de la case est le milieu de la page (deux colonnes égales, marges égales à gauche et à droite),
     // quelle que soit la marge du contrat parti ; le logo ne change que le haut.
-    let page = sc::page(false);
+    let page = sc::page(None);
     let largeur_utile = page.largeur - page.gauche - page.droite;
     let (x_case, l_case) = (page.gauche + largeur_utile * mesure!("0.5"), largeur_utile * mesure!("0.5"));
     let mut caracteres = BTreeSet::new();

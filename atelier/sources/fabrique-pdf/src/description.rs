@@ -749,9 +749,9 @@ fn lire_repere(r: &Option<f::Repere>, nom: &str, police: &Police) -> Result<Opti
     }))
 }
 
-/// La page : celle que la description dit, sinon celle du style (sous son logo, s'il en a un : `avec_logo`) ; une
-/// description sans l'une ni l'autre se refuse.
-fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>, avec_logo: bool) -> Result<Page, Refus> {
+/// La page : celle que la description dit, sinon celle du style (sous son logo, s'il en a un : `logo`, sa hauteur posée) ;
+/// une description sans l'une ni l'autre se refuse.
+fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>, logo: Option<Mesure>) -> Result<Page, Refus> {
     let brute = match (p, style) {
         (Some(p), _) => Page {
             largeur: p.largeur,
@@ -761,7 +761,7 @@ fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>, avec_l
             bas: p.marges.bas,
             gauche: p.marges.gauche,
         },
-        (None, Some(_)) => style_contrat::page(avec_logo),
+        (None, Some(_)) => style_contrat::page(logo),
         (None, None) => return refus("description : sans \"style\", elle dit sa \"page\""),
     };
     let page = Page {
@@ -795,8 +795,9 @@ fn lire_police(p: &Option<f::Police>, style: Option<style_contrat::Variante>) ->
     })
 }
 
-/// Valide une description : ce que la mise en page emploie.
-pub fn resoudre(d: &f::Description) -> Result<Resolue, Refus> {
+/// Valide une description : ce que la mise en page emploie. `hauteur_du_logo` : celle du logo lu, à sa largeur (le haut
+/// de la page d'un style se calcule sous lui).
+pub fn resoudre(d: &f::Description, hauteur_du_logo: Option<Mesure>) -> Result<Resolue, Refus> {
     // Le 3 est le numéro de la fabrique (`--version`) : une description qui le porte est celle
     // du format 2, avec `largeur_max` en plus. Les trois se lisent de la même façon.
     if !d.format.d_un_document() {
@@ -811,7 +812,7 @@ pub fn resoudre(d: &f::Description) -> Result<Resolue, Refus> {
         f::Style::Avenant => style_contrat::Variante::Avenant,
         f::Style::Attestation => style_contrat::Variante::Attestation,
     });
-    let page = lire_page(&d.page, style, d.logo.is_some())?;
+    let page = lire_page(&d.page, style, hauteur_du_logo)?;
     let police = lire_police(&d.police, style)?;
     let logo = match &d.logo {
         Some(l) => Some(Logo {

@@ -811,8 +811,9 @@ function montrerLApercu(bloc, g, cible) {
   let numero = 0;
   const montrer = async () => {
     const n = ++numero;
-    const charge = chargeDuGeste(bloc, g) || g.charge;
-    if (CATALOGUE[g.apercu].charge.some((c) => c.obligatoire && charge[c.nom] == null)) { cible.innerHTML = ""; return; }
+    // Aucune case lue : rien ne s'appelle.
+    const charge = chargeDuGeste(bloc, g);
+    if (!charge || CATALOGUE[g.apercu].charge.some((c) => c.obligatoire && charge[c.nom] == null)) { cible.innerHTML = ""; return; }
     let r;
     try { r = await api(g.apercu, charge); } catch (e) {
       if (n === numero) cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;

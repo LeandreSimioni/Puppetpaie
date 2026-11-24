@@ -645,7 +645,7 @@ fn blocs_certificat(c: &Certificat, p: &ContratDuCertificat, ent: &EntrepriseDuD
             blocs.push(texte_fixe(*x, *y, &texte, police, *corps, largeur_max(champ, *x)));
         }
     }
-    if let Some(signature) = identite_de(&ent.gabarits, "signature") {
+    if let Some(signature) = identite_de(&ent.gabarits, "signature")? {
         let (x0, y0, x1, y1) = SIGNATURE_CADRE;
         let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
         blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {

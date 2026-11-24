@@ -44,17 +44,21 @@ const ANNULE_DEFAUT: &str = "Le présent contrat annule et remplace le contrat n
 /// ordinaire d'un intermittent tient ainsi sur une page A4.
 pub const MARGE: Mesure = mesure!("42.5");
 /// Le logo du contrat, en haut à droite (`documents::contrat::enveloppe`) : 48 pt de large, son bord droit sur celui du
-/// texte, à 10 mm du haut de la page ; le texte commence 8 pt sous un logo carré.
+/// texte, à 10 mm du haut de la page ; le texte commence 8 pt sous le logo, quelle que soit sa hauteur.
 pub const LOGO_LARGEUR: Mesure = Mesure::entier(48);
 pub const LOGO_HAUT: Mesure = mesure!("28.35");
 const LOGO_ECART: Mesure = Mesure::entier(8);
 
-/// La page du contrat : A4 (595 x 842), ses marges (`MARGE`) ; avec un logo, le texte commence sous lui.
-pub fn page(avec_logo: bool) -> Page {
+/// La page du contrat : A4 (595 x 842), ses marges (`MARGE`) ; avec un logo de hauteur `logo` (à la largeur où il se
+/// pose), le texte commence sous lui, jamais plus haut que la marge.
+pub fn page(logo: Option<Mesure>) -> Page {
     Page {
         largeur: Mesure::entier(595),
         hauteur: Mesure::entier(842),
-        haut: if avec_logo { LOGO_HAUT + LOGO_LARGEUR + LOGO_ECART } else { MARGE },
+        haut: match logo {
+            Some(h) => (LOGO_HAUT + h + LOGO_ECART).max(MARGE),
+            None => MARGE,
+        },
         droite: MARGE,
         bas: MARGE,
         gauche: MARGE,

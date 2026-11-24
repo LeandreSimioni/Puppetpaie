@@ -1125,14 +1125,16 @@ fn fabriquer_passe(
     description: &crate::forme::Description,
     total: usize,
 ) -> Result<(Dessin, Option<String>, bool), Refus> {
-    let d = resoudre(description)?;
+    // Le logo se lit d'abord : sa hauteur, à sa largeur, donne le haut de la page d'un style.
+    let image_du_logo = match &description.logo {
+        Some(l) => Some(charger_image(&l.chemin, l.largeur, "logo", "fichier")?),
+        None => None,
+    };
+    let d = resoudre(description, image_du_logo.as_ref().map(Image::hauteur))?;
     let ctx = Ctx { polices, base: Style::new(d.police.taille) };
     let cadre = Cadre { origine: (d.page.gauche, d.page.haut), page: (d.page.largeur, d.page.hauteur) };
 
-    let logo = match &d.logo {
-        Some(l) => Some((charger_image(&l.chemin, l.largeur, "logo", "fichier")?, l.marge_haut, l.marge_droite)),
-        None => None,
-    };
+    let logo = d.logo.as_ref().zip(image_du_logo).map(|(l, image)| (image, l.marge_haut, l.marge_droite));
     let mut reperes = Vec::new();
     for (r, en_bas, nom) in [(&d.entete_page, false, "entete_page"), (&d.pied_page, true, "pied_page")] {
         if let Some(r) = r {

@@ -632,7 +632,7 @@ async function boiteContratsEnAttente(mois, fait) {
   ouvrirBoite(`
     <h3>${echapper(a.titre_en_attente)}</h3>
     ${moisEnGros(mois)}
-    ${contrats.length ? encart(a.signature) : ""}
+    ${encart(a.signature_en_attente)}
     ${fait ? `<div class="encart info" id="a-fait">${echapper(fait.texte)}
       <button class="lien" id="a-annuler">${echapper(fait.annuler.libelle)}</button></div>` : ""}
     ${!contrats.length ? `<p class="discret">${echapper(a.rien_en_attente)}</p>` : `<div class="liste-choix">
