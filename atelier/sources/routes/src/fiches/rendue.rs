@@ -100,12 +100,17 @@ pub(crate) enum CoutDeLaFiche {
 
 /// CE QUI SE FAIT DEPUIS LA FICHE D'UN SALARIE ENREGISTRE (son en-tete) : sa cle, dont la page montre les imprevus (route
 /// `imprevus`) et les droits (route `conseils-salarie`), et le libelle du geste qui mene a ses documents (Exports, ce
-/// salarie choisi).
+/// salarie choisi), et ses gestes : « Supprimer ce salarié » (`supprimer-salarie`), offert seulement quand rien ne le lie
+/// a la compagnie (`super::ce_qui_lie`), sa boite disant ce qui s'efface ; sinon aucun, et il s'archive.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SalarieDeLEntete {
     cle: IdSalarie,
     exporter: &'static str,
+    gestes: Vec<GesteDeRoute<super::ChargeSupprimerSalarie>>,
 }
+
+/// Le libelle du geste qui supprime un salarie que rien ne lie.
+const SUPPRIMER_LE_SALARIE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Supprimer ce salarié");
 
 /// LA FICHE D'UN SALARIE NEUF A FAIRE REMPLIR PAR LA PERSONNE (son en-tete) : le titre de l'encart, ce que la demande
 /// fait, le geste qui l'envoie (`fiche-demander`, ses cases : le courriel et le prenom) quand la boite courriel est liee,
@@ -175,8 +180,14 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
     let nom: Vec<String> = [lu(p.prenom_affichage.portee(), p.prenom.portee()), lu(p.nom_affichage.portee(), p.nom.portee())].into_iter().flatten().collect();
     let titre = if nom.is_empty() { cle.to_string() } else { nom.join(" ") };
     let matricule = p.code_salarie.portee().map(str::trim).filter(|m| !m.is_empty()).map(|m| format!("matricule {}", m));
+    let mut gestes = Vec::new();
+    if super::ce_qui_lie(ctx, cle)?.is_none() {
+        let disparait = super::ce_que_supprimer_dit(ctx, &titre, &ctx.fiche_de(cle)?.champs)?;
+        let charge = super::ChargeSupprimerSalarie { cle: cle.clone() };
+        gestes.push(GesteDeRoute::sans_cases(crate::catalogue::Route::SupprimerSalarie, charge, SUPPRIMER_LE_SALARIE).disant(disparait));
+    }
     Ok(EnteteDeLaFiche {
-        salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents" }),
+        salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents", gestes }),
         ..EnteteDeLaFiche::de(titre, matricule, None, Some(CoutDeLaFiche::Salarie { de: cle.clone() }))
     })
 }

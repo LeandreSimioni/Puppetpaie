@@ -1,5 +1,5 @@
 //! Configuration › Entreprise, Salariés, Spectacles : les fiches des salaries, des spectacles et de l'entreprise
-//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `activer-fiche`, `enregistrer-fiche`, leur avertissement), leur demande par courriel
+//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `activer-fiche`, `enregistrer-fiche`, leur avertissement ; `supprimer-salarie`), leur demande par courriel
 //! (`fiche-demander`, `fiches-relever`, `fiche-oublier-demande`), le taux AT/MP (`taux-atmp`), le regime de la taxe sur
 //! les salaires, le cout de l'annee (`couts`), la sauvegarde et la suppression de la compagnie.
 //!
@@ -73,7 +73,8 @@ const CHARGE_ACTIVER: ChargeDuType = ChargeDuType {
         ChampDuType::du_type::<_, bool>("actif", dit("Active", "vrai : réactiver ; faux : archiver")),
     ],
 };
-pub(crate) const REFUSEE: Refus = Refus { classe: Classe::FicheRefusee, corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
+const LIE: Refus = Refus { classe: Classe::Refuse, corriger: "un salarié qu'un engagement, une paie, un imprévu ou une pièce partie lie ne se supprime pas : l'archiver (activer-fiche, actif faux) ; rien n'est supprimé" };
+pub(crate) const REFUSEE: Refus =Refus { classe: Classe::FicheRefusee, corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est envoyé" };
 const BOITE: Refus = Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe)" };
 const ETAT_REND: &str = "etat : ce que la page lit de la compagnie (la route etat), relu après l'écriture";
@@ -131,6 +132,19 @@ pub const ROUTES: &[Fiche] = &[
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::SupprimerSalarie,
+        geste: "Supprimer la fiche d'un salarié que rien ne lie encore à la compagnie.",
+        charge: &ChargeSupprimerSalarie::CHARGE,
+        exemple: r#"{"cle":"DUNCAN"}"#,
+        rend: "phrase (le salarié supprimé, et la demande de fiche abandonnée avec lui s'il en attendait une), etat : ce que la page lit de la compagnie (la route etat), relu après l'écriture",
+        refus: &[LIE, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
+        acte: Acte::Ecrit,
+        phrase: 0,
+        // La fiche d'un salarie que rien ne lie la rend en geste, dans son en-tete (`rendue::entete_du_salarie`).
+        ecran: Ecran::Geste(Place::Fiches),
     },
     Fiche {
         route: Route::FicheDemander,
@@ -247,6 +261,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::Effectif => en_json(effectif(ctx, charge.lire()?)?),
         Route::Couts => en_json(couts(ctx, charge.lire()?)?),
         Route::ActiverFiche => en_json(activer_fiche_route(ctx, charge.lire()?)?),
+        Route::SupprimerSalarie => en_json(supprimer_salarie(ctx, charge.lire()?)?),
         Route::SauvegardeMaintenant => {
             let super::SansCharge {} = charge.lire()?;
             let faite: SauvegardeFaite = sauvegarde_maintenant(ctx)?;
@@ -317,7 +332,7 @@ macro_rules! dites {
         })*
     };
 }
-dites!(FicheActivee, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche);
+dites!(FicheActivee, SalarieSupprime, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche);
 
 /// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`gestes::ouverture`).
 fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
@@ -858,6 +873,87 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
     Ok(FicheActivee { phrase, etat: etat_relu(ctx)? })
 }
 
+// ---------------------------------------------------------- supprimer-salarie
+
+charge! {
+    /// La charge de `supprimer-salarie` : la cle du salarie, telle que sa fiche la rend.
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub(crate) struct ChargeSupprimerSalarie {
+        cle: IdSalarie = dit("Salarié", "la clé du salarié à supprimer"),
+    }
+}
+
+/// Ce que rend `supprimer-salarie` : la phrase, et ce que la page relit de la compagnie.
+#[derive(Debug, serde::Serialize)]
+struct SalarieSupprime {
+    phrase: Phrase,
+    etat: crate::ouverture::EtatDeLaPage,
+}
+
+/// CE QUI LIE LE SALARIE `cle` A LA COMPAGNIE, le premier trouve, tel que le refus le dit : un engagement (une carte,
+/// validee ou non, retiree, ou un contrat repris de l'import : `engagement::stock::objets`, ou vivent aussi les
+/// engagements importes), une paie ecrite (`engagement::paies`), un imprevu saisi (`engagement::imprevus`), une piece
+/// partie qui le nomme (`envois::journal`, `Ligne::nomme` : DPAE, DSN, contrat, documents, dossier). Aucun : sa fiche
+/// peut se supprimer, rien ne la lit plus. Une demande de fiche en attente ne le lie pas : elle s'abandonne avec lui
+/// (`supprimer_salarie`).
+pub(crate) fn ce_qui_lie(ctx: &Contexte, cle: &IdSalarie) -> R<Option<&'static str>> {
+    if engagement::stock::objets(&ctx.racine)?.iter().any(|o| o.carte().salarie.as_ref() == Some(cle)) {
+        return Ok(Some("il a un engagement (une carte, validée ou non, ou un contrat repris de l'import)"));
+    }
+    if engagement::paies::en_porte(&ctx.racine, cle)? {
+        return Ok(Some("il a une paie écrite"));
+    }
+    if !engagement::imprevus::du_salarie(&ctx.racine, cle)?.is_empty() {
+        return Ok(Some("un arrêt ou une absence est saisi pour lui"));
+    }
+    if journal::lu(&ctx.racine)?.lignes.iter().any(|l| l.nomme(cle)) {
+        return Ok(Some("une pièce est partie pour lui (DPAE, DSN, contrat, bulletin ou dossier)"));
+    }
+    Ok(None)
+}
+
+/// LES DEMANDES DE FICHE QUI ATTENDENT LA REPONSE DU SALARIE `fiche` : celles parties a son courriel, que sa reponse
+/// viendrait remplir (`relever_fiches` retrouve le salarie par l'adresse de la demande). Aucun courriel : aucune.
+fn demandes_du_salarie(ctx: &Contexte, fiche: &droit::fiche::ChampsSalarie) -> R<Vec<CodeDeDemande>> {
+    let Some(adresse) = fiche.email.portee().map(|e| strip(e).to_lowercase()) else { return Ok(Vec::new()) };
+    Ok(fiches_attendues(&ctx.racine)?.into_iter().filter(|a| *a.adresse == *adresse).map(|a| a.code).collect())
+}
+
+/// CE QUE LA BOITE DE `supprimer-salarie` DIT avant qu'on supprime `qui` : sa fiche s'efface, et la demande de fiche qui
+/// attend sa reponse s'abandonne avec lui.
+pub(crate) fn ce_que_supprimer_dit(ctx: &Contexte, qui: &str, fiche: &droit::fiche::ChampsSalarie) -> R<Vec<String>> {
+    let mut v = vec![format!("La fiche de {} s'efface : rien ne le lie encore à la compagnie (aucun engagement, aucune paie, aucune pièce partie).", qui)];
+    if !demandes_du_salarie(ctx, fiche)?.is_empty() {
+        v.push("La demande de fiche qui attend sa réponse est abandonnée avec elle.".to_string());
+    }
+    Ok(v)
+}
+
+/// SUPPRIMER UN SALARIE QUE RIEN NE LIE (`ce_qui_lie`) : sa fiche quitte `config/salaries.json`, et les demandes de fiche
+/// qui attendent sa reponse s'abandonnent (sa reponse recreerait la fiche qu'on vient de supprimer). Un lien refuse, et
+/// rien n'est ecrit : on l'archive alors.
+fn supprimer_salarie(ctx: &Contexte, c: ChargeSupprimerSalarie) -> R<SalarieSupprime> {
+    let fiche = ctx.fiche_de(&c.cle)?;
+    let qui = match fiche.nomme() {
+        Some(n) => n,
+        None => c.cle.to_string(),
+    };
+    if let Some(lien) = ce_qui_lie(ctx, &c.cle)? {
+        return Err(refus(format!("{} ne se supprime pas : {}. L'archiver plutôt : ce qui est fait pour lui se garde.", qui, lien)));
+    }
+    let demandes = demandes_du_salarie(ctx, &fiche)?;
+    let mut contenu = lire_fichier::<FicheSalarieDatee>(ctx)?;
+    contenu.fiches.shift_remove(&c.cle);
+    // La demande s'abandonne d'abord : une ecriture qui tombe ensuite laisse la fiche, sans demande qui la remplisse.
+    abandonner_demandes(ctx, &demandes)?;
+    ecrire_fichier::<FicheSalarieDatee>(ctx, &contenu)?;
+    let phrase = match demandes.is_empty() {
+        true => socle::phrase!("{} : fiche supprimée.", qui),
+        false => socle::phrase!("{} : fiche supprimée, et la demande de fiche abandonnée.", qui),
+    };
+    Ok(SalarieSupprime { phrase, etat: etat_relu(ctx)? })
+}
+
 // ----------------------------------------------------- fiche-oublier-demande
 
 /// `fiche-oublier-demande` : `{"adresse"}`, la personne a qui la fiche a ete demandee ; ses demandes en attente sont
@@ -868,8 +964,15 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
     if codes.is_empty() {
         return Err(refus(format!("Aucune demande de fiche en attente pour {}.", adresse)));
     }
-    // CE QUI REVIENT SE RANGE SUR LA LIGNE DE LA DEMANDE : ici, qu'on y renonce.
-    for code in &codes {
+    abandonner_demandes(ctx, &codes)?;
+    // Ni NIR ni IBAN dans la reponse : la page relit `configuration` (comme apres `fiche-demander`).
+    Ok(DemandeOubliee { phrase: socle::phrase!("Demande à {} abandonnée.", adresse), adresse })
+}
+
+/// Les demandes de fiche `codes` abandonnees, sans reponse. CE QUI REVIENT SE RANGE SUR LA LIGNE DE LA DEMANDE : ici,
+/// qu'on y renonce.
+fn abandonner_demandes(ctx: &Contexte, codes: &[CodeDeDemande]) -> R<()> {
+    for code in codes {
         let retour = journal::RetourFiche {
             code: code.clone(),
             abandon: true,
@@ -884,8 +987,7 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
         };
         journal::rattacher(&ctx.racine, |l| demande_de(l, code), journal::Revenu::Fiche(retour))?;
     }
-    // Ni NIR ni IBAN dans la reponse : la page relit `configuration` (comme apres `fiche-demander`).
-    Ok(DemandeOubliee { phrase: socle::phrase!("Demande à {} abandonnée.", adresse), adresse })
+    Ok(())
 }
 
 charge! {
