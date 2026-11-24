@@ -231,8 +231,8 @@ pub struct Ouverture {
     /// Ce qui n'a pas repondu, une phrase par service (l'erreur telle qu'elle est venue) : le reseau manquait pour CELA,
     /// pas forcement pour tout -- la releve a pu passer quand le Drive ne repondait pas.
     pub injoignables: Vec<String>,
-    /// `pas_avant` a retenu ce passage (la derniere ouverture est trop recente) : rien n'a ete fait, la trace n'est pas
-    /// reecrite.
+    /// Ce passage a ete retenu (la derniere ouverture est trop recente, `pas_avant`, ou la mise a jour se prend en compte
+    /// dans un autre passage) : rien n'a ete fait, la trace n'est pas reecrite ; un incident dit pourquoi.
     pub retenue: bool,
     /// Les etapes finies de ce passage, dans l'ordre, et la duree de chacune (`dire_l_etape`).
     pub etapes: Vec<EtapeMesuree>,
@@ -397,7 +397,7 @@ pub struct OuvertureDite {
     pub hors_ligne: bool,
     pub injoignables: Vec<String>,
     pub tout_va_bien: bool,
-    /// `pas_avant` a retenu ce passage : rien n'a ete fait.
+    /// Ce passage a ete retenu (`pas_avant`, ou la mise a jour prise en compte ailleurs) : rien n'a ete fait.
     pub retenue: bool,
     pub phrases: Vec<String>,
 }
@@ -511,14 +511,9 @@ struct Etape {
 /// jusqu'a la suivante, ou jusqu'a ce que le passage la finisse.
 fn dire_l_etape(ctx: &Contexte, r: &mut Ouverture, etape: &str) -> R<()> {
     r.finir_l_etape();
-    ecrire_l_etape(&ctx.racine, etape)?;
+    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)?;
     r.en_cours = Some((etape.to_string(), std::time::Instant::now()));
     Ok(())
-}
-
-/// L'etape `etape` ecrite pour la veille qui la lit (`etape_en_cours`).
-fn ecrire_l_etape(racine: &Path, etape: &str) -> R<()> {
-    socle::ecriture::ecrire_json(&chemin_etape(racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)
 }
 
 fn finir_les_etapes(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
@@ -691,32 +686,72 @@ const VERSION_DU_CALCUL: &str = ".version-du-calcul.json";
 /// passage interrompu se refait.
 ///
 /// DEUX CHEMINS L'APPELLENT, et elle seule prend en compte une version : la route `ouverture` (`dire` y entre dans son
-/// etape), et, au lancement de la fenetre, la file des etats de chaque compagnie tenue a jour, avant ses etats
-/// (`etat_garde::Cle::VersionDuCalcul`, `dire_l_etape_seule`) : du calcul local, ni coffre ni reseau. L'un pendant
-/// l'autre (le lancement qui passe, le clic qui lance la veille) : le verrou de la version (`VERROU_DE_LA_VERSION`) n'en
-/// laisse passer qu'un ; l'autre ne fait rien, il ne reecrit pas ce que le premier ecrit. L'etape dite s'efface avant que
-/// le verrou se rende : celui qui le prend ensuite ecrit la sienne.
-pub(crate) fn passer_la_version(ctx: &Contexte, dire: impl FnOnce() -> R<()>) -> R<()> {
+/// etape), et la file des etats de chaque compagnie, en tete, avant tout etat (`etat_garde::Cle::VersionDuCalcul`, qui
+/// le dit par sa phrase) : du calcul local, ni coffre ni reseau. L'un pendant l'autre (le lancement qui passe, le clic
+/// qui lance la veille) : le verrou de la version (`VERROU_DE_LA_VERSION`) n'en laisse passer qu'un, et l'autre
+/// l'apprend (`PriseEnCompte::EnCoursAilleurs`) : rien d'autre ne touche la compagnie pendant ce temps. Le verrou se
+/// rafraichit avant chaque mois : un long passage ne passe pas pour abandonne. Sa marque porte le numero du passage
+/// (`PASSAGES`) : deux fils du meme processus ne se prennent jamais l'un pour l'autre.
+pub(crate) fn passer_la_version(ctx: &Contexte, dire: impl FnOnce() -> R<()>) -> R<PriseEnCompte> {
     let marque = VersionDuCalcul { version: format!("{}+{}", compagnie::maj::courante(&compagnie::maj::dossier_installe()?)?, engagement::empreinte::MOTEUR) };
     let p = ctx.racine.join(socle::fichiers::CONFIG).join(VERSION_DU_CALCUL);
     if deja_passee(&p, &marque)? {
-        return Ok(());
+        return Ok(PriseEnCompte::DejaAJour);
     }
-    let qui = socle::verrou::marque("mise a jour", socle::processus::numero(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
-    let _verrou = match socle::verrou::Verrou::prendre(&VERROU_DE_LA_VERSION.dans(&ctx.racine), &qui, socle::verrou::DELAI_VERROU).map_err(|m| m.reclasser(socle::echec::Classe::Disque))? {
+    let passage = PASSAGES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let qui = socle::verrou::marque(&format!("mise a jour, passage {}", passage), socle::processus::numero(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
+    let verrou = match socle::verrou::Verrou::prendre(&VERROU_DE_LA_VERSION.dans(&ctx.racine), &qui, socle::verrou::DELAI_VERROU).map_err(|m| m.reclasser(socle::echec::Classe::Disque))? {
         Ok(v) => v,
-        Err(socle::verrou::Verrouille { .. }) => return Ok(()),
+        Err(socle::verrou::Verrouille { .. }) => return Ok(PriseEnCompte::EnCoursAilleurs),
     };
     // Celui qui tenait le verrou vient peut-etre de finir.
     if deja_passee(&p, &marque)? {
-        return Ok(());
+        return Ok(PriseEnCompte::DejaAJour);
     }
     dire()?;
-    let passe = envois::journal::lu(&ctx.racine)
-        .and_then(|j| engagement::etats::corriger_les_mois_finis(ctx, &j.departs))
-        .and_then(|_| socle::ecriture::ecrire_json(&p, &marque, 1).map_err(|m| m.reclasser(socle::echec::Classe::Disque)));
-    let efface = socle::fichiers::effacer(&chemin_etape(&ctx.racine));
-    passe.and(efface)
+    let j = envois::journal::lu(&ctx.racine)?;
+    engagement::etats::corriger_les_mois_finis(ctx, &j.departs, &mut || verrou.rafraichir())?;
+    socle::ecriture::ecrire_json(&p, &marque, 1).map_err(|m| m.reclasser(socle::echec::Classe::Disque))?;
+    Ok(PriseEnCompte::Faite)
+}
+
+/// CE QU'A FAIT UNE PRISE EN COMPTE DE LA MISE A JOUR (`passer_la_version`) : elle s'est faite ici, la version avait
+/// deja passe, ou un autre passage la fait en ce moment (il tient son verrou) et celui-ci n'a rien touche.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PriseEnCompte {
+    Faite,
+    DejaAJour,
+    EnCoursAilleurs,
+}
+
+/// Le numero du prochain passage de la version dans ce processus : il entre dans la marque de son verrou.
+static PASSAGES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// LA ROUTE `ouverture` PASSE LA VERSION, en tete : elle-meme (son etape dite, puis effacee : un effacement rate se note
+/// a part, la prise en compte, elle, est faite), ou, si un autre passage la fait en ce moment, ce passage-ci s'arrete
+/// la (`true`) : rien ne se releve, ne s'envoie ni ne se sauvegarde pendant qu'il reecrit les paies, la trace n'est pas
+/// reecrite, et la veille repasse a son tour suivant. Un refus est un incident, et le passage continue.
+fn arreter_pour_la_version(ctx: &Contexte, r: &mut Ouverture) -> bool {
+    let prise = passer_la_version(ctx, || dire_l_etape(ctx, r, PRISE_EN_COMPTE));
+    r.finir_l_etape();
+    match prise {
+        Ok(PriseEnCompte::EnCoursAilleurs) => {
+            r.incidents.push(format!("{} Un autre passage la fait : rien ne se relève ni ne se sauvegarde pendant ce temps.", PRISE_EN_COMPTE));
+            r.retenue = true;
+            true
+        }
+        Ok(PriseEnCompte::Faite) => {
+            if let Err(e) = socle::fichiers::effacer(&chemin_etape(&ctx.racine)) {
+                r.incidents.push(format!("L'étape du passage ne s'efface pas : {}", nomme(&ctx.racine, &e)));
+            }
+            false
+        }
+        Ok(PriseEnCompte::DejaAJour) => false,
+        Err(e) => {
+            r.incidents.push(format!("Mois finis : {}", nomme(&ctx.racine, &e)));
+            false
+        }
+    }
 }
 
 /// La marque `p` dit-elle deja la version `marque` ?
@@ -733,15 +768,9 @@ fn deja_passee(p: &Path, marque: &VersionDuCalcul) -> R<bool> {
 pub(crate) const PRISE_EN_COMPTE: &str = "Prise en compte de la mise à jour…";
 
 /// LE VERROU DE LA VERSION (`passer_la_version`) : un seul passage a la fois sur les mois finis d'une compagnie. Tenu au
-/// plus le temps d'un passage ; un verrou abandonne (le logiciel arrete en route) se leve passe `DELAI_VERROU`, et le
-/// passage se refait (la marque n'a pas ete ecrite).
-const VERROU_DE_LA_VERSION: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/.version-du-calcul.verrou");
-
-/// L'etape de la prise en compte, ecrite seule, hors d'un passage de la route `ouverture` (la file des etats) : la veille
-/// qui tourne pendant ce temps la lit (`etape_en_cours`).
-pub(crate) fn dire_l_etape_seule(racine: &Path) -> R<()> {
-    ecrire_l_etape(racine, PRISE_EN_COMPTE)
-}
+/// plus le temps d'un passage, rafraichi avant chaque mois ; un verrou abandonne (le logiciel arrete en route) se leve
+/// passe `DELAI_VERROU` sans rafraichissement, et le passage se refait (la marque n'a pas ete ecrite).
+pub(crate) const VERROU_DE_LA_VERSION: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/.version-du-calcul.verrou");
 
 /// La version qui a passe sur les mois finis (`config/.version-du-calcul.json`) : le numero et la marque du code.
 #[derive(Debug, Serialize, Deserialize)]
@@ -926,11 +955,12 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
         signatures = false;
     }
 
-    // UNE VERSION QUI CALCULE AUTREMENT passe une fois sur les mois finis, avant le present.
-    if let Err(e) = passer_la_version(ctx, || dire_l_etape(ctx, &mut r, PRISE_EN_COMPTE)) {
-        r.incidents.push(format!("Mois finis : {}", nomme(&ctx.racine, &e)));
+    // UNE VERSION QUI CALCULE AUTREMENT passe une fois sur les mois finis, avant le present ; prise en compte ailleurs en
+    // ce moment, ce passage s'arrete la.
+    if arreter_pour_la_version(ctx, &mut r) {
+        r.duree = debut.elapsed();
+        return Ok(r);
     }
-    r.finir_l_etape();
 
     // LES SPECTACLES QUE LE TEMPS RANGE : plus de 24 mois sans engagement ni reactivation, ils s'archivent. Des engagements
     // qui ne se lisent pas ne rangent rien, et le passage le dit.
@@ -1069,6 +1099,11 @@ fn sauvegarder_seulement(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>
         }
     };
     if !opt.sauvegarder || est_copie(&ctx.racine) || joue {
+        return Ok(r);
+    }
+    // Rien ne se sauvegarde pendant qu'un autre passage reecrit les paies : la sauvegarde attend le tour suivant.
+    if arreter_pour_la_version(ctx, &mut r) {
+        r.duree = debut.elapsed();
         return Ok(r);
     }
     sauvegarder_le_dossier(ctx, opt, &mut clients, &mut r)?;

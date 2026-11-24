@@ -143,6 +143,18 @@ impl Verrou {
     pub fn prendre(chemin: &Path, marque: &str, delai: Duration) -> R<Result<Verrou, Verrouille>> {
         Ok(prendre(chemin, marque, delai)?.map(|_| Verrou { chemin: chemin.to_path_buf(), marque: marque.to_string() }))
     }
+
+    /// UN LONG PASSAGE DIT QU'IL VIT : la date du fichier redevient maintenant, et son age repart de zero ; un passage
+    /// plus long que le delai ne passe donc pas pour abandonne tant qu'il se rafraichit. Un verrou qui ne porte plus
+    /// notre marque (le delai a joue, un autre l'a repris) refuse : le passage s'arrete, l'autre le fait.
+    pub fn rafraichir(&self) -> R<()> {
+        let disque = |e: std::io::Error| crate::echec::du_disque(&self.chemin, &e);
+        let lu = std::fs::read(&self.chemin).map_err(disque)?;
+        if String::from_utf8_lossy(&lu).trim() != self.marque {
+            return Err(crate::echec::refus(format!("Le verrou {} a été repris par un autre passage : celui-ci s'arrête.", self.chemin.display())));
+        }
+        OpenOptions::new().write(true).open(&self.chemin).and_then(|f| f.set_modified(SystemTime::now())).map_err(disque)
+    }
 }
 
 impl Drop for Verrou {

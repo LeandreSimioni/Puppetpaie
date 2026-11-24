@@ -570,8 +570,8 @@ impl Fenetre {
     /// instantanement, meme a la premiere ouverture du jour. Chaque vraie compagnie de l'installation -- celles de
     /// l'administrateur, et celles qui ont garde leur mot de passe : toutes sont sur ce disque, en clair -- recoit sa file
     /// sur le fil de la fenetre, qui y prend d'abord en compte la mise a jour sur ses mois finis
-    /// (`FileDesEtats::prendre_en_compte_la_mise_a_jour` : le jour d'une mise a jour, ses paies reecrites avant ses
-    /// etats, et non apres, au clic), puis verifie et refait en fond son etat d'ouverture, son tableau (une compagnie de
+    /// (`Cle::VersionDuCalcul`, en tete de toute file des sa creation, `Fil::file` : le jour d'une mise a jour, ses paies
+    /// reecrites avant ses etats, et non apres, au clic), puis verifie et refait en fond son etat d'ouverture, son tableau (une compagnie de
     /// l'administrateur), puis ses mois. La derniere ouverte d'abord (la date de son journal de la fenetre, que chaque
     /// ouverture recommence), puis chacune son tour.
     ///
@@ -594,9 +594,7 @@ impl Fenetre {
                 }
             };
             for r in &reelles {
-                let file = f.file_de(r);
-                file.prendre_en_compte_la_mise_a_jour();
-                file.tout_verifier();
+                f.file_de(r).tout_verifier();
             }
             let noms: Vec<String> = reelles.iter().map(|r| r.display().to_string()).collect();
             f.ecrire(&format!("Calcul en fond, sans rien ouvrir : {} compagnie(s) a tenir a jour ({}).\n", reelles.len(), noms.join(", ")));
