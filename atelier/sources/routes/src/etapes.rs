@@ -229,6 +229,7 @@ pub(crate) enum ChargeDuGeste {
     Annee(ChargeAnnee),
     Faite(crate::rappels::ChargeFaite),
     Piece(crate::documents::ChargePiecePartie),
+    Copie(crate::mois::ChargeCopier),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -267,6 +268,7 @@ charge_du_geste! {
     ChargeAnnee => Annee,
     crate::rappels::ChargeFaite => Faite,
     crate::documents::ChargePiecePartie => Piece,
+    crate::mois::ChargeCopier => Copie,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
@@ -1331,6 +1333,8 @@ struct LigneDePage<'a> {
     repris_dit: Option<&'static str>,
     embauche_dit: Option<String>,
     numero_dit: Option<String>,
+    /// Le geste qui copie l'engagement pour un autre salarie (`copier-engagement`, puis `enregistrer-saisie`).
+    copier: Action,
 }
 
 #[derive(Debug, Serialize)]
@@ -1344,7 +1348,7 @@ struct DpaeDePage<'a> {
 }
 
 impl<'a> LigneDePage<'a> {
-    fn de(l: &'a Ligne) -> LigneDePage<'a> {
+    fn de(l: &'a Ligne, mois: Mois) -> LigneDePage<'a> {
         let v = &l.vue;
         let valide = v.valide.map(Moment::dit);
         let debut = match (&v.bornes, &v.contrat) {
@@ -1363,6 +1367,12 @@ impl<'a> LigneDePage<'a> {
                 (_, e) => e,
             },
             numero_dit: v.numero.as_ref().map(|n| format!("contrat n° {}", n)),
+            copier: action(
+                Route::CopierEngagement,
+                crate::mois::ChargeCopier { mois, engagement: l.engagement.clone() },
+                Some(Route::EnregistrerSaisie),
+                "Copier pour un autre salarié".into(),
+            ),
             engagement: &l.engagement,
             salarie: v.salarie.as_ref(),
             nom: v.nom.as_deref(),
@@ -3073,7 +3083,7 @@ pub(crate) struct LesDeuxEtats {
 impl LesDeuxEtats {
     /// `etat-par-engagement` : la phrase du mois, et ce que la page lit de chaque engagement.
     pub(crate) fn par_engagement(&self) -> R<EtatParEngagement<'_>> {
-        let engagements: Vec<LigneDePage> = self.lignes.iter().map(LigneDePage::de).collect();
+        let engagements: Vec<LigneDePage> = self.lignes.iter().map(|l| LigneDePage::de(l, self.mois)).collect();
         let phrase = match engagements.len() {
             0 => socle::phrase!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
             n => socle::phrase!("Engagements du mois : {}.", n),

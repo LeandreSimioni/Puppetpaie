@@ -92,7 +92,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire l'état de chaque engagement du mois : ses carrés DPAE, Contrat, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien)",
+        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part, copier : le geste qui le copie pour un autre salarié), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
