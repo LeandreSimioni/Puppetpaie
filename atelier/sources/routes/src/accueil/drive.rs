@@ -9,11 +9,14 @@
 //! meme client (`coffre::client_drive`). Rien de ce jeton n'entre dans une sauvegarde (`sauvegarde::ecarte`).
 //!
 //! UNE REPRISE NE VA JAMAIS DANS UNE COMPAGNIE QUI EXISTE : elle cree un dossier neuf, y pose d'abord sa marque
-//! (`restauration::RepriseEnCours`), puis la restauration le remplit. Coupee (le reseau, un fichier qui n'est pas
-//! revenu), elle se relance dans ce dossier-la, que sa marque designe, et dans aucun autre. Allee au bout, la compagnie
-//! recoit une copie du jeton de l'accueil (elle est liee au meme compte, et sa sauvegarde repart dans le meme dossier du
-//! Drive), sa marque s'efface, et la fenetre l'ouvre (`ouvrir`). Avant, aucune compagnie de ce poste n'est liee a un
-//! compte Google par la reprise : rien de ce qu'elle n'a pas fini ne part au Drive.
+//! (`restauration::RepriseEnCours`), puis la restauration le remplit. Coupee (le reseau), elle se relance dans ce
+//! dossier-la, que sa marque designe, et dans aucun autre. Allee au bout (tous les fichiers tentes ; ce qui n'est pas
+//! revenu se dit), la compagnie recoit une copie du jeton de l'accueil (elle est liee au meme compte, et sa sauvegarde
+//! repart dans le meme dossier du Drive, qui ne perd rien : elle n'y supprime jamais), sa marque s'efface, et la fenetre
+//! l'ouvre (`ouvrir`). Avant, la reprise ne lie aucune compagnie de ce poste a un compte Google.
+//!
+//! DEJA SUR CE POSTE : une compagnie de l'installation qui porte l'identite du dossier (`deja_la`) ; le rang le dit, sans
+//! geste, et `drive-reprendre` se refuse en la nommant.
 
 use std::path::{Path, PathBuf};
 
@@ -21,6 +24,7 @@ use serde::Serialize;
 
 use compagnie::installation::{IdDeCompagnie, Marqueur, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
 use compagnie::restauration::RepriseEnCours;
+use compagnie::sauvegarde::IdentiteSurLeDrive;
 use compagnie::sur_le_drive::{DossierVu, GenreDuDossier};
 use envois::drive::IdDrive;
 use socle::echec::{erreur, Classe, R};
@@ -133,6 +137,35 @@ fn reprises_en_cours(inst: &Path) -> R<(Vec<Commencee>, Vec<(String, socle::eche
     Ok((lues, illisibles))
 }
 
+/// Une compagnie de ce poste : son nom, sa racine, et son identite sur le Drive (aucune : elle ne s'est jamais
+/// sauvegardee), ou pourquoi elle ne se lit pas.
+type IdentiteDuPoste = (String, PathBuf, R<Option<IdentiteSurLeDrive>>);
+
+/// L'IDENTITE SUR LE DRIVE DE CHAQUE COMPAGNIE DE L'INSTALLATION `inst` (`config/drive.json`) : une qui ne se lit pas
+/// ne ferme rien, elle se dit.
+fn identites_du_poste(inst: &Path) -> R<Vec<IdentiteDuPoste>> {
+    Ok(compagnie::installation::liste_de(inst)?.into_iter().map(|c| {
+        let i = compagnie::sauvegarde::identite_ecrite(&c.racine);
+        (c.nom, c.racine, i)
+    }).collect())
+}
+
+/// LES COMPAGNIES DE CE POSTE QUI SONT DEJA CELLE DU DOSSIER `vu` : elles portent son identite. Le dossier neuf de sa
+/// propre reprise pas finie (`sauf`) n'en est pas : il la recoit en revenant.
+fn deja_la<'a>(du_poste: &'a [IdentiteDuPoste], vu: &DossierVu, sauf: Option<&Path>) -> Vec<&'a str> {
+    let GenreDuDossier::Compagnie(identite) = &vu.genre else { return Vec::new() };
+    du_poste
+        .iter()
+        .filter(|(_, racine, i)| Some(racine.as_path()) != sauf && matches!(i, Ok(Some(j)) if j == identite))
+        .map(|(nom, _, _)| nom.as_str())
+        .collect()
+}
+
+/// La racine de la reprise pas finie du dossier `vu`, parmi `en_cours`.
+fn commencee_de<'a>(en_cours: &'a [Commencee], vu: &DossierVu) -> Option<&'a Commencee> {
+    en_cours.iter().find(|(_, _, r)| r.dossier == vu.id)
+}
+
 /// L'ECRAN DE LA REPRISE (`drive-compagnies`) : le compte Google de l'accueil (le lier, le relier, l'oublier), puis chaque
 /// dossier du Drive qui se reprend (le dossier d'une compagnie, l'ancienne sauvegarde commune), sa derniere sauvegarde,
 /// son volume, une reprise pas finie sur ce poste, et le geste « Reprendre ». Doux : sans compte lie, un Drive qui ne se
@@ -180,6 +213,19 @@ pub(crate) fn compagnies(inst: &Path) -> R<CompagniesDuDrive> {
             Vec::new()
         }
     };
+    // L'identite de chaque compagnie de ce poste : celle qui ne se lit pas se dit ici, et ne ferme rien.
+    let du_poste = match identites_du_poste(inst) {
+        Ok(l) => l,
+        Err(e) => {
+            encarts.push(Encart::de(EtatDEcran::Refuse, "Les compagnies de ce poste ne se listent pas : celles déjà reprises ne se voient pas", e.phrase));
+            Vec::new()
+        }
+    };
+    for (nom, _, i) in &du_poste {
+        if let Err(e) = i {
+            encarts.push(Encart::de(EtatDEcran::Refuse, format!("« {} » : son dossier du Drive ne se reconnaît pas", nom), e.phrase.clone()));
+        }
+    }
     if vus.is_empty() {
         encarts.push(Encart::de(EtatDEcran::Information, "Aucune compagnie dans ce Drive", "Ce compte Google ne porte aucune sauvegarde de PuppetPaie. Est-ce le bon compte ?"));
     }
@@ -193,7 +239,14 @@ pub(crate) fn compagnies(inst: &Path) -> R<CompagniesDuDrive> {
             dit.push(format!("Volume : {}.", o));
         }
         dit.extend(vu.illisible.iter().cloned());
-        let commencee = en_cours.iter().find(|(_, _, r)| r.dossier == vu.id);
+        let commencee = commencee_de(&en_cours, vu);
+        // DEJA SUR CE POSTE : la reprise se refuserait ; le geste ne se propose pas, le rang dit ou elle est.
+        let deja = deja_la(&du_poste, vu, commencee.map(|c| c.1.as_path()));
+        if !deja.is_empty() {
+            dit.push(format!("Cette compagnie est déjà sur ce poste : « {} ».", deja.join(" », « ")));
+            rangs.push(RangDeLEcran { titre: vu.nom.clone(), dit, pastille: Pastille::de(EtatDEcran::Fait, "déjà sur ce poste"), etat: None, montre: None, gestes: Vec::new() });
+            continue;
+        }
         let (pastille, boite) = match commencee {
             Some((_, _, r)) => {
                 dit.push(format!("Une reprise commencée sur ce poste le {} n'est pas finie : « Reprendre » la continue.", socle::paris::ecrit::saisie::texte(r.depuis)));
@@ -239,8 +292,8 @@ pub(crate) fn oublier(inst: &Path) -> R<DriveOublie> {
 /// designe) ; sinon un dossier neuf, comme « Ajouter une compagnie » le fait (une fictive ajoutee d'un logiciel bride, une
 /// compagnie reelle sinon), ou la reprise pose sa marque avant toute autre chose. Rend son identifiant, sa racine, et si
 /// elle est neuve.
-fn ou_revient(inst: &Path, vu: &DossierVu, bride: bool) -> R<(IdDeCompagnie, PathBuf, bool)> {
-    if let Some((id, racine, _)) = reprises_en_cours(inst)?.0.into_iter().find(|(_, _, r)| r.dossier == vu.id) {
+fn ou_revient(inst: &Path, vu: &DossierVu, bride: bool, commencee: Option<Commencee>) -> R<(IdDeCompagnie, PathBuf, bool)> {
+    if let Some((id, racine, _)) = commencee {
         return Ok((id, racine, false));
     }
     let nom = compagnie::installation::nom_de_dossier(&vu.nom);
@@ -256,8 +309,8 @@ fn ou_revient(inst: &Path, vu: &DossierVu, bride: bool) -> R<(IdDeCompagnie, Pat
 }
 
 /// REPRENDRE UNE COMPAGNIE DU DRIVE (`drive-reprendre`) : le dossier, s'il est sous la racine du Drive lie a l'accueil
-/// (relue) et se reprend, revient sur ce poste (`ou_revient`), par la restauration. Allee au bout (ni coupee, ni un
-/// fichier qui n'est pas revenu), la compagnie recoit le jeton de l'accueil (d'un logiciel bride, elle devient une
+/// (relue) et se reprend, revient sur ce poste (`ou_revient`), par la restauration ; une compagnie deja sur ce poste
+/// la refuse. Allee au bout (la connexion n'est pas tombee), la compagnie recoit le jeton de l'accueil (d'un logiciel bride, elle devient une
 /// fictive ajoutee, et rien n'en part), sa marque s'efface, et `ouvrir` la designe. Un refus de la restauration n'ecrit
 /// rien : le dossier neuf qu'elle aurait rempli s'efface ; celui d'une reprise relancee reste tel qu'il etait.
 pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
@@ -271,8 +324,25 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
     if !vu.se_reprend() {
         return Err(erreur(Classe::Refuse, format!("« {} » n'est pas la sauvegarde d'une compagnie : rien n'est repris.", vu.nom)));
     }
+    let commencee = reprises_en_cours(inst)?.0.into_iter().find(|(_, _, r)| r.dossier == vu.id);
+    // DEJA SUR CE POSTE : une compagnie de l'installation porte l'identite de ce dossier (hors le dossier neuf de sa
+    // propre reprise pas finie) ; la reprise se refuse en la nommant. Une compagnie dont l'identite ne se lit pas ne
+    // ferme rien : elle ne se dit ici que si elle porte le nom de ce dossier, la seule qui pourrait etre la meme.
+    let du_poste = identites_du_poste(inst)?;
+    let deja = deja_la(&du_poste, &vu, commencee.as_ref().map(|c| c.1.as_path()));
+    if !deja.is_empty() {
+        let douteuses: Vec<String> = du_poste
+            .iter()
+            .filter(|(nom, _, i)| i.is_err() && *nom == vu.nom)
+            .map(|(nom, _, _)| format!(" « {} » aussi peut-être : son dossier du Drive ne se reconnaît pas.", nom))
+            .collect();
+        return Err(erreur(
+            Classe::Refuse,
+            format!("Cette compagnie est déjà sur ce poste : « {} ». Rien n'est repris.{}", deja.join(" », « "), douteuses.concat()),
+        ));
+    }
     let bride = compagnie::bridage::est_bride_de(inst);
-    let (id, racine, neuve) = ou_revient(inst, &vu, bride)?;
+    let (id, racine, neuve) = ou_revient(inst, &vu, bride, commencee)?;
     let r = match compagnie::restauration::restaurer(&racine, &vu, racine_drive, &mut client) {
         Ok(r) => r,
         Err(e) => {
@@ -283,7 +353,10 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
             return Err(e.echec);
         }
     };
-    let au_bout = !r.hors_ligne && r.incidents.is_empty();
+    // AU BOUT : tous les fichiers ont ete tentes, la connexion n'est pas tombee. Ce qui n'est pas revenu (homonymes, nom
+    // impossible ici, document Google) se dit dans la reponse ; la compagnie se lie quand meme : sa sauvegarde ne supprime
+    // jamais rien sur le Drive, ce qui y manque ici y reste.
+    let au_bout = !r.hors_ligne;
     if au_bout {
         if bride {
             let marqueur = Marqueur {
@@ -307,17 +380,10 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
     let a_faire = compagnie::restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&racine));
     let nom = compagnie::installation::nom_de(&racine)?;
     let revenus = r.redescendus.len();
-    let phrase = if au_bout {
-        socle::phrase!("« {} » est reprise de votre Drive : {} fichier(s) revenu(s). Elle s'ouvre.", nom, revenus)
-    } else if r.hors_ligne {
-        socle::phrase!("« {} » : {} fichier(s) revenu(s), puis la connexion est tombée. « Reprendre » de nouveau continue où elle en était.", nom, revenus)
-    } else {
-        socle::phrase!(
-            "« {} » : {} fichier(s) revenu(s), {} ne sont pas revenus. « Reprendre » de nouveau les redemande ; elle s'ouvre quand tout est revenu.",
-            nom,
-            revenus,
-            r.incidents.len()
-        )
+    let phrase = match (au_bout, r.incidents.len()) {
+        (true, 0) => socle::phrase!("« {} » est reprise de votre Drive : {} fichier(s) revenu(s). Elle s'ouvre.", nom, revenus),
+        (true, n) => socle::phrase!("« {} » est reprise de votre Drive : {} fichier(s) revenu(s), {} n'ont pas pu revenir et restent dans le Drive. Elle s'ouvre.", nom, revenus, n),
+        (false, _) => socle::phrase!("« {} » : {} fichier(s) revenu(s), puis la connexion est tombée. « Reprendre » de nouveau continue où elle en était.", nom, revenus),
     };
     Ok(Reprise { phrase, ouvrir: au_bout.then_some(id), nom, chemin: racine, redescendus: revenus, incidents: r.incidents, a_faire })
 }
