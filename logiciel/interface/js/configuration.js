@@ -702,15 +702,16 @@ async function peindreCoutAnnee() {
     return `<div><b>${annee}</b> : ${echapper(d.phrase)}</div>`;
   };
   el.innerHTML = `<span class="discret">${aideDe("cout_attente")}</span>`;
-  let cette, avant;
-  // Un refus se dit à la place du coût, et l'année se redemande à la prochaine fiche ouverte.
-  try { [cette, avant] = await Promise.all([coutsDe(an), coutsDe(an - 1)]); } catch (e) {
-    oublierCouts();
-    if (el.isConnected) el.innerHTML = `<span class="discret">${echapper(e.message)}</span>`;
-    return;
-  }
+  // Chaque année répond pour elle : un refus se dit à la place de son coût, sans cacher l'autre, et cette année se
+  // redemande à la prochaine fiche ouverte.
+  const lues = await Promise.allSettled([coutsDe(an), coutsDe(an - 1)]);
   if (!el.isConnected) return;
-  el.innerHTML = ligne(cette, an) + ligne(avant, an - 1);
+  el.innerHTML = [an, an - 1].map((annee, i) => {
+    const l = lues[i];
+    if (l.status === "fulfilled") return ligne(l.value, annee);
+    delete COUTS[annee];
+    return `<div><b>${annee}</b> : <span class="discret">${echapper(l.reason.message)}</span></div>`;
+  }).join("");
 }
 
 /* L'ONGLET MÉTIERS. L'éditeur : « les métiers, c'est vraiment

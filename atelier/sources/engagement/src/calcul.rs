@@ -1130,7 +1130,8 @@ fn pile(ctx: &Contexte, sal: &SalarieDuContrat, nat: &Nature, fin: &Jour, caisse
         return Ok(v.clone());
     }
     let ent = droit::bareme::EntrepriseLue { taux_lus, ..ctx.entreprise_lue(fin)? };
-    let bar = Arc::new(bareme_applique(&*ctx.bareme(fin)?, &ent, sal, nat, Some(fin), caisse, cpf_cdd, majoration)?);
+    let partage = if taux_lus { ctx.bareme_des_taux_lus(fin)? } else { ctx.bareme(fin)? };
+    let bar = Arc::new(bareme_applique(&partage, &ent,sal, nat, Some(fin), caisse, cpf_cdd, majoration)?);
     socle::fichiers::ranger(cache, cle, bar.clone());
     Ok(bar)
 }

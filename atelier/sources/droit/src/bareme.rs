@@ -1149,7 +1149,11 @@ pub fn bareme_applique(
         surcharger(partage.clone(), fiche, &etablissement_de(fiche, sal)?)?
     };
     bar = bareme_du_statut(bar, *sal.statut.exigee("statut")?)?;
-    bar = bareme_atmp(bar, fiche)?;
+    // Une paie importee a cotise le taux AT/MP que l'ancien logiciel a applique (`EntrepriseLue::taux_lus`) : sa pile ne
+    // le pose pas, et la compagnie n'a pas a le dire pour qu'on lise ce qu'elle a paye.
+    if !ent.taux_lus {
+        bar = bareme_atmp(bar, fiche)?;
+    }
     // Ce que la caisse reprend du statut tel qu'avant la nature : ses rubriques et ses cotisations (`bareme_caisse_conges`).
     let avant_la_nature = (caisse_conges != crate::caisse_conges::par_defaut(nat))
         .then(|| AvantLaNature { rubriques: bar.rubriques_bulletin.clone(), cotisations: bar.cotisations_dsn.clone() });
