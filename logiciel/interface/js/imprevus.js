@@ -248,7 +248,7 @@ function fermerMenuImprevu() {
 
 /** Le petit menu de la porte, ancré sous le bouton : ses choix sont ceux que `imprevus` rend (`porte`), chacun la
  *  lecture qui rend sa boîte (son `code`, `boiteDUnImprevu`). `ou` : la carte, ou `{salarie}` depuis le dossier du
- *  salarié. */
+ *  salarié ; sur la ligne d'un engagement, `copier` : le geste que sa ligne rend (`copierLEngagement`). */
 async function menuImprevu(ancre, ou) {
   fermerMenuImprevu();
   let n;
@@ -260,7 +260,8 @@ async function menuImprevu(ancre, ou) {
   menu.innerHTML = `
     ${n.porte.map((c) => `<button type="button" data-choix="${echapper(c.code)}">${echapper(c.libelle)}
       <span class="discret">${echapper(c.dit)}</span></button>`).join("")}
-    ${rupture ? `<button type="button" data-choix="rupture">${echapper(rupture)}</button>` : ""}`;
+    ${rupture ? `<button type="button" data-choix="rupture">${echapper(rupture)}</button>` : ""}
+    ${ou.copier ? `<button type="button" data-choix="copier">${echapper(ou.copier.libelle)}</button>` : ""}`;
   document.body.appendChild(menu);
   const r = ancre.getBoundingClientRect();
   menu.style.top = `${window.scrollY + r.bottom + 4}px`;
@@ -271,6 +272,8 @@ async function menuImprevu(ancre, ou) {
   });
   const r2 = menu.querySelector('[data-choix="rupture"]');
   if (r2) r2.onclick = () => { fermerMenuImprevu(); ouvrirLaFin(ou.div); };
+  const r3 = menu.querySelector('[data-choix="copier"]');
+  if (r3) r3.onclick = () => { fermerMenuImprevu(); copierLEngagement(ou.copier); };
   setTimeout(() => {
     const dehors = (ev) => {
       if (MENU_IMPREVU && !MENU_IMPREVU.contains(ev.target)) {
