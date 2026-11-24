@@ -971,13 +971,16 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
         }
         if chez_eux && !chez_nous {
             // UNE COTISATION QUE LE BULLETIN IMPRIME A TORT, DEJA RELEVEE (`Constat::AbsenteDuCalcul`) : ce n'est pas un
-            // ecart. Ce qu'elle a fait cotiser de plus ou de moins, tel que le bulletin l'imprime (une reduction en
-            // negatif), est dans le total des cotisations de sa part, s'il l'y compte (`hors_total`).
-            match crate::ecarts_connus::de(logiciel, mois, c.statut, code)?.into_iter().find(|k| k.constate == Constat::AbsenteDuCalcul) {
-                Some(k) => {
-                    let signee = |m: &mut dyn Iterator<Item = Montant>| m.fold(Montant::ZERO, |a, x| a + x);
-                    let employeur = signee(&mut eux.iter().filter_map(|l| l.montant_employeur));
-                    let salarie = signee(&mut eux.iter().filter_map(|l| l.montant_salarie));
+            // ecart. Ce qu'elle a fait cotiser de plus ou de moins (son effet, que la ligne connue dit : une deduction
+            // compte de moins) est dans le total des cotisations de sa part, s'il l'y compte (`hors_total`).
+            let effet = |k: &crate::ecarts_connus::EcartConnu| match k.constate {
+                Constat::AbsenteDuCalcul { effet } => Some(effet),
+                Constat::Taux { .. } => None,
+            };
+            match crate::ecarts_connus::de(logiciel, mois, c.statut, code)?.into_iter().find_map(|k| effet(&k).map(|e| (k, e))) {
+                Some((k, effet)) => {
+                    let employeur = effet.ecart(&mut eux.iter().filter_map(|l| l.montant_employeur));
+                    let salarie = effet.ecart(&mut eux.iter().filter_map(|l| l.montant_salarie));
                     if !hors_total.contains(code) {
                         explique_pat = explique_pat + employeur;
                         explique_sal = explique_sal + salarie;

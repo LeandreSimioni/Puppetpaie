@@ -64,13 +64,13 @@
     {
       "logiciel": "coolpaie",
       "cotisation": "reduction_generale",
-      "constate": { "grandeur": "absente_du_calcul" },
+      "constate": { "grandeur": "absente_du_calcul", "effet": "deduction" },
       "de": "2026-01",
       "a": "2026-02",
       "statut": "artiste",
       "pour": "la sécurité sociale, la retraite complémentaire et l'assurance chômage de ses salariés",
       "explication": "Coolpaie a appliqué la réduction générale, que la loi n'accorde pas sur la paie d'un artiste du spectacle, dont les taux sont déjà spécifiques.",
-      "note": "Tri de l'import Coolpaie du 23/11/2026, 8b et #620 : « EXONERATIONS ET ALLEGEMENTS DE COTISATIONS » sur 7 paies d'artistes de janvier et février 2026. Le barème 2026 livré ne la fait qu'au technicien (`baremes/2026.json`, `par_statut.technicien.reduction_generale`). Le montant que la carte dit est celui que le bulletin imprime, avec son signe (une réduction, en négatif : la compagnie a cotisé de moins).",
+      "note": "Tri de l'import Coolpaie du 23/11/2026, 8b et #620 : « EXONERATIONS ET ALLEGEMENTS DE COTISATIONS » sur 7 paies d'artistes de janvier et février 2026. Le barème 2026 livré ne la fait qu'au technicien (`baremes/2026.json`, `par_statut.technicien.reduction_generale`). Son effet est une déduction (arrêté du 25/02/2016, art. 4, la dernière source) : la carte dit que la compagnie a cotisé de moins le montant que le bulletin imprime, en valeur absolue, quel que soit le signe qu'il lui donne ; le signe que Coolpaie imprime n'est pas encore vu sur une de ses paies (question posée à Léandre le 24/11/2026).",
       "source": {
         "sources": [
           {
@@ -90,9 +90,15 @@
             "emetteur": "urssaf",
             "article": "Urssaf, réduction générale, « Les règles de cumul »",
             "citation": "avec l’application de taux spécifiques, d’assiettes ou de montants forfaitaires de cotisations (exemple : taux spécifiques aux artistes"
+          },
+          {
+            "fichier": "atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin.md",
+            "emetteur": "loi",
+            "article": "arrêté du 25/02/2016, art. 4",
+            "citation": "est égale à la somme des montants de l'ensemble des réductions ou exonérations de cotisations ou de contributions sociales"
           }
         ],
-        "raisonnement": "L'arrêté de 1975 fixe aux artistes du spectacle des taux spécifiques (70 % du régime général) ; le BOSS (§ 220) interdit de cumuler la réduction générale avec l'application de taux spécifiques, et l'Urssaf le dit des artistes du spectacle, en exemple. La réduction générale ne s'applique donc pas à la paie d'un artiste."
+        "raisonnement": "L'arrêté de 1975 fixe aux artistes du spectacle des taux spécifiques (70 % du régime général) ; le BOSS (§ 220) interdit de cumuler la réduction générale avec l'application de taux spécifiques, et l'Urssaf le dit des artistes du spectacle, en exemple. La réduction générale ne s'applique donc pas à la paie d'un artiste. Ce que le bulletin imprime sous la mention « Exonérations et allègements de cotisations » est, selon l'arrêté du 25/02/2016 (art. 4), la somme des réductions : une déduction de ce que la compagnie a cotisé."
       }
     }
   ]

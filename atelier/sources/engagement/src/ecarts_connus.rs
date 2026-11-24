@@ -29,13 +29,37 @@ use crate::importe::LogicielDUnBulletin;
 
 /// CE QU'UNE LIGNE DES ECARTS CONNUS CONSTATE : le taux d'une part (`grandeur`, `CeQuiDiffere::TauxEmployeur` ou
 /// `TauxSalarie`), celui que l'ancien logiciel a applique et celui du texte ; ou une cotisation que le bulletin imprime a
-/// tort et que ce moteur ne calcule pas (`CeQuiDiffere::AbsenteDuCalcul`, sans taux). Il s'ecrit
-/// `{"grandeur", "applique", "texte"}`, les taux seulement pour un taux (`ConstatEcrit`, la porte).
+/// tort et que ce moteur ne calcule pas (`CeQuiDiffere::AbsenteDuCalcul`, sans taux), avec ce qu'elle fait a ce que la
+/// paie a cotise (`effet`). Il s'ecrit `{"grandeur", "applique", "texte"}`, les taux seulement pour un taux, ou
+/// `{"grandeur", "effet"}` (`ConstatEcrit`, la porte).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ConstatEcrit", into = "ConstatEcrit")]
 pub enum Constat {
     Taux { grandeur: CeQuiDiffere, applique: Taux, texte: Taux },
-    AbsenteDuCalcul,
+    AbsenteDuCalcul { effet: EffetSurLaPaie },
+}
+
+/// CE QU'UNE COTISATION IMPRIMEE A TORT FAIT A CE QUE LA PAIE A COTISE, que la ligne connue dit et fonde (sa `source`) :
+/// une reduction ou une exoneration (`Deduction` : la mention « Exonérations et allègements de cotisations » de
+/// l'arrete du 25/02/2016, art. 4, la somme des reductions, deduite de ce qui est du), ou une cotisation de plus
+/// (`Cotisation`). Le montant que le bulletin imprime se prend en valeur absolue, compte de moins ou de plus selon
+/// lui : le signe qu'un ancien logiciel imprime ne le dit pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EffetSurLaPaie {
+    Deduction,
+    Cotisation,
+}
+
+impl EffetSurLaPaie {
+    /// Ce que les montants `imprimes` ont fait cotiser de plus (positif) ou de moins (negatif).
+    pub fn ecart(self, imprimes: &mut dyn Iterator<Item = Montant>) -> Montant {
+        let total = imprimes.fold(Montant::ZERO, |a, m| a + m.abs());
+        match self {
+            EffetSurLaPaie::Deduction => -total,
+            EffetSurLaPaie::Cotisation => total,
+        }
+    }
 }
 
 /// La forme ecrite d'un `Constat`.
@@ -49,17 +73,20 @@ struct ConstatEcrit {
     /// Le taux que dit le texte (`source`), en pourcent.
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::grandeurs::ecrit::nombre::option")]
     texte: Option<Taux>,
+    /// Ce que la cotisation imprimee a tort fait a la paie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    effet: Option<EffetSurLaPaie>,
 }
 
 impl TryFrom<ConstatEcrit> for Constat {
     type Error = String;
     fn try_from(e: ConstatEcrit) -> Result<Constat, String> {
-        match (e.grandeur, e.applique, e.texte) {
-            (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, Some(applique), Some(texte)) => Ok(Constat::Taux { grandeur: e.grandeur, applique, texte }),
-            (CeQuiDiffere::AbsenteDuCalcul, None, None) => Ok(Constat::AbsenteDuCalcul),
-            (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, _, _) => Err(format!("un écart connu sur le {} dit le taux appliqué et celui du texte", e.grandeur.dite())),
-            (CeQuiDiffere::AbsenteDuCalcul, _, _) => Err("un écart connu sur une cotisation absente du calcul ne porte pas de taux".to_string()),
-            (g, _, _) => Err(format!("un écart connu constate un taux, ou une cotisation absente du calcul, pas « {} »", g.code())),
+        match (e.grandeur, e.applique, e.texte, e.effet) {
+            (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, Some(applique), Some(texte), None) => Ok(Constat::Taux { grandeur: e.grandeur, applique, texte }),
+            (CeQuiDiffere::AbsenteDuCalcul, None, None, Some(effet)) => Ok(Constat::AbsenteDuCalcul { effet }),
+            (CeQuiDiffere::TauxEmployeur | CeQuiDiffere::TauxSalarie, _, _, _) => Err(format!("un écart connu sur le {} dit le taux appliqué et celui du texte, et rien d'autre", e.grandeur.dite())),
+            (CeQuiDiffere::AbsenteDuCalcul, _, _, _) => Err("un écart connu sur une cotisation absente du calcul dit son effet (une déduction ou une cotisation), sans taux".to_string()),
+            (g, _, _, _) => Err(format!("un écart connu constate un taux, ou une cotisation absente du calcul, pas « {} »", g.code())),
         }
     }
 }
@@ -67,8 +94,8 @@ impl TryFrom<ConstatEcrit> for Constat {
 impl From<Constat> for ConstatEcrit {
     fn from(c: Constat) -> ConstatEcrit {
         match c {
-            Constat::Taux { grandeur, applique, texte } => ConstatEcrit { grandeur, applique: Some(applique), texte: Some(texte) },
-            Constat::AbsenteDuCalcul => ConstatEcrit { grandeur: CeQuiDiffere::AbsenteDuCalcul, applique: None, texte: None },
+            Constat::Taux { grandeur, applique, texte } => ConstatEcrit { grandeur, applique: Some(applique), texte: Some(texte), effet: None },
+            Constat::AbsenteDuCalcul { effet } => ConstatEcrit { grandeur: CeQuiDiffere::AbsenteDuCalcul, applique: None, texte: None, effet: Some(effet) },
         }
     }
 }
@@ -165,7 +192,7 @@ impl EcartConnuConstate {
     pub fn phrase(&self) -> String {
         let taux = match self.constate {
             Constat::Taux { applique, texte, .. } => format!(" ({} % au lieu de {} %)", socle::texte::virgule(applique), socle::texte::virgule(texte)),
-            Constat::AbsenteDuCalcul => String::new(),
+            Constat::AbsenteDuCalcul { .. } => String::new(),
         };
         let dit = |qui: &str, x: Montant| {
             let sens = if x < Montant::ZERO { "moins" } else { "plus" };
