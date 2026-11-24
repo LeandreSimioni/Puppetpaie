@@ -1419,7 +1419,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | organisation patronale | `OrganisationPatronale` | `droit/src/forme_bareme.rs` |
 | catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
 | DFS d'un salarié (sa profession, son taux, ses lignes abattues, son plafond) | `DfsDuSalarie` | `engagement/src/calcul.rs` |
-| déduction forfaitaire spécifique d'une paie (sa catégorie, sa profession, son taux, ses lignes abattues, ce qu'elle retient, ce que l'année avait déjà déduit) | `DeductionForfaitaire` | `engagement/src/calcul.rs` |
+| déduction forfaitaire spécifique d'une paie (sa catégorie, sa profession, son taux, ses lignes abattues, ce qu'elle retient, les frais qu'elle réintègre, ce que l'année avait déjà déduit) | `DeductionForfaitaire` | `engagement/src/calcul.rs` |
 | option de l'employeur pour la DFS (une case de sa fiche, une condition de la DFS d'un salarié) | `droit::fiche::OptionDfs` | `droit/src/fiche.rs` |
 | jour du versement des salaires que la compagnie choisit (à la fin du mois, à la fin du contrat, un jour du mois, un jour du mois suivant ; les cases `date_de_versement_permanents` et `date_de_versement_intermittents` de la fiche entreprise l'écrivent dans sa forme, `droit::fiche::VersementEcrit` : un choix, `droit::fiche::QuandDuVersement`, et le numéro du jour pour les deux derniers) | `droit::versement::Versement` | `droit/src/versement.rs` |
 | taux de PAS reçu (son taux, son type, son identifiant, l'instant de sa mise à disposition, la DSN mensuelle à laquelle il répond ; la case `taux_pas` de la fiche d'un salarié le porte, qui ne se saisit pas ; il se reçoit pour un salarié, la clé de sa fiche à côté ; la paie applique celui en vigueur, `taux_dgfip`. Ses formes, à leur porte : ce qu'un compte rendu de nature 94 dit, `envois::retours::ReleveTauxPas` ; ce qu'un scénario du banc annonce, `envois::organismes_simules::TauxPasAnnonce` ; la situation du taux d'un salarié, `Situation`) | `droit::pas::TauxRecu` | `droit/src/pas.rs` |
@@ -1441,13 +1441,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | première embauche reprise (le plus ancien début de contrat que les pièces reprises disent, et la pièce qui le dit ; « Pour démarrer » le propose dans la case de la première embauche, la compagnie le valide ou le corrige) | `engagement::effectif_repris::PremiereEmbaucheReprise` | `engagement/src/effectif_repris.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
 | limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`, sur la part abattue que les assiettes plafonnées disent) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
-| régularisation du plafond (quelles paies régularisent leurs assiettes plafonnées sur l'année civile, CSS R. 242-2, II ; BOSS § 1250 ; le technicien intermittent, une tolérance retenue, `par_contrat`) | `droit::forme_bareme::RegularisationDuPlafond`, `droit::forme_bareme::PlafondDuTechnicienIntermittent` | `droit/src/forme_bareme.rs` |
+| régularisation du plafond (les textes, que le barème cite : CSS R. 242-2, II ; BOSS § 290, 1220-1250 ; la règle est dans le moteur : toute paie qui n'est pas celle d'un artiste se régularise, permanent ou technicien intermittent, `droit::plafond::se_regularise`) | `droit::forme_bareme::RegularisationDuPlafond` | `droit/src/forme_bareme.rs` |
 | tranches du plafond (les bornes des tranches d'une paie en nombre de plafonds, chacune avec son texte : la tranche 2 de la retraite complémentaire, ANI Agirc-Arrco art. 32 ; la tranche 2 de la prévoyance conventionnelle, CCNEAC XII.2 ; le chômage et l'AGS, règlement Unédic art. 49 ; l'Apec, Audiens) | `droit::forme_bareme::TranchesDuPlafond` | `droit/src/forme_bareme.rs` |
 | limite des tranches journalières d'un intermittent (le plafond journalier par jour du contrat, « dans la limite du plafond mensuel » : Audiens 2026, absente en 2025 ; le plafond qui limite) | `droit::forme_bareme::LimiteDuPlafondJournalier`, `droit::forme_bareme::PlafondQuiLimite` | `droit/src/forme_bareme.rs` |
 | jours sans rémunération d'une paie (les jours d'absence que l'employeur ne maintient pas, qui réduisent le plafond d'un permanent : CSS R. 242-2, I, al. 4 ; BOSS § 820-920 ; `engagement::conges::lignes_du_mois` les dit, l'engagement les porte, `Engagement::sans_remuneration`) | `droit::plafond::JoursSansRemuneration` | `droit/src/plafond.rs` |
-| assiettes plafonnées d'une paie (celles qui se régularisent : tranches 1 et 2, T2 conventionnelle, T1 + T2, CET, part abattue de la CSG, `Regularisees` ; et le brut dans la limite des plafonds du chômage, `chomage`, qui ne se régularise pas ; le seul calcul, `droit::plafond::assiettes_plafonnees`, qui exige le plafonnement) | `droit::plafond::AssiettesPlafonnees`, `droit::plafond::Regularisees` | `droit/src/plafond.rs` |
+| assiettes plafonnées d'une paie (celles qui se régularisent : tranches 1 et 2, T2 conventionnelle, T1 + T2, CET, part abattue de la CSG, `Regularisees` ; et le brut dans la limite des plafonds de l'Apec, `apec`, qui ne se régularise pas, comme l'assiette du chômage, `droit::plafond::chomage` ; le seul calcul, `droit::plafond::assiettes_plafonnees`, qui exige le plafonnement) | `droit::plafond::AssiettesPlafonnees`, `droit::plafond::Regularisees` | `droit/src/plafond.rs` |
 | bascule de la contribution d'équilibre technique (la paie où la rémunération de l'année passe au-dessus de la somme de ses plafonds, ou repasse dessous : la CET de l'année devient due, ou se rend ; jugée par `BasculeDeLaCet::entre` sur l'année avant la paie et l'année jusqu'à elle, un mois découpé entre l'année avant sa première période et l'année après sa dernière, dite par un avis de la paie du mois, `calcul::avis_de_la_bascule`) ; l'année de part et d'autre d'une période qui se régularise ou dont la retraite se compte sur le plafond de l'année, interne au calcul ; le plafond auquel la rémunération de l'année se compare (la somme des plafonds des paies d'un salarié au mois, ou le plafond annuel de la retraite d'un intermittent) | `droit::plafond::BasculeDeLaCet`, `engagement::calcul::AnneeDeLaPeriode`, `engagement::calcul::PlafondDeLAnnee` | `droit/src/plafond.rs`, `engagement/src/calcul.rs` |
-| ce qui précède une paie dans l'année (la somme des rémunérations, des plafonds et des assiettes appliquées des paies qui se régularisent, depuis le 1er janvier ou l'embauche ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois ; pour la retraite complémentaire d'un intermittent, ses paies d'intermittent de l'année sous le plafond annuel, `AnneeAnterieure::sous_le_plafond_annuel`, lues par `conges::retraite_des_mois_anterieurs`) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
+| ce qui précède une paie dans l'année (un cumul par assiette régularisée, `CumulDeLAssiette` : la somme des rémunérations, des plafonds et des assiettes appliquées des seules paies qui portent l'assiette, depuis le 1er janvier ou l'embauche, tous contrats confondus, BOSS § 1230 ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois ; pour la retraite complémentaire d'un intermittent, ses paies d'intermittent de l'année sous le plafond annuel, `AnneeAnterieure::sous_le_plafond_annuel`, lues par `conges::retraite_des_mois_anterieurs`) ; les rémunérations qu'une paie y compte (la base de calcul des cotisations, abattue sous DFS, pour les tranches ; le brut entier pour la part abattue de la CSG, § 290) ; les assiettes qu'une paie y porte (toutes pour une paie au mois ; la tranche 1 et la part abattue de la CSG pour un technicien intermittent) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::CumulDeLAssiette`, `droit::plafond::RemunerationsRegularisees`, `droit::plafond::PorteesParLaPaie`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
 | maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` ; ce que la reconstitution d'un maintien en net rend au calcul (son montant, son avis, les jours que son complement maintient) : `engagement::maintien::Reconstitue` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
@@ -1913,9 +1913,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.
 - **déduction forfaitaire spécifique d'une paie** : ce que le calcul d'un contrat abat (`calcul::abattement_dfs`, en
-  montants : le taux de l'année par rubrique de salaire, le plafond annuel, l'assiette minimum), et ce que la paie
-  écrite garde telle quelle (sa forme est la sienne, ses grandeurs en texte normalisé) ; le bulletin en imprime le taux
-  et le montant, la DSN le taux (40.023) et le montant (54 de type 10), sans le recomposer. Ce que l'année avait déjà
+  montants : le taux de l'année par rubrique de salaire, les remboursements de frais que l'annexe 2 de l'arrêté ne laisse
+  pas dehors réintégrés avant l'abattement, le plafond annuel, l'assiette minimum), et ce que la paie écrite garde telle
+  quelle (sa forme est la sienne, ses grandeurs en texte normalisé ; `frais_reintegres`, absent quand elle n'en
+  réintègre aucun) ; le bulletin en imprime le taux et le montant, la DSN le taux (40.023), le montant (54 de type 10) et
+  les frais réintégrés (54 de type 35), sans le recomposer. Ce que l'année avait déjà
   déduit (`deja`) est le cumul de l'année des paies validées (`conges::dfs_des_mois_anterieurs`) et des contrats
   précédents du mois ; un cumul de l'année est la grandeur de ce qu'il somme, pas une notion. La règle de l'année est
   la section du barème (`forme_bareme::DfsDuBareme`, une forme), dont `calcul::deduction_forfaitaire` tire la DFS d'un
@@ -2259,8 +2261,8 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
     (déduction forfaitaire spécifique, heures supplémentaires, exonération des heures en plus). Ce lecteur prend ses
     paies telles que les pièces les disent (`importe::PaieReprise`), sans les ranger ni rien calculer d'elles : une
     nature encore à dire, le barème ou la convention de leur mois ne font refuser aucun de ces calculs. Le calcul qui les
-    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-au-mois <mois> <salarié>` pour les seules
-    validées de ses contrats payés au mois, que la régularisation du plafond lit sans calculer les autres, et
+    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-regularisees <mois> <salarié>` pour les seules
+    validées de ses contrats qui se régularisent (pas d'artiste), que la régularisation du plafond lit sans calculer les autres, et
     `paies-intermittentes <mois> <salarié>` pour celles de ses contrats d'intermittent, que l'année de sa retraite
     complémentaire lit) : un
     réimport, un bulletin qui complète une paie de DSN, une ligne rattachée font recalculer la paie validée qui les a
@@ -2547,8 +2549,10 @@ le module la dit avec ses textes (`atelier/reference/sources/`) :
 - un **artiste** engagé moins de cinq jours calendaires : 12 × le PSS horaire
   par journée de travail de la paie (arrêté du 24/01/1975, art. 3, al. 2) ;
 - tout **autre intermittent** (artiste engagé cinq jours ou plus, technicien) :
-  le PSS mensuel au prorata des jours rémunérés de la paie, mois par mois (la
-  tolérance du BOSS, § 1090, appliquée : le BOSS est opposable) ;
+  le PSS mensuel au prorata des jours calendaires du contrat dans la période de
+  la paie, mois par mois, quels que soient les jours travaillés (CSS R. 242-2,
+  I, al. 3 ; BOSS § 700 et 740 ; la tolérance du § 1090 sur les jours
+  rémunérés n'est pas appliquée) ;
 - un **permanent** : le PSS au prorata des jours de sa période de paie
   couverts par le contrat (CSS R. 242-2), moins les jours d'absence que
   l'employeur ne rémunère pas (R. 242-2, I, al. 4 ; BOSS § 820-920 : une
@@ -2582,8 +2586,15 @@ assoit, la DSN ne la déclare pas ; une paie qui ne l'écrit pas a abattu
 toutes ses rubriques soumises, ce que dit sa base de CSG, son brut soumis
 abattu plus la prévoyance patronale : sa part abattue est son brut,
 `FormeDePaie::part_abattue_csg`). Une tranche
-régularisée peut être négative, la DSN la déclare signée. L'artiste et le
-technicien intermittent gardent le plafond de chaque paie ; les paies reprises
+régularisée peut être négative, la DSN la déclare signée. L'artiste garde le
+plafond de chaque paie (BOSS § 1250). Le technicien intermittent se régularise
+(§ 1220-1230), tous ses contrats à la compagnie confondus, CDI compris : sa
+tranche 1 de la sécurité sociale (`brut_plafonne`, sous DFS `brut_plafonne_dfs`
+sur le brut abattu) et sa part abattue de la CSG (sur le brut entier, § 290) ;
+chaque assiette a son cumul, des seules paies qui la portent
+(`droit::plafond::CumulDeLAssiette`, `PorteesParLaPaie`) : sa retraite et sa
+prévoyance ont leurs règles (l'année, les tranches journalières) et n'entrent
+pas dans la tranche 2, la CET ni la T2 conventionnelle d'un CDI. Les paies reprises
 d'un ancien logiciel n'entrent pas dans le cumul (la régularisation commence
 au premier mois payé ici) ; le chômage, l'AGS et l'Apec ne se régularisent pas.
 Une paie corrigée (une saisie d'un mois passé) n'est pas reprise par les
@@ -3362,7 +3373,7 @@ tranches de l'année chez la compagnie sous le plafond annuel (`plafond_securite
 chemin qu'une paie qui se régularise (`droit::plafond::tranches_sous_le_plafond_annuel`) sur ses paies d'intermittent
 validées des mois d'avant (`conges::retraite_des_mois_anterieurs` ; une paie reprise d'un ancien logiciel n'y entre
 pas : l'année commence au premier mois payé ici), et les contrats précédents du mois. Le plafond de la Sécurité sociale de ses
-paies, lui, ne se régularise pas. Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut : rien ne change.
+paies se régularise à part, sur la somme de leurs plafonds, celui d'un technicien seulement (`droit::plafond::se_regularise`). Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut : rien ne change.
 Le 131 de sa tranche 1 (sa ligne `retraite_t1`) se déclare sous la base 43, `t1_annuelle` ; celui de sa tranche 2 et
 de sa CET (`retraite_t2`, `cet`) sous la base 23. Seule la paie dont le barème pose `retraite_t1` sur `t1_annuelle`
 écrit les tranches de l'année : un cadre intermittent retire la tranche 2 et la CET de l'année
@@ -3385,7 +3396,7 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 | numéro d'objet (40.050) | oui | **INTERDIT** — CCH-11 ne l'autorise que pour les natures 02 et 10 |
 | congés payés | caisse des Congés Spectacles (40.022, cotisation 15,5 %), sauf un CDDU de douze mois ou plus | chez l'employeur : compteur, indemnité, solde ; sauf le CDD de droit commun de moins de douze mois d'un artiste, déclaré à la caisse (`caisse_conges::affilie`) |
 | assiettes FNAL / taxe d'apprentissage | brut **majoré** de 11,5 % et de 10 % (CSS L. 243-1-3, D. 243-0-2), pour un contrat déclaré à la caisse des Congés Spectacles | brut nu ; tranche 1 majorée de 11,5 % (FNAL) et brut majoré de 11,5 % (taxe d'apprentissage) pour un contrat déclaré à la caisse (`par_caisse_conges.affilie` du barème) |
-| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours rémunérés (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
+| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours calendaires du contrat dans la paie (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
 | chômage | 9,75 / 2,40 dans la limite de quatre plafonds, recouvré par **France Travail** | 4,00 + AGS 0,25 dans la limite de quatre plafonds de la période, recouvré par l'**Urssaf** (CTP 772, 937) |
 | retraite complémentaire | taux Audiens, tranches **journalières** | droit commun, tranches **mensuelles** |
 | formation professionnelle | 2,00 % (CTP 983) | 0,55 % (CTP 959) |

@@ -428,7 +428,7 @@ impl ValeurLue {
             },
             CleDeLecture::Moteur if !texte.is_empty() => ValeurLue::Moteur(texte),
             CleDeLecture::Date | CleDeLecture::Aujourdhui => ValeurLue::Jour(crate::date::Jour::lire(&texte).map_err(|_| refus())?),
-            CleDeLecture::Fiches { .. } | CleDeLecture::Imprevus { .. } | CleDeLecture::Datee(LectureDatee::Mensuels { .. } | LectureDatee::Paies { .. } | LectureDatee::PaiesAuMois { .. } | LectureDatee::PaiesIntermittentes { .. } | LectureDatee::Reprises { .. }) => ValeurLue::Empreinte(empreinte(&texte)?),
+            CleDeLecture::Fiches { .. } | CleDeLecture::Imprevus { .. } | CleDeLecture::Datee(LectureDatee::Mensuels { .. } | LectureDatee::Paies { .. } | LectureDatee::PaiesAuMois { .. } | LectureDatee::PaiesIntermittentes { .. } | LectureDatee::PaiesRegularisees { .. } | LectureDatee::Reprises { .. }) => ValeurLue::Empreinte(empreinte(&texte)?),
             CleDeLecture::Datee(LectureDatee::Saisie { .. }) => ValeurLue::Saisie(EmpreinteDeSaisie::lire(&texte).map_err(|_| refus())?),
             CleDeLecture::Datee(LectureDatee::Pas { .. } | LectureDatee::Mission { .. }) if !texte.is_empty() => ValeurLue::Composee(texte),
             CleDeLecture::Moteur | CleDeLecture::Datee(_) => return Err(refus()),
@@ -499,10 +499,13 @@ pub enum LectureDatee<S, L> {
     Mensuels { mois: crate::mois::Mois, salarie: S },
     /// `paies <mois> <salarie>` : les paies validees d'un salarie au mois.
     Paies { mois: crate::mois::Mois, salarie: S },
-    /// `paies-au-mois <mois> <salarie>` : celles de ses contrats payes au mois.
+    /// `paies-au-mois <mois> <salarie>` : celles de ses contrats payes au mois. Aucun calcul ne la note plus ; celle
+    /// qu'une compagnie a ecrite se relit, et ne tient pas (`engagement::empreinte`).
     PaiesAuMois { mois: crate::mois::Mois, salarie: S },
     /// `paies-intermittentes <mois> <salarie>` : celles de ses contrats d'intermittent (qui ne sont pas payes au mois).
     PaiesIntermittentes { mois: crate::mois::Mois, salarie: S },
+    /// `paies-regularisees <mois> <salarie>` : celles de ses contrats qui se regularisent sur l'annee (pas un artiste).
+    PaiesRegularisees { mois: crate::mois::Mois, salarie: S },
     /// `reprises <mois> <salarie>` : les paies d'un salarie au mois reprises d'un ancien logiciel.
     Reprises { mois: crate::mois::Mois, salarie: S },
     /// `saisie <mois> [<salarie>]` : la saisie du mois, ou celle d'un salarie.
@@ -520,6 +523,7 @@ impl<S: std::fmt::Display, L: std::fmt::Display> std::fmt::Display for LectureDa
             LectureDatee::Paies { mois, salarie } => write!(f, "paies {} {}", mois, salarie),
             LectureDatee::PaiesAuMois { mois, salarie } => write!(f, "paies-au-mois {} {}", mois, salarie),
             LectureDatee::PaiesIntermittentes { mois, salarie } => write!(f, "paies-intermittentes {} {}", mois, salarie),
+            LectureDatee::PaiesRegularisees { mois, salarie } => write!(f, "paies-regularisees {} {}", mois, salarie),
             LectureDatee::Reprises { mois, salarie } => write!(f, "reprises {} {}", mois, salarie),
             LectureDatee::Saisie { mois, salarie: Some(s) } => write!(f, "saisie {} {}", mois, s),
             LectureDatee::Saisie { mois, salarie: None } => write!(f, "saisie {}", mois),
@@ -553,6 +557,9 @@ impl<S: TryFrom<String, Error = crate::echec::Echec>, L: TryFrom<String, Error =
         }
         if let Some((mois, salarie)) = cle.strip_prefix("paies-intermittentes ").and_then(|r| r.split_once(' ')) {
             return Some((|| Ok(LectureDatee::PaiesIntermittentes { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());
+        }
+        if let Some((mois, salarie)) = cle.strip_prefix("paies-regularisees ").and_then(|r| r.split_once(' ')) {
+            return Some((|| Ok(LectureDatee::PaiesRegularisees { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());
         }
         if let Some((mois, salarie)) = cle.strip_prefix("reprises ").and_then(|r| r.split_once(' ')) {
             return Some((|| Ok(LectureDatee::Reprises { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());

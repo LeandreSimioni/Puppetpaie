@@ -176,7 +176,8 @@ fn assiette_csg(brut: Montant, plafond: Montant, annee: socle::mois::Annee) -> R
             annee
         ));
     };
-    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond, pile.limite_abattement_csg.plafonds, &pile.tranches_du_plafond, &droit::plafond::Plafonnement::ParPaie);
+    let remunerations = droit::plafond::RemunerationsRegularisees::la_meme(brut);
+    let plafonnees = droit::plafond::assiettes_plafonnees(remunerations, plafond, pile.limite_abattement_csg.plafonds, &pile.tranches_du_plafond, &droit::plafond::Plafonnement::ParPaie);
     Ok(pile.assiette_csg(brut, brut, plafonnees.regularisees.abattue_csg).au_centime())
 }
 
@@ -530,12 +531,12 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     jours_travailles.extend(b.dates.iter().flat_map(|p| p.jours()));
     let jours = Jours::de_dates(jours_travailles.len());
     // LE « PLAFOND URSSAF » IMPRIME, PAR LA REGLE DU MOTEUR (`plafond.rs`, qui cite ses textes) et le PSS d'un texte
-    // (`pss`) : le prorata calendaire pour un permanent, les journees de l'artiste engage moins de cinq jours, le
-    // prorata des jours remuneres pour les autres intermittents.
+    // (`pss`) : les journees de l'artiste engage moins de cinq jours, le prorata calendaire de la periode pour tout
+    // autre salarie.
     let resoudre = pss;
     let plafond = if b.permanent {
         // Un bulletin du banc ne decrit aucune absence.
-        droit::plafond::plafond_permanent(&b.periode, &droit::plafond::JoursSansRemuneration::aucun(), None, &resoudre)
+        droit::plafond::plafond_de_la_periode(&b.periode, &droit::plafond::JoursSansRemuneration::aucun(), None, &resoudre)
     } else {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
         droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)

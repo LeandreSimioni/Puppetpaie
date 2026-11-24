@@ -128,19 +128,31 @@ fn repartir_la_reduction(rg: &ParametresDeLaReduction, coefficient: Coefficient,
 /// dans des limites et conditions fixees par arrete >> ; arrete du 4 decembre 2019, art. 1er (redaction de l'arrete du
 /// 4 septembre 2025, art. 11 ; `atelier/reference/sources/dfs/arrete-2019-reduction-generale/`) : << Le montant de la
 /// reduction generale [...] calcule pour les remunerations apres application de l'abattement forfaitaire [...] ne peut
-/// exceder, pour ces remunerations, 130 % du montant la reduction calcule sans application du meme abattement. >> La
-/// reduction se calcule donc sur le brut abattu (`abattu`), dans la limite (`limite`, lue au bareme :
-/// `deduction_forfaitaire.limite_reduction_generale`) de celle du brut entier.
+/// exceder, pour ces remunerations, 130 % du montant la reduction calcule sans application du meme abattement. >> Le
+/// BOSS, Allegements generaux (`atelier/reference/sources/boss/boss-allegements-generaux-20261123.txt`), dit les deux
+/// remunerations :
+/// - avec la deduction, `abattu` : le brut et les frais qu'elle reintegre, abattus (§ 190, l. 241-252 : « la
+///   rémunération intègre les sommes versées au titre du remboursement de frais professionnels » ; « 1 900 × (1 – 10%)
+///   soit 1 710 € », 100 € de frais compris) ;
+/// - sans elle, `brut` : le brut seul, les frais restant alors hors de l'assiette (§ 350, l. 523-560 : 2 200 € de brut
+///   et 200 € de frais, puis 2 200 € et 100 € de frais, donnent le meme montant « si cette déduction n'avait pas été
+///   prise en compte », 537,53 €, celui des 2 200 € seuls).
+/// La reduction se calcule sur `abattu`, dans la limite (`limite`, lue au bareme :
+/// `deduction_forfaitaire.limite_reduction_generale`) de celle de `brut` (§ 350 : « plafonné à 130 % du montant qui
+/// aurait été calculé si cette déduction n'avait pas été prise en compte »).
 pub fn reduction_generale_sous_dfs(
     rg: Option<&ParametresDeLaReduction>, limite: Taux, statut: Option<Statut>, brut: Montant, abattu: Montant, heures: Heures, caisse_conges: bool,
 ) -> R<Option<ReductionGenerale>> {
     let Some(apres) = reduction_generale(rg, statut, abattu, heures, caisse_conges)? else { return Ok(None) };
-    // Le brut entier (au moins le brut abattu) ouvre la reduction des qu'elle s'ouvre sur l'abattu (memes parametres,
-    // meme statut, memes heures).
-    let Some(sans) = reduction_generale(rg, statut, brut, heures, caisse_conges)? else {
-        return Err(socle::echec::refus("La réduction générale s'ouvre sur le brut abattu mais pas sur le brut entier : le signaler au développeur."));
+    // Sans la deduction (memes parametres, meme statut, memes heures, qui ont ouvert la reduction sur l'abattu), seul le
+    // brut compte : une paie sans brut (des frais reintegres seuls) n'y a aucune reduction (`reduction_generale` n'en
+    // calcule pas sur un brut nul), et 130 % de rien est rien.
+    let sans = match reduction_generale(rg, statut, brut, heures, caisse_conges)? {
+        Some(sans) => sans.montant,
+        None if brut <= Montant::ZERO => Montant::ZERO,
+        None => return Err(socle::echec::refus("La réduction générale s'ouvre sur le brut abattu mais pas sur le brut : le signaler au développeur.")),
     };
-    let limite = sans.montant.fois_taux(limite).au_centime();
+    let limite = sans.fois_taux(limite).au_centime();
     if apres.montant <= limite {
         return Ok(Some(apres));
     }
@@ -154,10 +166,11 @@ pub fn reduction_generale_sous_dfs(
 ///
 /// Ce qui se compare au seuil, ce sont « les revenus d'activité tels qu'ils sont pris en compte pour la détermination de
 /// l'assiette des cotisations définie à l'article L. 242-1 » (CSS L. 241-2-1 et L. 241-6-1, versions du 01/01/2025 au
-/// 01/01/2026, `atelier/reference/sources/legi-entrepot/`) : le brut, moins la deduction forfaitaire specifique du
-/// contrat quand il en a une (`deduction_forfaitaire`, son montant), puisque sous elle « l'assiette des cotisations »
-/// est le montant global des remunerations abattu de la deduction (arrete du 4 septembre 2025, art. 9, I,
-/// `atelier/reference/sources/dfs/arrete-2025-frais-professionnels/`). Ces deux articles ne reprennent pas la limite
+/// 01/01/2026, `atelier/reference/sources/legi-entrepot/`) : la remuneration avant l'abattement (`remuneration` : le
+/// brut, et sous deduction forfaitaire specifique les frais qu'elle reintegre), moins la deduction du contrat quand il
+/// en a une (`deduction_forfaitaire`, son montant), puisque sous elle « l'assiette des cotisations » est le montant
+/// global des remunerations, remboursements de frais compris, abattu de la deduction (arrete du 4 septembre 2025, art. 9,
+/// I, `atelier/reference/sources/dfs/arrete-2025-frais-professionnels/`). Ces deux articles ne reprennent pas la limite
 /// propre a la reduction generale (L. 241-13, III, al. 4 : la remuneration du coefficient « ne tient compte des
 /// déductions au titre de frais professionnels calculées forfaitairement [...] que dans des limites et conditions
 /// fixées par arrêté ») : ils n'empruntent a L. 241-13 que le calcul du SMIC (« deuxième alinéa du III »). Le BOSS lit
@@ -166,15 +179,15 @@ pub fn reduction_generale_sous_dfs(
 /// `atelier/reference/sources/boss/boss-allegements-generaux-20261123.txt`, l. 241-252 ; la version 2026, celle de la
 /// reduction generale, la seule que le BOSS serve encore).
 pub fn au_dela_du_seuil(
-    rg: Option<&ParametresDeLaReduction>, brut: Montant, deduction_forfaitaire: Option<Montant>, heures: Heures, seuil: Coefficient,
+    rg: Option<&ParametresDeLaReduction>, remuneration: Montant, deduction_forfaitaire: Option<Montant>, heures: Heures, seuil: Coefficient,
 ) -> R<bool> {
     let smic = requis(rg.and_then(|r| r.smic_horaire_reference), "reduction_generale.smic_horaire_reference")?;
     if heures <= Heures::ZERO {
         return Err(socle::echec::refus("Un seuil de SMIC se compare à des heures rémunérées : la paie n'en porte aucune."));
     }
     let revenus = match deduction_forfaitaire {
-        Some(d) => brut - d,
-        None => brut,
+        Some(d) => remuneration - d,
+        None => remuneration,
     };
     Ok(revenus > (heures * smic).au_centime() * seuil)
 }

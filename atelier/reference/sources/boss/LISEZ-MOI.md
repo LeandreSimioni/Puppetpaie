@@ -29,17 +29,26 @@ Ce que le moteur en lit (chapitre 6) :
 - **§ 1090** (l. 1472-1483) : les artistes du spectacle « ne sont pas éligibles à la réduction du plafond » ; non
   mensualisés, le plafond « dépend uniquement de la périodicité de la paie » ; « Toutefois, il est admis que : pour les
   salariés intermittents, le plafond soit proratisé pour ne tenir compte que des jours ayant donné lieu à
-  rémunération ». **Tolérance appliquée depuis la vague 1o** (10/10/2026, tranché par Léandre : le BOSS est opposable,
-  et le but n'est pas de faire payer le plus aux compagnies) : tout intermittent hors de l'arrêté de 1975 (artiste
-  engagé cinq jours ou plus, technicien) a, pour chaque paie, le PSS mensuel × jours rémunérés du mois / jours du mois
-  (la formule du § 700) ; les jours rémunérés sont les dates distinctes des lignes de la paie, et une journée dite et
-  non datée refuse. La vague 1l l'avait écartée (« une tolérance, pas le texte ») et appliquait le prorata calendaire
-  de tout le contrat.
+  rémunération ». **La tolérance n'est pas appliquée** (Léandre, 24/11/2026 : « pas de tolérance, c'est la loi ») :
+  tout intermittent hors de l'arrêté de 1975 (artiste engagé cinq jours ou plus, technicien) a, pour chaque paie, le
+  PSS mensuel × jours calendaires du contrat dans la période de paie / jours du mois (CSS R. 242-2, I, al. 3 ; la
+  formule du § 700 et le § 740), quels que soient les jours travaillés. La première phrase du § 1090 (l'artiste
+  « n'est pas éligible à la réduction du plafond ») fait qu'aucun jour d'absence ne sort de son prorata.
+- **§ 1220-1230** (l. 1697-1717) : la régularisation progressive : à chaque paie, « la somme des bases de calcul des
+  cotisations » de l'année (ou depuis l'embauche) contre « la somme des plafonds applicables », moins les assiettes
+  plafonnées déjà appliquées ; « Les rémunérations prises en compte sont l'ensemble des rémunérations dues par un même
+  employeur à un même salarié, y compris au titre de plusieurs contrats, successifs ou non. » **§ 1250** : les salariés
+  à taux spécifiques (l'artiste, § 1090) n'y sont pas éligibles. **§ 290** (l. 352-360) : l'abattement de la CSG se
+  calcule « sur le montant brut des rémunérations », dans la limite de quatre plafonds calculés selon « les mêmes »
+  règles que celui de la vieillesse. Le moteur régularise toute paie qui n'est pas celle d'un artiste, le technicien
+  intermittent compris, chaque assiette sur son cumul : la tranche 1 sur la base de calcul des cotisations (le brut
+  abattu sous DFS), la part abattue de la CSG sur le brut entier (`droit::plafond::se_regularise`,
+  `AnneeAnterieure`, `assiettes_plafonnees` ; `engagement::calcul::ajouter_a_l_annee`).
 - § 1100 : « 12 fois le plafond horaire par jour d'engagement » pour un artiste engagé moins de cinq jours ; le moteur
   suit l'arrêté (« par journée de travail accomplie »).
 
-Où le moteur s'en sert : `atelier/sources/paie/src/plafond.rs` (le plafond d'un contrat), `calcul::plafond_de_l_engagement`
-(lots 1i, 1l et 1o, `prive/journal/archives/2026-10-08-lots/norme/corrections/`).
+Où le moteur s'en sert : `atelier/sources/droit/src/plafond.rs` (`pour_paie`, `plafond_de_la_periode`),
+`engagement::calcul::plafond_de_l_engagement`.
 
 ## `boss-frais-professionnels-20261013.pdf` — Autres éléments de rémunération › Frais professionnels
 
@@ -76,21 +85,17 @@ Ce qu'on en lit (chapitre 9) :
 - **§ 2240-2290, non-cumul** : les remboursements de frais (réels ou forfaitaires) et prises en charge directes entrent dans
   l'assiette avant l'abattement, sauf l'annexe 2 de l'arrêté (défraiements de tournée des artistes dramatiques, lyriques,
   chorégraphiques et régisseurs de théâtre ; allocations de saison ; frais des chefs d'orchestre, musiciens et choristes en
-  déplacement…). Les outils de travail (véhicule, ordinateur) ne sont pas une prise en charge de frais. **MAIS § 2320, huit
-  secteurs dont le spectacle vivant : « par tolérance », depuis le 01/01/2023 et jusqu'à l'extinction, « l'ensemble des
-  remboursements de frais professionnels définis par l'arrêté du 4 septembre 2025 peut faire l'objet d'un cumul avec la
-  déduction forfaitaire spécifique » ; leur intégration dans l'assiette avant l'abattement « n'est pas obligatoire ».** Le
-  rescrit BOSS-RES-000010 borne la tolérance : une indemnité de transport conventionnelle n'est pas un remboursement de
-  frais au sens de l'arrêté, elle se réintègre dès le premier euro. **Conséquence pour le moteur, à porter (décision par le
-  texte, pas par Léandre)** : le refus d'un remboursement de frais hors annexe 2 pour un salarié sous DFS
-  (`calcul::dfs_applicable`, point 4 du `LISEZ-MOI` de `../dfs/`) n'a plus de raison d'être pour un remboursement de frais
-  au sens de l'arrêté : il reste hors de l'assiette abattue, comme ceux de l'annexe 2 ; seule une indemnité conventionnelle
-  (qui n'est pas un frais) se réintègre. Le BOSS est opposable (Léandre, 10/10/2026, § 1090 de l'assiette générale). **Porté par le
-  lot DF2 (14/10/2026)** : le barème le dit (`deduction_forfaitaire.frais_cumulables`, 2025 et 2026, son `_frais_cumulables`
-  cite § 2300, 2310, 2320 et 2325), `calcul::dfs_applicable` le lit ; une rubrique de nature `frais` (catalogue ou
-  compagnie) reste hors de l'assiette abattue ; test : `tests/calcul/dfs.rs`,
-  `un_remboursement_de_frais_sous_dfs_reste_hors_de_l_assiette_abattue_par_la_tolerance_du_boss`. Le rescrit
-  BOSS-RES-000010 est dans la page déposée (§ 2325, l. 2923-2934) : pas de dépôt à part.
+  déplacement…). Les outils de travail (véhicule, ordinateur) ne sont pas une prise en charge de frais. Le moteur suit la
+  règle (l. 2794-2796 et 2808) : `calcul::dfs_applicable` rend les remboursements de frais (rubrique de nature `frais`,
+  catalogue ou compagnie, dans leurs limites d'exonération) que l'annexe 2 ne laisse pas dehors pour la profession, et
+  `calcul::abattement_dfs` abat le brut et ces frais ensemble ; le chômage d'un intermittent les compte avant
+  l'abattement ; la DSN les déclare en bloc 54 de type 35 (`dsn::autre_revenu`) ; test :
+  `moteur/tests/routes/frais_de_deplacement.rs`, `sous_dfs_le_remboursement_de_frais_entre_dans_l_assiette_avant_l_abattement`.
+  Le § 2320 (l. 2917-2921) admet « par tolérance », pour les huit secteurs dont le spectacle vivant, le cumul de tous les
+  remboursements de frais avec la déduction : le moteur ne l'applique pas (Léandre, 24/11/2026 : « Pas de tolérance,
+  c'est la loi »). Le rescrit BOSS-RES-000010 (§ 2325, l. 2923-2934, dans la page déposée) : une indemnité de transport
+  conventionnelle n'est pas un remboursement de frais au sens de l'arrêté, elle entre dans l'assiette dès le premier
+  euro ; une ligne hors assiette qui n'est pas un remboursement de frais refuse (`calcul::dfs_applicable`).
 - **§ 2300, le calendrier du spectacle vivant** : à 20 % → −1 point en 2024 et 2025, −2 points de 2026 à 2028, −3 points de
   2029 à 2031, zéro au 01/01/2032 ; à 25 % → −2 points en 2024 et 2025, −3 points de 2026 à 2031, zéro au 01/01/2032. Donc
   **2026 : 16 % et 18 %** ; 2027 : 14 % et 15 %. Même calendrier que l'arrêté du 4 septembre 2025 (annexe 1), que les barèmes
@@ -141,10 +146,18 @@ Ce qu'on en lit :
   jour du mois civil suivant. Le paragraphe dit « exonération », pas « taux spécifiques ».
 - **§ 250-280** (l. 371-405) : les taux réduits cumulables avec la réduction : journalistes rémunérés à la pige, VRP à
   cartes multiples, professions médicales à temps partiel. Les artistes du spectacle n'y sont pas.
+- **§ 350** (l. 523-560) : le montant calculé avec la déduction est « plafonné à 130 % du montant qui aurait été calculé
+  si cette déduction n'avait pas été prise en compte » ; ses deux exemples (2 200 € de brut et 200 € de frais, puis 2 200 €
+  et 100 €) donnent le même montant sans la déduction, 537,53 €, celui des 2 200 € seuls : sans la déduction, les frais
+  restent hors de l'assiette. Les coefficients des exemples (24,43 %, 34,87 %, 38,82 %) ne se retrouvent pas avec le Tdelta
+  du § 440 (0,3821 pour 70 salariés : 24,72 %, 35,29 %, 39,29 %) ; ils supposent un Tdelta d'environ 0,3773 : le moteur
+  suit le tableau du § 440 et le D. 241-7.
 - **§ 820** (l. 1281-1292) : pour un salarié intermittent, le SMIC du coefficient « est basé sur la durée de travail
   inscrite au contrat de travail du salarié » ; rien sur la durée d'un cachet.
 
-Où le moteur s'en sert : § 190, dans la règle du seuil des taux réduits de 2025 (`droit::reduction::au_dela_du_seuil`,
+Où le moteur s'en sert : § 190 et § 350, la réduction générale sous déduction forfaitaire spécifique
+(`droit::reduction::reduction_generale_sous_dfs` : sur le brut et les frais abattus, dans la limite de 130 % de celle du
+brut seul) ; § 190, dans la règle du seuil des taux réduits de 2025 (`droit::reduction::au_dela_du_seuil`,
 les revenus déduction forfaitaire spécifique déduite). § 220 à 280 : ce que fait déjà le barème 2026 (l'artiste n'a pas
 la réduction générale, `par_statut.technicien.reduction_generale.statuts`), non cité dans le barème. § 220 (l. 331) :
 `logiciel/donnees/ecarts-connus-base.json`, la ligne `reduction_generale` de Coolpaie, l'écart connu d'une réduction

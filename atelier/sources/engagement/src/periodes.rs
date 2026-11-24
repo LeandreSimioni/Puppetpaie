@@ -1,7 +1,7 @@
 //! La paie d'un mois decoupee en periodes elementaires (`droit::periodes`, qui cite les textes) : chaque periode est une
 //! paie calculee par `calcul::calculer_periode`, sur un engagement borne (`Engagement::periode`) ; elle lit sa fiche sur
 //! ses bornes, sa pile de bareme (rien n'est empile ailleurs que dans `bareme_applique`), son plafond
-//! (`plafond::plafond_permanent` : le prorata calendaire de R. 242-2, sur les bornes de la periode), son salaire (la part
+//! (`plafond::plafond_de_la_periode` : le prorata calendaire de R. 242-2, sur les bornes de la periode), son salaire (la part
 //! du mois de ses heures, `droit::periodes::part_du_mois`). La paie du mois est leur somme (`assembler`).
 
 use std::collections::BTreeMap;
