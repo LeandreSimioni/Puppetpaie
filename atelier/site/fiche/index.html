@@ -15,7 +15,8 @@
   font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable.woff2") format("woff2")}
 :root{
   --papier:#FFFFFF; --encre:#141413; --gris:#6E6B66; --filet:#E6E5E2;
-  --carmin:#9B1B30; --rayon:4px;
+  /* Le bleu du logo (favicon.svg) ; le blanc sur ce bleu se lit à 7:1 (WCAG AA). Le voile en est une teinte pâle. */
+  --bleu:#2350C4; --voile:#F3F6FD; --rayon:4px;
   color-scheme:light;
 }
 *{box-sizing:border-box}
@@ -28,31 +29,31 @@ h1{font:400 clamp(1.7rem,6vw,2.2rem)/1.2 "EB Garamond",Georgia,serif;margin:0 0 
 .question legend,.question > label{display:block;font-weight:500;margin:0 0 .35rem;padding:0}
 .facultatif{font-weight:400;color:var(--gris)}
 .aide{margin:.3rem 0 0;font-size:.85rem;color:var(--gris)}
-input[type=text]{width:100%;font:inherit;font-size:1.05rem;padding:.65rem .75rem;
+input[type=text],select{width:100%;font:inherit;font-size:1.05rem;padding:.65rem .75rem;
   border:1px solid #C9C7C2;border-radius:var(--rayon);background:var(--papier);color:var(--encre)}
-input[type=text]:focus{border-color:var(--encre);outline:none}
-input[type=text]:disabled{background:#F4F3F1;color:var(--gris)}
+input[type=text]:focus,select:focus{border-color:var(--encre);outline:none}
+input[type=text]:disabled,select:disabled{background:#F4F3F1;color:var(--gris)}
 .choix{display:flex;flex-wrap:wrap;gap:.5rem 1.2rem}
 .choix label,.aucun{display:flex;align-items:flex-start;gap:.5rem;cursor:pointer}
 .aucun{margin:.5rem 0 0;font-size:.95rem}
-input[type=radio],input[type=checkbox]{width:1.15rem;height:1.15rem;margin:.2rem 0 0;flex:none;accent-color:var(--carmin)}
-.faute{margin:.35rem 0 0;font-size:.85rem;color:var(--carmin)}
+input[type=radio],input[type=checkbox]{width:1.15rem;height:1.15rem;margin:.2rem 0 0;flex:none;accent-color:var(--bleu)}
+.faute{margin:.35rem 0 0;font-size:.85rem;color:var(--bleu)}
 .plus{margin:.45rem 0 0;font-size:.92rem}
-.plus summary{cursor:pointer;color:var(--carmin);font-weight:500}
-.plus p{margin:.5rem 0 0;padding:.7rem .9rem;background:#FAF7F6;border-left:3px solid var(--filet)}
-.plus .exemple{margin:.5rem 0 0;padding:.7rem .9rem;background:#FAF7F6;border-left:3px solid var(--carmin)}
+.plus summary{cursor:pointer;color:var(--bleu);font-weight:500}
+.plus p{margin:.5rem 0 0;padding:.7rem .9rem;background:var(--voile);border-left:3px solid var(--filet)}
+.plus .exemple{margin:.5rem 0 0;padding:.7rem .9rem;background:var(--voile);border-left:3px solid var(--bleu)}
 .plus .exemple p{margin:0 0 .25rem;padding:0;background:none;border:0;font-variant-numeric:tabular-nums}
 .cache{display:none}
 .actions{margin:2.2rem 0 0;display:flex;flex-direction:column;gap:.7rem}
 button{font:500 1rem/1.2 "Libre Franklin",sans-serif;padding:1rem 1.4rem;border-radius:var(--rayon);
-  border:1px solid var(--encre);background:var(--encre);color:var(--papier);cursor:pointer}
-button:hover{background:var(--carmin);border-color:var(--carmin)}
+  border:1px solid var(--bleu);background:var(--bleu);color:var(--papier);cursor:pointer}
+button:hover{background:var(--encre);border-color:var(--encre)}
 button.second{background:var(--papier);color:var(--encre);border-color:#C9C7C2}
-button.second:hover{border-color:var(--carmin);color:var(--carmin);background:var(--papier)}
-.manque,.copie,.avis{margin:1rem 0 0;padding:.8rem 1rem;border-left:3px solid var(--carmin);background:#FAF7F6}
+button.second:hover{border-color:var(--bleu);color:var(--bleu);background:var(--papier)}
+.manque,.copie,.avis{margin:1rem 0 0;padding:.8rem 1rem;border-left:3px solid var(--bleu);background:var(--voile)}
 .copie pre{white-space:pre-wrap;word-break:break-word;font:inherit;font-size:.9rem;margin:.6rem 0 0}
 .pied{margin:3rem 0 0;font-size:.8rem;color:var(--gris)}
-:focus-visible{outline:2px solid var(--carmin);outline-offset:3px}
+:focus-visible{outline:2px solid var(--bleu);outline-offset:3px}
 </style>
 <main>
   <h1>Remplir ma fiche</h1>
