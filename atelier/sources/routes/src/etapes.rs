@@ -460,6 +460,24 @@ fn faire_signer(mois: Mois, salaries: Option<Vec<IdSalarie>>, signee: bool) -> A
 /// et offre d'imprimer.
 const SIGNATURE_A_POSER: &str = "Signature de l'employeur à poser…";
 
+/// LES GESTES QUI REFONT UN ENVOI PARTI EN FOND QUI N'EST PAS ALLE AU BOUT (`envois_en_fond::CeQuiPart`) : la boite d'ou
+/// il est parti, rouverte ; ce qui n'est pas parti y est encore a faire partir.
+pub(crate) fn refaire_la_signature(mois: Mois) -> Action {
+    vers(VueDuGeste::ContratsAEnvoyer, crate::contrats::ChargeApercuSignature { mois, salaries: None }, Some(Route::DemanderSignature), REFAIRE_L_ENVOI.into())
+}
+
+/// Les documents du mois, rouverts pour un envoi qui n'est pas alle au bout.
+pub(crate) fn refaire_les_documents(mois: Mois) -> Action {
+    envoyer_documents(mois, REFAIRE_L_ENVOI.into())
+}
+
+/// Le depot designe, rouvert pour un depot qui n'est pas alle au bout.
+pub(crate) fn refaire_le_depot(d: Designation) -> Action {
+    vers(VueDuGeste::Depot, d, Some(Route::Deposer), "Refaire le dépôt…".into())
+}
+
+const REFAIRE_L_ENVOI: &str = "Refaire l'envoi…";
+
 /// Les contrats partis du mois, recus ou a relancer : l'apercu, puis noter chacun recu.
 fn contrats_en_attente(mois: Mois) -> Action {
     vers(VueDuGeste::ContratsEnAttente, crate::contrats::ChargeApercuSignature { mois, salaries: None }, Some(Route::ContratRecu), "Reçus ou à relancer…".into())

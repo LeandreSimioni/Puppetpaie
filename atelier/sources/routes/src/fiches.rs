@@ -1365,6 +1365,8 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
     };
     let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
     let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur, questions: Some(envoyees.clone()) };
+    // Sa demande se refait depuis la fiche, d'ou elle est partie.
+    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::CeQuiPart { quoi: format!("Demande de fiche à {}", adresse), refaire: None }))?;
     if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e.phrase, demande(None, None), None)))?;
         return Err(e);

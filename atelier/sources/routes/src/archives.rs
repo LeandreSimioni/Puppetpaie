@@ -1103,6 +1103,8 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
         partis: None,
         echec_a: None,
     };
+    // Le dossier se renvoie depuis les Exports, d'ou il est parti.
+    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::CeQuiPart { quoi: socle::ecran::compte(messages.len(), "dossier de salarié", "dossiers de salariés"), refaire: None }))?;
     let partis = match envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None) {
         Ok(p) => p,
         Err(e) => {
@@ -1240,6 +1242,8 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     let casc = horodate.suivi_de(&const { NomDeFichier::du_moteur("_CASC-SVP_") });
     let emls: Vec<NomDeFichier> = messages.iter().map(|m| casc.suivi_de(&m.pour).avec_l_extension(&const { NomDeFichier::du_moteur("eml") })).collect();
     let mut copies: Vec<Vec<u8>> = Vec::new();
+    // La regularisation se renvoie depuis les Exports, d'ou elle est partie.
+    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::CeQuiPart { quoi: "Régularisation CASC-SVP".into(), refaire: None }))?;
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,
         Err(e) => {

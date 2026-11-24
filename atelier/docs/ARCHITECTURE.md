@@ -628,6 +628,9 @@ un libellé, chacun sa forme.
 | adresse | `Url` | `socle/src/garde_reseau.rs` |
 | un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
 | le temps d'un travail du fil de fond fait par qui l'attend (le navigateur, sans second fil) | `LeTempsDUnTravail` | `socle/src/fil_de_fond.rs` |
+| un envoi parti en fond, dans la fenêtre (ce qu'il dit en partant : `CeQuiPart` ; où il en est : `EtatDUnEnvoi` ; tel que le bandeau le dit : `EnvoiDit`) | `EnvoiEnFond` | `routes/src/envois_en_fond.rs` |
+| les envois partis en fond d'une compagnie, que la fenêtre garde | `EnvoisEnFond` | `routes/src/envois_en_fond.rs` |
+| numéro d'un envoi parti en fond | `NumeroDEnvoi` | `routes/src/envois_en_fond.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -2043,6 +2046,7 @@ navigateur (`AGENTS.md`, le flux « Tests »).
 
 À sa racine, à côté des routes : `service.rs` (la demande et la réponse de `moteur route`), `etat_garde.rs` (l'état
 d'un mois et de l'ouverture tels que l'écran les lit, refaits en fond), `veille.rs` (ce que la veille dit à la page),
+`envois_en_fond.rs` (les envois que la fenêtre fait partir en fond, et ce que le bandeau en dit),
 `horloge.rs` (l'horloge des compagnies fictives), `scenario.rs` (le scénario d'une compagnie et son rejeu, le circuit
 des fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_mois.rs`, `obligations.rs`,
 `regularisation.rs`, `simulation_courriels.rs`.
@@ -4095,6 +4099,21 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   de passe ; dans le navigateur, sans second fil, celui qui attend un état fait le travail de la file avec les mêmes
   refus, le temps de ce travail (`fil_de_fond::LeTempsDUnTravail`). La veille (réseau, coffre, relève, sauvegarde) ne démarre qu'à l'ouverture d'une compagnie ; le tableau de
   l'accueil ne relève les comptes rendus qu'une fois le mot de passe de l'administrateur tapé dans la fenêtre.
+- **Les envois longs partent en fond** (#683 ; `routes::envois_en_fond`). Une route qui engage (sa fiche :
+  `Acte::Engage` : la signature, les documents, le dépôt, la demande de fiche, le dossier, la régularisation CASC-SVP)
+  se fait, dans la fenêtre, sur un fil à elle (`EnvoisEnFond::servir`) ; c'est la même route, la même fonction, de bout
+  en bout. La page attend ce que ce fil lui dit d'abord : un refus, ou la réponse entière, comme avant ; mais dès que la
+  route arrive au point où tout est vérifié, le mot de passe compris, et où seul le transport reste (`partir`, juste
+  avant le premier courriel ou le dépôt réel ; un essai se suit dans sa boîte et n'y va pas), la page reçoit « en cours
+  d'envoi » (`en_fond`, le numéro de l'envoi) et la route continue. Son issue se dit dans le bandeau
+  (`DitDuBandeau::envois` : en cours, partie avec la phrase de la route, ou échouée avec le geste qui rouvre la boîte d'où
+  elle est partie ; un dépôt réel parti se suit ensuite par `suivre-depot`) ; un refus en fond se note en incident comme
+  celui d'une route attendue. En ligne de commande, dans la veille, dans l'horloge d'une fictive, pour une compagnie aux
+  envois simulés et dans le navigateur, `partir` ne fait rien : la route va au bout avant de rendre. **Un envoi à la fois
+  par compagnie**, dans l'ordre des clics : le second attend que le premier soit au bout avant même de se vérifier, et lit
+  le journal qu'il a écrit. **Fermer ou redémarrer pour la mise à jour attend les envois en vol**
+  (`EnvoisEnFond::attendre`, dans `Fenetre::fermer_le_logiciel`), comme lâcher une compagnie qu'on supprime : la version
+  neuve ne s'installe qu'après eux, et ne se prend en compte qu'au lancement suivant.
 
 
 ## L'horloge des compagnies fictives

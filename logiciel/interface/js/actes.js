@@ -502,6 +502,7 @@ async function boiteEnvoi(mois) {
       const repere = g.demande ? await repereCourrielsFictifs() : null;
       try {
         const r = await api(g.route, mdp ? { ...charge, motdepasse: mdp } : charge);
+        if (partiEnFond(r)) return;
         fermerBoite();
         // L'impression rend le PDF, qui s'ouvre ; l'envoi par courriel, ce qui est parti.
         if (!g.demande) await ouvrirEtDire(r.chemin, r.phrase);
@@ -579,6 +580,7 @@ async function boiteSignature(charge) {
       const repere = g.demande ? await repereCourrielsFictifs() : null;
       try {
         const r = await api(g.route, mdp ? { ...charge, motdepasse: mdp } : charge);
+        if (partiEnFond(r)) return;
         fermerBoite();
         if (!g.demande) await ouvrirEtDire(r.chemin, r.phrase);
         else {
@@ -681,6 +683,7 @@ async function boiteContratsEnAttente(mois, fait) {
       const rendre = occupe(b, "…");
       try {
         const r = await api(c.relancer.route, { ...c.relancer.charge, motdepasse: mdp });
+        if (partiEnFond(r)) return;
         fermerBoite();
         dire(r.phrase, "envoye");
         await rafraichirActions();

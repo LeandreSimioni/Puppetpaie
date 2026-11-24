@@ -924,6 +924,10 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
         .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
     etats::poser_les_pastilles(&mut fait.ligne);
     poser_les_pastilles(&mut fait.deja);
+    // PARTI EN FOND, le depot reel se suit depuis le bandeau, comme la page le suit apres l'avoir attendu (`suivre-depot`).
+    if mode == Mode::Reel {
+        crate::envois_en_fond::a_suivre(ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) });
+    }
     Ok(Deposee { phrase, fait, avis })
 }
 

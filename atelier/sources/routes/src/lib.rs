@@ -38,7 +38,7 @@
 //! compagnie qui appellent des routes (`gestes`), le metier qu'elles partagent (`metier`), ce que l'import compose et
 //! ecrit pour elles (`importation`), les obligations d'un arret (`obligations`), les regularisations
 //! (`regularisation`), l'Historique d'un mois (`historique_mois`), l'apercu d'une DSN (`apercu_dsn`), ce que la veille
-//! dit a la page (`veille`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
+//! dit a la page (`veille`), les envois que la fenetre fait partir en fond (`envois_en_fond`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
 //! (`scenario`), l'horloge fictive (`horloge`), les courriels joues (`simulation_courriels`). Au-dessus, le moteur : la
 //! ligne de commande, l'interface, l'atelier.
 #![forbid(unsafe_code)]
@@ -101,6 +101,7 @@ pub mod scenario;
 pub mod service;
 mod simulation_courriels;
 pub mod veille;
+pub mod envois_en_fond;
 
 /// LE NOM D'UN SALARIE A L'ECRAN : celui que sa fiche porte (`ChampsSalarie::nomme`) ; une fiche qui ne nomme personne se
 /// designe par sa cle, `cle`.

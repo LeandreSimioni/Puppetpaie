@@ -95,6 +95,9 @@ pub struct DitDuBandeau {
     a_poser: Vec<APoser>,
     /// Ce qui persiste de la sauvegarde, vrai maintenant (`souci_de_la_sauvegarde`).
     sauvegarde_souci: Option<String>,
+    /// Les envois partis en fond (`envois_en_fond::EnvoisEnFond::dits`) : en cours, au bout, ou echoues avec le geste
+    /// qui les refait.
+    envois: Vec<crate::envois_en_fond::EnvoiDit>,
     retours: Option<String>,
     fictive: Option<&'static str>,
     horloge: Option<String>,
@@ -105,7 +108,14 @@ pub struct DitDuBandeau {
     termine: &'static str,
 }
 
-pub fn dit_du_bandeau(d: Option<&Trace>, a_poser: Vec<APoser>, sauvegarde_souci: Option<String>, dans: Option<std::time::Duration>, fictive: bool) -> DitDuBandeau {
+pub fn dit_du_bandeau(
+    d: Option<&Trace>,
+    a_poser: Vec<APoser>,
+    sauvegarde_souci: Option<String>,
+    envois: Vec<crate::envois_en_fond::EnvoiDit>,
+    dans: Option<std::time::Duration>,
+    fictive: bool,
+) -> DitDuBandeau {
     let dans = dans.map(socle::temps::ecrit::minutes_commencees_dites);
     // Aucun passage encore : le releve est a venir.
     let quand = match d {
@@ -133,6 +143,7 @@ pub fn dit_du_bandeau(d: Option<&Trace>, a_poser: Vec<APoser>, sauvegarde_souci:
         muets,
         a_poser,
         sauvegarde_souci,
+        envois,
         retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),
         fictive: fictive.then_some("compagnie fictive : pas de sauvegarde, pourquoi ?"),
         horloge: horloge.map(|n| format!("pendant votre absence, la compagnie a travaillé ({}) : voir", n)),

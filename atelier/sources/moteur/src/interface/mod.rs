@@ -31,6 +31,7 @@ use routes::accueil::suppression;
 use compagnie::installation::{self, JOURNAL_INTERFACE};
 use compagnie::instance::{self, Instance, Prise};
 use compagnie::poste;
+use routes::envois_en_fond::EnvoisEnFond;
 use routes::etat_garde::{Fil, FileDesEtats};
 use routes::veille::EtatDeLaVeille;
 use veille::Veille;
@@ -193,6 +194,9 @@ pub struct Fenetre {
     /// reprises, jamais refaites, quand la compagnie s'ouvre, se ferme et se rouvre.
     fil: Arc<Fil>,
     files: Mutex<HashMap<PathBuf, Arc<FileDesEtats>>>,
+    /// LES ENVOIS PARTIS EN FOND de chaque compagnie (`routes::envois_en_fond`), par dossier : gardes quand la compagnie
+    /// se ferme et se rouvre, attendus avant de fermer le logiciel ou de lacher la compagnie.
+    envois: Mutex<HashMap<PathBuf, Arc<EnvoisEnFond>>>,
     phase: Mutex<Phase>,
     /// LE MOT DE PASSE DE L'ADMINISTRATEUR, tape une fois dans cette fenetre : il ouvre ses autres
     /// compagnies sans le redemander tant que la fenetre vit. Il OUVRE, il n'autorise rien : un acte reel redemande
@@ -515,6 +519,7 @@ impl Fenetre {
             local,
             fil: Fil::nouveau(),
             files: Mutex::new(HashMap::new()),
+            envois: Mutex::new(HashMap::new()),
             phase: Mutex::new(Phase::Accueil),
             administrateur: Mutex::new(None),
             temoin: Mutex::new(Instant::now()),
@@ -564,6 +569,11 @@ impl Fenetre {
         let cle = cle_du_dossier(racine);
         let mut files = tenu(&self.files);
         files.entry(cle).or_insert_with(|| self.fil.file(racine, None)).clone()
+    }
+
+    /// Les envois partis en fond de la compagnie `racine`, nes a son premier envoi ou a son ouverture.
+    fn envois_de(&self, racine: &Path) -> Arc<EnvoisEnFond> {
+        tenu(&self.envois).entry(cle_du_dossier(racine)).or_insert_with(EnvoisEnFond::nouveaux).clone()
     }
 
     /// LES COMPAGNIES DE L'INSTALLATION, TENUES A JOUR DES LE LANCEMENT : n'importe quelle compagnie s'ouvre
@@ -652,6 +662,11 @@ impl Fenetre {
     /// dossier, et rien ne la refait apparaitre.
     fn lacher(&self, racine: &Path) {
         let cle = cle_du_dossier(racine);
+        // Un envoi en fond ecrit dans ce dossier : il va au bout avant que la compagnie s'en aille.
+        let envois = tenu(&self.envois).remove(&cle);
+        if let Some(e) = envois {
+            e.attendre();
+        }
         if let Phase::Ouverte { racine: r, veille, .. } = self.phase() {
             if cle_du_dossier(&r) == cle {
                 veille.arreter_et_attendre();
@@ -705,7 +720,7 @@ impl Fenetre {
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
-        let veille = Veille::nouvelle(&racine, self.veille, Some(etats.clone()));
+        let veille = Veille::nouvelle(&racine, self.veille, Some(etats.clone()), self.envois_de(&racine));
         veille.demarrer();
         self.poser_phase(Phase::Ouverte { racine, veille, etats });
     }
@@ -719,7 +734,13 @@ impl Fenetre {
         ok
     }
 
+    /// Fermer, ou redemarrer pour la mise a jour : un envoi parti en fond va d'abord au bout (`EnvoisEnFond::attendre`),
+    /// jamais coupe au milieu, et la version neuve ne s'installe qu'apres lui.
     fn fermer_le_logiciel(&self) {
+        let envois: Vec<Arc<EnvoisEnFond>> = tenu(&self.envois).values().cloned().collect();
+        for e in envois {
+            e.attendre();
+        }
         if let Some(f) = tenu(&self.fermer).as_ref() {
             f();
         }
@@ -973,6 +994,8 @@ impl Fenetre {
                     if c.confirme == Some(true) {
                         let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
                             RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a été supprimé."))
+                        } else if self.envois_de(&racine).en_vol() {
+                            RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un envoi de cette compagnie est en cours : attendez que le bandeau le dise parti, puis recommencez. Rien n'a été supprimé."))
                         } else {
                             match suppression::route(&racine, c, charge.mot_de_passe(), &|r| self.lacher(r)) {
                                 Ok(s) => RouteReponse::de(nom, routes::enveloppe::en_json(s)),
@@ -986,7 +1009,14 @@ impl Fenetre {
                     }
                 }
                 let debut = Instant::now();
-                let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref());
+                // UNE ROUTE QUI ENGAGE (un envoi, un depot reel) se fait sur un fil a elle : la page attend sa
+                // verification, pas son transport (`routes::envois_en_fond`). Toute autre, ici.
+                let rendu = if routes::envois_en_fond::part_en_fond(nom) {
+                    let (r, c) = (racine.clone(), charge.clone());
+                    self.envois_de(&racine).servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref()))
+                } else {
+                    api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref())
+                };
                 self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
                 return Reponse::json(200, &rendu);
             }

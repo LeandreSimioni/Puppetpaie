@@ -14,6 +14,7 @@ use socle::memoire::tenu;
 use super::api::route;
 use routes::gestes::ouverture::ChargeOuverture;
 use routes::veille::{acces_a_poser, dit_du_bandeau, souci_de_la_sauvegarde, EtatDeLaVeille};
+use routes::envois_en_fond::EnvoisEnFond;
 use routes::etat_garde::FileDesEtats;
 use routes::catalogue::Route;
 use routes::enveloppe::{Charge, Refus};
@@ -34,6 +35,8 @@ pub struct Veille {
     prochain: Mutex<Option<Instant>>,
     /// Les etats des mois, a verifier apres chaque tour : un retour releve, une signature notee changent un mois.
     etats: Option<Arc<FileDesEtats>>,
+    /// Les envois de la compagnie partis en fond (`EnvoisEnFond`) : le bandeau les dit, et le passage les suit.
+    envois: Arc<EnvoisEnFond>,
 }
 
 /// OU EN EST LE PASSAGE (`Veille::etape`) : la releve ou la sauvegarde qui tournent, et l'etape que l'ouverture ecrit.
@@ -42,10 +45,12 @@ pub struct EtapeDeLaVeille {
     pub en_cours: bool,
     pub sauvegarde_en_cours: bool,
     pub etape: Option<String>,
+    /// Un envoi parti en fond n'est pas au bout : la page suit le bandeau jusqu'a ce qu'il le soit.
+    pub envoi_en_cours: bool,
 }
 
 impl Veille {
-    pub fn nouvelle(racine: &Path, periode: Duration, etats: Option<Arc<FileDesEtats>>) -> Arc<Veille> {
+    pub fn nouvelle(racine: &Path, periode: Duration, etats: Option<Arc<FileDesEtats>>, envois: Arc<EnvoisEnFond>) -> Arc<Veille> {
         Arc::new(Veille {
             racine: racine.to_path_buf(),
             periode,
@@ -58,6 +63,7 @@ impl Veille {
             du: AtomicBool::new(false),
             prochain: Mutex::new(None),
             etats,
+            envois,
         })
     }
 
@@ -75,7 +81,7 @@ impl Veille {
         } else {
             None
         };
-        EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape }
+        EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, envoi_en_cours: self.envois.en_cours() }
     }
 
     /// L'etat de la veille : la trace du dernier passage relue (une trace qui ne se lit pas se dit dans `erreur`).
@@ -101,9 +107,9 @@ impl Veille {
             Err(e) => (None, Some(e.phrase)),
         };
         let erreur = [tenu(&self.erreur).clone(), illisible, marqueur, coffre, jeton].into_iter().flatten().next();
-        let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape } = self.etape();
+        let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, .. } = self.etape();
         EtatDeLaVeille {
-            dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, self.prochain_dans(), fictive),
+            dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, self.envois.dits(), self.prochain_dans(), fictive),
             // Sans fil, le tour qui reste du est un passage en cours pour la page : elle le suit, et sa demande le fait
             // (`suivie`).
             en_cours: en_cours || self.du.load(Ordering::SeqCst),
@@ -174,6 +180,8 @@ impl Veille {
         }
         self.en_cours.store(true, Ordering::SeqCst);
         *tenu(&self.erreur) = None;
+        // Un envoi au bout s'est dit depuis le passage d'avant : il ne se redit plus.
+        self.envois.oublier_les_partis();
         let releve = ChargeOuverture { jours: Some(self.jours), veille: Some(veille), incidents_editeur: Some(true), sauvegarder: Some(false), ..Default::default() };
         let mut erreur = self.passage(&releve).err();
         self.en_cours.store(false, Ordering::SeqCst);

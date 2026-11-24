@@ -130,6 +130,8 @@ async function lancerDossier(g, bloc) {
   let r;
   try { r = await api(g.route, charge); }
   catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
+  // Parti en fond : le bandeau dit la suite.
+  if (partiEnFond(r)) { cible.innerHTML = `<p class="note">${echapper(r.phrase)}</p>`; return; }
   if (r.envoi) fenetreCourrielsFictifs("documents", repere);
   cible.innerHTML = `
     <h3>${echapper(r.titre)}</h3>

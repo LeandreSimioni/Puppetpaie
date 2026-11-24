@@ -208,6 +208,8 @@ async function demanderFiche(bouton, inv, bloc) {
   try {
     // Un prénom non tapé part absent : le courriel dit alors « Bonjour, ».
     const r = await api(inv.geste.route, { ...charge, motdepasse: mdp });
+    // Partie en fond, la demande s'attend dans le bandeau ; sa fiche se relit quand elle est au bout (`relireFichesAttendues`).
+    if (partiEnFond(r)) { rendre(); return; }
     // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
     ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
     oublierLEcran(casesDeLaFicheOuverte());
