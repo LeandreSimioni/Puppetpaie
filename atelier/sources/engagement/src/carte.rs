@@ -743,22 +743,15 @@ impl Brouillon {
     /// LA CARTE PROPOSEE A UN AUTRE SALARIE, copiee de ce brouillon (Leandre, 24/11/2026 : « copier l'engagement pour
     /// proposer à un autre salarié, c'est hyper courant ») : les changements qui la font d'une carte neuve de sa nature
     /// (`Changement::qui_font`), chaque case qui se copie (`se_copie`) telle qu'elle est ; les autres restent vides, le
-    /// salarie le premier. Ce sont ceux qu'`enregistrer-saisie` ecrit, par le chemin d'une carte neuve.
-    ///
-    /// Une ligne de frais ne garde pas sa case « justificatif » : elle dit que la compagnie garde la facture de CE salarie
-    /// (`engagement::frais_au_dela`, BOSS § 270 ; § 1280), et copiee, elle exonererait les frais de qui n'en a fourni
-    /// aucune.
+    /// salarie le premier. Ce sont ceux qu'`enregistrer-saisie` ecrit, par le chemin d'une carte neuve. Les lignes se
+    /// copient entieres, frais compris (Leandre, 24/11/2026 : « copie c'est copie, c'est plus facile de supprimer ») :
+    /// la carte neuve les montre, et la personne retire ce qui n'est pas vrai du nouveau salarie.
     pub fn proposee_a_un_autre_salarie(&self) -> Changements {
         let n = self.nature();
         let de = self.en_carte();
         let mut c = Carte { nature: Some(n), ..Carte::default() };
         for x in Brouillon::cases(n).iter().copied().filter(|x| se_copie(n, *x)) {
             c.prendre(&de, x);
-        }
-        for l in c.lignes.iter_mut().flatten() {
-            if let LignePaie::Frais(f) = l {
-                f.cases.retain(|k| *k != crate::ligne::CaseDeFrais::Justificatif);
-            }
         }
         Changements(Changement::qui_font(&c))
     }
