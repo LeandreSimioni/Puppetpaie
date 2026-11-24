@@ -828,8 +828,10 @@ impl Fenetre {
         // compagnie : une compagnie gardee avant qu'elle change de dossier, une supprimee apres sa preuve) ; une
         // compagnie nommee nulle part reste, avec ses envois. Un echec a la lacher se dit pour elle.
         if nom == Route::CompagniesGarder {
-            let rendu = charge.lire::<routes::accueil::ChargeGarder>().map_err(|e| routes::case_nommee(nom, e)).and_then(|c| routes::accueil::garder_ou_supprimer(&inst, c, &|r| self.lacher(r)));
-            return RouteReponse::de(nom, rendu);
+            return routes::garde_dans_la_fenetre(nom, || {
+                let rendu = charge.lire::<routes::accueil::ChargeGarder>().map_err(|e| routes::case_nommee(nom, e)).and_then(|c| routes::accueil::garder_ou_supprimer(&inst, c, &|r| self.lacher(r)));
+                RouteReponse::de(nom, rendu)
+            });
         }
         if nom == Route::AdministrateurTableau {
             let c: routes::accueil::ChargeTableau = match charge.lire() {

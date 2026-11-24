@@ -162,7 +162,13 @@ pub(crate) fn remettre_le_fil() {
 /// `moteur route` et la ligne de commande (`commandes::Cadre`) appellent `commande` directement : le processus meurt avec
 /// sa commande, et le mot de passe qu'elle a fait taper (`demande::autoriser_acte`) sert a toute la commande.
 pub fn dans_la_fenetre(o: &Options, route: Route, charge: &Charge) -> Reponse {
-    let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| servir_la_route(o, route, charge)));
+    garde_dans_la_fenetre(route, || servir_la_route(o, route, charge))
+}
+
+/// LA GARDE D'UNE ROUTE DANS LA FENETRE (`dans_la_fenetre`), pour une route que la fenetre fait elle-meme parce qu'elle y
+/// joint ce qu'elle seule tient (`compagnies-garder` et le lacher de ses envois en fond) : la panique gardee, le fil remis.
+pub fn garde_dans_la_fenetre(route: Route, faire: impl FnOnce() -> Reponse) -> Reponse {
+    let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(faire));
     remettre_le_fil();
     match rendu {
         Ok(rep) => rep,
