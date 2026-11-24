@@ -288,7 +288,8 @@ async function changer(div, changements) {
   try {
     // La carte visée se lit à son tour : une carte neuve écrite par l'appel d'avant a désormais son identité.
     r = await aSonTour(() => api("enregistrer-saisie", { mois, changements,
-      carte: div.dataset.engagement ? { ecrite: JSON.parse(div.dataset.engagement) } : { neuve: div._carte.nature } }));
+      carte: div.dataset.engagement ? { ecrite: JSON.parse(div.dataset.engagement) }
+        : div._copie ? { copie: div._copie } : { neuve: div._carte.nature } }));
   } catch (e) {
     noteSaisie("Non enregistré — " + e.message);
     dire(e.message, "erreur");
@@ -495,9 +496,9 @@ function dessinerLaLigne(div) {
     <div class="e-imprevus"></div>`;
   poserLesChevrons(div);
   const resume = div.querySelector(".e-resume");
-  rendreOuvrable(resume, () => ouvrirEnModification(div), "Modifier l'engagement");
+  rendreOuvrable(resume, () => ouvrirEnModification(div), "Voir l'engagement");
   const porte = div.querySelector(".carte-imprevu");
-  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuImprevu(porte, { div }); };
+  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuImprevu(porte, { div, copier: ligne.copier }); };
   const frise = div.querySelector(".carte-versions");
   if (frise) frise.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); boiteFrise(ligne); };
   peindreImprevusDesCartes();
@@ -728,6 +729,20 @@ function rafraichirReferentiels() {
 document.getElementById("ajouter-engagement").onclick = () => {
   document.getElementById("engagements").appendChild(carteDEngagement({ nature: NOUVELLE_CARTE.nature }, null));
 };
+
+/** « COPIER POUR UN AUTRE SALARIÉ » (`copier` de la ligne d'un engagement, route `etat-par-engagement`) : la route du
+ *  geste rend la copie, sans son salarié ; une carte neuve s'ouvre, remplie de ce qu'elle rend, et rien ne s'écrit avant
+ *  sa première case changée, que le moteur écrit sur la copie (`carte: {copie}` de `enregistrer-saisie`). */
+async function copierLEngagement(geste) {
+  let r;
+  try { r = await api(geste.route, geste.charge); } catch (e) { dire(e.message, "erreur"); return; }
+  if (MOIS_AFFICHE !== geste.charge.mois) return;
+  const div = carteDEngagement(r.brouillon, null);
+  div._copie = r.copie;
+  document.getElementById("engagements").appendChild(div);
+  noteSaisie(r.phrase);
+  div.scrollIntoView({ block: "center" });
+}
 
 /* LES CONTRATS REPRIS D'UN AUTRE LOGICIEL QUI COURENT ENCORE (`contrats-en-cours`) : chacun se montre avec ce que la route
  * en dit, et « Reprendre » écrit l'engagement qu'elle rend pour lui, case par case. */

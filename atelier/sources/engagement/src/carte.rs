@@ -740,6 +740,88 @@ impl Brouillon {
 }
 
 impl Brouillon {
+    /// LA COPIE DE CE BROUILLON POUR UN AUTRE SALARIE (Leandre, 24/11/2026 : « copier l'engagement pour proposer à un autre
+    /// salarié, c'est hyper courant ») : un brouillon neuf de sa nature, qui prend chaque case qui se copie
+    /// (`se_copie`) telle qu'elle est, et laisse vides les autres, le salarie le premier. `qui` : le salarie que le refus
+    /// nomme.
+    pub fn copie_pour_un_autre_salarie(&self, qui: &str) -> R<Brouillon> {
+        let n = self.nature();
+        let de = self.en_carte();
+        let mut c = Carte { nature: Some(n), ..Carte::default() };
+        for x in Brouillon::cases(n).iter().copied().filter(|x| se_copie(n, *x)) {
+            c.prendre(&de, x);
+        }
+        Brouillon::de_la_carte(&c, qui)
+    }
+}
+
+/// UNE CASE D'UNE CARTE DE NATURE `n` QUI SE COPIE POUR UN AUTRE SALARIE (`Brouillon::copie_pour_un_autre_salarie`) :
+/// ce que l'engagement fait faire (le spectacle, les lignes et leurs dates, le metier, les termes du contrat, la date du
+/// paiement). Ne se copie pas ce qui appartient au salarie ou a un acte : le salarie ; le numero (celui d'un contrat
+/// deja declare) ; ce que la carte rend sans le faire saisir (`PlaceDeLaCase::Rendue` : les bornes, les jours et
+/// l'emploi d'un CDDU, tires de ses lignes ou d'une piece) ; ce que le salarie a fait ou pris ce mois (ses conges, ses
+/// primes, ses jours, ses heures en plus) ; la fin de son contrat et ce qu'elle appelle (le groupe `Fin`, l'indemnite de
+/// licenciement, la faute grave) ; ce que la vue deduit ou dit de l'engagement ecrit.
+fn se_copie(n: NatureDeContrat, x: Champ) -> bool {
+    let rendue = CarteValide::ouvertures_de(n).iter().any(|(c, _, p)| *c == x && *p == PlaceDeLaCase::Rendue);
+    !rendue
+        && match x {
+            Champ::Spectacle
+            | Champ::Nature
+            | Champ::Debut
+            | Champ::Fin
+            | Champ::Etablissement
+            | Champ::Metier
+            | Champ::Lieu
+            | Champ::MotifRecours
+            | Champ::QuotiteContrat
+            | Champ::QuotiteReference
+            | Champ::ModaliteTempsTravail
+            | Champ::SalaireMensuel
+            | Champ::Emploi
+            | Champ::PcsEse
+            | Champ::CodeEmploiFt
+            | Champ::Statut
+            | Champ::StatutConventionnel
+            | Champ::StatutCategorielRc
+            | Champ::PeriodeEssaiJours
+            | Champ::PersonneRemplacee
+            | Champ::RepartitionHoraire
+            | Champ::ClausesParticulieres
+            | Champ::ModeleContrat
+            | Champ::Lignes
+            | Champ::DatePaiement => true,
+            Champ::Salarie
+            | Champ::Numero
+            | Champ::CongesPris
+            | Champ::Primes
+            | Champ::Jours
+            | Champ::HeuresSupplementaires
+            | Champ::HeuresSupplementairesA50
+            | Champ::HeuresComplementaires
+            | Champ::IndemniteLicenciement
+            | Champ::FauteGrave
+            | Champ::MotifRupture
+            | Champ::NotificationRupture
+            | Champ::EngagementLicenciement
+            | Champ::SignatureConvention
+            | Champ::Preavis
+            | Champ::Transaction
+            | Champ::DernierJourPaye
+            | Champ::EnDroitALaRetraite
+            | Champ::PreavisNonEffectue
+            | Champ::PreavisMois
+            | Champ::PrecariteDue
+            | Champ::PrecaritePourquoi
+            | Champ::JoursContrat
+            | Champ::DateModification
+            | Champ::Avant
+            | Champ::Valide
+            | Champ::Importe => false,
+        }
+}
+
+impl Brouillon {
     /// Le salarie d'une carte de CDDU qui ne dit pas son metier : celle dont le metier se pre-remplit
     /// (`preremplir_le_metier`).
     pub fn salarie_sans_metier(&self) -> Option<&IdSalarie> {
