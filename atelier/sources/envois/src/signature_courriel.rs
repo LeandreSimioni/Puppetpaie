@@ -1,7 +1,7 @@
 //! LA SIGNATURE DES COURRIELS.
 //!
 //! Une seule signature pour tous les courriels du logiciel (documents, contrats, avenants, demandes de fiche, CASC),
-//! et un nom affiche devant l'adresse de la boite. Les deux se posent dans la fiche Entreprise :
+//! et un nom affiche devant l'adresse de la boite (vide : le nom de la compagnie). Les deux se posent dans la fiche Entreprise :
 //! `courriel_nom` (« Compagnie du Fil ») et `courriel_signature` (du HTML colle depuis une messagerie).
 //!
 //! Elle s'applique a UN endroit, `envoi::envoyer_suivi`, que tout courriel traverse : la boite (`Courriel::racine`)
@@ -49,7 +49,8 @@ pub struct CorpsDeSignature {
 
 /// La signature d'une fiche Entreprise. `Err` : elle est posee mais trop lourde.
 pub fn de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Signature>> {
-    let nom = ent.courriel_nom.portee().map(|n| nom_sur(n.trim()));
+    // Le nom affiche est celui de la case ; vide, celui de la compagnie (Léandre, 24/11/2026, #685).
+    let nom = ent.courriel_nom.portee().or_else(|| ent.nommee()).map(|n| nom_sur(n.trim()));
     let brut = ent.courriel_signature.portee().map(str::trim);
     if nom.is_none() && brut.is_none() {
         return Ok(None);

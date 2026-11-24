@@ -1339,42 +1339,30 @@ pub fn empreinte_de(reprises: &[PaieReprise]) -> socle::fichiers::Empreinte {
 }
 
 /// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois, et
-/// celles qui ne s'y rangent pas encore (`NatureADire`). REGARDER N'EST JAMAIS REFUSE (« Le logiciel est doux ») : un
-/// contrat repris dont la nature reste a dire ne ferme pas la lecture des autres ; ce qui lit les paies du mois les range
-/// et dit, sur ce contrat-la, ce qui lui manque.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<PaieImportee>, Vec<NatureADire>)> {
+/// celles qui ne s'y rangent pas encore (`etats::PaieDeCote`, `PourquoiDeCote::NatureADire`). REGARDER N'EST JAMAIS
+/// REFUSE (« Le logiciel est doux ») : un contrat repris dont la nature reste a dire ne ferme pas la lecture des autres ;
+/// ce qui lit les paies du mois les range et dit, sur ce contrat-la, ce qui lui manque.
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<PaieImportee>, Vec<crate::etats::PaieDeCote>)> {
     let (mut rangees, mut a_dire) = (Vec::new(), Vec::new());
     for i in du_mois(&ctx.racine, mois)?.iter().filter(|i| i.paies().contains_key(&mois)) {
         match i.a_dire() {
-            true => a_dire.push(NatureADire { mois, salarie: i.carte().salarie.clone(), qui: crate::etats::qui_de(ctx, &i.objet) }),
+            true => a_dire.push(crate::etats::PaieDeCote {
+                mois,
+                salarie: i.carte().salarie.clone(),
+                // Le spectacle que sa paie designe ; un manque (aucune fiche ne le porte encore) le laisse vide, comme
+                // dans la paie rangee (`Importe::paie`).
+                spectacle: match i.paies().get(&mois).map(|p| i.spectacle_de(ctx, p)).transpose() {
+                    Ok(s) => s.flatten(),
+                    Err(e) if e.dit_un_manque() => None,
+                    Err(e) => return Err(e),
+                },
+                qui: crate::etats::qui_de(ctx, &i.objet),
+                pourquoi: crate::etats::PourquoiDeCote::NatureADire,
+            }),
             false => rangees.push(i.paie(ctx, mois)?),
         }
     }
     Ok((rangees, a_dire))
-}
-
-/// UNE PAIE REPRISE QUI NE SE RANGE PAS ENCORE : celle de `mois` d'un contrat dont la nature reste a dire
-/// (`Importe::a_dire`). Une nature ne se devine pas (regle 6) : ce qui a ete verse ne se range sous aucune
-/// (`Importe::nature_rangee`), et ce qui lit les paies du mois la dit sur ce contrat (`phrase`), sans refuser les autres.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NatureADire {
-    pub mois: Mois,
-    /// Le salarie du contrat (la cle de sa fiche) ; `None` : l'engagement ne le dit pas. Un calcul d'un salarie qui a
-    /// besoin de cette paie refuse pour lui seul, en la nommant.
-    pub salarie: Option<IdSalarie>,
-    /// Le contrat, tel qu'une phrase le nomme (`etats::qui_de`).
-    pub qui: String,
-}
-
-impl NatureADire {
-    /// Ce que la lecture en dit.
-    pub fn phrase(&self) -> String {
-        format!(
-            "{} : sa paie reprise de {} n'est pas comptée, la nature de ce contrat reste à dire (Configuration, « Reprendre l'historique »).",
-            self.qui,
-            self.mois.libelle(socle::mois::Graphie::Accentuee)
-        )
-    }
 }
 
 /// Tous les engagements importes, fichier par fichier.

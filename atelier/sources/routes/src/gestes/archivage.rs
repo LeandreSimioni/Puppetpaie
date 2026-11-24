@@ -2,7 +2,8 @@
 //!
 //! Les sorties d'un mois (`sorties/<mois>/`, sans le sous-dossier
 //! `envoi/` : memes documents redecoupes par salarie, deja partis) vont dans
-//! `PuppetPaie/<mois>` du Drive du compte autorise. Le fichier groupe y a toute sa place :
+//! `PuppetPaie/<la compagnie>/archives/<mois>` du Drive du compte autorise, sous le dossier de la compagnie que sa
+//! sauvegarde remplit (`compagnie::sauvegarde::dossier_de_la_compagnie`). Le fichier groupe y a toute sa place :
 //! c'est l'archive de la compagnie, pas le courrier d'un salarie.
 //!
 //! Relancer `archiver` REMPLACE le contenu des fichiers de meme nom (`Depose::remplace`), au
@@ -28,6 +29,8 @@ pub(crate) struct FichierArchive {
 pub(crate) struct Archivage {
     pub mois: socle::mois::Mois,
     pub racine_drive: String,
+    /// Le nom du dossier de la compagnie sous la racine du Drive, tel qu'il a ete cree.
+    pub compagnie: String,
     pub compte: Option<String>,
     pub fichiers: Vec<FichierArchive>,
 }
@@ -67,19 +70,23 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
             &mut propre
         }
     };
-    let cible = client.chemin(&[racine_drive, mois])?;
+    let identite = compagnie::sauvegarde::identite(racine).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Illisible)))?;
+    let nom = compagnie::installation::nom_de(racine).map_err(ErreurGoogle::from)?;
+    let connu = compagnie::sauvegarde::lire_index(racine)?.and_then(|i| i.compagnie);
+    let cie = compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref())?;
+    let cible = client.chemin(&cie, &[compagnie::sauvegarde::ARCHIVES, mois])?;
     // Un seul listage du dossier du mois : c'est lui qui dit quels fichiers se remplacent (et
     // non une recherche par fichier, par nom seul, qui prendrait les dossiers).
     let deja = client.lister(&cible)?;
     let mut deposes = Vec::new();
     for f in &fichiers {
         let nom_local = socle::fichiers::NomDeFichier::du(f)?;
-        let r = client.televerser(f, &cible, None, deja.get(nom_local.texte()))?;
+        let r = client.televerser(f, &cible, None, deja.le_seul(nom_local.texte())?)?;
         let octets = socle::grandeurs::Octets::du_disque(&std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?);
         // Le fichier porte dans Drive le nom sous lequel il y est depose (`televerser`, sans nom : celui du fichier).
         deposes.push(FichierArchive { nom: nom_local, octets, remplace: r.remplace });
     }
-    Ok(Archivage { mois: le_mois, racine_drive: racine_drive.to_string(), compte: client.compte(), fichiers: deposes })
+    Ok(Archivage { mois: le_mois, racine_drive: racine_drive.to_string(), compagnie: nom, compte: client.compte(), fichiers: deposes })
 }
 
 /// LE DRIVE JOUE d'une compagnie fictive (ses envois sont joues, `bridage::branchement`) : le depot se deroule, chaque
@@ -90,20 +97,29 @@ impl Drive for DriveJoue {
     fn compte(&self) -> Option<String> {
         None
     }
-    fn chemin(&mut self, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
-        Ok(IdDrive::lire(&noms.join("/"))?)
+    fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
+        Ok(IdDrive::lire(&format!("{}/{}", depuis, noms.join("/")))?)
     }
-    fn lister(&mut self, _parent: &IdDrive) -> Result<std::collections::BTreeMap<String, envois::drive::Distant>, ErreurGoogle> {
-        Ok(Default::default())
+    fn lister(&mut self, _parent: &IdDrive) -> Result<envois::drive::FichiersDuDossier, ErreurGoogle> {
+        Ok(envois::drive::FichiersDuDossier::default())
     }
     fn televerser(&mut self, fichier: &Path, _parent: &IdDrive, nom: Option<&str>, _connu: Option<&envois::drive::Distant>) -> Result<envois::drive::Depose, ErreurGoogle> {
         let nom = nom.map(String::from).or_else(|| fichier.file_name().map(|n| n.to_string_lossy().into_owned()));
         Ok(envois::drive::Depose { id: None, nom, lien: None, remplace: false })
     }
-    fn sous_dossiers(&mut self, _parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle> {
+    fn sous_dossiers(&mut self, _parent: &IdDrive) -> Result<Vec<envois::drive::SousDossier>, ErreurGoogle> {
         Ok(Vec::new())
     }
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {
         Err(ErreurGoogle::nouvelle(Classe::Refuse, format!("Le Drive d'une compagnie fictive ne garde rien : {} n'y est pas.", id)))
+    }
+    fn creer_dossier(&mut self, nom: &str, parent: &IdDrive, _marque: &envois::drive::MarqueDuDossier) -> Result<IdDrive, ErreurGoogle> {
+        Ok(IdDrive::lire(&format!("{}/{}", parent, nom))?)
+    }
+    fn marquer(&mut self, _id: &IdDrive, _marque: &envois::drive::MarqueDuDossier) -> Result<(), ErreurGoogle> {
+        Ok(())
+    }
+    fn en_place(&mut self, _id: &IdDrive) -> Result<bool, ErreurGoogle> {
+        Ok(true)
     }
 }

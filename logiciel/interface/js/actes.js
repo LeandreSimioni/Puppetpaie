@@ -114,6 +114,7 @@ async function dessinerActions(mois) {
     return `<li class="rangee"><div class="kases" style="grid-template-columns:${gabarit}">${cases}</div></li>`;
   }).join("");
   cible.innerHTML = `<ol class="etapes">${rangees}<svg class="arbre" aria-hidden="true"></svg></ol>`;
+  dessinerOuEnEst(e, mois);
 
   cible.querySelectorAll("[data-geste]").forEach((d) => {
     const ouvrir = (ev) => { ev.preventDefault(); ouvrirGeste(gestes[Number(d.dataset.geste)], mois); };
@@ -271,7 +272,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     a = await api("depot-apercu", charge);
   } catch (e) { dire(e.message, "erreur"); return; }
   const dit = [a.phrase, ...a.avertissements, ...a.informations].filter(Boolean);
-  if (dit.length) dire(dit.join("  ·  "));
+  if (dit.length) direLesAvis(dit);
   rafraichirActions();
 
   ouvrirBoite(`
@@ -319,7 +320,6 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     }
     fermerBoite();
     dire(r.phrase, "envoye");
-    if (r.avis) avisApresLeDepot(r);
     await rafraichirActions();
     suivreDepot(quoi, r.flux, r.mois);
   };
@@ -386,18 +386,6 @@ function boiteRenvoiDsn(phrase, renvoyer) {
       <button class="secondaire envoi" id="d-renvoyer">Renvoyer quand même</button>
     </div>`);
   document.getElementById("d-renvoyer").onclick = () => { fermerBoite(); renvoyer(); };
-}
-
-/** APRÈS LE DÉPÔT RÉEL, L'AVIS QUE LE MOTEUR REND (`avis` de `deposer`) : il le rend quand il y a quelque chose à dire
- *  (les documents des salariés d'une DSN qui en a). */
-function avisApresLeDepot(r) {
-  ouvrirBoite(`
-    <h3>DSN envoyée</h3>
-    ${moisEnGros(r.mois)}
-    ${encart(r.avis)}
-    <div class="actions">
-      <button class="primaire" onclick="fermerBoite()">Compris</button>
-    </div>`);
 }
 
 /** L'ÉCOUTE DES RETOURS, JUSTE APRÈS UN DÉPÔT RÉEL. Toutes les quinze secondes,
@@ -502,12 +490,12 @@ async function boiteEnvoi(mois) {
       const repere = g.demande ? await repereCourrielsFictifs() : null;
       try {
         const r = await api(g.route, mdp ? { ...charge, motdepasse: mdp } : charge);
+        if (partiEnFond(r)) return;
         fermerBoite();
         // L'impression rend le PDF, qui s'ouvre ; l'envoi par courriel, ce qui est parti.
         if (!g.demande) await ouvrirEtDire(r.chemin, r.phrase);
         else {
           dire(r.phrase, "envoye");
-          afficherEnvoi(r, mois);
           fenetreCourrielsFictifs("documents", repere);
         }
         await rafraichirActions();
@@ -579,11 +567,11 @@ async function boiteSignature(charge) {
       const repere = g.demande ? await repereCourrielsFictifs() : null;
       try {
         const r = await api(g.route, mdp ? { ...charge, motdepasse: mdp } : charge);
+        if (partiEnFond(r)) return;
         fermerBoite();
         if (!g.demande) await ouvrirEtDire(r.chemin, r.phrase);
         else {
           dire(r.phrase, "envoye");
-          afficherEnvoi(r, mois);
           if (enFictive()) fenetreCourrielsFictifs("signature", repere);
         }
         await rafraichirActions();
@@ -681,6 +669,7 @@ async function boiteContratsEnAttente(mois, fait) {
       const rendre = occupe(b, "…");
       try {
         const r = await api(c.relancer.route, { ...c.relancer.charge, motdepasse: mdp });
+        if (partiEnFond(r)) return;
         fermerBoite();
         dire(r.phrase, "envoye");
         await rafraichirActions();
@@ -743,11 +732,10 @@ async function boiteAvenant(mois, salarie, debut, numero) {
                 }, "contrat-signature");
   };
   // UN ENVOI : sa charge, que complète ce que disent ses cases (la date d'effet tapée), part sans autre boîte, après le
-  // mot de passe (`faireLeGeste`) ; ce qui est parti se dit sous le mois.
+  // mot de passe (`faireLeGeste`) ; ce qui est parti se dit sous le mois, dans le cadre que rend `etat-du-mois`.
   const apres = async (r) => {
     fermerBoite();
     dire(r.phrase, "envoye");
-    afficherEnvoi(r, a.mois);
     await rafraichirActions();
   };
   document.querySelectorAll("#av-envois [data-geste]").forEach((b) => {
@@ -756,14 +744,25 @@ async function boiteAvenant(mois, salarie, debut, numero) {
   });
 }
 
-/** CE QUI EST PARTI, tel que la route d'envoi le rend (`r` : son titre, sa phrase, ses avertissements), sous le mois. */
-function afficherEnvoi(r, mois) {
-  document.getElementById("resultat").innerHTML = `
+/** OÙ EN EST LE MOIS, sous lui, tel que `etat-du-mois` le rend : son dernier fait (`ou_en_est.dernier`, un encart dans
+ *  le ton que la route lui donne), ce qui en part en fond (`envois` : en cours, parti, ou échoué et le geste qui le
+ *  refait, chacun dans la couleur que la route lui donne ; ce qu'il avertit, une fois au bout), et la prochaine étape. */
+function dessinerOuEnEst(e, mois) {
+  const cible = document.getElementById("resultat");
+  const o = e.ou_en_est;
+  const envois = e.envois || [];
+  if (!o.dernier && !o.prochaine && !envois.length) { cible.innerHTML = ""; return; }
+  cible.innerHTML = `
     <div class="carte" style="margin-top:20px">
-      <h2>${echapper(r.titre)} — ${echapper(moisEnClair(mois))}</h2>
-      <div class="encart bien">${echapper(r.phrase)}</div>
-      ${r.avertissements.length
-        ? `<p class="note">${echapper(r.avertissements.join(" · "))}</p>` : ""}
+      <h2>${echapper(o.titre)}</h2>
+      ${encart(o.dernier)}
+      ${envois.map((x, i) => `<div class="encart ${ENCART_DE_COULEUR[x.couleur]}">${echapper(x.phrase)}${x.refaire
+        ? ` <button class="lien" data-refaire-mois="${i}">${echapper(x.refaire.libelle)}</button>` : ""}${
+        x.avertissements.map((a) => `<div>${echapper(a)}</div>`).join("")}</div>`).join("")}
+      ${o.prochaine ? `<p><b>${echapper(o.prochaine)}</b></p>` : ""}
     </div>`;
+  cible.querySelectorAll("[data-refaire-mois]").forEach((b) => {
+    b.onclick = () => ouvrirGeste(envois[+b.dataset.refaireMois].refaire, mois);
+  });
 }
 

@@ -933,6 +933,16 @@ AT/MP, que lui seul ne peut pas connaitre.",
     ))
 }
 
+/// LE TAUX AT/MP DU SIEGE QUE LA PILE EMPILEE N'A PAS (`Contexte::empiler`, `taux_atmp_manque`) : toute paie calculee ici
+/// le cotise, la pile qui la calcule le refuse en disant ce qu'il faut saisir. Seule la pile d'une paie importee s'en
+/// passe (`Contexte::bareme_lu`).
+fn exiger_le_taux_atmp(pile: &Pile) -> R<()> {
+    match &pile.taux_atmp_manque {
+        Some(pourquoi) => Err(pourquoi.clone()),
+        None => Ok(()),
+    }
+}
+
 /// Les quatre, dans l'ordre du plus structurel au plus chiffre.
 fn controler(pile: &Pile, fiche: &ChampsEntreprise, eff: &EffectifsParAnnee, ou: &str) -> R<()> {
     controler_secteur(pile, fiche)?;
@@ -1522,14 +1532,24 @@ impl Contexte {
     /// LA PILE DE `jour` : le socle livre + la couche de la convention que la fiche `ent` nomme + la surcouche de la
     /// compagnie, lus a ce jour et confrontes aux faits d'entreprise de cette fiche. `ent` est la fiche entreprise au jour
     /// lu : une compagnie qui change de convention en cours d'annee lit chaque jour sous la sienne. Garde tant que les
-    /// fichiers et la fiche sont les memes, avec ce qu'il a lu (`garde_notee`) ; un refus ne se garde pas.
+    /// fichiers et la fiche sont les memes, avec ce qu'il a lu (`garde_notee`) ; un refus ne se garde pas. Le taux AT/MP
+    /// du siege qui manque la refuse (`exiger_le_taux_atmp`).
     fn pile_lue(&self, jour: &Jour, ent: &ChampsEntreprise) -> R<Arc<PileLue>> {
+        self.pile_lue_de(jour, ent, false)
+    }
+
+    /// `pile_lue`, et `taux_lus` : la pile d'une paie importee, dont les taux se lisent sur ses pieces
+    /// (`bareme::EntrepriseLue::taux_lus`), se compose sans le taux AT/MP du siege, que l'ancien logiciel a applique.
+    fn pile_lue_de(&self, jour: &Jour, ent: &ChampsEntreprise, taux_lus: bool) -> R<Arc<PileLue>> {
         type Cache = Mutex<HashMap<String, socle::fichiers::Notee<Arc<PileLue>>>>;
         static CACHE: OnceLock<Cache> = OnceLock::new();
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        let cle = format!("{}|{}", self.empreinte_bareme_de(jour.annee(), ent)?, jour.iso());
+        let cle = format!("{}|{}|{}", self.empreinte_bareme_de(jour.annee(), ent)?, jour.iso(), taux_lus);
         socle::fichiers::garde_notee(cache, cle, || {
             let (pile, regles) = self.empiler(jour, ent)?;
+            if !taux_lus {
+                exiger_le_taux_atmp(&pile)?;
+            }
             // Le controle est ici, le seul endroit qui compose un bareme.
             controler(&pile, ent, &self.effectif_lu(ent)?, surcouche(jour.annee())?.texte())?;
             Ok(Arc::new(PileLue { pile: Arc::new(pile), regles }))
@@ -1558,17 +1578,18 @@ impl Contexte {
         }
         fondre_la_surcouche(&mut pile, surcouche, &ou)?;
         // Le taux AT/MP du siege, tel que sa fiche le dit pour l'annee ; ce qui ne se reprend pas d'une autre annee dit
-        // pourquoi, et ce qu'il faut saisir.
-        pile.taux_atmp = match self.taux_atmp_du_siege(an, ent, Some(&pile)) {
-            Some(Ok(t)) => Some(t),
-            Some(Err(pourquoi)) => return Err(pourquoi),
-            None => {
-                return Err(socle::echec::erreur(
+        // pourquoi, et ce qu'il faut saisir (`taux_atmp_manque`, que `exiger_le_taux_atmp` rend).
+        (pile.taux_atmp, pile.taux_atmp_manque) = match self.taux_atmp_du_siege(an, ent, Some(&pile)) {
+            Some(Ok(t)) => (Some(t), None),
+            Some(Err(pourquoi)) => (None, Some(pourquoi)),
+            None => (
+                None,
+                Some(socle::echec::erreur(
                     socle::echec::Classe::TauxAtmpAbsent,
                     format!("Le code risque et le taux AT/MP de {} ne sont pas dits. Ils se lisent sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
                     an),
-                ))
-            }
+                )),
+            ),
         };
         regles.sort();
         regles.dedup();
@@ -1733,7 +1754,10 @@ impl Contexte {
     /// LE BAREME DE `jour` AVANT SON CONTROLE (le socle, la convention, la surcouche de la compagnie) : ce contre quoi une
     /// fiche qu'on enregistre se controle avant d'etre ecrite (`controler_etablissements`).
     pub fn bareme_fondu(&self, jour: &Jour) -> R<Pile> {
-        self.empiler(jour, &self.entreprise).map(|(p, _)| p)    }
+        let (pile, _) = self.empiler(jour, &self.entreprise)?;
+        exiger_le_taux_atmp(&pile)?;
+        Ok(pile)
+    }
 
     /// LES REGLES DATEES QUI S'APPLIQUENT A CE JOUR : le `depuis` de chaque valeur datee en vigueur du bareme de
     /// l'annee (le socle, la convention, la compagnie), du plus ancien au plus recent, sans doublon. Une paie qui s'est
@@ -1786,6 +1810,14 @@ impl Contexte {
     /// `bareme::bareme_applique` ; la surcharge d'un etablissement) en part.
     pub fn bareme(&self, jour: &Jour) -> R<Arc<Pile>> {
         Ok(self.pile_lue(jour, &self.entreprise_au(jour))?.pile.clone())
+    }
+
+    /// LE BAREME A CE JOUR DE LA COMPAGNIE TELLE QUE LA PILE LA LIT (`entreprise_lue`) : `bareme`, et, pour une paie
+    /// importee (`bareme::EntrepriseLue::taux_lus` : ses taux se lisent sur ses pieces, la pile ne fait que ranger ses
+    /// bases), sans le taux AT/MP du siege, que l'ancien logiciel a applique : la compagnie n'a pas a le dire pour qu'on
+    /// lise ce qu'il a paye.
+    pub fn bareme_lu(&self, jour: &Jour, lue: &crate::bareme::EntrepriseLue) -> R<Arc<Pile>> {
+        Ok(self.pile_lue_de(jour, &lue.fiche, lue.taux_lus)?.pile.clone())
     }
 
     /// LA COMPAGNIE TELLE QUE LA PILE DU BAREME LA LIT a `jour` (`bareme::bareme_applique`) : sa fiche a ce jour, et son

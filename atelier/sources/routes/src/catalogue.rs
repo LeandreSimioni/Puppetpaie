@@ -116,6 +116,14 @@ routes! {
         MotDePasseRetirer = "mot-de-passe-retirer",
         GoogleAutoriser = "google-autoriser",
         GoogleOublier = "google-oublier",
+        DriveEtat = "drive-etat",
+        DriveSupprimer = "drive-supprimer",
+        DriveCompagnies = "drive-compagnies",
+        DriveLier = "drive-lier",
+        DriveReprendre = "drive-reprendre",
+        DriveOublier = "drive-oublier",
+        DriveAbandonner = "drive-abandonner",
+        CompagnieOuvrir = "compagnie-ouvrir",
         AdministrateurEtat = "administrateur-etat",
         AdministrateurRattacher = "administrateur-rattacher",
         AdministrateurDetacher = "administrateur-detacher",
@@ -144,6 +152,7 @@ routes! {
         TaxeSurLesSalairesRegime = "taxe-sur-les-salaires-regime",
         EnregistrerFiche = "enregistrer-fiche",
         ActiverFiche = "activer-fiche",
+        SupprimerSalarie = "supprimer-salarie",
         FicheDemander = "fiche-demander",
         FichesRelever = "fiches-relever",
         FicheOublierDemande = "fiche-oublier-demande",
@@ -286,12 +295,15 @@ pub enum Place {
     ModelesContrat,
     Identite,
     Coffre,
+    Drive,
     Import,
     Historique,
     Exports,
     Signaler,
     Bandeau,
     Accueil,
+    /// Le « + » de l'accueil, « De mon Drive » : reprendre une compagnie de son Drive (`accueil::drive`).
+    AccueilDrive,
 }
 
 impl Place {
@@ -305,12 +317,14 @@ impl Place {
             Place::ModelesContrat => "Configuration › Modèles de contrat",
             Place::Identite => "Configuration › Signature & tampon",
             Place::Coffre => "Configuration › Mots de passe",
+            Place::Drive => "Configuration › Le Drive",
             Place::Import => "Configuration › Reprendre l'historique",
             Place::Historique => "Historique",
             Place::Exports => "Exports",
             Place::Signaler => "Un problème, une idée ?",
             Place::Bandeau => "Le bandeau",
             Place::Accueil => "L'accueil des compagnies",
+            Place::AccueilDrive => "L'accueil des compagnies › De mon Drive",
         }
     }
 }
@@ -759,6 +773,8 @@ pub const MANQUE: Refus = Refus { classe: Classe::Manque, corriger: "le champ de
 pub(crate) const ILLISIBLE: Refus = Refus { classe: Classe::Illisible, corriger: "la date ou la valeur que la phrase dit illisible" };
 pub const FORME: Refus = Refus { classe: Classe::MalFormee, corriger: "le champ de la charge que la phrase nomme" };
 pub const OPERATION: Refus = Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit ; rien n'est écrit" };
+/// Le refus d'un acte ou d'un calcul qui attend une case de la configuration (`Classe::CaseExigee`).
+pub const CASE_EXIGEE: Refus = Refus { classe: Classe::CaseExigee, corriger: "les cases que la phrase nomme, dans Configuration" };
 
 impl Fiche {
     /// Le nom de la route.
@@ -907,7 +923,7 @@ fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
-pub const FICHES: [&[Fiche]; 31] = [
+pub const FICHES: [&[Fiche]; 33] = [
     crate::engagement::ROUTES,
     crate::etat_garde::ROUTES,
     crate::mois::ROUTES,
@@ -920,6 +936,7 @@ pub const FICHES: [&[Fiche]; 31] = [
     crate::depots::ROUTES,
     crate::documents::ROUTES,
     crate::coffre::ROUTES,
+    crate::drive::ROUTES,
     crate::import::ROUTES,
     crate::archives::ROUTES,
     crate::libelles_courts::ROUTES,
@@ -937,6 +954,9 @@ pub const FICHES: [&[Fiche]; 31] = [
     crate::gestes::conseils::ROUTES,
     crate::gestes::ouverture::ROUTES,
     crate::obligations::ROUTES,
+    // Reprendre une compagnie de son Drive, a l'accueil : avant les autres routes de l'accueil, dont la derniere
+    // (`basculer`) debride l'installation des exemples, ou la compagnie reprise est une fictive.
+    crate::accueil::drive::ROUTES,
     crate::accueil::ROUTES,
     ROUTES,
 ];

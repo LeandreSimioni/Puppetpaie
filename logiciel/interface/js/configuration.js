@@ -39,7 +39,10 @@ function comparerCases(x, y, ...options) {
 
 function dessinerConfig() {
   const liste = document.getElementById("config-liste");
-  dessinerSuppression();
+  // L'encart de suppression suit la fiche Entreprise : il ne se pose qu'avec elle (`ouvrirLaFicheRendue`), sinon il
+  // s'affiche seul en haut le temps que la route `fiche` réponde.
+  const suppression = document.getElementById("config-suppression");
+  if (suppression) suppression.innerHTML = "";
   // Avancé : la place du sous-onglet ouvert (`data-place`), ses routes sans écran dessiné.
   const avance = document.getElementById("config-avance");
   avance.dataset.auto = document.querySelector(`.sous-onglets button[data-fiche="${FICHE_ACTIVE}"]`).dataset.place;
@@ -695,19 +698,21 @@ async function peindreCoutAnnee() {
   const an = anneeDuJour();
   const ligne = (r, annee) => {
     const d = r[el.dataset.cote][el.dataset.coutDe];
-    if (!d || (!d.bulletins && !Number(d.prevu))) return "";
+    // La route ne rend que les lignes qui disent quelque chose.
+    if (!d) return "";
     return `<div><b>${annee}</b> : ${echapper(d.phrase)}</div>`;
   };
   el.innerHTML = `<span class="discret">${aideDe("cout_attente")}</span>`;
-  let cette, avant;
-  // Un refus se dit à la place du coût, et l'année se redemande à la prochaine fiche ouverte.
-  try { [cette, avant] = await Promise.all([coutsDe(an), coutsDe(an - 1)]); } catch (e) {
-    oublierCouts();
-    if (el.isConnected) el.innerHTML = `<span class="discret">${echapper(e.message)}</span>`;
-    return;
-  }
+  // Chaque année répond pour elle : un refus se dit à la place de son coût, sans cacher l'autre, et cette année se
+  // redemande à la prochaine fiche ouverte.
+  const lues = await Promise.allSettled([coutsDe(an), coutsDe(an - 1)]);
   if (!el.isConnected) return;
-  el.innerHTML = ligne(cette, an) + ligne(avant, an - 1);
+  el.innerHTML = [an, an - 1].map((annee, i) => {
+    const l = lues[i];
+    if (l.status === "fulfilled") return ligne(l.value, annee);
+    delete COUTS[annee];
+    return `<div><b>${annee}</b> : <span class="discret">${echapper(l.reason.message)}</span></div>`;
+  }).join("");
 }
 
 /* L'ONGLET MÉTIERS. L'éditeur : « les métiers, c'est vraiment

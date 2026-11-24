@@ -979,16 +979,13 @@ fn ligne_de_l_unite(unite: Unite) -> Option<CodeDeRubrique> {
 
 // ------------------------------------------------------------------ les deux lectures
 
-/// Une lecture, pas un verdict : la phrase renvoie au texte pour qu'on verifie.
+/// Une lecture, pas un verdict : la phrase renvoie au texte qu'elle nomme pour qu'on verifie. Elle s'affiche : elle le
+/// nomme en mots ; l'adresse de la convention (`lien` de la table) va a part (`Avis::convention`).
 fn a_verifier(t: &Table, idcc: &Idcc, phrase: String) -> Avis {
-    let lien = t.convention(idcc).and_then(|c| c.lien.as_ref());
-    let lien: String = lien.map(|l| format!(" : {}", l)).into_iter().collect();
     Avis {
         info: true,
-        texte: format!(
-            "{} Nous avons pu passer à côté d'un cas qui change ce minimum : vérifiez-le sur le texte de la convention{}.",
-            phrase, lien
-        ),
+        texte: format!("{} Nous avons pu passer à côté d'un cas qui change ce minimum : vérifiez-le sur le texte de la convention.", phrase),
+        convention: t.convention(idcc).and_then(|c| c.lien.clone()),
     }
 }
 
@@ -1268,6 +1265,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
         }
         avis.push(Avis {
             info: false,
+            convention: None,
             texte: format!(
                 "{}, {} : {} pour {} h. Le SMIC est de {} de l'heure au {} : il fallait {}, il manque {}. À corriger avant de déclarer (le SMIC vaut pour tous, art. L. 3231-2).",
                 qui,

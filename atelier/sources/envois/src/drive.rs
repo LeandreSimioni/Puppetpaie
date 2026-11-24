@@ -42,8 +42,80 @@ struct FichierDrive {
     type_mime: Option<String>,
     #[serde(rename = "webViewLink")]
     lien: Option<Url>,
+    /// Ce que l'application a pose sur un dossier (`appProperties`) ; absent : il n'en porte aucune.
+    #[serde(rename = "appProperties", default)]
+    marque: Option<MarqueDuDossier>,
 }
 impl socle::forme::ReponseDUnTiers for FichierDrive {}
+
+/// CE QUE DRIVE REND D'UN DOSSIER QU'ON DEMANDE S'IL EST EN PLACE (`Drive::en_place`, `fields=trashed`) : s'il est a la
+/// corbeille, lui ou un dossier qui le porte (« Whether the file was trashed, either explicitly or from a trashed parent
+/// folder » : `atelier/reference/sources/google-drive-api/google-drive-api-corbeille-20261124.txt`, « Determine a trashed
+/// file's properties »). Le champ est demande : il est requis, et une reponse qui ne le dit pas ne se lit pas.
+#[derive(Debug, Deserialize)]
+struct EtatALaCorbeille {
+    trashed: bool,
+}
+impl socle::forme::ReponseDUnTiers for EtatALaCorbeille {}
+
+/// LA MARQUE QUE PUPPETPAIE POSE SUR LE DOSSIER D'UNE COMPAGNIE DANS LE DRIVE, ses proprietes privees a l'application
+/// (`appProperties` : « To add properties restricted to your app, use the appProperties field of the files resource »,
+/// au plus 124 octets par propriete, cle et valeur comprises :
+/// `atelier/reference/sources/google-drive-api/google-drive-api-proprietes-20261124.txt`, « Limits of custom file
+/// properties »). Telle que Drive la rend : du texte, que `compagnie::sauvegarde` lit en ses types (une marque qui ne se
+/// lit pas se dit, elle ne ferme pas la liste). Une cle qu'une autre version y poserait est ignoree a la porte.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct MarqueDuDossier {
+    /// L'identite de la compagnie (`compagnie::sauvegarde::IdentiteSurLeDrive`, ecrite).
+    #[serde(rename = "puppetpaie_compagnie", default, skip_serializing_if = "Option::is_none")]
+    pub compagnie: Option<String>,
+    /// La derniere sauvegarde qui a envoye quelque chose (`AAAA-MM-JJTHH:MM`, heure de Paris).
+    #[serde(rename = "puppetpaie_derniere", default, skip_serializing_if = "Option::is_none")]
+    pub derniere: Option<String>,
+    /// Ce que la compagnie sauvegarde pese, en octets, a cette sauvegarde.
+    #[serde(rename = "puppetpaie_octets", default, skip_serializing_if = "Option::is_none")]
+    pub octets: Option<String>,
+}
+impl socle::forme::ReponseDUnTiers for MarqueDuDossier {}
+
+/// UN SOUS-DOSSIER, tel que `Drive::sous_dossiers` le rend : son nom, son identifiant, sa marque (`None` : il n'en porte
+/// aucune).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SousDossier {
+    pub nom: String,
+    pub id: IdDrive,
+    pub marque: Option<MarqueDuDossier>,
+}
+
+/// LES FICHIERS D'UN DOSSIER DU DRIVE, tels que `Drive::lister` les rend : par nom, chaque fichier de ce nom dans
+/// l'ordre ou Drive les rend. Le Drive admet deux fichiers du meme nom dans un dossier ; le logiciel ne choisit pas entre
+/// eux : `le_seul` les refuse en les nommant.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FichiersDuDossier(BTreeMap<String, Vec<Distant>>);
+
+impl FichiersDuDossier {
+    /// Ajoute le fichier `nom`, a la suite de ceux du meme nom.
+    pub fn ajouter(&mut self, nom: String, distant: Distant) {
+        self.0.entry(nom).or_default().push(distant);
+    }
+
+    /// Le fichier `nom`, s'il y en a un ; deux du meme nom se refusent (`SauvegardeAmbigue`), en le nommant.
+    pub fn le_seul(&self, nom: &str) -> Result<Option<&Distant>, ErreurGoogle> {
+        match self.0.get(nom).map(Vec::as_slice) {
+            None | Some([]) => Ok(None),
+            Some([seul]) => Ok(Some(seul)),
+            Some(plusieurs) => Err(ErreurGoogle::nouvelle(
+                Classe::SauvegardeAmbigue,
+                format!("{} fichiers « {} » dans le même dossier du Drive : le logiciel ne choisit pas entre eux. N'en garder qu'un dans le Drive.", plusieurs.len(), nom),
+            )),
+        }
+    }
+
+    /// Chaque nom, et les fichiers de ce nom (un seul, sauf homonymes).
+    pub fn par_nom(&self) -> impl Iterator<Item = (&str, &[Distant])> {
+        self.0.iter().map(|(n, l)| (n.as_str(), l.as_slice()))
+    }
+}
 
 /// Le `md5Checksum` d'un fichier : Google dit l'absence par un texte vide comme en omettant la cle ; c'est la meme.
 fn md5_ou_absent<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<EmpreinteMd5>, D::Error> {
@@ -189,13 +261,26 @@ impl Listage {
     }
 }
 
-/// Ce qui part pour creer un dossier (`files.create`) : son nom, son type, son parent.
+/// Ce qui part pour creer un dossier (`files.create`) : son nom, son type, son parent, et sa marque s'il en porte une.
 #[derive(Serialize)]
 struct DossierACreer<'a> {
     name: &'a str,
     #[serde(rename = "mimeType")]
     type_mime: &'a str,
     parents: [&'a str; 1],
+    #[serde(rename = "appProperties", skip_serializing_if = "Option::is_none")]
+    marque: Option<&'a MarqueDuDossier>,
+}
+
+/// Ce qui part pour changer un dossier (`files.update`) : sa marque, ou sa mise a la corbeille (« set the boolean trashed
+/// field to true » : `atelier/reference/sources/google-drive-api/google-drive-api-corbeille-20261124.txt`, « Move a
+/// file to the trash »).
+#[derive(Serialize)]
+struct DossierAChanger<'a> {
+    #[serde(rename = "appProperties", skip_serializing_if = "Option::is_none")]
+    marque: Option<&'a MarqueDuDossier>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trashed: Option<bool>,
 }
 
 /// Les metadonnees d'un premier depot (`files.create`, `multipart`) : le nom et le parent.
@@ -229,17 +314,45 @@ pub const NOUVELLES_TENTATIVES: u32 = 3;
 /// autant.
 const ATTENTE_DE_BASE_MS: u64 = 1000;
 
-/// Une erreur que Google dit passagere : a retenter apres une attente (voir `NOUVELLES_TENTATIVES`).
+/// CE QU'UNE ERREUR DE GOOGLE DIT D'UN FICHIER QU'ON LUI DEMANDE, TROIS SORTES ET PAS PLUS (`sorte`) : la restauration
+/// range chaque fichier par elle (`compagnie::restauration`). La sauvegarde n'en a pas besoin : elle ne retente que ce
+/// que Google dit passager (`passagere`) et ne nomme que le Drive plein.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDErreur {
+    /// CE QUE GOOGLE DIT DE CE FICHIER-LA ET DE LUI SEUL (`RaisonDeGoogle::FichierRefuse`) : il ne descendra pas par
+    /// cette voie, les autres si.
+    DuFichier,
+    /// Ce qui se retente : aucune reponse (la connexion, un delai, une reponse coupee), un 408, un 429, un 5xx, la limite
+    /// de debit (`RaisonDeGoogle::LimiteDeDebit`).
+    Passagere,
+    /// TOUT LE RESTE (une autorisation qui ne vaut plus, un refus du point de jeton, une limite du projet, « domainPolicy »,
+    /// un corps qui n'est pas de Google, tout 4xx que les textes ne disent pas d'un fichier) : rien de ce qui suit ne
+    /// descendrait, la restauration s'arrete. `autorisation` : Google dit que l'autorisation ne vaut plus
+    /// (`RaisonDeGoogle::AutorisationPerdue`, `PermissionManquante`, `JetonRefuse`), ce que leve « Relier le Drive ».
+    Arret { autorisation: bool },
+}
+
+/// La sorte de l'erreur `e` (`SorteDErreur`), par son statut et la raison que Google donne (lue a la porte,
+/// `google::traduire`), jamais par la phrase.
+pub fn sorte(e: &ErreurGoogle) -> SorteDErreur {
+    use ureq::http::StatusCode;
+    match (e.raison, e.statut) {
+        (Some(RaisonDeGoogle::AutorisationPerdue | RaisonDeGoogle::PermissionManquante | RaisonDeGoogle::JetonRefuse), _) => SorteDErreur::Arret { autorisation: true },
+        (Some(RaisonDeGoogle::FichierRefuse), _) => SorteDErreur::DuFichier,
+        (Some(RaisonDeGoogle::LimiteDeDebit), _) | (_, None) => SorteDErreur::Passagere,
+        (_, Some(s)) if s.is_server_error() || s == StatusCode::REQUEST_TIMEOUT || s == StatusCode::TOO_MANY_REQUESTS => SorteDErreur::Passagere,
+        (_, Some(_)) => SorteDErreur::Arret { autorisation: false },
+    }
+}
+
+/// UNE ERREUR QUE GOOGLE DIT PASSAGERE, a retenter apres une attente (voir `NOUVELLES_TENTATIVES`) : 500, 502, 503, 504,
+/// 429, la limite de debit (`RaisonDeGoogle::LimiteDeDebit`) (`google-drive-api-gerer-les-erreurs-20261020.txt`,
+/// « 429 errors », « 500, 502, 503, 504 errors », « rateLimitExceeded », « userRateLimitExceeded » ;
+/// `google-drive-api-televerser-20261020.txt`, « Handle media upload errors »).
 pub fn passagere(e: &ErreurGoogle) -> bool {
-    // Un 403 n'est passager que s'il dit une limite de debit.
-    // Ce que Google a dit est dans le detail, a part (`google::panne_de_google`).
-    let limite = || {
-        let m = e.echec.en_lignes().to_lowercase();
-        m.contains("rate limit") || m.contains("ratelimitexceeded")
-    };
     use ureq::http::StatusCode;
     let passagers = [StatusCode::INTERNAL_SERVER_ERROR, StatusCode::BAD_GATEWAY, StatusCode::SERVICE_UNAVAILABLE, StatusCode::GATEWAY_TIMEOUT, StatusCode::TOO_MANY_REQUESTS];
-    e.statut.is_some_and(|s| passagers.contains(&s)) || (e.statut == Some(StatusCode::FORBIDDEN) && limite())
+    e.raison == Some(RaisonDeGoogle::LimiteDeDebit) || e.statut.is_some_and(|s| passagers.contains(&s))
 }
 
 /// Une erreur de l'API ou de la configuration, avec sa classe (`Google` pour ce qui est deja traduit en francais ;
@@ -250,32 +363,50 @@ pub struct ErreurGoogle {
     pub echec: Echec,
     /// Le statut HTTP d'une reponse d'erreur de Google (rien d'autre n'en porte) : de quoi decider d'une nouvelle tentative.
     pub statut: Option<ureq::http::StatusCode>,
-    /// Ce que Google a dit qui demande un geste de la compagnie, quand il l'a dit (`google::panne_de_google`).
+    /// Ce que Google a dit de l'erreur par sa raison, quand il l'a dit (`google::panne_de_google`).
     pub raison: Option<RaisonDeGoogle>,
+    /// LA CONNEXION N'A PAS ABOUTI (`transport::Panne::Reseau` : aucun reseau, le nom de Google qui ne se resout pas, la
+    /// connexion refusee ou coupee avant la reponse) : la sauvegarde et la restauration s'arretent la et reprennent au
+    /// passage suivant. Un delai de lecture depasse ou une reponse coupee n'en sont pas : le reseau est la.
+    pub injoignable: bool,
 }
 
-/// CE QUE GOOGLE DIT QUI DEMANDE UN GESTE DE LA COMPAGNIE, reconnu dans sa reponse d'erreur (`google::traduire`) : la
-/// phrase que la compagnie lit, et la cause que la sauvegarde en dit (`compagnie::sauvegarde::cause_de`).
+/// CE QUE GOOGLE DIT DE SON ERREUR PAR SA RAISON, reconnu a la porte dans sa reponse (`google::traduire`) : la phrase
+/// que la compagnie lit, la sorte de l'erreur (`sorte`) et la cause que la sauvegarde en dit
+/// (`compagnie::sauvegarde::cause_de`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RaisonDeGoogle {
-    /// `invalid_grant` : l'autorisation perdue ou expiree.
+    /// `invalid_grant` (le point de jeton) : l'autorisation perdue ou expiree.
     AutorisationPerdue,
+    /// « authError » : un 401 de l'API rendu malgre un jeton neuf (`Client::appel_brut`) ; « If this fails, direct the user
+    /// through the OAuth flow » (l. 549-573).
+    JetonRefuse,
     /// Un 403 « insufficient » : une permission qui manque a l'autorisation.
     PermissionManquante,
     /// `storageQuotaExceeded` : « This error occurs when the user reaches their storage limit »
     /// (`atelier/reference/sources/google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt`, l. 961-985).
     DrivePlein,
+    /// Google dit que CE FICHIER-LA ne se donne pas : `fileNotDownloadable` (« Only files with binary content can be
+    /// downloaded », l. 575-591), `appNotAuthorizedToFile` (« your app isn't on the ACL for the file », l. 627-645),
+    /// `download_restricted_for_revision` (« the user cannot download a blob file revision », l. 715-731), `notFound`
+    /// (« the user doesn't have read access to a file, or the file doesn't exist », l. 1150-1172).
+    FichierRefuse,
+    /// `rateLimitExceeded` ou `userRateLimitExceeded` : la limite de debit du projet ou du compte, a retenter apres une
+    /// attente (« Use exponential backoff to retry the request », l. 889-1149).
+    LimiteDeDebit,
 }
 
 impl RaisonDeGoogle {
-    /// La phrase que la compagnie lit.
-    pub fn phrase(self) -> &'static str {
-        match self {
+    /// La phrase que la compagnie lit, pour une raison qui demande un geste de la compagnie ; aucune pour les autres, que
+    /// la phrase de la panne dit (`transport::panne_dite`).
+    pub fn phrase(self) -> Option<&'static str> {
+        Some(match self {
+            RaisonDeGoogle::JetonRefuse | RaisonDeGoogle::FichierRefuse | RaisonDeGoogle::LimiteDeDebit => return None,
             RaisonDeGoogle::AutorisationPerdue => "Autorisation Google perdue ou expirée : le plus souvent, l'écran de consentement est resté en mode « Test », ou Google a révoqué le jeton au bout de 7 jours. Le passer « En production » dans la console, puis lier de nouveau le Drive (Configuration › Mots de passe).",
             RaisonDeGoogle::PermissionManquante => "Permission refusée : l'autorisation en cours ne couvre pas cette action. Lier de nouveau le Drive (Configuration › Mots de passe) pour redemander les permissions.",
             // Le remede : « Manage your storage in Drive, Gmail & Google Photos », « Buy more Google storage » (l. 979-985).
             RaisonDeGoogle::DrivePlein => "Le Drive du compte Google lié est plein : Google refuse d'y écrire. Faire de la place (Drive, Gmail, Google Photos) ou prendre plus d'espace chez Google ; la sauvegarde ne repart qu'ensuite.",
-        }
+        })
     }
 }
 
@@ -300,7 +431,7 @@ impl ErreurGoogle {
 
 impl From<Echec> for ErreurGoogle {
     fn from(echec: Echec) -> Self {
-        ErreurGoogle { echec, statut: None, raison: None }
+        ErreurGoogle { echec, statut: None, raison: None, injoignable: false }
     }
 }
 
@@ -324,15 +455,16 @@ pub struct Depose {
     pub remplace: bool,
 }
 
-/// Ce que la sauvegarde et l'archivage demandent a Drive.
+/// Ce que la sauvegarde, l'archivage, la restauration et la vue du Drive demandent a Drive. Il n'efface rien : la seule
+/// suppression est a part (`Corbeille`), et ce qui recoit un `Drive` ne l'a pas.
 pub trait Drive {
     /// `Client.compte` : l'adresse du compte autorise, lue sans reseau.
     fn compte(&self) -> Option<String>;
-    /// `Client.chemin` : cree au besoin toute une suite de dossiers et rend le dernier.
-    fn chemin(&mut self, noms: &[&str]) -> Result<IdDrive, ErreurGoogle>;
-    /// `Client.lister` : les FICHIERS deja deposes dans un dossier, par nom ; les sous-dossiers
+    /// `Client.chemin` : sous `depuis`, cree au besoin toute une suite de dossiers et rend le dernier.
+    fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle>;
+    /// `Client.lister` : les FICHIERS deja deposes dans un dossier, par nom, homonymes compris ; les sous-dossiers
     /// sont ecartes.
-    fn lister(&mut self, parent: &IdDrive) -> Result<BTreeMap<String, Distant>, ErreurGoogle>;
+    fn lister(&mut self, parent: &IdDrive) -> Result<FichiersDuDossier, ErreurGoogle>;
     /// `Client.televerser` : depose un fichier. `connu` : le fichier de meme nom que `lister` a trouve dans ce dossier ;
     /// s'il y en a un, son contenu est REMPLACE (`Depose::remplace`, meme identifiant, meme lien), sinon le fichier est
     /// CREE. Le client ne cherche pas lui-meme (une recherche par nom seul confondrait un dossier et un fichier, et
@@ -340,13 +472,44 @@ pub trait Drive {
     /// celle de la comparaison des empreintes.
     /// Un fichier disparu entre-temps est un `FichierAbsent`.
     fn televerser(&mut self, fichier: &Path, parent: &IdDrive, nom: Option<&str>, connu: Option<&Distant>) -> Result<Depose, ErreurGoogle>;
-    /// Les SOUS-DOSSIERS d'un dossier, `(nom, identifiant)`, dans l'ordre ou Drive les rend, homonymes compris (la
-    /// restauration les refuse plutot que d'en choisir un). Ne cree rien : c'est ce qui distingue la recherche de la
-    /// restauration de `chemin`, qui cree ce qui manque.
-    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle>;
+    /// Les SOUS-DOSSIERS d'un dossier, chacun son nom, son identifiant et sa marque, dans l'ordre ou Drive les rend,
+    /// homonymes compris (la restauration les refuse plutot que d'en choisir un). Ne cree rien : c'est ce qui distingue
+    /// la recherche de `chemin`, qui cree ce qui manque.
+    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<SousDossier>, ErreurGoogle>;
     /// Le contenu d'un fichier, tel que Drive le sert (`alt=media`). La restauration le compare a `md5Checksum` avant
     /// d'ecrire quoi que ce soit.
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle>;
+    /// Cree le dossier `nom` sous `parent`, avec sa marque, et rend son identifiant.
+    fn creer_dossier(&mut self, nom: &str, parent: &IdDrive, marque: &MarqueDuDossier) -> Result<IdDrive, ErreurGoogle>;
+    /// Pose sur le dossier `id` ce que `marque` dit ; une cle qu'elle ne dit pas reste telle quelle.
+    fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle>;
+    /// Le dossier `id` est-il en place : il existe, et ni lui ni un dossier qui le porte n'est a la corbeille ?
+    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle>;
+}
+
+/// LA CORBEILLE DU DRIVE, A PART DU CLIENT : un `Client` (la sauvegarde, l'archivage, la restauration, la vue) n'a pas de
+/// quoi effacer, et aucun `use` ne le lui donne. Une corbeille se fait d'une `Autorisation` (le jeton scelle, que seul
+/// `routes::coffre` lit), et `routes::coffre` ne la fait qu'apres le mot de passe du logiciel, pour le seul geste qui
+/// supprime un dossier (`routes::drive`).
+pub struct Corbeille {
+    client: Client,
+}
+
+impl Corbeille {
+    /// La corbeille du compte que `autorisation` dit. Aucun appel reseau.
+    pub fn nouvelle(autorisation: Autorisation, adresses: Adresses) -> Corbeille {
+        Corbeille { client: Client::nouveau(autorisation, adresses) }
+    }
+
+    /// Le Drive du meme compte, pour relire ce qu'il porte avant de rien y mettre.
+    pub fn drive(&mut self) -> &mut Client {
+        &mut self.client
+    }
+
+    /// Met `id` (un dossier : tout ce qu'il porte) a la corbeille de Google, d'ou on le sort pendant 30 jours.
+    pub fn mettre(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
+        self.client.changer(id, &DossierAChanger { marque: None, trashed: Some(true) })
+    }
 }
 
 /// Les trois adresses que le client appelle. Les vraies par defaut ; la preuve pointe sur un
@@ -407,10 +570,14 @@ impl Client {
         if let Some(a) = self.acces.as_ref().filter(|a| !a.devoiler().is_empty()) {
             return Ok(a.clone());
         }
+        // AUCUNE AUTORISATION A RENOUVELER (aucun jeton de rafraichissement) : le compte est a lier, comme une autorisation
+        // perdue (`SorteDErreur::Autorisation`). Un refus du point de jeton garde ce que Google en dit (`google::traduire` :
+        // `invalid_grant` seul est l'autorisation perdue ; un `invalid_client`, la page d'un relais gardent leur sorte).
         let Some(rafraichissement) = self.rafraichissement.clone()?.filter(|r| !r.devoiler().is_empty()) else {
-            return Err(ErreurGoogle::google(
-                "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
-            ));
+            return Err(ErreurGoogle {
+                raison: Some(RaisonDeGoogle::AutorisationPerdue),
+                ..ErreurGoogle::google("Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.")
+            });
         };
         let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(std::time::Duration::from_secs(60)))??;
         self.acces = Some(acces.clone());
@@ -478,10 +645,23 @@ impl Client {
         if let Some(premier) = trouves.files.first() {
             return premier.id();
         }
-        let corps = socle::json_ascii::dumps(&DossierACreer { name: nom, type_mime: DOSSIER_DRIVE, parents: [parent.texte()] }, None, false, false);
+        self.creer(nom, parent, None)
+    }
+
+    /// Cree le dossier `nom` sous `parent`, avec sa marque s'il en porte une.
+    fn creer(&mut self, nom: &str, parent: &IdDrive, marque: Option<&MarqueDuDossier>) -> Result<IdDrive, ErreurGoogle> {
+        let corps = socle::json_ascii::dumps(&DossierACreer { name: nom, type_mime: DOSSIER_DRIVE, parents: [parent.texte()], marque }, None, false, false);
         let url = self.adresses.fichiers.clone();
         let cree: FichierDrive = self.appel(&url, Some(corps.as_bytes()), Some("application/json"), None)?;
         cree.id()
+    }
+
+    /// Change `id` (`files.update`, PATCH de ses metadonnees) : `changement` dit quoi.
+    fn changer(&mut self, id: &IdDrive, changement: &DossierAChanger<'_>) -> Result<(), ErreurGoogle> {
+        let corps = socle::json_ascii::dumps(changement, None, false, false);
+        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "id".into())])));
+        let _: FichierDrive = self.appel(&url, Some(corps.as_bytes()), Some("application/json"), Some("PATCH"))?;
+        Ok(())
     }
 }
 
@@ -543,16 +723,16 @@ impl Drive for Client {
         self.compte.clone()
     }
 
-    fn chemin(&mut self, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
-        let mut parent = IdDrive::RACINE;
+    fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
+        let mut parent = depuis.clone();
         for nom in noms {
             parent = self.dossier(nom, &parent)?;
         }
         Ok(parent)
     }
 
-    fn lister(&mut self, parent: &IdDrive) -> Result<BTreeMap<String, Distant>, ErreurGoogle> {
-        let mut fichiers = BTreeMap::new();
+    fn lister(&mut self, parent: &IdDrive) -> Result<FichiersDuDossier, ErreurGoogle> {
+        let mut fichiers = FichiersDuDossier::default();
         let mut page: Option<String> = None;
         loop {
             let mut champs = vec![
@@ -570,7 +750,7 @@ impl Drive for Client {
                     continue;
                 }
                 let octets = f.size.as_deref().filter(|t| !t.is_empty()).map(octets_de).transpose()?;
-                fichiers.insert(f.nom()?, Distant { id: f.id()?, md5: f.md5.clone(), octets });
+                fichiers.ajouter(f.nom()?, Distant { id: f.id()?, md5: f.md5.clone(), octets });
             }
             page = r.suite();
             if page.is_none() {
@@ -617,13 +797,13 @@ impl Drive for Client {
         Ok(depose_de(r))
     }
 
-    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle> {
+    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<SousDossier>, ErreurGoogle> {
         let mut dossiers = Vec::new();
         let mut page: Option<String> = None;
         loop {
             let mut champs = vec![
                 ("q", format!("'{}' in parents and mimeType = '{}' and trashed = false", parent, DOSSIER_DRIVE)),
-                ("fields", "nextPageToken,files(id,name)".to_string()),
+                ("fields", "nextPageToken,files(id,name,appProperties)".to_string()),
                 ("pageSize", "200".to_string()),
             ];
             if let Some(p) = &page {
@@ -632,7 +812,7 @@ impl Drive for Client {
             let url = self.adresses.fichiers.joindre(&format!("?{}", encoder(&champs)));
             let r: Listage = self.appel(&url, None, None, None)?;
             for f in &r.files {
-                dossiers.push((f.nom()?, f.id()?));
+                dossiers.push(SousDossier { nom: f.nom()?, id: f.id()?, marque: f.marque.clone() });
             }
             page = r.suite();
             if page.is_none() {
@@ -646,6 +826,25 @@ impl Drive for Client {
         // fabrique pas un chemin d'URL avec ce qu'un serveur a rendu.
         let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("alt", "media".into())])));
         self.appel_brut(&url, None, None, None)
+    }
+
+    fn creer_dossier(&mut self, nom: &str, parent: &IdDrive, marque: &MarqueDuDossier) -> Result<IdDrive, ErreurGoogle> {
+        self.creer(nom, parent, Some(marque))
+    }
+
+    fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle> {
+        self.changer(id, &DossierAChanger { marque: Some(marque), trashed: None })
+    }
+
+    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle> {
+        // `trashed` : « Whether the file was trashed, either explicitly or from a trashed parent folder »
+        // (`google-drive-api-corbeille-20261124.txt`, « Determine a trashed file's properties »). Un 404 : il n'existe plus.
+        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "trashed".into())])));
+        match self.appel::<EtatALaCorbeille>(&url, None, None, None) {
+            Ok(f) => Ok(!f.trashed),
+            Err(e) if e.statut == Some(ureq::http::StatusCode::NOT_FOUND) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 }
 

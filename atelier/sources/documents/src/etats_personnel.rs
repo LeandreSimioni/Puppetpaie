@@ -248,7 +248,7 @@ pub fn fichier_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avec_total = false;
     t.donnees_personnelles = true;
     t.sections = vec![Section::nouvelle("", lignes)];
-    t.avertissements = vec!["Ce fichier porte le NIR, la date de naissance et l'adresse des salariés : il reste dans prive/, et ne s'envoie qu'à qui en a besoin.".to_string()];
+    t.avertissements = vec!["Ce fichier porte le NIR, la date de naissance et l'adresse des salariés : il reste dans le dossier de la compagnie, et ne s'envoie qu'à qui en a besoin.".to_string()];
     t.colonnes = vec![
         C::Code.colonne(),
         C::Nom.colonne(),

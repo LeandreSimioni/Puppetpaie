@@ -110,6 +110,7 @@ formes! {
         engagement::numeros::NumeroContrat,
         engagement::carte::IdDeModele,
         envois::retours::IdDeFlux,
+        envois::drive::IdDrive,
         compagnie::installation::IdDeCompagnie,
         compagnie::installation::CouleurDeCompagnie,
     ],

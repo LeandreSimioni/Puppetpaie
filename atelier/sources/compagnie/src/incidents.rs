@@ -595,11 +595,11 @@ const ECRITURES_PAR_INCIDENT: usize = 3;
 
 /// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
 /// situation d'usage, pas un defaut du logiciel ; l'effectif et le taux AT/MP qui manquent aussi : la compagnie les dit.
-const REFUS_PAR_CLASSE: [Classe; 17] = [
+const REFUS_PAR_CLASSE: [Classe; 18] = [
     Classe::Refuse, Classe::SaisieIncomplete, Classe::PreuveInsuffisante, Classe::FabriqueRefus, Classe::FicheRefusee,
     Classe::DsnDejaDeposee, Classe::RepetitionManquante, Classe::VersionExigee, Classe::CompteursVerrouilles,
     Classe::Manque, Classe::TauxAtmpAbsent, Classe::EffectifAbsent, Classe::Illisible, Classe::FichierAbsent,
-    Classe::Coffre, Classe::Google, Classe::ModificationNonDeclarable,
+    Classe::Coffre, Classe::Google, Classe::ModificationNonDeclarable, Classe::CaseExigee,
 ];
 
 /// La nature d'un refus d'apres sa classe : un refus d'usage, ou un defaut du logiciel (un refus sans classe aussi).

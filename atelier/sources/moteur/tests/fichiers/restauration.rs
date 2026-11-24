@@ -22,9 +22,11 @@ fn dossier(test: &str) -> PathBuf {
     dossier_de_test("restauration", test)
 }
 
-/// Une petite compagnie : six fichiers qui partent, deux qui ne partent pas.
+/// Une petite compagnie : sept fichiers qui partent (son identite sur le Drive comprise), deux qui ne partent pas. Sa
+/// fiche ne se lit pas : son dossier sur le Drive porte le nom de son dossier, `source`.
 fn petite(r: &Path) {
     for (rel, contenu) in [
+        ("config/drive.json", r#"{"identite": "cie:0123456789abcdef0123456789abcdef", "quoi": "essai"}"#),
         ("notes.txt", "notes"),
         ("config/entreprise.json", "{\"a\": 1}"),
         ("journal/depots.jsonl", "{\"id\": \"1\", \"ligne\": {}}\n"),
@@ -41,6 +43,20 @@ fn petite(r: &Path) {
 fn sauvegarder_dans(r: &Path, d: &mut FauxDrive) {
     let s = sauvegarder(r, RD, false, Some(d as &mut dyn Drive)).unwrap();
     assert!(s.incidents.is_empty(), "{:?}", s.incidents);
+}
+
+/// La restauration dans `cible`, comme la reprise et `moteur restaurer` la font : le dossier cree, son verrou pris.
+fn restaurer_dans(cible: &Path, vu: &compagnie::sur_le_drive::DossierVu, d: &mut FauxDrive) -> Result<compagnie::restauration::Restauration, envois::drive::ErreurGoogle> {
+    std::fs::create_dir_all(cible).unwrap();
+    let verrou = compagnie::restauration::VerrouDeRestauration::prendre(cible).unwrap();
+    restaurer(cible, vu, RD, d, &verrou)
+}
+
+/// Le seul dossier du Drive, tel que la vue le montre : celui de la compagnie sauvegardee.
+fn le_seul(d: &mut FauxDrive) -> compagnie::sur_le_drive::DossierVu {
+    let mut vus = compagnie::sur_le_drive::voir(d, RD).unwrap();
+    assert_eq!(vus.len(), 1, "{:?}", vus);
+    vus.remove(0)
 }
 
 /// Tous les fichiers d'un dossier (ecartes compris), relatifs.
@@ -76,14 +92,17 @@ fn un_dossier_qui_porte_autre_chose_refuse_et_rien_n_est_ecrit_ni_efface() {
     ecrire(&cible, "paies/2026-07/martin.json", "{}"); // absent de la sauvegarde
     ecrire(&cible, "notes.txt", "notes"); // identique : pas un ecart
     let avant = tout(&cible);
+    let vu = le_seul(&mut d);
     d.journal.clear();
-    let e = restaurer(&cible, RD, &mut d).unwrap_err().echec;
+    let e = restaurer_dans(&cible, &vu, &mut d).unwrap_err().echec;
     assert_eq!(e.classe, Some(socle::echec::Classe::DossierNonVide));
-    assert!(e.phrase.contains("2 fichier(s)"), "{}", e.phrase);
-    assert!(e.phrase.contains("config/entreprise.json (differe de la copie du Drive)"), "{}", e.phrase);
-    assert!(e.phrase.contains("paies/2026-07/martin.json (absent de la sauvegarde)"), "{}", e.phrase);
-    assert!(e.phrase.contains("Rien n'a ete redescendu, rien n'a ete efface"), "{}", e.phrase);
-    assert!(!e.phrase.contains("notes.txt"), "{}", e.phrase);
+    // La phrase dit le cas en mots ; les fichiers vont a part.
+    assert!(e.phrase.contains("2 fichier(s)") && e.phrase.contains("Rien n'a été redescendu, rien n'a été effacé"), "{}", e.phrase);
+    assert!(!e.phrase.contains('/') && !e.phrase.contains(&cible.display().to_string()), "ni chemin ni dossier dans la phrase : {}", e.phrase);
+    let a_part = e.en_lignes();
+    assert!(a_part.contains("config/entreprise.json (differe de la copie du Drive)"), "{}", a_part);
+    assert!(a_part.contains("paies/2026-07/martin.json (absent de la sauvegarde)"), "{}", a_part);
+    assert!(!a_part.contains("notes.txt"), "{}", a_part);
     // Rien de touche : les memes fichiers, le meme contenu, pas d'index, aucun telechargement.
     assert_eq!(tout(&cible), avant);
     assert_eq!(std::fs::read_to_string(cible.join("config/entreprise.json")).unwrap(), "{\"a\": 2}");
@@ -100,12 +119,16 @@ fn une_empreinte_qui_ne_colle_pas_n_ecrit_rien_de_ce_fichier() {
     let mut d = FauxDrive::nouveau();
     sauvegarder_dans(&source, &mut d);
     // Le Drive annonce une empreinte que le contenu ne donne pas (un transfert abime, un fichier change en route).
-    d.fichier_mut("PuppetPaie/sauvegarde/paies/2026-06/dupont.json").md5 = Some(envois::drive::EmpreinteMd5::lire(&"0".repeat(32)).unwrap());
+    d.fichier_mut("PuppetPaie/source/sauvegarde/paies/2026-06/dupont.json").md5 = Some(envois::drive::EmpreinteMd5::lire(&"0".repeat(32)).unwrap());
     let cible = base.join("cible");
-    let r = restaurer(&cible, RD, &mut d).unwrap();
-    assert_eq!(r.incidents.len(), 1, "{:?}", r.incidents);
-    assert!(r.incidents[0].starts_with("paies/2026-06/dupont.json") && r.incidents[0].contains(&"0".repeat(32)), "le fichier et l'empreinte annoncee : {}", r.incidents[0]);
-    assert_eq!(r.redescendus.len(), 5);
+    let vu = le_seul(&mut d);
+    let r = restaurer_dans(&cible, &vu, &mut d).unwrap();
+    // Un contenu abime en route se retente : la restauration n'est pas complete, rien n'est perdu pour elle.
+    assert!(r.incidents.is_empty(), "{:?}", r.incidents);
+    assert_eq!(r.a_retenter.len(), 1, "{:?}", r.a_retenter);
+    assert!(r.a_retenter[0].starts_with("paies/2026-06/dupont.json") && r.a_retenter[0].contains(&"0".repeat(32)), "le fichier et l'empreinte annoncee : {}", r.a_retenter[0]);
+    assert!(!r.complete());
+    assert_eq!(r.redescendus.len(), 6);
     // Ni le fichier, ni un `.part`, ni une ligne d'index.
     assert!(!cible.join("paies/2026-06/dupont.json").exists());
     assert!(tout(&cible).iter().all(|f| !f.ends_with(".part") && !f.contains("dupont")), "{:?}", tout(&cible));

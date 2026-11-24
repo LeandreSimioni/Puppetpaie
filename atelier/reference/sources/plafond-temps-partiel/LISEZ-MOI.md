@@ -135,7 +135,7 @@ Le moteur : `calcul::plafond_temps_partiel` (la règle, la renonciation, l'exclu
 
 ## Où le moteur s'en sert
 
-- `atelier/sources/paie/src/plafond.rs`, `plafond_permanent` : le prorata calendaire et la correction.
+- `atelier/sources/droit/src/plafond.rs`, `plafond_de_la_periode` : le prorata calendaire et la correction.
 - `atelier/sources/paie/src/calcul.rs`, `plafond_temps_partiel` (le choix, lu dans la fiche entreprise
   `plafond_temps_partiel` : « proratisé » ou « entier »), `duree_du_temps_partiel` (le rapport ; une ligne d'heures en
   plus du mois refuse, faute de savoir si ce sont des heures complémentaires), `plafond_de_l_engagement` (le plafond

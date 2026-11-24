@@ -22,12 +22,32 @@ let VEILLE = null;
 async function rafraichirApresVeille(v) {
   const avant = VEILLE?.dernier?.quand;
   const apres = v?.dernier?.quand;
-  if (!apres || apres === avant || v.en_cours) return;
+  const envoisAuBout = envoisArrives(v);
+  if (!envoisAuBout && (!apres || apres === avant || v.en_cours)) return;
+  if (envoisAuBout) oublierLeMois();
   const mois = document.getElementById("mois").value;
   try {
     await dessinerEtatsDesEngagements(mois);
     await rafraichirActions();
+    await relireFichesAttendues();
   } catch (e) { dire(e.message, "erreur"); }
+}
+
+/* LES ENVOIS PARTIS EN FOND (`dit.envois`, routes/src/envois_en_fond.rs) : un envoi
+   à la signature, des documents, un dépôt réel partent sur un fil du moteur une fois
+   vérifiés ; la page reçoit « en cours d'envoi » (`en_fond`), et le bandeau dit la
+   suite. Les numéros déjà vus au bout, pour ne repeindre et ne suivre qu'une fois. */
+const ENVOIS_VUS_AU_BOUT = new Set();
+
+/** Des envois sont-ils arrivés au bout depuis le dernier regard ? Un dépôt réel parti
+ *  se suit ensuite comme après l'avoir attendu (`suivre`, la charge de `suivre-depot`). */
+function envoisArrives(v) {
+  const neufs = (v?.dit?.envois || []).filter((e) => e.etat !== "en_cours" && !ENVOIS_VUS_AU_BOUT.has(e.numero));
+  neufs.forEach((e) => {
+    ENVOIS_VUS_AU_BOUT.add(e.numero);
+    if (e.suivre) suivreDepot(e.suivre.quoi, e.suivre.flux, e.suivre.mois);
+  });
+  return neufs.length > 0;
 }
 
 /* LE BANDEAU. On y cherche trois choses, dans cet ordre : est-ce que tout
@@ -48,13 +68,20 @@ function dessinerVeille(v) {
   VEILLE = v;
   const zone = document.getElementById("veille");
   const texte = document.getElementById("veille-texte");
-  if (!v || (!v.minutes && !v.dernier?.quand && !v.en_cours)) { zone.hidden = true; return; }
+  const envois = v?.dit?.envois || [];
+  if (!v || (!v.minutes && !v.dernier?.quand && !v.en_cours && !envois.length)) { zone.hidden = true; return; }
   zone.hidden = false;
   zone.classList.remove("souci", "neuf");
+  // LES ENVOIS EN COURS, dits par le moteur, comme l'étape d'un relevé ; le bandeau les suit jusqu'au bout.
+  const enCours = envois.filter((e) => e.etat === "en_cours")
+    .map((e) => `<span class="veille-etape">${echapper(e.phrase)}</span>`);
+  // LE LOGICIEL SE FERME dès que l'envoi est parti (la croix, le bouton, la mise à jour) : le moteur le dit.
+  if (v?.dit?.fermeture) enCours.push(`<b>${echapper(v.dit.fermeture)}</b>`);
+  if (enCours.length) suivreLesEtapes();
 
   if (v.en_cours) {
     // L'ÉTAPE, DITE PAR LE MOTEUR : qui il appelle, puis qui d'autre, puis la sauvegarde.
-    texte.innerHTML = `<span class="veille-etape">${echapper(v.etape || v.dit.en_cours)}</span>`;
+    texte.innerHTML = [`<span class="veille-etape">${echapper(v.etape || v.dit.en_cours)}</span>`, ...enCours].join(" — ");
     suivreLesEtapes();
     return;
   }
@@ -86,6 +113,8 @@ function dessinerVeille(v) {
   // Les retours se LISENT dans l'Historique : le bandeau les annonce et y mène.
   const retours = k.retours ? ` <button class="lien" data-vers-historique>${echapper(k.retours)}</button>` : "";
   if (d) d.signatures_recues.forEach((x) => nouvelles.push(x.phrase));
+  envois.filter((e) => e.etat === "parti").forEach((e) => nouvelles.push(e.phrase));
+  if (enCours.length) morceaux.push(...enCours);
   // L'HORLOGE DE LA COMPAGNIE FICTIVE : ce que l'administrateur fictif a fait
   // pendant l'absence du visiteur, chaque geste à sa date limite.
   const horloge = k.horloge ? ` <button class="lien" id="fictive-horloge">${echapper(k.horloge)}</button>` : "";
@@ -98,6 +127,15 @@ function dessinerVeille(v) {
   // Ce qui manque est celui du coffre AU MOMENT où la fenêtre répond (`dit.a_poser`), pas celui du dernier relevé.
   const afaire = k.a_poser.map((a) =>
     `${echapper(a.phrase)} <button class="lien" data-aller>${echapper(a.geste)}</button>`);
+  // UN ENVOI QUI N'EST PAS ALLÉ AU BOUT : ce qui a échoué, et le geste qui le refait (la boîte d'où il est parti).
+  envois.forEach((e, i) => {
+    if (e.etat === "echoue") {
+      afaire.push(`${echapper(e.phrase)}${e.refaire
+        ? ` <button class="lien" data-refaire="${i}">${echapper(e.refaire.libelle)}</button>` : ""}`);
+    }
+    // CE QUE L'ENVOI AVERTIT (un salarié sans courriel, la boîte qui envoie), que le moteur dit avec lui, au bout.
+    e.avertissements.forEach((a) => afaire.push(echapper(a)));
+  });
   if (d) [...d.manquants, ...d.incidents].forEach((x) => afaire.push(echapper(x)));
   if (v.erreur) afaire.push(echapper(v.erreur));
   if (afaire.length) {
@@ -116,6 +154,9 @@ function dessinerVeille(v) {
   });
   texte.querySelectorAll("[data-aller]").forEach((b) => {
     b.onclick = () => allerAuxMotsDePasse();
+  });
+  texte.querySelectorAll("[data-refaire]").forEach((b) => {
+    b.onclick = (ev) => { ev.preventDefault(); ouvrirGeste(envois[+b.dataset.refaire].refaire); };
   });
   const bh = texte.querySelector("#fictive-horloge");
   if (bh) bh.onclick = () => ouvrirBoite(`
@@ -146,7 +187,9 @@ function suivreLesEtapes() {
     } catch (x) { direLeRefusDuSuivi("veille_etape", x.message); }
     SUIVI_ETAPES = null;
     if (!e) return;
-    if (e.en_cours || e.sauvegarde_en_cours || RELEVE_DEMANDE) {
+    // La fermeture attend un envoi : le bandeau se relit une fois pour le dire.
+    if (e.fermeture && !VEILLE?.dit?.fermeture) { suivreVeille(); return; }
+    if (e.en_cours || e.sauvegarde_en_cours || e.envoi_en_cours || RELEVE_DEMANDE) {
       const el = document.querySelector("#veille-texte .veille-etape");
       if (el && e.etape) el.textContent = e.etape;
       suivreLesEtapes();

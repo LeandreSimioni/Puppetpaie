@@ -9,7 +9,7 @@ use std::path::Path;
 use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
-    cause_de, ecrire_index, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
+    cause_de, ecrire_index, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
     GOOGLE_INDISPONIBLE,
 };
 
@@ -29,10 +29,11 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             &mut propre
         }
     };
+    // L'identite de la compagnie sur le Drive, ecrite avant l'inventaire a la premiere sauvegarde : elle part avec elle.
+    let identite = compagnie::sauvegarde::identite(racine).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Illisible)))?;
+    let nom = compagnie::installation::nom_de(racine).map_err(ErreurGoogle::from)?;
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
-    // Tout renvoyer, ou aucun index : aucun dossier n'est connu d'avance, chacun se cherche dans Drive.
-    let mut dossiers: BTreeMap<compagnie::sauvegarde::DossierDuDrive, envois::drive::IdDrive> = index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
 
     let mut resultat = Sauvegarde {
         racine_drive: racine_drive.to_string(),
@@ -64,9 +65,35 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         par_dossier.entry(relatif.parent()).or_default().push(relatif.clone());
     }
 
-    for (dossier, fichiers) in &par_dossier {
-        let segments = compagnie::sauvegarde::DossierDuDrive::segments(racine_drive, dossier.as_ref());
-        let cle = compagnie::sauvegarde::DossierDuDrive::de(racine_drive, dossier.as_ref());
+    // LE DOSSIER DE LA COMPAGNIE : celui que l'index garde s'il est encore en place, sinon celui que sa marque designe,
+    // sinon un neuf. Qu'il ne se trouve pas, et rien ne part a ce passage : tout est reporte au suivant.
+    let connu = index.as_ref().filter(|_| !tout).and_then(|i| i.compagnie.clone());
+    let compagnie_id = match compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref()) {
+        Ok(id) => Some(id),
+        Err(e) => {
+            if e.injoignable {
+                resultat.hors_ligne = true;
+            } else {
+                resultat.incidents.push(format!(". : {}", e.echec.phrase));
+                let reporte = Reporte { quoi: ".".to_string(), dossier: true, cause: cause_de(&e).into() };
+                a_noter.push((reporte.cle(), e));
+                resultat.reportes.push(reporte);
+            }
+            en_echec.extend(presents.iter().map(|(r, _)| r.clone()));
+            None
+        }
+    };
+    // Tout renvoyer, ou un dossier que l'index ne connait pas : aucun de ses dossiers n'est connu d'avance, chacun se
+    // cherche dans le Drive.
+    let mut dossiers = match &compagnie_id {
+        Some(c) if !tout => compagnie::sauvegarde::dossiers_connus(index.as_ref(), c),
+        Some(_) | None => BTreeMap::new(),
+    };
+
+    for (dossier, fichiers) in par_dossier.iter().filter(|_| compagnie_id.is_some()) {
+        let Some(cie) = compagnie_id.as_ref() else { break };
+        let segments = compagnie::sauvegarde::DossierDuDrive::segments(dossier.as_ref());
+        let cle = compagnie::sauvegarde::DossierDuDrive::de(dossier.as_ref());
         // Le dossier, tel qu'un dossier reporte le dit (`.` pour la racine).
         let dossier = match dossier {
             Some(d) => d.to_string(),
@@ -77,10 +104,10 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             en_echec.extend(fichiers.iter().cloned());
             continue;
         }
-        let essai: Result<(envois::drive::IdDrive, BTreeMap<String, envois::drive::Distant>), ErreurGoogle> = (|| {
+        let essai: Result<(envois::drive::IdDrive, envois::drive::FichiersDuDossier), ErreurGoogle> = (|| {
             let parent = match dossiers.get(&cle) {
                 Some(p) => p.clone(),
-                None => client.chemin(&segments)?,
+                None => client.chemin(cie, &segments)?,
             };
             dossiers.insert(cle.clone(), parent.clone());
             // Meme avec `tout`, on liste : c'est `lister` qui dit ce qui existe, donc ce qui se REMPLACE (aucune
@@ -91,7 +118,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         let (parent, deja) = match essai {
             Ok(x) => x,
             Err(e) => {
-                if hors_ligne(&e.echec.phrase) {
+                if e.injoignable {
                     // Pas de reseau : les dossiers suivants tomberaient pareil. On s'arrete,
                     // rien de ce qui reste n'entre a l'index, et le prochain passage reprendra tout.
                     resultat.hors_ligne = true;
@@ -125,8 +152,9 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             let nom = relatif.nom();
             let mut faire = || -> Result<Option<EtatFichier>, ErreurGoogle> {
                 let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
-                // Le fichier de ce nom que `lister` connait (le meme pour decider ET pour remplacer).
-                let connu = deja.get(nom.texte());
+                // Le fichier de ce nom que `lister` connait (le meme pour decider ET pour remplacer) ; deux de ce nom dans
+                // le Drive : le fichier est reporte, en le disant, et rien ne se choisit.
+                let connu = deja.le_seul(nom.texte())?;
                 let distante = if tout { None } else { connu.and_then(|d| d.md5.as_ref()) };
                 if distante == Some(&locale) {
                     return Ok(None);
@@ -167,9 +195,17 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         }
     }
 
+    let maintenant = socle::temps::secondes();
+    // LA MARQUE DU DOSSIER, quand ce passage a envoye quelque chose : la date de cette sauvegarde et ce que la compagnie
+    // pese, que la vue du Drive montre (et que la suppression d'un dossier dit avant). Qu'elle ne se pose pas n'arrete rien.
+    if let (Some(cie), false) = (&compagnie_id, resultat.deposes.is_empty() || resultat.hors_ligne) {
+        let poids = presents.iter().map(|(_, e)| e.octets).sum();
+        if let Err(e) = client.marquer(cie, &compagnie::sauvegarde::marque(&identite, maintenant.a_la_minute(), poids)) {
+            resultat.incidents.push(format!("la date de cette sauvegarde ne s'est pas notée sur le dossier du Drive : {}", e.echec.phrase));
+        }
+    }
     // L'index n'est ecrit qu'a la fin, et seulement pour ce qui est passe.
     let fichiers: BTreeMap<CheminRelatif, Etat> = presents.iter().filter(|(r, _)| !en_echec.contains(r)).map(|(r, e)| (r.clone(), *e)).collect();
-    let maintenant = socle::temps::secondes();
     let quand = maintenant.a_la_minute();
     // CE QUI RESTE EN ECHEC, D'UN PASSAGE A L'AUTRE : de quoi dire ce qui persiste (`souci`). Un passage hors ligne ne compte
     // pas (il n'a rien essaye) : il garde les echecs tels quels. Un passage sans rien de reporte les efface. Les deux cles ne
@@ -201,6 +237,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let nouvel_index = Index {
         quand,
         racine_drive: racine_drive.to_string(),
+        compagnie: compagnie_id,
         dossiers,
         fichiers,
         derniere_complete,

@@ -917,12 +917,25 @@ pub(crate) fn lie_le(racine: &Path) -> R<Option<socle::paris::Moment>> {
     }
 }
 
-/// L'adresse du compte, sans reseau ; `None` si pas autorise (un jeton illisible ne l'est pas).
-pub(crate) fn compte_autorise(racine: &Path) -> Option<String> {
+/// L'adresse du compte lie, sans reseau ; `None` : aucun jeton. Un jeton qui ne se lit pas n'est pas « aucun » : il se
+/// refuse, et l'ecran le dit (le relier de nouveau).
+pub(crate) fn compte_autorise(racine: &Path) -> R<Option<String>> {
     match Jeton::de(racine) {
-        Jeton::Lu(j) => Some(j.compte),
-        Jeton::Absent | Jeton::Illisible(_) => None,
+        Jeton::Lu(j) => Ok(Some(j.compte)),
+        Jeton::Absent => Ok(None),
+        Jeton::Illisible(e) => Err(e),
     }
+}
+
+/// Ce que la boite de « Lier le Drive » dit avant d'ouvrir Google, a l'accueil comme dans une compagnie.
+pub(crate) const OUVRIR_GOOGLE: [&str; 2] = [
+    "Le logiciel ouvre la fenêtre de Google dans votre navigateur : choisissez le compte, acceptez, puis revenez ici.",
+    "Si Google dit que l'application n'est pas validée : Paramètres avancés › Accéder à PuppetPaie.",
+];
+
+/// Ce que la boite de « Lier le Drive » dit, une ligne par phrase.
+pub(crate) fn ouvrir_google_dit() -> Vec<String> {
+    OUVRIR_GOOGLE.iter().map(|p| p.to_string()).collect()
 }
 
 /// Le faux Google qui remplace Google : dans l'atelier, celui d'`envois::redirection` ; en essai, celui que l'essai
@@ -956,6 +969,13 @@ fn adresses_du_poste() -> R<envois::drive::Adresses> {
 /// compagnie), lit l'application (`google.json` ou celle du logiciel), le jeton scelle par la cle du poste et l'adresse
 /// du compte, et les passe au client (`drive::Client::nouveau`). Aucun appel reseau.
 pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::drive::ErreurGoogle> {
+    let (autorisation, adresses) = autorisation_du_drive(racine)?;
+    Ok(envois::drive::Client::nouveau(autorisation, adresses))
+}
+
+/// Ce que le client du Drive (`client_drive`) et la corbeille (`corbeille_du_drive`) recoivent : l'autorisation lue sous
+/// `racine` et les adresses du poste. Aucun appel reseau.
+fn autorisation_du_drive(racine: &Path) -> Result<(envois::drive::Autorisation, envois::drive::Adresses), envois::drive::ErreurGoogle> {
     if let Some(refus) = refus_de_copie(racine) {
         return Err(refus.into());
     }
@@ -965,8 +985,18 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
         Jeton::Lu(j) => (Ok(Some(j.rafraichissement)), Some(j.compte)),
         Jeton::Illisible(e) => (Err(envois::drive::ErreurGoogle::from(e.reclasser(Classe::Google))), None),
     };
-    let autorisation = envois::drive::Autorisation { application, rafraichissement, compte };
-    Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()?))
+    Ok((envois::drive::Autorisation { application, rafraichissement, compte }, adresses_du_poste()?))
+}
+
+/// LA CORBEILLE DU DRIVE DE LA COMPAGNIE (`envois::drive::Corbeille`), pour le seul geste `geste` qui met un dossier a la
+/// corbeille (`routes::drive`) : le mot de passe du logiciel d'abord, comme un acte reel (`preuve::verifier_preuve` ; tape
+/// dans la page, `mdp`, sinon le moteur le demande a un humain), puis l'autorisation lue ici, que rien d'autre ne donne.
+pub(crate) fn corbeille_du_drive(ctx: &Contexte, mdp: Option<&socle::secret::Secret>, geste: &str) -> R<envois::drive::Corbeille> {
+    let demande = demande(&ctx.racine, geste)?;
+    let preuve = compagnie::preuve::Preuve::du_mot_de_passe(mdp.cloned());
+    compagnie::preuve::verifier_preuve(ctx, Some(&preuve), &demande).map_err(|e| e.reformuler(|m| m.replace("Rien n'est parti", "Rien n'est supprimé")))?;
+    let (autorisation, adresses) = autorisation_du_drive(&ctx.racine).map_err(|e| e.echec)?;
+    Ok(envois::drive::Corbeille::nouvelle(autorisation, adresses))
 }
 
 /// La variable d'un faux Google des essais : sa base locale (`http://127.0.0.1:<port>`), lue en essai seulement
@@ -987,7 +1017,13 @@ fn adresses_de_l_autorisation() -> R<envois::google_autorisation::Adresses> {
 /// le code au moteur, qui scelle le jeton. Rend l'adresse du compte lie. La page et `moteur route` l'appellent pareil.
 fn google_autoriser(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<String> {
     exiger_mot_de_passe(&ctx.racine, mdp, GESTE_GOOGLE_LIER)?;
-    let (application, _) = identifiants(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?;
+    lier_google(&ctx.racine)
+}
+
+/// L'AUTORISATION DE GOOGLE, SCELLEE SOUS `racine` (`config/google-jeton.bin`) : celle d'une compagnie (`google-autoriser`),
+/// ou celle de l'accueil, sous l'installation (`drive-lier`, `accueil::drive`). Rend l'adresse du compte lie.
+pub(crate) fn lier_google(racine: &Path) -> R<String> {
+    let (application, _) = identifiants(racine).map_err(|e| e.reclasser(Classe::Refuse))?;
     let dire_url = |u: &socle::garde_reseau::Url| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         if let Err(e) = compagnie::poste::ouvrir_adresse(u) {
@@ -995,7 +1031,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<St
         }
     };
     let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation()?,envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
-    sceller_le_jeton(&ctx.racine, &jeton)
+    sceller_le_jeton(racine, &jeton)
 }
 
 /// Le jeton que l'autorisation a obtenu (`google_autorisation::autoriser`) et l'adresse du compte, dans un seul fichier
@@ -1363,17 +1399,25 @@ fn ecran_du_coffre(ctx: &Contexte, e: &EtatDuCoffre) -> R<EcranDuCoffre> {
     // LE COMPTE GOOGLE, dit sans reseau : le lier (le moteur ouvre Google dans le navigateur et attend qu'on y accepte),
     // le verifier (une tentative), l'oublier.
     let dit = vec!["La sauvegarde du dossier privé et l'archivage des mois, dans son Drive ; rien d'autre.".to_string()];
-    let lie = if fictive { None } else { compte_autorise(&ctx.racine) };
-    let pastille = match (fictive, &lie) {
-        (true, _) => Pastille::de(socle::ecran::EtatDEcran::Information, "non lié"),
-        (false, Some(_)) => Pastille::de(socle::ecran::EtatDEcran::Fait, "lié"),
-        (false, None) => Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun Drive lié"),
+    let mut dit = dit;
+    // Un jeton qui ne se lit pas n'est pas « aucun Drive lié » : il se dit, et se relie.
+    let (lie, illisible) = match if fictive { Ok(None) } else { compte_autorise(&ctx.racine) } {
+        Ok(compte) => (compte, false),
+        Err(_) => {
+            dit.push("Le jeton de ce compte Google ne se lit pas sur ce poste : relier le Drive de nouveau.".to_string());
+            (None, true)
+        }
+    };
+    let pastille = match (fictive, &lie, illisible) {
+        (true, _, _) => Pastille::de(socle::ecran::EtatDEcran::Information, "non lié"),
+        (false, _, true) => Pastille::de(socle::ecran::EtatDEcran::Refuse, "illisible"),
+        (false, Some(_), false) => Pastille::de(socle::ecran::EtatDEcran::Fait, "lié"),
+        (false, None, false) => Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun Drive lié"),
     };
     let mut gestes = Vec::new();
     if !fictive {
-        let ouvrir = "Le logiciel ouvre la fenêtre de Google dans votre navigateur : choisissez le compte, acceptez, puis revenez ici. Si Google dit que l'application n'est pas validée : Paramètres avancés › Accéder à PuppetPaie.";
-        gestes.push(geste(Route::GoogleAutoriser, None, if lie.is_some() { RELIER } else { LIER }, Vec::new()).disant(vec![ouvrir.to_string()]).exigeant(exigee(GESTE_GOOGLE_LIER)?));
-        if lie.is_some() {
+        gestes.push(geste(Route::GoogleAutoriser, None, if lie.is_some() || illisible { RELIER } else { LIER }, Vec::new()).disant(ouvrir_google_dit()).exigeant(exigee(GESTE_GOOGLE_LIER)?));
+        if lie.is_some() || illisible {
             gestes.push(geste(Route::GoogleEtat, None, VERIFIER, Vec::new()));
             let oublier = "Oublier le compte Google ? Le jeton local est effacé : plus de sauvegarde ni d'archivage jusqu'à ce qu'un Drive soit relié. L'accès accordé côté Google, lui, se retire sur myaccount.google.com › Sécurité › Vos connexions à des applications tierces.";
             gestes.push(geste(Route::GoogleOublier, None, OUBLIER, Vec::new()).disant(vec![oublier.to_string()]).exigeant(exigee(GESTE_GOOGLE_OUBLIER)?));

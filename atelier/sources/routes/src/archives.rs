@@ -898,7 +898,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
         n => socle::phrase!("{} : {} fichiers écrits.", titre, n),
     };
     let ecran = EcranDUnEtat {
-        personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans prive/, et ne s'envoie qu'à qui en a besoin."),
+        personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans le dossier de la compagnie, et ne s'envoie qu'à qui en a besoin."),
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),
         sources: "Sources",
         ouvrir: (casc.is_none() && !ecrits.is_empty()).then_some("Ouvrir le dossier"),
@@ -1103,6 +1103,8 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
         partis: None,
         echec_a: None,
     };
+    // Le dossier se renvoie depuis les Exports, d'ou il est parti.
+    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: socle::ecran::compte(messages.len(), "dossier de salarié", "dossiers de salariés"), place: crate::envois_en_fond::PlaceDeLEnvoi::Ailleurs, refaire: None, avertissements: Vec::new() }))?;
     let partis = match envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None) {
         Ok(p) => p,
         Err(e) => {
@@ -1240,6 +1242,8 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     let casc = horodate.suivi_de(&const { NomDeFichier::du_moteur("_CASC-SVP_") });
     let emls: Vec<NomDeFichier> = messages.iter().map(|m| casc.suivi_de(&m.pour).avec_l_extension(&const { NomDeFichier::du_moteur("eml") })).collect();
     let mut copies: Vec<Vec<u8>> = Vec::new();
+    // La regularisation se renvoie depuis les Exports, d'ou elle est partie.
+    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: "Régularisation CASC-SVP".into(), place: crate::envois_en_fond::PlaceDeLEnvoi::Ailleurs, refaire: None, avertissements: Vec::new() }))?;
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,
         Err(e) => {

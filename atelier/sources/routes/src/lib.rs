@@ -38,7 +38,7 @@
 //! compagnie qui appellent des routes (`gestes`), le metier qu'elles partagent (`metier`), ce que l'import compose et
 //! ecrit pour elles (`importation`), les obligations d'un arret (`obligations`), les regularisations
 //! (`regularisation`), l'Historique d'un mois (`historique_mois`), l'apercu d'une DSN (`apercu_dsn`), ce que la veille
-//! dit a la page (`veille`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
+//! dit a la page (`veille`), les envois que la fenetre fait partir en fond (`envois_en_fond`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
 //! (`scenario`), l'horloge fictive (`horloge`), les courriels joues (`simulation_courriels`). Au-dessus, le moteur : la
 //! ligne de commande, l'interface, l'atelier.
 #![forbid(unsafe_code)]
@@ -63,6 +63,7 @@ mod historique;
 pub mod documents;
 mod dossier_salarie;
 pub mod coffre;
+mod drive;
 mod engagement;
 mod contrats;
 mod modeles_contrat;
@@ -101,6 +102,7 @@ pub mod scenario;
 pub mod service;
 mod simulation_courriels;
 pub mod veille;
+pub mod envois_en_fond;
 
 /// LE NOM D'UN SALARIE A L'ECRAN : celui que sa fiche porte (`ChampsSalarie::nomme`) ; une fiche qui ne nomme personne se
 /// designe par sa cle, `cle`.
@@ -161,19 +163,29 @@ pub(crate) fn remettre_le_fil() {
 /// `moteur route` et la ligne de commande (`commandes::Cadre`) appellent `commande` directement : le processus meurt avec
 /// sa commande, et le mot de passe qu'elle a fait taper (`demande::autoriser_acte`) sert a toute la commande.
 pub fn dans_la_fenetre(o: &Options, route: Route, charge: &Charge) -> Reponse {
-    let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| servir_la_route(o, route, charge)));
+    garde_dans_la_fenetre(route, || servir_la_route(o, route, charge))
+}
+
+/// LA GARDE D'UNE ROUTE DANS LA FENETRE (`dans_la_fenetre`), pour une route que la fenetre fait elle-meme parce qu'elle y
+/// joint ce qu'elle seule tient (`compagnies-garder` et le lacher de ses envois en fond) : la panique gardee, le fil remis.
+pub fn garde_dans_la_fenetre(route: Route, faire: impl FnOnce() -> Reponse) -> Reponse {
+    let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(faire));
     remettre_le_fil();
     match rendu {
         Ok(rep) => rep,
-        Err(panique) => {
-            let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
-                (Some(s), _) => format!(" ({})", s),
-                (None, Some(s)) => format!(" ({})", s),
-                (None, None) => String::new(),
-            };
-            Reponse::de(route, Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée{}.", route, pourquoi))))
-        }
+        Err(panique) => Reponse::de(route, Err(route_tombee(route, panique.as_ref()))),
     }
+}
+
+/// UNE ROUTE TOMBEE (une panique gardee : `dans_la_fenetre`, `envois_en_fond::EnvoisEnFond::servir`) : un defaut du
+/// logiciel, qui dit la route et ce que la panique a dit, quand elle a dit un texte.
+pub(crate) fn route_tombee(route: Route, panique: &(dyn std::any::Any + Send)) -> Echec {
+    let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
+        (Some(s), _) => format!(" ({})", s),
+        (None, Some(s)) => format!(" ({})", s),
+        (None, None) => String::new(),
+    };
+    erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée{}.", route, pourquoi))
 }
 
 /// `moteur route [--racine R] [--date D]` : la demande lue en sa forme (`Demande::lire`), sans ses secrets
@@ -211,7 +223,7 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     // Ce que la route rend, reussite ou refus, est ce que l'ecran lit : ses phrases passent ici (`phrase_a_sa_place`).
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
     if let (Ok(v), Some(r)) = (&rendu, &racine) {
-        if catalogue::dans(accueil::ROUTES, route).is_none() && catalogue::dans(catalogue::ROUTES, route).is_none() {
+        if !accueil::est_de_l_installation(route) && catalogue::dans(catalogue::ROUTES, route).is_none() {
             phrase_a_sa_place(r, route, v);
         }
     }
@@ -268,7 +280,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         panic!("la route d'essai tombe expres");
     }
     // UNE ROUTE DE L'INSTALLATION (l'accueil des compagnies) ne porte sur aucune compagnie : elle se sert sans contexte.
-    if catalogue::dans(accueil::ROUTES, route).is_some() {
+    if accueil::est_de_l_installation(route) {
         return accueil::route(o, route, charge);
     }
     // ECRIRE AU DEVELOPPEUR, ET CE QUI S'Y RATTACHE, SE SERT AUSSI SANS COMPAGNIE : depuis l'accueil, ou en ligne de
@@ -314,6 +326,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         // Les organismes et les contrats de la DSN : lus, et composes quand la compagnie les enregistre (`organismes`).
         _ if dans(crate::gestes::organismes::ROUTES) => crate::gestes::organismes::route(&porte, charge),
         _ if dans(coffre::ROUTES) => coffre::route(&porte, charge),
+        _ if dans(drive::ROUTES) => drive::route(&porte, charge),
         _ if dans(filet::ROUTES) => filet::route(&porte, charge),
         _ if dans(import::ROUTES) => import::route(&porte, charge),
         _ if dans(archives::ROUTES) => archives::route(&porte, charge),
@@ -335,11 +348,12 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         Route::HorlogeRattraper => crate::horloge::route(&ctx, charge),
         autre => return Err(enveloppe::route_inconnue(autre.nom())),
     };
-    // UN ACTE REFUSE A UNE COMPAGNIE QUI N'A PAS FINI DE DEMARRER dit tout ce qui lui manque, pas un manque a la fois.
-    // Les mots de passe et les comptes (`routes::coffre`), le filet et les messages au developpeur (`routes::filet`) ne
-    // dependent d'aucun de ces manques : leur refus se dit seul.
+    // UN ACTE REFUSE PARCE QU'UN MANQUE DE « POUR DEMARRER » LE BLOQUE (une case qu'il exige, le taux AT/MP, l'effectif :
+    // sa classe le dit) dit tout ce qui manque encore, pas un manque a la fois. Tout autre refus dit ce qui corrige CE
+    // geste, et se dit seul.
+    let bloque_au_demarrage = |e: &Echec| matches!(e.classe, Some(Classe::CaseExigee | Classe::TauxAtmpAbsent | Classe::EffectifAbsent));
     match rendu {
-        Err(e) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && e.classe != Some(Classe::EnvoiBride) => {
+        Err(e) if est_une_ecriture(route) && bloque_au_demarrage(&e) => {
             // Un refus qui porte une donnee a part (l'etat d'un mois, les anomalies d'une fiche, un chemin) se dit seul.
             if e.a_part.is_some() {
                 return Err(e);
@@ -347,6 +361,9 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
             match declarations::demarrage::a_la_suite(&ctx, &e.phrase) {
                 Ok(Some(suite)) => Err(e.reformuler(|p| format!("{}{}", p, suite))),
                 Ok(None) => Err(e),
+                // « Pour demarrer » qui ne se lit pas : une panne remonte telle quelle, sa classe avec elle ; un manque
+                // qu'il rencontre se dit a la suite du refus.
+                Err(m) if !m.dit_un_manque() => Err(m),
                 Err(m) => Err(Echec { a_part: m.a_part, ..e.reformuler(|p| format!("{} {}", p, m.phrase)) }),
             }
         }

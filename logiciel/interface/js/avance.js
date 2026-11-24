@@ -856,6 +856,19 @@ function brancherLesGestes(cible, gestes, entete, apres) {
   });
 }
 
+/** LA RÉPONSE D'UN ENVOI PARTI EN FOND (`en_fond`, routes/src/envois_en_fond.rs) : la boîte se ferme, la phrase se
+ *  dit, et le bandeau suit l'envoi (`suivreVeille`, js/veille.js : seule une compagnie ouverte en reçoit). Vrai si c'en
+ *  est une : ce qui suivrait un envoi attendu (ce qui est parti, l'avis) se dit dans le bandeau. */
+function partiEnFond(r) {
+  if (!r || !r.en_fond) return false;
+  fermerBoite();
+  dire(r.phrase);
+  suivreVeille();
+  // Le cadre sous le mois (`etat-du-mois`) dit l'envoi en cours.
+  rafraichirActions();
+  return true;
+}
+
 /** `bouton` : celui du geste, éteint le temps de la réponse quand le geste part sans boîte. `apres` reçoit la réponse.
  *  Un geste dont la route engage (sa fiche : `acte`) est un envoi pour la boîte du mot de passe (`envoi`) ; le bouton de
  *  sa boîte a la forme que lui donne la route (`classeDuGeste`), en bouton principal. */
@@ -875,6 +888,8 @@ async function faireLeGeste(g, entete, apres, bouton) {
       if (!(entete.refus && entete.refus(e, g))) dire(e.message, "erreur");
       return false;
     }
+    // Parti en fond : le bandeau dit la suite (`partiEnFond`).
+    if (partiEnFond(r)) { rallumer(); return ENREGISTRE_PUIS_SUITE; }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
     await apres(r);

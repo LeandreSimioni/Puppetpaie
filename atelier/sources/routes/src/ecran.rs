@@ -13,6 +13,19 @@ use crate::{Encart, SansCharge};
 use droit::fiche::CaseDeFiche;
 use socle::ecran::Pastille;
 
+/// CE QUE LA PAGE FAIT DE LA REPONSE D'UN GESTE, dit par la route (`apres`) : la page ne le devine pas a la forme de la
+/// reponse, elle suit ce mot ; qui lit la reponse en ligne de commande le lit de meme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ApresLeGeste {
+    /// La reponse porte un ecran (`EcranRendu`) : il se pose a la place de celui ou le geste s'est fait.
+    PoserLEcran,
+    /// L'ecran ou le geste s'est fait se relit (la route qui rend sa place).
+    Relire,
+    /// La compagnie que la reponse nomme (`ouvrir`) s'ouvre.
+    Ouvrir,
+}
+
 /// UN ECRAN QU'UNE ROUTE REND : ce qu'il dit en tete (`encarts`), ses rangs dans l'ordre ou il les montre, ses cases
 /// (`CaseDeLaFiche`, dessinees comme celles d'une fiche), l'historique de ses cases datees en mots, et le geste qui
 /// enregistre ses cases (aucun sans cases). Ce qui est vide ne s'ecrit pas. `C` : la charge que l'ecran donne a ses

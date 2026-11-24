@@ -206,7 +206,7 @@ impl crate::enveloppe::Dite for Suppression {
 /// qui dit ce qui sera efface ; rien ne bouge. Avec `confirme` : la suppression (`supprimer`), la preuve d'une compagnie
 /// reelle comprise (`motdepasse`, que la page a fait taper ; sinon le moteur le demande lui-meme a un humain). `avant` :
 /// ce que la fenetre lache de la compagnie avant qu'elle parte (rien, par `moteur route`).
-pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::secret::Secret>, avant: &dyn Fn(&Path)) -> R<Suppression> {
+pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::secret::Secret>, avant: &dyn Fn(&Path) -> R<()>) -> R<Suppression> {
     if charge.confirme != Some(true) {
         return question(racine);
     }
@@ -241,38 +241,48 @@ fn geste_supprimer(nom: &str) -> String {
 /// SUPPRIMER `racine`, compagnie de l'installation `inst` : la preuve d'abord (une compagnie reelle), puis `avant` (la
 /// fenetre lache ce qu'elle tient de la compagnie), puis l'effacement (`effacer`). Rend le nom de la compagnie. Un refus
 /// n'efface rien et n'appelle pas `avant`.
-pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&socle::secret::Secret>, poste: &Poste, avant: &dyn Fn(&Path)) -> R<String> {
+pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&socle::secret::Secret>, poste: &Poste, avant: &dyn Fn(&Path) -> R<()>) -> R<String> {
     let g = genre(inst, racine)?;
     let nom = installation::nom_de(racine)?;
     if g == Genre::Reelle {
         prouver(racine, &nom, motdepasse, poste)?;
     }
-    avant(racine);
+    avant(racine)?;
     // L'ouverture gardee de son coffre part avec elle ; qu'il y en ait eu une ou non ne change rien.
     poste.coffre(racine).oublier_ouverture_gardee()?;
     crate::gestes::administrateur::oublier(inst, racine)?;
-    effacer(racine)?;
+    effacer(racine, "La compagnie ne se supprime pas : fermez ce qui l'utilise, puis recommencez. Rien n'a été supprimé.")?;
     Ok(nom)
 }
 
-/// Le dossier `racine` renomme en dossier cache a cote, puis efface ; ce qui resiste reste cache, et s'efface au lancement
-/// suivant (`effacer_les_restes`). Echoue seulement si le renommage echoue : alors rien n'a bouge.
-fn effacer(racine: &Path) -> R<()> {
+/// Ce que l'effacement d'un dossier a fait (`effacer`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Efface {
+    /// Le dossier est parti.
+    Tout,
+    /// Une partie resiste : elle reste cachee (aucune liste ne la voit), et part au lancement suivant.
+    ResteCache,
+}
+
+/// LE DOSSIER `racine` renomme d'abord en dossier cache a cote (que `installation::est_cache` ecarte de toute liste : un
+/// effacement coupe ne laisse jamais une moitie de compagnie qui deviendrait une tuile), puis efface ; ce qui resiste
+/// reste cache, et s'efface au lancement suivant (`effacer_les_restes`). Echoue seulement si le renommage echoue (le refus
+/// dit `si_rien`) : alors rien n'a bouge. Le seul effacement d'un dossier de compagnie : la suppression d'une compagnie,
+/// l'abandon d'une reprise du Drive et la sortie d'une reprise neuve refusee (`accueil::drive`) le prennent.
+pub(crate) fn effacer(racine: &Path, si_rien: &str) -> R<Efface> {
     let parent = racine.parent().ok_or_else(|| refus("Un dossier sans parent ne se supprime pas."))?;
     let nom = racine.file_name().ok_or_else(|| refus("Un dossier sans nom ne se supprime pas."))?.to_string_lossy().into_owned();
     let instant = socle::temps::maintenant_ms();
     let cache = parent.join(format!("{}{}-{}", PREFIXE_RESTE, nom, instant));
-    std::fs::rename(racine, &cache).map_err(|e| {
-        refus_avec(
-            "La compagnie ne se supprime pas : fermez ce qui l'utilise, puis recommencez. Rien n'a été supprimé.",
-            Lieu { chemin: Some(racine.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
-        )
-    })?;
+    std::fs::rename(racine, &cache).map_err(|e| refus_avec(si_rien, Lieu { chemin: Some(racine.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() }))?;
     // Ce qui resiste reste cache, et part au lancement suivant (`effacer_les_restes`).
-    if let Err(e) = std::fs::remove_dir_all(&cache) {
-        eprintln!("{}", socle::echec::du_disque(&cache, &e).en_lignes());
+    match std::fs::remove_dir_all(&cache) {
+        Ok(()) => Ok(Efface::Tout),
+        Err(e) => {
+            eprintln!("{}", socle::echec::du_disque(&cache, &e).en_lignes());
+            Ok(Efface::ResteCache)
+        }
     }
-    Ok(())
 }
 
 /// Les restes d'une suppression, au lancement : ceux qui sont partis, et la phrase de chacun qui resiste encore (il reste
@@ -358,7 +368,7 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
 /// parmi `a_garder`. Chacune est gardee ou supprimee ; une fictive ajoutee nommee nulle part reste, et la question
 /// reviendra pour elle. `lacher` : ce que la fenetre tient de chacune (sa file sur le fil des calculs), avant qu'elle
 /// bouge. Rend ce qui est garde, supprime, et chaque echec : un echec sur l'une n'arrete pas les autres.
-pub fn repondre(inst: &Path, garder_ids: &[installation::IdDeCompagnie], ne_pas_garder: &[installation::IdDeCompagnie], poste: &Poste, lacher: &dyn Fn(&Path)) -> R<Reponse> {
+pub fn repondre(inst: &Path, garder_ids: &[installation::IdDeCompagnie], ne_pas_garder: &[installation::IdDeCompagnie], poste: &Poste, lacher: &dyn Fn(&Path) -> R<()>) -> R<Reponse> {
     if compagnie::bridage::est_bride_de(inst) {
         return Err(refus("Le logiciel est bridé : ses compagnies ajoutées restent des compagnies fictives."));
     }
@@ -373,8 +383,7 @@ pub fn repondre(inst: &Path, garder_ids: &[installation::IdDeCompagnie], ne_pas_
     let (mut gardees, mut supprimees, mut erreurs) = (Vec::new(), Vec::new(), Vec::new());
     for c in proposees {
         if garder_ids.contains(&c.id) {
-            lacher(&c.racine);
-            match garder(inst, &c.racine) {
+            match lacher(&c.racine).and_then(|()| garder(inst, &c.racine)) {
                 Ok(r) => gardees.push(Gardee { id: r.id, nom: r.nom }),
                 Err(m) => erreurs.push(m.phrase),
             }

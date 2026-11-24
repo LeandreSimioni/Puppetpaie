@@ -107,8 +107,9 @@ pub fn encoder(champs: &[(&str, String)]) -> String {
     champs.iter().map(|(k, v)| format!("{}={}", q(k), q(v))).collect::<Vec<_>>().join("&")
 }
 
-/// Ce que Google dit d'une reponse d'erreur qui demande un geste de la compagnie (`RaisonDeGoogle` : l'autorisation
-/// perdue, une permission qui manque, le Drive plein) ; `None` pour toute autre erreur de Google, que `panne_dite` dit.
+/// Ce que Google dit d'une reponse d'erreur par sa raison (`RaisonDeGoogle` : l'autorisation perdue, une permission qui
+/// manque, le Drive plein, un fichier refuse, la limite de debit) ; `None` pour toute autre erreur de Google, que
+/// `panne_dite` dit.
 /// Un corps qui n'est pas une erreur de Google (la page d'un relais, un corps vide) : le tiers a mal repondu, son refus
 /// cite le statut et le corps.
 fn traduire(statut: ureq::http::StatusCode, corps: &str) -> R<Option<RaisonDeGoogle>> {
@@ -116,13 +117,29 @@ fn traduire(statut: ureq::http::StatusCode, corps: &str) -> R<Option<RaisonDeGoo
     Ok(traduite(statut, corps, code_g.as_deref(), &raisons))
 }
 
-/// La raison d'une erreur de Google de code `code_g` (et de raisons `raisons`) qui demande un geste de la compagnie.
+/// La raison (`RaisonDeGoogle`) d'une erreur de Google de code `code_g` et de raisons `raisons`.
 fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>, raisons: &[String]) -> Option<RaisonDeGoogle> {
     if code_g == Some("invalid_grant") {
         return Some(RaisonDeGoogle::AutorisationPerdue);
     }
+    // « authError » d'un 401 de l'API, qui n'arrive a l'appelant qu'apres un jeton neuf (`Client::appel_brut`) : « If
+    // this fails, direct the user through the OAuth flow » (`google-drive-api-gerer-les-erreurs-20261020.txt`, l. 549-573).
+    if raisons.iter().any(|r| r == "authError") {
+        return Some(RaisonDeGoogle::JetonRefuse);
+    }
     if raisons.iter().any(|r| r == "storageQuotaExceeded") {
         return Some(RaisonDeGoogle::DrivePlein);
+    }
+    // Ce que Google dit d'un fichier-la qu'il ne donne pas (`google-drive-api-gerer-les-erreurs-20261020.txt`,
+    // « fileNotDownloadable », « appNotAuthorizedToFile », « download_restricted_for_revision », « notFound ») : avant
+    // « insufficient », qui ne les nomme pas.
+    if raisons.iter().any(|r| ["fileNotDownloadable", "appNotAuthorizedToFile", "download_restricted_for_revision", "notFound"].contains(&r.as_str())) {
+        return Some(RaisonDeGoogle::FichierRefuse);
+    }
+    // La limite de debit, que Google dit a retenter (« rateLimitExceeded », « userRateLimitExceeded » : « Use exponential
+    // backoff to retry the request », l. 889-1149).
+    if raisons.iter().any(|r| r == "rateLimitExceeded" || r == "userRateLimitExceeded") {
+        return Some(RaisonDeGoogle::LimiteDeDebit);
     }
     if statut == ureq::http::StatusCode::FORBIDDEN && corps.to_lowercase().contains("insufficient") {
         return Some(RaisonDeGoogle::PermissionManquante);
@@ -139,6 +156,8 @@ fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>, r
 /// delai depasse reste `DelaiDepasse`).
 #[track_caller]
 pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoogle {
+    // Une raison sans phrase propre (`RaisonDeGoogle::phrase`) : la panne la dit, la raison reste.
+    let mut raison_lue = None;
     let p = match p {
         Panne::Statut { code, corps: Ok(corps) } => {
             // Le transport demande `gzip` : une reponse d'erreur peut arriver compressee.
@@ -151,13 +170,19 @@ pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoo
                 corps
             };
             match traduire(code, &String::from_utf8_lossy(&corps)) {
-                Ok(Some(raison)) => {
-                    let detail = format!("HTTP {} : {}", code.as_str(), crate::transport::debut_lisible(&corps, 800));
-                    socle::echec::noter_echec(Some(Classe::Google), &detail);
-                    let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
-                    let echec = Echec { classe: Some(Classe::Google), phrase: raison.phrase().to_string(), a_part: Some(a_part.into()) };
-                    return ErreurGoogle { echec, statut: Some(code), raison: Some(raison) };
-                }
+                Ok(Some(raison)) => match raison.phrase() {
+                    Some(phrase) => {
+                        let detail = format!("HTTP {} : {}", code.as_str(), crate::transport::debut_lisible(&corps, 800));
+                        socle::echec::noter_echec(Some(Classe::Google), &detail);
+                        let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
+                        let echec = Echec { classe: Some(Classe::Google), phrase: phrase.to_string(), a_part: Some(a_part.into()) };
+                        return ErreurGoogle { echec, statut: Some(code), raison: Some(raison), injoignable: false };
+                    }
+                    None => {
+                        raison_lue = Some(raison);
+                        Panne::Statut { code, corps: Ok(corps) }
+                    }
+                },
                 Ok(None) => Panne::Statut { code, corps: Ok(corps) },
                 // Pas une erreur de Google : une panne brute, dans la classe de son refus, le statut garde.
                 Err(pas_de_google) => {
@@ -171,8 +196,10 @@ pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoo
         }
         autre => autre,
     };
+    // La connexion qui n'a pas abouti se reconnait a sa panne, jamais a sa phrase (`ErreurGoogle::injoignable`).
+    let injoignable = matches!(p, Panne::Reseau(_));
     let e = crate::transport::panne_dite(faisait, Classe::Google, url, p);
-    ErreurGoogle { echec: e.echec, statut: e.code, raison: None }
+    ErreurGoogle { echec: e.echec, statut: e.code, raison: raison_lue, injoignable }
 }
 
 /// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus

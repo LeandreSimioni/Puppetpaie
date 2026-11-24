@@ -622,10 +622,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "759.68",
+     "base": "840",
      "taux_sal": "4.83",
-     "montant_sal": "36.69",
-     "montant_pat": "45.5",
+     "montant_sal": "40.57",
+     "montant_pat": "50.32",
      "masquer_base_et_taux": false
     },
     {
@@ -674,9 +674,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "847.04",
+     "base": "936.6",
      "montant_sal": "0",
-     "montant_pat": "0.59",
+     "montant_pat": "0.66",
      "masquer_base_et_taux": false
     },
     {
@@ -698,9 +698,9 @@
     {
      "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
      "libelle": "Cotisations conventionnelles IDCC 3090",
-     "base": "759.68",
+     "base": "840",
      "montant_sal": "0",
-     "montant_pat": "3.04",
+     "montant_pat": "3.36",
      "masquer_base_et_taux": true
     },
     {
@@ -722,8 +722,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "678.56",
-   "pas": "37.32"
+   "net_imposable": "674.68",
+   "pas": "37.11"
   },
   {
    "salarie": "2",
@@ -1289,10 +1289,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "785",
+     "base": "840",
      "taux_sal": "4.83",
-     "montant_sal": "37.92",
-     "montant_pat": "47.02",
+     "montant_sal": "40.57",
+     "montant_pat": "50.32",
      "masquer_base_et_taux": false
     },
     {
@@ -1341,9 +1341,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "875.28",
+     "base": "936.6",
      "montant_sal": "0",
-     "montant_pat": "0.61",
+     "montant_pat": "0.66",
      "masquer_base_et_taux": false
     },
     {
@@ -1365,9 +1365,9 @@
     {
      "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
      "libelle": "Cotisations conventionnelles IDCC 3090",
-     "base": "785",
+     "base": "840",
      "montant_sal": "0",
-     "montant_pat": "3.14",
+     "montant_pat": "3.36",
      "masquer_base_et_taux": true
     },
     {
@@ -1389,8 +1389,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "677.33",
-   "pas": "37.25"
+   "net_imposable": "674.68",
+   "pas": "37.11"
   },
   {
    "salarie": "2",
@@ -1956,10 +1956,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "633.06",
+     "base": "700",
      "taux_sal": "4.83",
-     "montant_sal": "30.58",
-     "montant_pat": "37.92",
+     "montant_sal": "33.81",
+     "montant_pat": "41.93",
      "masquer_base_et_taux": false
     },
     {
@@ -2008,9 +2008,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "705.86",
+     "base": "780.5",
      "montant_sal": "0",
-     "montant_pat": "0.49",
+     "montant_pat": "0.55",
      "masquer_base_et_taux": false
     },
     {
@@ -2032,9 +2032,9 @@
     {
      "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
      "libelle": "Cotisations conventionnelles IDCC 3090",
-     "base": "633.06",
+     "base": "700",
      "montant_sal": "0",
-     "montant_pat": "2.53",
+     "montant_pat": "2.8",
      "masquer_base_et_taux": true
     },
     {
@@ -2056,8 +2056,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "565.46",
-   "pas": "31.1"
+   "net_imposable": "562.23",
+   "pas": "30.92"
   },
   {
    "salarie": "2",

@@ -10,7 +10,7 @@ use engagement::stock::Identite;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusDit, FORME};
+use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusDit, CASE_EXIGEE, FORME};
 use crate::declaration::{charge, dit, legendes, ChampDuType, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
@@ -44,7 +44,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &ChargeValider::CHARGE,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0}}"#,
         rend: "engagement (l'identité de la carte), phrase",
-        refus: &[SAISIE_INCOMPLETE, OPERATION, FORME],
+        refus: &[SAISIE_INCOMPLETE, OPERATION, CASE_EXIGEE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 320,
@@ -59,6 +59,7 @@ pub const ROUTES: &[Fiche] = &[
         refus: &[
             SAISIE_INCOMPLETE,
             OPERATION,
+            CASE_EXIGEE,
             RefusDit { classe: Classe::ModificationNonDeclarable, corriger: "rien : la norme ne permet plus de déclarer ce changement ; la phrase dit pourquoi" },
             FORME,
         ],

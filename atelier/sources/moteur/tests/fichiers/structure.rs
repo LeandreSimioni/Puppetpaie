@@ -269,6 +269,9 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         ("enregistrer-fiche", entreprise),
         ("organismes-enregistrer", json!({"contrats": {"prevoyance_permanents": {"libelle": "PREVOYANCE", "organisme": "P0983"}, "sante_permanents": {"libelle": "SANTE", "organisme": "P0983"}}})),
         ("enregistrer-fiche", svoboda),
+        // Une salariée que rien ne lie encore (aucun engagement, aucune pièce) : l'exemple de `supprimer-salarie` la
+        // supprime.
+        ("enregistrer-fiche", json!({"nom": "salarie", "cle": null, "changements": [{"case": "prenom_affichage", "valeur": "Isadora"}, {"case": "nom_affichage", "valeur": "Duncan"}]})),
         // La signature de l'employeur, sans laquelle aucun contrat ne part se faire signer (l'exemple de
         // `demander-signature`).
         ("poser-identite", json!({"quoi": "signature", "contenu": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTIgMTUgQzEwIDIgMjAgMjAgNzggNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIi8+PC9zdmc+", "allegement": "garder"})),
@@ -307,7 +310,20 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         // Un secret ne se lit jamais dans la charge : la fausse demande des essais le tape (`demande::canal_de_la_route`).
         let exemple = serde_json::from_str(f.exemple).unwrap();
         let r = match f.route {
-            Route::GoogleAutoriser => google_autoriser(&c, exemple),
+            Route::GoogleAutoriser => google_autoriser(&c, &c, f.nom(), exemple),
+            // Le compte Google de l'accueil : son application et son jeton vivent sous l'installation.
+            Route::DriveLier => google_autoriser(&c, &compagnie::installation::IdDeCompagnie::installation_de(&c), f.nom(), exemple),
+            Route::DriveReprendre => drive_reprendre(&c, exemple),
+            // Une reprise coupee, a abandonner : un dossier de l'installation qui ne porte que sa marque (illisible : elle
+            // s'abandonne de meme).
+            Route::DriveAbandonner => {
+                let coupee = c.parent().unwrap().join("ajoutee-reprise-coupee");
+                std::fs::create_dir_all(coupee.join("config")).unwrap();
+                std::fs::write(coupee.join("config/reprise-en-cours.json"), "{}").unwrap();
+                let r = route_avec(&c, f.nom(), exemple, "2026-11-02", &[(VARIABLE_ESSAIS, "exemple")]);
+                assert!(!coupee.exists(), "drive-abandonner : le dossier de la reprise est encore là : {}", r);
+                r
+            }
             // La suppression efface une compagnie ajoutee a part, pas celle des exemples.
             Route::CompagnieSupprimer => {
                 let autre = c.parent().unwrap().join("ajoutee-a-supprimer");
@@ -356,10 +372,61 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
 }
 
 
-/// L'exemple de `google-autoriser`, sur un faux Google local (rien ne sort de la machine) : le test fait le navigateur
-/// (il lit l'adresse de la fenetre de Google que le moteur dit sur sa sortie d'erreur, et renvoie un code a l'adresse
-/// locale qu'elle nomme) ; le faux Google rend un jeton et l'adresse du compte.
-fn google_autoriser(c: &Path, exemple: Value) -> Value {
+/// L'exemple de `drive-reprendre`, sur un faux Drive local (rien ne sort de la machine), apres celui de `drive-lier`
+/// (le jeton de l'accueil) : sous `PuppetPaie`, le dossier d'une compagnie (`cie-essai`, sa marque) dont la sauvegarde
+/// ne porte que sa fiche Entreprise. L'installation des exemples est bridee : la compagnie reprise est une fictive.
+fn drive_reprendre(c: &Path, exemple: Value) -> Value {
+    let fiche = std::fs::read(c.join("config/entreprise.json")).unwrap();
+    let md5 = envois::drive::EmpreinteMd5::des_octets(&fiche).texte().to_string();
+    let taille = fiche.len().to_string();
+    let (google, _) = crate::outils::serveur(move |r| {
+        let q = decoder(&r.requete);
+        let dossiers = |l: Value| crate::outils::http_json(200, &json!({"files": l}));
+        Some(match r.chemin.as_str() {
+            "/token" => crate::outils::http_json(200, &json!({"access_token": "essai", "expires_in": 3600})),
+            "/drive/v3/files/entreprise-essai" => crate::outils::http(200, "application/json", &fiche),
+            "/drive/v3/files" if q.contains("'root' in parents and mimeType") => dossiers(json!([{"id": "racine-essai", "name": "PuppetPaie"}])),
+            "/drive/v3/files" if q.contains("'racine-essai' in parents and mimeType") => dossiers(json!([{"id": "cie-essai", "name": "La Reprise d'essai", "appProperties": {"puppetpaie_compagnie": "cie:0123456789abcdef0123456789abcdef", "puppetpaie_derniere": "2026-11-01T10:00"}}])),
+            "/drive/v3/files" if q.contains("'cie-essai' in parents and mimeType") => dossiers(json!([{"id": "sauvegarde-essai", "name": "sauvegarde"}])),
+            "/drive/v3/files" if q.contains("'sauvegarde-essai' in parents and mimeType") => dossiers(json!([{"id": "config-essai", "name": "config"}])),
+            // La liste des fichiers d'un dossier (`Drive::lister`) : sa requete ne filtre pas le type (ses `fields`, si).
+            "/drive/v3/files" if q.contains("'config-essai' in parents and trashed") => {
+                dossiers(json!([{"id": "entreprise-essai", "name": "entreprise.json", "md5Checksum": md5, "size": taille, "mimeType": "application/json"}]))
+            }
+            "/drive/v3/files" => dossiers(json!([])),
+            _ => crate::outils::http(404, "text/plain", b""),
+        })
+    });
+    let r = route_avec(c, "drive-reprendre", exemple, "2026-11-02", &[(routes::coffre::VARIABLE_GOOGLE_ESSAIS, &google), (VARIABLE_ESSAIS, "exemple")]);
+    let reprise = c.parent().unwrap().join("ajoutee-la-reprise-d-essai");
+    assert!(reprise.join("config/entreprise.json").is_file() && reprise.join("COPIE-DE-DEVELOPPEMENT.json").is_file(), "drive-reprendre : la compagnie reprise n'est pas là : {}", r);
+    r
+}
+
+/// Une requete encodee comme le client Drive l'encode (`envois::google::encoder` : `+` pour l'espace, `%XX`), en clair.
+fn decoder(t: &str) -> String {
+    let o = t.as_bytes();
+    let mut s = Vec::new();
+    let mut i = 0;
+    while i < o.len() {
+        match o[i] {
+            b'+' => s.push(b' '),
+            b'%' if i + 2 < o.len() => {
+                s.push(u8::from_str_radix(std::str::from_utf8(&o[i + 1..i + 3]).unwrap(), 16).unwrap());
+                i += 2;
+            }
+            b => s.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&s).into_owned()
+}
+
+/// L'exemple de `google-autoriser` (ou de `drive-lier`), sur un faux Google local (rien ne sort de la machine) : le test
+/// fait le navigateur (il lit l'adresse de la fenetre de Google que le moteur dit sur sa sortie d'erreur, et renvoie un
+/// code a l'adresse locale qu'elle nomme) ; le faux Google rend un jeton et l'adresse du compte. `sous` : ou l'application
+/// de la compagnie se pose (la compagnie, ou l'installation pour l'accueil).
+fn google_autoriser(c: &Path, sous: &Path, route: &str, exemple: Value) -> Value {
     use std::io::{BufRead, Read, Write};
     use std::process::{Command, Stdio};
     let (google, _) = crate::outils::serveur(|r| {
@@ -370,13 +437,14 @@ fn google_autoriser(c: &Path, exemple: Value) -> Value {
         })
     });
     // L'application du logiciel n'est livree qu'avec une version publiee : celle de la compagnie, inventee.
-    std::fs::write(c.join("config/google.json"), json!({"client_id": "essai.apps.googleusercontent.com", "client_secret": "essai"}).to_string()).unwrap();
+    std::fs::create_dir_all(sous.join("config")).unwrap();
+    std::fs::write(sous.join("config/google.json"), json!({"client_id": "essai.apps.googleusercontent.com", "client_secret": "essai"}).to_string()).unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_moteur"));
     cmd.args(["route", "--racine", c.to_str().unwrap(), "--date", "2026-11-02"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     crate::outils::bac_a_sable(&mut cmd, c, "2026-11-02");
     cmd.env(routes::coffre::VARIABLE_GOOGLE_ESSAIS, &google).env(VARIABLE_ESSAIS, "exemple");
     let mut p = cmd.spawn().unwrap();
-    p.stdin.take().unwrap().write_all(json!({"route": "google-autoriser", "charge": exemple}).to_string().as_bytes()).unwrap();
+    p.stdin.take().unwrap().write_all(json!({"route": route, "charge": exemple}).to_string().as_bytes()).unwrap();
     let (envoi, recu) = std::sync::mpsc::channel();
     let erreur = p.stderr.take().unwrap();
     std::thread::spawn(move || {

@@ -219,8 +219,8 @@ pub struct Lecture<'a> {
     departs: &'a engagement::departs::Departs,
     paies: HashMap<Mois, Rc<Vec<PaieDuMois>>>,
     pas: HashMap<Mois, Rc<Vec<Option<Prelevement>>>>,
-    /// Les paies reprises des mois lus qui ne se rangent pas (`engagement::importe::NatureADire`), dans l'ordre lu.
-    a_dire: Vec<engagement::importe::NatureADire>,
+    /// Les paies des mois lus mises de cote (`engagement::etats::PaieDeCote`), dans l'ordre lu.
+    a_dire: Vec<engagement::etats::PaieDeCote>,
 }
 
 impl<'a> Lecture<'a> {
@@ -239,20 +239,20 @@ impl<'a> Lecture<'a> {
         Ok(Rc::clone(&self.paies[&mois]))
     }
 
-    /// CE QUE L'ETAT DIT DES PAIES QU'IL N'A PAS COMPTEES : une phrase par paie reprise des mois lus dont la nature du
-    /// contrat reste a dire (`engagement::importe::NatureADire::phrase`). L'etat repond avec le reste.
+    /// CE QUE L'ETAT DIT DES PAIES QU'IL N'A PAS COMPTEES : une phrase par paie des mois lus mise de cote
+    /// (`engagement::etats::PaieDeCote::phrase`). L'etat repond avec le reste.
     pub fn avertissements(&self) -> Vec<String> {
-        self.a_dire().iter().map(engagement::importe::NatureADire::phrase).collect()
+        self.a_dire().iter().map(engagement::etats::PaieDeCote::phrase).collect()
     }
 
-    /// Les paies reprises des mois lus dont la nature du contrat reste a dire.
-    pub fn a_dire(&self) -> &[engagement::importe::NatureADire] {
+    /// Les paies des mois lus mises de cote.
+    pub fn a_dire(&self) -> &[engagement::etats::PaieDeCote] {
         &self.a_dire
     }
 
-    /// LES PAIES REPRISES DU SALARIE `cle` QUI NE SE RANGENT PAS, de `du` a `au` (ces mois sont lus) : un calcul de ce
+    /// LES PAIES DU SALARIE `cle` MISES DE COTE, de `du` a `au` (ces mois sont lus) : un calcul de ce
     /// salarie qui a besoin de ses paies de ces mois refuse pour lui seul, en les nommant ; vide : il les a toutes.
-    pub fn a_dire_de(&mut self, cle: &droit::contexte::IdSalarie, du: Mois, au: Mois) -> R<Vec<engagement::importe::NatureADire>> {
+    pub fn a_dire_de(&mut self, cle: &droit::contexte::IdSalarie, du: Mois, au: Mois) -> R<Vec<engagement::etats::PaieDeCote>> {
         for m in du.jusqu_a(au) {
             self.paies(m)?;
         }
@@ -531,7 +531,7 @@ pub struct LivreDePaie {
     pub format: FormatDExport,
     #[serde(serialize_with = "crate::tableaux_export::nom_du_fichier")]
     pub fichier: Option<PathBuf>,
-    /// Ce que le livre dit, dont chaque paie reprise qu'il ne compte pas (`engagement::importe::NatureADire::phrase`).
+    /// Ce que le livre dit, dont chaque paie qu'il ne compte pas (`engagement::etats::PaieDeCote::phrase`).
     pub avertissements: Vec<String>,
 }
 
@@ -568,11 +568,11 @@ fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option
 }
 
 /// Les lignes du livre pour un mois (`engagement::etats::paies_du_mois` : les paies ecrites des engagements valides, puis
-/// celles que l'import a lues), ce qu'il a fallu taire, si ses numeros de contrat sont tous ecrits, et les paies reprises
-/// qu'il ne compte pas (`engagement::importe::NatureADire`, en phrases). Un montant que les pieces d'une paie importee ne
+/// celles que l'import a lues), ce qu'il a fallu taire, si ses numeros de contrat sont tous ecrits, et les paies
+/// qu'il ne compte pas (`engagement::etats::PaieDeCote`, en phrases). Un montant que les pieces d'une paie importee ne
 /// disent pas reste vide (`PaieDuMois`) ; aucun numero n'est invente.
-fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engagement::departs::Departs) -> R<(Vec<LigneLivre>, Vec<String>, bool, Vec<engagement::importe::NatureADire>)> {
-    if engagement::etats::validees_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?.is_none() && !mois_importes(ctx)?.contains(&mois) {
+fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engagement::departs::Departs) -> R<(Vec<LigneLivre>, Vec<String>, bool, Vec<engagement::etats::PaieDeCote>)> {
+    if engagement::stock::vue_du_mois(&ctx.racine, mois)?.is_none() && !mois_importes(ctx)?.contains(&mois) {
         return Err(erreur(Classe::Refuse, format!("{} : aucun engagement ne touche ce mois.", mois)));
     }
     let (paies, a_dire) = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
@@ -667,9 +667,9 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
     Ok(livre_lu(ctx, d)?.0)
 }
 
-/// Le livre de paie (`livre_de_paie`), et les paies reprises qu'il ne compte pas (`engagement::importe::NatureADire`,
+/// Le livre de paie (`livre_de_paie`), et les paies qu'il ne compte pas (`engagement::etats::PaieDeCote`,
 /// que ses avertissements disent chacune).
-fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::importe::NatureADire>)> {
+fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::etats::PaieDeCote>)> {
     let quand = PeriodeDemandee::des_trois(
         d.mois,
         d.annee,
@@ -686,7 +686,7 @@ fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::impo
     };
     let p = Periode::pour(ctx, quand, true)?;
     let (mut lignes, mut avert, mut sans_pas, mut sans_numeros) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    let mut a_dire: Vec<engagement::importe::NatureADire> = Vec::new();
+    let mut a_dire: Vec<engagement::etats::PaieDeCote> = Vec::new();
     for &m in &p.mois {
         let (l_m, sans, figes, non_comptees) = lignes_du_mois(ctx, m, d.coordonnees, &d.departs)?;
         lignes.extend(l_m);
@@ -696,11 +696,11 @@ fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::impo
             sans_numeros.push(m.to_string());
         }
     }
-    // Des paies que le livre ne compte pas encore (`NatureADire`) : il repond, vide s'il le faut, et dit pourquoi.
+    // Des paies que le livre ne compte pas encore (`PaieDeCote`) : il repond, vide s'il le faut, et dit pourquoi.
     if lignes.is_empty() && a_dire.is_empty() {
         return Err(refus("Aucun bulletin sur la période : rien à porter au livre de paie."));
     }
-    avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
+    avert.extend(a_dire.iter().map(engagement::etats::PaieDeCote::phrase));
     if !sans_numeros.is_empty() {
         avert.push(format!(
             "Numéros de contrat absents pour {} : ces mois n'ont pas été produits par PuppetPaie, rien n'y a été figé. La colonne Contrat reste vide plutôt que de porter un numéro qui n'a jamais été déclaré.",
@@ -716,7 +716,7 @@ fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::impo
         ));
     }
     if d.coordonnees {
-        avert.push("Ce fichier porte le NIR, la date de naissance et l'adresse des salariés : il reste dans prive/, et ne s'envoie qu'à qui en a besoin.".to_string());
+        avert.push("Ce fichier porte le NIR, la date de naissance et l'adresse des salariés : il reste dans le dossier de la compagnie, et ne s'envoie qu'à qui en a besoin.".to_string());
     }
     let groupes = grouper(&lignes, regroupement)?;
     let refs: Vec<&LigneLivre> = lignes.iter().collect();
@@ -995,7 +995,7 @@ pub fn lignes_livre(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, depart
 
 /// Le livre de paie de la periode `p` que lisent les etats de synthese (`lignes_livre`) et le cout de l'annee : regroupe
 /// par salarie, sans coordonnees, sans fichier ; et les paies reprises qu'il ne compte pas (ses avertissements les disent).
-pub fn livre_des_etats(ctx: &Contexte, p: &Periode, departs: &engagement::departs::Departs) -> R<(LivreDePaie, Vec<engagement::importe::NatureADire>)> {
+pub fn livre_des_etats(ctx: &Contexte, p: &Periode, departs: &engagement::departs::Departs) -> R<(LivreDePaie, Vec<engagement::etats::PaieDeCote>)> {
     let (mois, annee, toutes) = p.quand.en_trois();
     let d = Demande {
         mois,
@@ -1480,7 +1480,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             lignes.push(l);
         }
     }
-    // Des paies que l'etat ne compte pas encore (`NatureADire`) : il repond, vide s'il le faut, et dit pourquoi.
+    // Des paies que l'etat ne compte pas encore (`PaieDeCote`) : il repond, vide s'il le faut, et dit pourquoi.
     if lignes.is_empty() && lecture.avertissements().is_empty() {
         return Err(refus(format!("Aucun contrat validé sur la période ({}).", p.libelle)));
     }

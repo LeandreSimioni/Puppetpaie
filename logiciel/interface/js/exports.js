@@ -130,6 +130,8 @@ async function lancerDossier(g, bloc) {
   let r;
   try { r = await api(g.route, charge); }
   catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
+  // Parti en fond : le bandeau dit la suite.
+  if (partiEnFond(r)) { cible.innerHTML = `<p class="note">${echapper(r.phrase)}</p>`; return; }
   if (r.envoi) fenetreCourrielsFictifs("documents", repere);
   cible.innerHTML = `
     <h3>${echapper(r.titre)}</h3>
@@ -423,7 +425,7 @@ function dessinerTableau(r, apercu) {
     <p class="discret">${echapper(r.phrase)}</p>
     ${r.ecran.personnelles ? `<div class="encart alerte">${echapper(r.ecran.personnelles)}</div>` : ""}
     ${r.avertissements.map((a) =>
-        `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
+        `<div class="encart info">${echapper(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
       <tr>${r.colonnes.map((c) => `<th${droite(c) ? ' class="r"' : ""}>${echapper(c.libelle)}</th>`).join("")}</tr>
       ${corps}
@@ -456,7 +458,7 @@ function dessinerLivre(r, apercu) {
     <p class="discret">${echapper(r.phrase)}</p>
     ${r.ecran.partiels ? `<div class="encart info">${echapper(r.ecran.partiels)}</div>` : ""}
     ${r.avertissements.map((a) =>
-        `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
+        `<div class="encart info">${echapper(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
       <tr>${l.colonnes.map((c) => `<th>${echapper(c.libelle)}</th>`).join("")}</tr>
       ${corps}
@@ -497,7 +499,7 @@ async function lancerExportCompta(annee) {
   ouvrirBoite(`
     <h3>${echapper(x.titre)}</h3>
     <p class="discret">${echapper(x.resume)}</p>
-    ${r.avertissements.map((a) => `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
+    ${r.avertissements.map((a) => `<div class="encart info">${echapper(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
       <tr>${x.colonnes.map((c) => `<th>${echapper(c)}</th>`).join("")}</tr>
       ${lignes}

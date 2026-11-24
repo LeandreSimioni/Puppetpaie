@@ -68,6 +68,7 @@ async function ouvrirLaFicheRendue(fiche) {
   // Une autre fiche s'est ouverte pendant que la route répondait : c'est elle qui se dessine.
   if (FICHE_COURANTE !== fiche) return;
   FICHE_SANS_LISTE = !r.annuler;
+  dessinerSuppression();
   const encart = (x) => (x.erreurs_titre ? `<div class="encart erreur"><b>${echapper(x.erreurs_titre)}</b> — ${echapper(x.erreurs_note)}</div>` : "");
   const s = r.salarie;
   const inv = r.invitation;
@@ -76,15 +77,17 @@ async function ouvrirLaFicheRendue(fiche) {
       <div class="entete-fiche">
         ${r.titre ? `<h2>${echapper(r.titre)}${r.sous_titre ? ` <span class="discret">— ${echapper(r.sous_titre)}</span>` : ""}</h2>` : ""}
         ${s ? `<button type="button" class="secondaire petit" data-exporter>${echapper(s.exporter)}</button>` : ""}
+        ${s && s.gestes.length ? `<span data-gestes-salarie>${boutonsDesGestes(s.gestes)}</span>` : ""}
       </div>
       ${r.cout ? `<div class="cout-annee" data-cote="${echapper(r.cout.cote)}" data-cout-de="${echapper(r.cout.de)}"></div>` : ""}
       ${s ? `<div class="fiche-imprevus" id="fiche-imprevus"></div><div class="fiche-conseils" id="fiche-conseils"></div>` : ""}
       ${inv ? `<div class="encart invitation">
         <h3>${echapper(inv.titre)}</h3>
         <p class="aide">${echapper(inv.aide)}</p>
+        ${inv.en_cours.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
         ${inv.geste ? `<div data-invitation>${casesDuGeste(inv.geste)}</div>
           <div class="actions"><button type="button" class="primaire" data-inviter>${echapper(inv.geste.libelle)}</button></div>`
-          : `<p class="note">${echapper(inv.sans_boite)}</p>`}
+          : inv.sans_boite ? `<p class="note">${echapper(inv.sans_boite)}</p>` : ""}
       </div>` : ""}
       ${r.note ? `<p class="note">${echapper(r.note)}</p>` : ""}
       <div data-fiche-erreurs>${encart(r)}</div>
@@ -127,6 +130,16 @@ async function ouvrirLaFicheRendue(fiche) {
     form.querySelector("[data-exporter]").onclick = () => exporterSalarie(s.cle);
     dessinerImprevusDuSalarie(s.cle);
     dessinerConseilsDuSalarie(s.cle);
+    // Les gestes que la route rend dans l'en-tête (supprimer un salarié que rien ne lie) : leur boîte dit ce qui
+    // s'efface ; fait, la fiche n'est plus, la liste se redessine sans elle.
+    const gestes = form.querySelector("[data-gestes-salarie]");
+    if (gestes) brancherLesGestes(gestes, s.gestes, { titre: r.titre }, async (rep) => {
+      oublierLEcran(cases);
+      poserEtat(rep.etat);
+      CLE_ACTIVE = null;
+      FICHE_NEUVE = false;
+      dessinerConfig();
+    });
   }
   if (inv && inv.geste) {
     const bloc = form.querySelector("[data-invitation]");
@@ -196,12 +209,17 @@ async function demanderFiche(bouton, inv, bloc) {
   try {
     // Un prénom non tapé part absent : le courriel dit alors « Bonjour, ».
     const r = await api(inv.geste.route, { ...charge, motdepasse: mdp });
+    // Partie en fond, la demande s'attend dans le bandeau ; la fiche d'un salarié neuf la dit « en cours d'envoi » à la
+    // place de son geste tant qu'elle n'est pas au bout (la route `fiche`), et la liste se relit à son bout
+    // (`relireFichesAttendues`).
+    const enFond = partiEnFond(r);
     // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
     ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
     oublierLEcran(casesDeLaFicheOuverte());
     CLE_ACTIVE = null;
     FICHE_NEUVE = false;
     dessinerConfig();
+    if (enFond) return;
     dire(r.phrase, "envoye");
     fenetreCourrielsFictifs("fiche", repere);
   } catch (e) {
@@ -236,14 +254,27 @@ function brancherFichesAttendues() {
   };
   document.querySelectorAll("[data-oublier-fiche]").forEach((b) => {
     b.onclick = async () => {
+      b.disabled = true;
       try {
-        await api("fiche-oublier-demande", { adresse: b.dataset.oublierFiche });
+        const r = await api("fiche-oublier-demande", { adresse: b.dataset.oublierFiche });
         // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
         ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
         dessinerConfig();
-      } catch (e) { dire(e.message, "erreur"); }
+        dire(r.phrase, undefined);
+      } catch (e) { b.disabled = false; dire(e.message, "erreur"); }
     };
   });
+}
+
+/* Après un passage de la veille (une réponse a pu arriver) : la liste des demandes attendues relue et repeinte en
+   place, sans toucher à la fiche ouverte. */
+async function relireFichesAttendues() {
+  if (!ETAT) return;
+  ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
+  const encart = document.querySelector("#config-liste .attente-fiches");
+  if (!encart) return;
+  encart.outerHTML = fichesAttenduesHtml();
+  brancherFichesAttendues();
 }
 
 /* UN MONTANT S'ECRIT D'UNE SEULE FACON : « 1 053,08 € ». Le

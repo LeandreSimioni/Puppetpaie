@@ -752,7 +752,7 @@ fn hors_comparaison(rel: &CheminRelatif) -> bool {
     let rel = rel.texte();
     rel == compagnie::installation::JOURNAL_INTERFACE.texte()
         || rel == compagnie::incidents::INCIDENTS.texte()
-        || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
+        || rel == socle::fichiers::ETAT_DE_L_OUVERTURE.texte()
         || rel.ends_with(socle::fichiers::ETAPE_DE_L_OUVERTURE.nom().texte())
 }
 
@@ -1042,7 +1042,7 @@ mod enregistreur {
     fn hors_empreinte(rel: &CheminRelatif) -> bool {
         let rel = rel.texte();
         rel == compagnie::installation::JOURNAL_INTERFACE.texte()
-            || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
+            || rel == socle::fichiers::ETAT_DE_L_OUVERTURE.texte()
             || rel.ends_with(socle::fichiers::ETAPE_DE_L_OUVERTURE.nom().texte())
             || rel.ends_with(".verrou")
     }

@@ -1170,7 +1170,7 @@
    "cle": "courriel_nom", "bloc": "Courriels", "largeur": "demie",
    "libelle": "Nom affiché dans les courriels",
    "forme": "affichage",
-   "aide": "Le nom que vos salariés voient comme expéditeur, devant l'adresse de la boîte. Vide : l'adresse seule.",
+   "aide": "Le nom que vos salariés voient comme expéditeur, devant l'adresse de la boîte. Vide : le nom de la compagnie.",
    "longueur": null,
    "exemple": "Compagnie du Fil",
    "choix": [],

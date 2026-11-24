@@ -201,8 +201,9 @@ pub struct Fenetre {
     temoin: Mutex<Instant>,
     journal: Mutex<Option<PathBuf>>,
     veille: std::time::Duration,
-    /// Ce que fait « fermer » : arreter le processus (le navigateur), ou fermer la fenetre Tauri.
-    pub fermer: Mutex<Option<Box<dyn Fn() + Send>>>,
+    /// Ce que fait « fermer » : arreter le processus (le navigateur), ou fermer la fenetre Tauri ; vrai si la fermeture
+    /// est partie.
+    pub fermer: Mutex<Option<Box<dyn Fn() -> bool + Send>>>,
 }
 
 /// La cle d'une compagnie dans la fenetre : son dossier resolu ; un dossier qui ne se resout plus (efface, deplace) se
@@ -502,7 +503,8 @@ pub fn page_logiciel(racine: &Path, jeton: &socle::secret::Secret) -> R<String> 
         .replace("{{PHRASES}}", &socle::ecriture::json_en_ligne(&PHRASES_DE_LA_FENETRE))
         .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
     let cale = CALE.replace("{{JETON}}", jeton.devoiler()).replace("{{NOMS}}", NOMS_LOGICIEL);
-    // Avant le PREMIER script de la page (`/js/tuyau.js`, qui definit `api`) : la cale doit exister avant lui.
+    // Avant le PREMIER script de la page (`/js/montrer.js`, puis `/js/tuyau.js`, qui definit `api`) : la cale doit exister
+    // avant eux.
     p = p.replacen("<script src=\"/js/", &format!("{}<script src=\"/js/", cale), 1);
     Ok(p)
 }
@@ -631,7 +633,7 @@ impl Fenetre {
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
         if compagnie::bridage::est_bride() || installation::est_fictive(&racine)? {
-            self.ouvrir(racine);
+            self.ouvrir(racine)?;
             return Ok(());
         }
         let exigee = compagnie::coffre::Coffre::du_poste(&racine).ouverture_exigee()?;
@@ -639,7 +641,7 @@ impl Fenetre {
         // le redemander (il ouvre encore son coffre : c'est verifie, pas suppose).
         if exigee && self.administrateur_ouvre(&racine)? {
             self.ecrire("Ouverte par le mot de passe de l'administrateur, deja tape dans cette fenetre.\n");
-            self.ouvrir(racine);
+            self.ouvrir(racine)?;
             return Ok(());
         }
         self.poser_phase(Phase::MotDePasse { racine, premiere: !exigee });
@@ -650,8 +652,10 @@ impl Fenetre {
     /// s'arrete (le tour en cours se finit) et l'on revient a l'accueil, son journal n'est plus celui de la fenetre ; sa
     /// file quitte le fil des calculs (le calcul en cours se finit). Ensuite rien de la fenetre n'ecrit plus dans son
     /// dossier, et rien ne la refait apparaitre.
-    fn lacher(&self, racine: &Path) {
+    fn lacher(&self, racine: &Path) -> R<()> {
         let cle = cle_du_dossier(racine);
+        // Un envoi en fond ecrit dans ce dossier : il va au bout avant que la compagnie s'en aille, et rien de neuf ne part.
+        routes::envois_en_fond::lacher(racine)?;
         if let Phase::Ouverte { racine: r, veille, .. } = self.phase() {
             if cle_du_dossier(&r) == cle {
                 veille.arreter_et_attendre();
@@ -670,6 +674,7 @@ impl Fenetre {
         if let Some(f) = file {
             f.quitter();
         }
+        Ok(())
     }
 
     /// Le mot de passe de l'administrateur, tape dans cette fenetre, ouvre-t-il `racine`, compagnie rattachee ? Un
@@ -694,7 +699,7 @@ impl Fenetre {
         Ok(())
     }
 
-    fn ouvrir(&self, racine: PathBuf) {
+    fn ouvrir(&self, racine: PathBuf) -> R<()> {
         // La mise a jour ne se fait pas ici : le logiciel la cherche au lancement (`maj::chercher_en_fond`) et l'applique
         // au lancement suivant, avant toute fenetre (`maj::au_lancement`), sans qu'aucune compagnie soit ouverte.
         // Les etats des mois se refont en fond, dans ce processus, s'ils ne sont plus justes (`etat_garde::FileDesEtats`) :
@@ -705,9 +710,12 @@ impl Fenetre {
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
-        let veille = Veille::nouvelle(&racine, self.veille, Some(etats.clone()));
+        // Les envois partis en fond de la compagnie : la veille les dit dans le bandeau ; gardes quand la compagnie se
+        // ferme et se rouvre (`routes::envois_en_fond`).
+        let veille = Veille::nouvelle(&racine, self.veille, Some(etats.clone()), routes::envois_en_fond::de_la_compagnie(&racine)?);
         veille.demarrer();
         self.poser_phase(Phase::Ouverte { racine, veille, etats });
+        Ok(())
     }
 
     fn autorise(&self, r: &Requete) -> bool {
@@ -719,10 +727,24 @@ impl Fenetre {
         ok
     }
 
-    fn fermer_le_logiciel(&self) {
-        if let Some(f) = tenu(&self.fermer).as_ref() {
-            f();
-        }
+    /// FERMER LE LOGICIEL : par son bouton, pour redemarrer a la mise a jour, ou par la croix de la fenetre Tauri
+    /// (`fenetre/src/main.rs`) -- un seul chemin. Un envoi parti en fond va d'abord au bout
+    /// (`envois_en_fond::fermer_apres_les_envois`, que le bandeau dit), jamais coupe au milieu, et la version neuve ne
+    /// s'installe qu'apres lui.
+    pub fn fermer_le_logiciel(&self) {
+        self.fermer_apres_les_envois(|| ());
+    }
+
+    /// Fermer, apres les envois en vol, puis `avant` (quitter la compagnie : sa veille dit l'attente dans le bandeau
+    /// jusque-la). Sans fermeture posee, ou si elle ne part pas, rien ne s'est ferme : les envois repartent.
+    fn fermer_apres_les_envois(&self, avant: impl FnOnce()) {
+        routes::envois_en_fond::fermer_apres_les_envois(|| {
+            avant();
+            match tenu(&self.fermer).as_ref() {
+                Some(f) => f(),
+                None => false,
+            }
+        });
     }
 
     /// LES GESTES DU BANC D'ESSAI (l'atelier seulement ; `atelier/outils/banc/`) : `/atelier/<geste>`, avec le jeton.
@@ -803,11 +825,14 @@ impl Fenetre {
     /// et ne releve les comptes rendus (le reseau, le coffre) qu'une fois le mot de passe de l'administrateur tape ici.
     fn route_de_l_installation(&self, nom: Route, charge: &Charge) -> RouteReponse {
         let inst = installation::base();
+        // On ne lache que ce qui s'en va, une fois decide qu'il s'en va (`accueil::garder_ou_supprimer`, compagnie par
+        // compagnie : une compagnie gardee avant qu'elle change de dossier, une supprimee apres sa preuve) ; une
+        // compagnie nommee nulle part reste, avec ses envois. Un echec a la lacher se dit pour elle.
         if nom == Route::CompagniesGarder {
-            match suppression::a_garder(&inst) {
-                Ok(cies) => cies.iter().for_each(|c| self.lacher(&c.racine)),
-                Err(e) => return RouteReponse::de(nom, Err(e.reclasser(Classe::Refuse))),
-            }
+            return routes::garde_dans_la_fenetre(nom, || {
+                let rendu = charge.lire::<routes::accueil::ChargeGarder>().map_err(|e| routes::case_nommee(nom, e)).and_then(|c| routes::accueil::garder_ou_supprimer(&inst, c, &|r| self.lacher(r)));
+                RouteReponse::de(nom, rendu)
+            });
         }
         if nom == Route::AdministrateurTableau {
             let c: routes::accueil::ChargeTableau = match charge.lire() {
@@ -854,7 +879,7 @@ impl Fenetre {
                     return Err(socle::echec::refus("Mot de passe refusé."));
                 }
                 self.retenir_administrateur(&racine, motdepasse)?;
-                self.ouvrir(racine);
+                self.ouvrir(racine)?;
                 Ok(fait(true))
             }
             ("accueil", _) => {
@@ -889,8 +914,8 @@ impl Fenetre {
             ("redemarrer", _) => {
                 let v = compagnie::maj::redemarrer_pour_mettre_a_jour(&compagnie::maj::installation(), &compagnie::maj::RECHERCHE)?;
                 self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", v.lue()));
-                self.poser_phase(Phase::Accueil);
-                self.fermer_le_logiciel();
+                // La compagnie reste ouverte tant qu'un envoi va au bout : son bandeau dit l'attente.
+                self.fermer_apres_les_envois(|| self.poser_phase(Phase::Accueil));
                 Ok(fait(false))
             }
             _ => Err(socle::refus!("Geste inconnu ici : {}.", nom)),
@@ -942,7 +967,7 @@ impl Fenetre {
                 // Le catalogue (`routes`) ne porte sur aucune compagnie : l'accueil le lit pour son « Avancé » (`js/avance.js`).
                 let au_developpeur = routes::catalogue::dans(routes::filet::ROUTES, nom).is_some() && !matches!(self.phase(), Phase::Ouverte { .. });
                 let catalogue = routes::catalogue::dans(routes::catalogue::ROUTES, nom).is_some();
-                if routes::catalogue::dans(routes::accueil::ROUTES, nom).is_some() || au_developpeur || catalogue {
+                if routes::accueil::est_de_l_installation(nom) || au_developpeur || catalogue {
                     let debut = Instant::now();
                     let rendu = self.route_de_l_installation(nom, &charge);
                     self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
@@ -971,8 +996,13 @@ impl Fenetre {
                         Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(routes::case_nommee(nom, e)))),
                     };
                     if c.confirme == Some(true) {
+                        let envoi_en_vol = routes::envois_en_fond::existants(&racine).map(|e| e.is_some_and(|e| e.en_vol()));
                         let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
                             RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a été supprimé."))
+                        } else if matches!(envoi_en_vol, Ok(true)) {
+                            RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un envoi de cette compagnie est en cours : attendez que le bandeau le dise parti, puis recommencez. Rien n'a été supprimé."))
+                        } else if let Err(e) = envoi_en_vol {
+                            RouteReponse::refusee_par(nom, Refus::de(None, e.reclasser(Classe::Refuse)))
                         } else {
                             match suppression::route(&racine, c, charge.mot_de_passe(), &|r| self.lacher(r)) {
                                 Ok(s) => RouteReponse::de(nom, routes::enveloppe::en_json(s)),
@@ -986,7 +1016,19 @@ impl Fenetre {
                     }
                 }
                 let debut = Instant::now();
-                let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref());
+                // UNE ROUTE QUI ENGAGE (un envoi, un depot reel) se fait sur un fil a elle : la page attend sa
+                // verification, pas son transport (`routes::envois_en_fond`). Toute autre, ici.
+                let rendu = if routes::envois_en_fond::part_en_fond(nom) {
+                    match routes::envois_en_fond::de_la_compagnie(&racine) {
+                        Ok(envois) => {
+                            let (r, c) = (racine.clone(), charge.clone());
+                            envois.servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref()))
+                        }
+                        Err(e) => RouteReponse::de(nom, Err(e)),
+                    }
+                } else {
+                    api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref())
+                };
                 self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
                 return Reponse::json(200, &rendu);
             }
@@ -1417,8 +1459,12 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
             // Le fil principal deja sorti n'attend plus rien.
             let _ = pour_fermer.send(Signal::Fermer);
         });
-        if let Err(e) = attendre_la_reponse {
-            eprintln!("Un fil du moteur ne demarre pas : {} ; la fenetre ne se ferme pas.", e);
+        match attendre_la_reponse {
+            Ok(_) => true,
+            Err(e) => {
+                eprintln!("Un fil du moteur ne demarre pas : {} ; la fenetre ne se ferme pas.", e);
+                false
+            }
         }
     }));
     let url = f.adresse("puppetpaie.localhost", port);
@@ -1513,4 +1559,5 @@ const PHRASES_DE_L_ACCUEIL: &[(&str, &str)] = &[
     ("neuve", "Elle commence ses paies ici : vous la configurez, puis vous engagez vos salariés."),
     ("precedent", "Vous faisiez vos paies ailleurs : vous mettez dans un dossier ce que votre ancien logiciel vous a laissé (bulletins, déclarations), et PuppetPaie se paramètre avec."),
     ("zero", "Remettre à zéro : tout ce qui a été fait ici s'efface"),
+    ("drive", "PuppetPaie l'a sauvegardée dans votre Drive : elle revient sur ce poste, telle qu'elle y est."),
 ];

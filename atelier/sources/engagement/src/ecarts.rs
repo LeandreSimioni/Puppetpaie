@@ -389,7 +389,7 @@ impl SorteDeNonComparaison {
     fn du_calcul(raison: &Echec) -> SorteDeNonComparaison {
         use socle::echec::Classe;
         match raison.classe {
-            Some(Classe::Manque | Classe::FicheRefusee | Classe::ValeurARedire) => SorteDeNonComparaison::CaseDeLaCompagnie,
+            Some(Classe::Manque | Classe::CaseExigee | Classe::FicheRefusee | Classe::ValeurARedire) => SorteDeNonComparaison::CaseDeLaCompagnie,
             _ => SorteDeNonComparaison::SaisieRefusee,
         }
     }
@@ -619,15 +619,21 @@ fn refaire<'a>(
     // la compagnie, salarie par salarie, que la fiche porte par sa profession (arrete du 4 septembre 2025, art. 9, I).
     // Tant que la fiche ne la dit pas, la paie refaite sans elle ne serait pas celle du bulletin : elle se compare quand
     // la fiche la dit.
+    // Ce qui manque se nomme tel qu'il manque : l'option de l'entreprise d'abord, sans laquelle la profession ne s'ouvre
+    // pas (`si_entreprise` de `champs-base.json`), puis la profession du salarie.
     if let Some(t) = p.abattement.filter(|t| *t > Taux::ZERO) {
-        if !fiche.deduction_forfaitaire.est_dite() {
+        let manque = if !ctx.entreprise.deduction_forfaitaire_option.est_dite() {
+            Some("la fiche de l'entreprise ne dit pas si la compagnie l'applique : la paie se compare quand elle le dit")
+        } else if !fiche.deduction_forfaitaire.est_dite() {
+            Some("la fiche du salarié ne dit pas sa profession : la paie se compare quand elle la dit")
+        } else {
+            None
+        };
+        if let Some(manque) = manque {
             return Err(a_refaire(
                 c,
-                socle::refus!(
-                    "le bulletin imprime un abattement de {} % (la déduction forfaitaire spécifique) et la fiche du salarié ne dit pas sa profession : la paie se compare quand elle la dit",
-                    socle::texte::virgule(t)
-                )
-                .reclasser(socle::echec::Classe::Manque),
+                socle::refus!("le bulletin imprime un abattement de {} % (la déduction forfaitaire spécifique) et {}", socle::texte::virgule(t), manque)
+                    .reclasser(socle::echec::Classe::Manque),
             ));
         }
     }
@@ -664,9 +670,9 @@ fn refaire<'a>(
     // UN BULLETIN QUI N'IMPRIME PAS SES JOURS TRAVAILLES en dit la periode et le nombre (`jours_comptes`) :
     // - autant de jours que la periode : ce sont tous les siens ;
     // - moins, dans une periode qui tient dans un mois : le calcul ne lit des jours que leur nombre, leur mois et le
-    //   premier. Le plafond d'un intermittent compte les jours remuneres mois par mois (BOSS, assiette generale, § 1090)
-    //   ou 12 heures du plafond horaire de l'annee par journee (arrete du 24/01/1975, art. 3, al. 2 : `droit::plafond`),
-    //   et l'engagement court se juge sur le debut et la fin du contrat ; le minimum conventionnel et le bareme se
+    //   premier. Le plafond d'un artiste engage moins de cinq jours compte 12 heures du plafond horaire de l'annee par
+    //   journee (arrete du 24/01/1975, art. 3, al. 2 : `droit::plafond`), et l'engagement court se juge sur le debut et
+    //   la fin du contrat ; le minimum conventionnel et le bareme se
     //   lisent au premier jour, qui est le debut de la periode. Le debut et les jours qui le suivent en tiennent lieu.
     // Sans ce nombre, une periode de plus d'un jour ne dit pas combien : la paie ne se compare pas.
     let mensuelle = nature.proprietes().map_err(|m| refusee(c, m))?.mensuelle();

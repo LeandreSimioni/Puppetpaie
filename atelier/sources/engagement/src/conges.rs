@@ -93,11 +93,11 @@ pub(crate) fn taux_au_montant(montant: Montant, jours: Jours) -> R<MontantUnitai
 }
 
 pub(crate) fn info(texte: String) -> Avis {
-    Avis { info: true, texte }
+    Avis::de(texte, true)
 }
 
 pub(crate) fn avertir(texte: String) -> Avis {
-    Avis { info: false, texte }
+    Avis::de(texte, false)
 }
 
 
@@ -896,34 +896,35 @@ pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalari
 
 /// CE QUI PRECEDE LA PAIE DE `mois` DANS L'ANNEE CIVILE, POUR LA REGULARISATION DU PLAFOND (`droit::plafond::
 /// AnneeAnterieure`, CSS R. 242-2, II) : les paies validees du salarie `cle` des mois de la meme annee, strictement avant
-/// `mois`, chacune pour ce qu'elle a applique (`calcul::ajouter_a_l_annee`, celles que `regle` regularise). Seules se
-/// relisent celles d'un contrat paye au mois (`etats::paies_validees_au_mois`) : une paie d'artiste ou de technicien
-/// intermittent n'entre pas dans le cumul, et son refus ne ferme pas celle d'un CDI du meme salarie. Une paie au mois qui
-/// ne se lit pas refuse : le plafond se regularise sur toute l'annee.
+/// `mois`, tous contrats confondus (BOSS, assiette generale, § 1230 : « y compris au titre de plusieurs contrats,
+/// successifs ou non »), chacune pour ce qu'elle a applique dans les assiettes qu'elle porte (`calcul::ajouter_a_l_annee` ;
+/// celle d'un artiste n'y entre pas). Se lisent celles qui se regularisent (`etats::paies_validees_regularisees`), un
+/// technicien intermittent et un salarie au mois faisant masse : une paie qui se regularise et ne se lit pas refuse, le
+/// plafond se regularise sur toute l'annee ; une paie d'artiste ne se calcule pas pour lui et ne ferme rien.
 ///
 /// UNE PAIE REPRISE D'UN ANCIEN LOGICIEL N'Y ENTRE PAS : la regularisation commence au premier mois paye ici (Leandre,
 /// 19/11/2026). INFERENCE, une approximation de la premiere annee : R. 242-2, II fait masse des sommes dues depuis « le
 /// premier jour de l'annee ou le jour de l'embauche », mais les pieces reprises ne disent ni le plafond que l'ancien
 /// logiciel a applique ni ses tranches de retraite et de prevoyance (`importe::PaieVersee`), et rien ne se reconstruit
 /// (regle 1) ; aucune paie ne se refuse parce que l'annee a commence ailleurs.
-pub(crate) fn plafonds_des_mois_anterieurs(
-    ctx: &Contexte, mois: Mois, cle: &IdSalarie, regle: &droit::forme_bareme::RegularisationDuPlafond,
-) -> R<droit::plafond::AnneeAnterieure> {
+pub(crate) fn plafonds_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<droit::plafond::AnneeAnterieure> {
     let _derivation = Derivation::ouvrir();
     let mut annee = droit::plafond::AnneeAnterieure::debut();
     let cle = cle_de_fiche(ctx, cle)?;
     for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
-        // Seules les paies d'un contrat paye au mois peuvent se regulariser : celles d'un intermittent ne se relisent pas
-        // (`etats::paies_validees_au_mois`), et les reprises n'entrent pas (ci-dessus).
-        let paies = crate::etats::paies_validees_au_mois(ctx, m, &cle).map_err(|e| {
+        // Les paies validees qui se regularisent, de tout contrat, choisies avant tout calcul : une paie d'artiste (BOSS
+        // § 1250) ne se calcule pas ici et son refus ne ferme rien (`etats::paies_validees_regularisees`) ; les reprises
+        // n'entrent pas (ci-dessus). Une paie qui se regularise et ne se calcule pas refuse : la regularisation a besoin
+        // de sa valeur.
+        let paies = crate::etats::paies_validees_regularisees(ctx, m, &cle).map_err(|e| {
             e.reformuler(|e| format!(
-                "Régularisation du plafond de {} : les paies de {} ne se lisent pas ({}). Le plafond se régularise sur toute \
-l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
+                "Régularisation du plafond de {} : les paies de {} ne se lisent pas ({}). Le plafond se régularise sur \
+toute l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
                 cle, m, e
             ))
         })?;
         for p in &paies {
-            crate::calcul::ajouter_a_l_annee(&mut annee, p, regle)?;
+            crate::calcul::ajouter_a_l_annee(&mut annee, p)?;
         }
     }
     Ok(annee)
@@ -1503,7 +1504,7 @@ pub(crate) fn lignes_du_mois(
 /// saisit pas comme tel. La prime d'anciennete de la convention n'en est pas (`lignes_du_mois`).
 ///
 /// Le prorata du contrat (R. 242-2, I, al. 3) et la correction du temps partiel (§ 910) s'appliquent ensuite
-/// (`droit::plafond::plafond_permanent`).
+/// (`droit::plafond::plafond_de_la_periode`).
 fn plafond_du_mois(
     sans_remuneration: std::collections::BTreeSet<socle::date::Jour>, presence: &Periode, prime_versee: bool,
 ) -> droit::plafond::JoursSansRemuneration {

@@ -890,10 +890,16 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let mut sous_le_deplafonne: Option<Cotisation> = None;
     // Le 131 de la tranche 1 (celui qui fait la somme de `retraite_t1`), sous la base duquel se declare le 142.
     let mut de_la_tranche_1: Option<Cotisation> = None;
-    // La deduction forfaitaire specifique de la paie, que le seuil d'un taux reduit retranche (`au_dela_du_seuil`).
+    // La deduction forfaitaire specifique de la paie, que le seuil d'un taux reduit retranche de la remuneration avant
+    // l'abattement, frais reintegres compris (`au_dela_du_seuil`, `DeductionForfaitaire::avant_abattement`).
     let deduction = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
+    // Sans deduction, rien ne s'abat : la remuneration est le brut.
+    let avant_abattement = match &p.deduction_forfaitaire {
+        Some(d) => d.avant_abattement(p.brut),
+        None => p.brut,
+    };
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, deduction, p.heures_travaillees, n)).transpose()? == Some(false) {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), avant_abattement, deduction, p.heures_travaillees, n)).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;
@@ -1315,7 +1321,8 @@ d'adhésion de l'assureur.",
 d'un salarié « {} » ne sont pas connus.\n  {}\n  Déclarer quand même le rattacherait aux contrats d'une autre \
 population, ce que la plate-forme accepte sans rien dire. Rien n'est écrit.",
             nat.libelle, cle.population(), pourquoi
-        ));
+        )
+        .reclasser(socle::echec::Classe::CaseExigee));
     }
     let mut out: Vec<(ReferenceDAdhesion, PlaceDAffiliation)> = sec
         .references
@@ -1666,7 +1673,7 @@ fn licence_du_contrat(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, ent: &
         return si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.049"), Some(licence));
     }
     if crate::demarrage::licence_exigee(ent, spectacle)? && usage_admet(f, droit::rubrique!("S21.G00.40.049"), nature_dsn)? {
-        return Err(refus("La licence d'entrepreneur de spectacles manque : la saisir dans Configuration › Entreprise, « Licence d'entrepreneur de spectacles » (le numéro attribué par la DRAC, ou la référence du récépissé de déclaration). L'entrepreneur de spectacles vivants la déclare dans chaque contrat (S21.G00.40.049). Rien n'est écrit."));
+        return Err(refus("La licence d'entrepreneur de spectacles manque : la saisir dans Configuration › Entreprise, « Licence d'entrepreneur de spectacles » (le numéro attribué par la DRAC, ou la référence du récépissé de déclaration). L'entrepreneur de spectacles vivants la déclare dans chaque contrat (S21.G00.40.049). Rien n'est écrit.").reclasser(socle::echec::Classe::CaseExigee));
     }
     Ok(())
 }
@@ -2409,6 +2416,19 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, periode: &Per
         if !deduction.est_nul() {
             f.ecrire_code(AutreElementDeRevenuBrut::DeductionForfaitaireSpecifique)?;
             f.add(droit::rubrique!("S21.G00.54.002"), ms(deduction, signe));
+            f.add(droit::rubrique!("S21.G00.54.003"), debut.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.54.004"), fin.jjmmaaaa());
+            f.add_opt(droit::rubrique!("S21.G00.54.005"), e.numero.clone())?;
+        }
+        // « 35 - Parts des frais professionnels reintegrees dans l'assiette de contribution du fait de l'application
+        // d'une DFS » (`atelier/reference/norme-dsn/texte/bloc-S21.G00.54.txt`, l. 39-43 : « aux seuls frais exoneres mais reintegres a l'assiette avant
+        // abattement en vertu de la regle de non cumul ») : ceux que la paie a reintegres
+        // (`calcul::DeductionForfaitaire::frais_reintegres`), par contrat comme le type 10. Le guide Urssaf du 04/06/2026
+        // (`editeur-dsn/guide-urssaf-regularisation.txt`, l. 1440-1459) recompose le brut par « 51 de type 001 + 54 de
+        // type 10 − 54 de type 35 ».
+        if let Some(reintegres) = d.frais_reintegres {
+            f.ecrire_code(AutreElementDeRevenuBrut::FraisReintegresDfs)?;
+            f.add(droit::rubrique!("S21.G00.54.002"), ms(reintegres, signe));
             f.add(droit::rubrique!("S21.G00.54.003"), debut.jjmmaaaa());
             f.add(droit::rubrique!("S21.G00.54.004"), fin.jjmmaaaa());
             f.add_opt(droit::rubrique!("S21.G00.54.005"), e.numero.clone())?;
@@ -4525,7 +4545,12 @@ fn echeance_mois_suivant(mois: Mois, jour: u32) -> Jour {
 /// regularise et le nominatif (`bar_du`) passent par elle. (La pile
 /// d'un salarie, `bareme::bareme_applique`, surcharge de meme par l'etablissement du salarie.)
 fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &Nic, mois: Mois) -> R<Pile> {
-    bareme::surcharger((*ctx.bareme(&mois.premier_jour())?).clone(), ent, nic)
+    let pile = bareme::surcharger((*ctx.bareme(&mois.premier_jour())?).clone(), ent, nic)?;
+    // Un etablissement dont la fiche ne dit aucune ligne AT/MP : la DSN ne declare rien sans elle (`surcharger` la note).
+    match (&pile.taux_atmp, &pile.taux_atmp_manque) {
+        (None, Some(manque)) => Err(manque.clone()),
+        _ => Ok(pile),
+    }
 }
 
 /// LE BLOC 40 DECLARE du contrat de `p` (regle 4 : il se lit, il ne se recalcule pas), pour le bloc Changements contrat
@@ -4616,7 +4641,7 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
     }
     let sauf: Vec<droit::fiche::CaseDeFiche> = if caisse_conges { Vec::new() } else { vec![documents::conges_spectacles::CLE_ADHERENT.into()] };
     match crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dsn, &fiches, &sauf)? {
-        Some(m) => Err(refus(m)),
+        Some(m) => Err(m),
         None => Ok(()),
     }
 }

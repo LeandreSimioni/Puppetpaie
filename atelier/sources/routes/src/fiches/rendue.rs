@@ -100,23 +100,38 @@ pub(crate) enum CoutDeLaFiche {
 
 /// CE QUI SE FAIT DEPUIS LA FICHE D'UN SALARIE ENREGISTRE (son en-tete) : sa cle, dont la page montre les imprevus (route
 /// `imprevus`) et les droits (route `conseils-salarie`), et le libelle du geste qui mene a ses documents (Exports, ce
-/// salarie choisi).
+/// salarie choisi), et ses gestes : « Supprimer ce salarié » (`supprimer-salarie`), offert seulement quand rien ne le lie
+/// a la compagnie (`super::ce_qui_lie`), sa boite disant ce qui s'efface ; sinon aucun, et il s'archive.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SalarieDeLEntete {
     cle: IdSalarie,
     exporter: &'static str,
+    gestes: Vec<GesteDeRoute<super::ChargeSupprimerSalarie>>,
 }
 
+/// Le libelle du geste qui supprime un salarie que rien ne lie.
+const SUPPRIMER_LE_SALARIE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Supprimer ce salarié");
+
 /// LA FICHE D'UN SALARIE NEUF A FAIRE REMPLIR PAR LA PERSONNE (son en-tete) : le titre de l'encart, ce que la demande
-/// fait, le geste qui l'envoie (`fiche-demander`, ses cases : le courriel et le prenom) quand la boite courriel est liee,
-/// sinon ce qui lui manque, et la demande du mot de passe du logiciel avant l'envoi.
+/// fait, le geste qui l'envoie (`fiche-demander`, ses cases : le courriel, montrant d'abord celui de la fiche, et le
+/// prenom) quand la boite courriel est liee, sinon ce qui lui manque (`sans_boite`), les demandes en cours d'envoi parties
+/// de cette fiche (`en_cours`, chacune nomme sa personne), et la demande du mot de passe du logiciel avant l'envoi. Tant
+/// qu'une demande partie d'ici est en cours, elle prend la place du geste.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct InvitationDeLaFiche {
     titre: &'static str,
     aide: &'static str,
-    geste: Option<GesteDeRoute<crate::SansCharge>>,
+    geste: Option<GesteDeRoute<crate::SansCharge, ValeursDeLaDemande>>,
     sans_boite: Option<&'static str>,
+    en_cours: Vec<String>,
     demande: compagnie::demande::DemandeDuMotDePasse,
+}
+
+/// CE QUE LES CASES DE LA DEMANDE DE FICHE MONTRENT D'ABORD : le courriel que la fiche dit deja, quand elle le dit.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ValeursDeLaDemande {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    adresse: Option<droit::fiche::Courriel>,
 }
 
 /// OU UNE CASE RENVOIE, que la route rend sous elle (`renvoi`) : le sous-onglet des metiers, ou la case d'une autre fiche
@@ -151,21 +166,28 @@ impl EnteteDeLaFiche {
 /// boite liee, sinon ce qui manque).
 pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &droit::fiche::ChampsSalarie) -> R<EnteteDeLaFiche> {
     let Some(cle) = cle else {
+        // La case adresse du geste montre d'abord le courriel que la fiche dit deja.
+        let valeurs = ValeursDeLaDemande { adresse: p.email.dite().cloned() };
         let geste = crate::ouverture::boite_liee(ctx)?.then(|| {
             GesteDeRoute::avec_cases(
                 crate::catalogue::Route::FicheDemander,
                 crate::SansCharge {},
                 crate::catalogue::Affiche::new("Envoyer la demande"),
                 vec![crate::declaration::cle!(super::ChargeFicheDemander, adresse), crate::declaration::cle!(super::ChargeFicheDemander, prenom)],
-                crate::imprevus::ValeursDeDepart::default(),
+                valeurs,
                 crate::imprevus::ChoixDesCases::default(),
             )
         });
+        let sans_boite = geste.is_none().then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe).");
+        // UNE DEMANDE EN COURS PARTIE DE LA FICHE D'UN SALARIE NEUF prend la place de son geste, quelle que soit l'adresse
+        // tapee dans ses cases : un second clic ne la refait pas partir.
+        let en_cours = crate::envois_en_fond::fiches_en_cours(&ctx.racine, None);
         let invitation = InvitationDeLaFiche {
             titre: "À faire remplir",
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; le métier se choisit ensuite à chaque engagement.",
-            sans_boite: geste.is_none().then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe)."),
-            geste,
+            sans_boite,
+            geste: geste.filter(|_| en_cours.is_empty()),
+            en_cours,
             demande: crate::coffre::demande(&ctx.racine, super::GESTE_DEMANDER_FICHE)?,
         };
         let note = Some("Ou remplissez la fiche vous-même ci-dessous. Le matricule se donne à l'enregistrement.");
@@ -175,8 +197,19 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
     let nom: Vec<String> = [lu(p.prenom_affichage.portee(), p.prenom.portee()), lu(p.nom_affichage.portee(), p.nom.portee())].into_iter().flatten().collect();
     let titre = if nom.is_empty() { cle.to_string() } else { nom.join(" ") };
     let matricule = p.code_salarie.portee().map(str::trim).filter(|m| !m.is_empty()).map(|m| format!("matricule {}", m));
+    // REGARDER N'EST JAMAIS REFUSE : un fichier que la recherche des liens ne lit pas (le stock, les imprevus, le journal)
+    // ne ferme pas la fiche ; le geste n'est alors pas offert, et seule la route `supprimer-salarie`, appelee, le refuse
+    // en le disant.
+    let offerte = ctx.fiche_de(cle).and_then(|f| super::suppression_offerte(ctx, cle, &titre, &f.champs));
+    let gestes = match offerte {
+        Ok(Some(disparait)) => {
+            let charge = super::ChargeSupprimerSalarie { cle: cle.clone() };
+            vec![GesteDeRoute::sans_cases(crate::catalogue::Route::SupprimerSalarie, charge, SUPPRIMER_LE_SALARIE).disant(disparait)]
+        }
+        Ok(None) | Err(_) => Vec::new(),
+    };
     Ok(EnteteDeLaFiche {
-        salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents" }),
+        salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents", gestes }),
         ..EnteteDeLaFiche::de(titre, matricule, None, Some(CoutDeLaFiche::Salarie { de: cle.clone() }))
     })
 }
@@ -475,18 +508,13 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
     let completer = Completer::de(ctx, F::a_juger(&plate), &|k| montres.contains(&k), &listes)?;
     let mut cases = Vec::new();
     let mut avance_ouvert = false;
-    for c in table.iter().filter(|c| montres.contains(&c.cle) || completer.en_lecture(c.cle)) {
+    for c in table.iter().filter(|c| montres.contains(&c.cle)) {
         let ecrite = |chemin: &[&str]| plate.ecrite_au_chemin(c.cle, chemin);
         let Some(mut case) = case_du_champ(c, plate.valeur_ecrite(c.cle), &ecrite, mobilite)? else { continue };
         if !completer.case(ctx, &mut case)? {
             continue;
         }
-        let ouverte = montres.contains(&c.cle);
-        if !ouverte {
-            case.forme = Forme::Objet;
-            case.choix = None;
-        }
-        avance_ouvert |= ouverte && case.place == PlaceDeLaCase::Avance && c.ecart(&plate, du_code_postal.as_ref().map(|c| c.as_str()));
+        avance_ouvert |= case.place == PlaceDeLaCase::Avance && c.ecart(&plate, du_code_postal.as_ref().map(|c| c.as_str()));
         case.anomalie = anomalies.iter().find(|a| a_l_ecran(&table, a.champ) == c.cle).cloned();
         case.temps = historique.iter().find(|h| h.temps.champ == CaseDatee::Case(c.cle)).map(|h| h.temps.clone());
         cases.push(case);
@@ -523,16 +551,6 @@ impl<'a> Completer<'a> {
             }
             FicheAJuger::Spectacle(_) => Completer::Rien,
         })
-    }
-
-    /// LA CASE QUE LA FICHE FERME ET QUE LA ROUTE REND POURTANT, EN LECTURE : la profession de la deduction forfaitaire
-    /// d'un salarie quand la compagnie n'exerce pas l'option (rien ne s'y saisit ; elle porte la phrase qui le dit et le
-    /// renvoi a la fiche de l'entreprise, ou l'option se pose).
-    fn en_lecture(&self, k: CaseDeFiche) -> bool {
-        match self {
-            Completer::Salarie(_, listes, _) => !listes.deduction_forfaitaire_exercee && k == CaseDeFiche::from(droit::fiche::CaseSalarie::DeductionForfaitaire),
-            Completer::Entreprise(_) | Completer::Rien => false,
-        }
     }
 
     /// La case completee ; faux : la route ne l'ouvre pas (`completer_le_salarie`).
@@ -712,13 +730,12 @@ fn choix_de(choix: &[String], libelles: Option<&Libelles>) -> Vec<Choix> {
 /// LES LISTES QUE LA FICHE D'UN SALARIE OFFRE, lues une fois par reponse (la fiche rendue, ou toutes les lignes de
 /// « Pour démarrer ») : les pays de naissance (la table « Pays » de la DSN), les pays de nationalite (le COG de l'INSEE,
 /// chacun avec la nationalite DSN qui s'en deduit), les metiers qu'une fiche choisit (`metiers::metiers_d_une_fiche`), et
-/// ce que la fiche de l'entreprise dit de la deduction forfaitaire specifique (sa phrase, et si la compagnie l'exerce).
+/// ce que la fiche de l'entreprise dit de la deduction forfaitaire specifique (sa phrase, quand la compagnie l'exerce).
 pub(crate) struct ListesDuSalarie {
     pays_naissance: Vec<Choix>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     metiers: Vec<Choix>,
-    deduction_forfaitaire: String,
-    deduction_forfaitaire_exercee: bool,
+    deduction_forfaitaire: Option<String>,
 }
 
 /// LA COMPLEMENTAIRE SANTE D'UN SALARIE AU MOIS, telle que la fiche la fait dire : la convention ne la fait pas choisir
@@ -811,7 +828,6 @@ impl ListesDuSalarie {
             pays: droit::nationalite::servir()?,
             metiers,
             deduction_forfaitaire: crate::ouverture::deduction_forfaitaire_dite(ctx)?,
-            deduction_forfaitaire_exercee: ctx.entreprise.deduction_forfaitaire_option.code().is_some(),
         })
     }
 }
@@ -886,7 +902,7 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
             }
         }
     } else if est(S::DeductionForfaitaire) {
-        case.dit.push(listes.deduction_forfaitaire.clone());
+        case.dit.extend(listes.deduction_forfaitaire.clone());
         case.renvoi = Some(RenvoiDeLaFiche::Case { libelle: "Fiche de l'entreprise", fiche: NomDeFiche::Entreprise, case: CaseEntreprise::DeductionForfaitaireOption.into() });
     }
     Ok(true)

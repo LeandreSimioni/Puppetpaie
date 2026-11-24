@@ -214,6 +214,22 @@ impl Ligne {
         }
     }
 
+    /// CE QUI EST PARTI POUR LE SALARIE `cle` : la ligne emporte une version de l'un de ses engagements (`versions`), ou
+    /// son detail le nomme (une embauche declaree, des documents servis, un contrat a signer ou contresigne, son dossier).
+    /// Une demande de fiche ne le nomme pas : elle part avant que sa fiche existe, et sa reponse n'est qu'une fiche recue.
+    pub fn nomme(&self, cle: &IdSalarie) -> bool {
+        let par_version = self.versions().is_some_and(|v| v.iter().any(|x| x.salarie == *cle));
+        par_version
+            || match self {
+                Ligne::Dpae(e) => e.detail.embauches.iter().any(|x| x.salarie == *cle),
+                Ligne::Documents(e) => e.detail.salaries.iter().any(|x| x.cle == *cle),
+                Ligne::ContratSignature(e) => e.detail.contrats.iter().any(|x| x.salarie == *cle),
+                Ligne::ContratContresigne(e) => e.detail.salarie == *cle,
+                Ligne::DossierSalarie(e) => e.detail.salaries.iter().any(|x| x.cle == *cle),
+                Ligne::Dsn(_) | Ligne::RegularisationCasc(_) | Ligne::FicheDemande(_) => false,
+            }
+    }
+
     /// SA REMISE, dite seulement par les lignes qui en ont une : celles qui donnent une piece au salarie imprimee (a
     /// remettre en main propre) ou par courriel, et le notent (`remise`) : des contrats a signer, des documents
     /// (bulletins, certificats, attestations). Les autres n'ont pas de remise : une DSN, une DPAE se deposent ; une

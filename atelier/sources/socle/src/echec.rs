@@ -81,6 +81,10 @@ classes! {
     PreuveInsuffisante,
     /// La saisie n'est pas finie.
     SaisieIncomplete,
+    /// Un acte ou un calcul refuse : une case que la compagnie n'a pas dite et qu'il exige (une case d'une fiche,
+    /// `declarations::champs::refus_des_manques` ; la licence, le CSE, la taxe sur les salaires, les contrats des
+    /// organismes), celle qu'une ligne bloquante de « Pour démarrer » demande (`declarations::demarrage::manques`).
+    CaseExigee,
     /// Aucun document a envoyer ou a imprimer.
     AucunDocument,
     /// La fiche porte des anomalies.
@@ -228,7 +232,15 @@ impl Echec {
     /// illisible, un calcul impossible) ? Une route qui lit rend le premier a sa place, dans sa reponse, et laisse
     /// remonter la seconde : regarder n'est jamais refuse, une panne ne se deguise pas en manque.
     pub fn dit_un_manque(&self) -> bool {
-        matches!(self.classe, None | Some(Classe::Refuse | Classe::Manque | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete))
+        matches!(self.classe, None | Some(Classe::Refuse | Classe::Manque | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete | Classe::CaseExigee))
+    }
+
+    /// CE REFUS DIT-IL UNE CASE QUE LA COMPAGNIE N'A PAS ENCORE DITE (une case d'une fiche, l'effectif, le taux AT/MP,
+    /// une saisie pas finie) ? Plus etroit que `dit_un_manque` : un refus ordinaire (sans classe, `Refuse`) peut dire une
+    /// donnee livree qui manque ou un bareme incomplet, une panne qu'aucune case ne repare. Ce qui met une chose de cote
+    /// pour lire le reste (`engagement::etats::PaieDeCote`) ne met de cote que ceci ; le reste remonte.
+    pub fn manque_une_case(&self) -> bool {
+        matches!(self.classe, Some(Classe::Manque | Classe::CaseExigee | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete))
     }
 
     /// Le meme refus, sa phrase recomposee par `f` (« <ce qu'on faisait> : <la phrase> ») : sa classe et ce qu'il porte a

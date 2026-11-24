@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use droit::fiche::Lue as _;
 use serde::Serialize;
 
 use crate::etats_paie::{self, cumul_de, cumuls_par, Demande, LigneLivre, Periode};
@@ -21,7 +22,7 @@ use socle::grandeurs::Montant;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
 fn est_erreur_operation(e: &Echec) -> bool {
-    matches!(e.classe, None | Some(Classe::Refuse | Classe::SaisieIncomplete | Classe::Manque))
+    matches!(e.classe, None | Some(Classe::Refuse | Classe::SaisieIncomplete | Classe::Manque | Classe::CaseExigee))
 }
 
 fn copie(e: &Echec) -> Echec {
@@ -38,10 +39,10 @@ pub struct CoutsDeLAnnee {
     pub spectacles: Vec<(String, Cout)>,
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub salaries: Vec<(String, Cout)>,
-    /// Les paies reprises que le cout ne compte pas (`etats_paie::livre_des_etats`) : la nature de leur contrat reste a
-    /// dire.
+    /// Les paies que le cout ne compte pas (`etats_paie::livre_des_etats`, `engagement::etats::PaieDeCote`), chacune avec
+    /// ce qui lui manque.
     #[serde(skip)]
-    pub non_comptees: Vec<engagement::importe::NatureADire>,
+    pub non_comptees: Vec<engagement::etats::PaieDeCote>,
 }
 
 /// Le cout d'un spectacle ou d'un salarie : ses bulletins, ses sommes (en texte), ce qui n'est que prevu, et si une paie
@@ -58,6 +59,10 @@ pub struct Cout {
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     pub prevu: Montant,
     pub incomplet: bool,
+    /// Les paies de ce salarie, ou de ce spectacle, que le cout ne compte pas (`engagement::etats::PaieDeCote`) : sa ligne
+    /// les dit.
+    #[serde(skip)]
+    pub de_cote: Vec<engagement::etats::PaieDeCote>,
 }
 
 /// Les deux etats de la periode, lus une fois chacun pour tous les salaries du dossier.
@@ -112,12 +117,31 @@ impl<'a> Recapitulatifs<'a> {
                 .map(|(k, _)| {
                     let (f, prevu) = (cumul_de(&faits, &k), cumul_de(&prevus, &k).cout_employeur.montant);
                     let incomplet = f.cout_employeur.dite < f.bulletins;
-                    (k, Cout { bulletins: f.bulletins, brut: f.brut.montant, charges: f.cotisations_patronales.montant, cout: f.cout_employeur.montant, prevu, incomplet })
+                    (k, Cout { bulletins: f.bulletins, brut: f.brut.montant, charges: f.cotisations_patronales.montant, cout: f.cout_employeur.montant, prevu, incomplet, de_cote: Vec::new() })
                 })
                 .collect()
         };
         out.spectacles = couts(&|l| Some(l.spectacle.clone()).filter(|s| !s.is_empty()));
         out.salaries = couts(&|l| Some(l.cle_salarie.to_string()));
+        // Chaque paie mise de cote, sur la ligne de son salarie et sur celle de son spectacle (sous son titre, la cle des
+        // lignes du livre) ; celui dont aucune paie ne se compte a la sienne.
+        fn poser(lignes: &mut Vec<(String, Cout)>, cle: String, d: &engagement::etats::PaieDeCote) {
+            match lignes.iter_mut().find(|(k, _)| *k == cle) {
+                Some((_, c)) => c.de_cote.push(d.clone()),
+                None => lignes.push((
+                    cle,
+                    Cout { bulletins: 0, brut: Montant::ZERO, charges: Montant::ZERO, cout: Montant::ZERO, prevu: Montant::ZERO, incomplet: false, de_cote: vec![d.clone()] },
+                )),
+            }
+        }
+        for d in &out.non_comptees {
+            if let Some(cle) = &d.salarie {
+                poser(&mut out.salaries, cle.to_string(), d);
+            }
+            if let Some(titre) = d.spectacle.as_ref().and_then(|s| self.ctx.spectacles.get(s)).and_then(|f| f.titre.dite()).filter(|t| !t.is_empty()) {
+                poser(&mut out.spectacles, titre.clone(), d);
+            }
+        }
         Ok(out)
     }
 

@@ -33,6 +33,7 @@ pub mod preuve;
 pub mod problemes;
 pub mod restauration;
 pub mod sauvegarde;
+pub mod sur_le_drive;
 pub mod taux_pas;
 
 /// QUI ECRIT : ce que les routes et les gestes de la compagnie inscrivent, la fenetre comme la ligne de commande

@@ -588,6 +588,19 @@ un libellé, chacun sa forme.
 | nom d'un fichier d'export | `documents::etats_paie::NomDExport` | `documents/src/etats_paie.rs` |
 | chemin d'un texte déposé | `droit::source::CheminDepose` | `droit/src/source.rs` |
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
+| identité d'une compagnie sur le Drive | `compagnie::sauvegarde::IdentiteSurLeDrive` | `compagnie/src/sauvegarde.rs` |
+| marque du dossier d'une compagnie dans le Drive | `envois::drive::MarqueDuDossier` | `envois/src/drive.rs` |
+| sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
+| dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
+| fichiers d'un dossier du Drive, par nom, homonymes compris | `envois::drive::FichiersDuDossier` | `envois/src/drive.rs` |
+| corbeille du Drive, à part du client | `envois::drive::Corbeille` | `envois/src/drive.rs` |
+| reprise du Drive pas finie sur ce poste | `compagnie::restauration::RepriseEnCours` | `compagnie/src/restauration.rs` |
+| geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
+| provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
+| ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
+| sorte d'une erreur de Google pour un fichier demandé (du fichier, passagère, arrêt — autorisation ou non) : le seul classement de la restauration | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
+| pourquoi une restauration s'est arrêtée en route (hors ligne, autorisation perdue, refus de Google, verrou perdu) | `compagnie::restauration::ArretDeLaRestauration` | `compagnie/src/restauration.rs` |
+| verrou d'une restauration du Drive sur un dossier (une à la fois, d'un processus à l'autre) | `compagnie::restauration::VerrouDeRestauration` | `compagnie/src/restauration.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
 | titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
@@ -607,7 +620,7 @@ un libellé, chacun sa forme.
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
-| ce que Google dit qui demande un geste de la compagnie (l'autorisation perdue, une permission qui manque, le Drive plein) | `RaisonDeGoogle` | `envois/src/drive.rs` |
+| ce que Google dit de son erreur par sa raison, lue à la porte (l'autorisation perdue, le jeton refusé, une permission qui manque, le Drive plein, un fichier refusé, la limite de débit) | `RaisonDeGoogle` | `envois/src/drive.rs` |
 | sorte d'un refus de la boîte courriel (le mot de passe refusé, la boîte injoignable, autre) ; le refus et sa sorte : `RefusDeLaBoite` | `SorteDeRefusDeLaBoite` | `envois/src/courriel.rs` |
 | une demande de la page dans un onglet du navigateur, sans serveur ; la réponse que la fenêtre lui sert : `ReponseALOnglet` ; la première page que l'hôte demande, la fenêtre née : `PremierePageDeLOnglet` | `DemandeDeLOnglet` | `moteur/src/interface/onglet.rs` |
 | ce qui arrête un envoi SMTP (la réponse négative et son code, le délai, le TLS, l'échange interrompu), avant sa phrase ; le dialogue SMTP sur un flux : `Smtp`, une réponse : `ReponseSmtp`, ce que le serveur offre : `Extensions` | `ArretDeLEnvoi` | `envois/src/courriel.rs` |
@@ -628,6 +641,13 @@ un libellé, chacun sa forme.
 | adresse | `Url` | `socle/src/garde_reseau.rs` |
 | un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
 | le temps d'un travail du fil de fond fait par qui l'attend (le navigateur, sans second fil) | `LeTempsDUnTravail` | `socle/src/fil_de_fond.rs` |
+| un envoi parti en fond, dans la fenêtre (ce qu'il dit en partant : `EnvoiQuiPart` ; où il en est, et sa phrase : `EtatDUnEnvoi` ; tel que le bandeau et le cadre du mois le disent : `EnvoiDit`) | `EnvoiEnFond` | `routes/src/envois_en_fond.rs` |
+| où un envoi parti en fond se dit, en plus du bandeau : l'étape du mois d'où il part, la fiche d'où part une demande de fiche, ailleurs | `PlaceDeLEnvoi` | `routes/src/envois_en_fond.rs` |
+| ce qu'un envoi parti en fond emporte de son étape, nommé au départ : des contrats ou des embauches (salarié et numéro), les documents de ces salariés, la DSN d'un établissement | `CeQuiPartDeLEtape` | `routes/src/envois_en_fond.rs` |
+| ce que les envois en fond disent d'un mois à sa lecture : les envois en cours (leur étape, ce qu'ils emportent), et les envois du mois | `EnvoisDuMois` | `routes/src/envois_en_fond.rs` |
+| les envois partis en fond d'une compagnie, que la fenêtre garde | `EnvoisEnFond` | `routes/src/envois_en_fond.rs` |
+| numéro d'un envoi parti en fond | `NumeroDEnvoi` | `routes/src/envois_en_fond.rs` |
+| où en est le mois, le cadre sous lui : son dernier fait et sa prochaine étape | `OuEnEstLeMois` | `routes/src/etapes.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -937,9 +957,44 @@ un libellé, chacun sa forme.
 - **chemin d'un texte déposé** : le fichier d'une source, depuis la racine du dépôt, sous `atelier/reference/` (ou le mode
   d'emploi), suivi pour un article d'un entrepôt de la DILA de son code (`…/articles.jsonl.gz#travail`) ; que portent une
   `Source` et les titres de la banque des conseils.
-- **dossier de la sauvegarde dans le Drive** : la racine du Drive de la compagnie, `sauvegarde`, puis le dossier de la
+- **dossier de la sauvegarde dans le Drive** : sous le dossier de la compagnie, `sauvegarde`, puis le dossier de la
   compagnie qu'il tient, écrit avec des barres droites ; une seule construction (`DossierDuDrive::segments`, que le
-  Drive parcourt, et `de`, qui les joint), pour la sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`).
+  Drive parcourt, et `de`, qui les joint), pour la sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`, avec le dossier de la compagnie, `compagnie`).
+- **identité d'une compagnie sur le Drive** : ce qui marque le dossier d'une compagnie sous `PuppetPaie/` sans dépendre
+  de son nom ni d'aucune donnée de la compagnie : `cie:<32 hexadécimaux>` tiré au hasard à sa première sauvegarde ;
+  gardée dans `config/drive.json`, qui part avec la sauvegarde et revient avec une reprise, et elle ne change plus. La
+  sauvegarde et l'archivage retrouvent leur dossier par elle (`sauvegarde::dossier_de_la_compagnie`).
+- **fichiers d'un dossier du Drive** : ce que `Drive::lister` rend, par nom, homonymes compris ; deux fichiers du même
+  nom ne se départagent pas (`FichiersDuDossier::le_seul` les refuse en les nommant : la sauvegarde reporte le fichier,
+  l'archivage refuse, la restauration le dit en incident).
+- **corbeille du Drive** : mettre un dossier à la corbeille de Google, à part du client (`Corbeille`) : un `Client` (la
+  sauvegarde, l'archivage, la restauration, la vue) n'a pas de quoi effacer ; une corbeille se fait d'une autorisation
+  que seul `routes::coffre` lit, et il ne la fait qu'après le mot de passe du logiciel, pour le geste qui supprime un
+  dossier (`routes::drive`).
+- **reprise en cours** : la marque qu'une reprise du Drive à l'accueil pose d'abord dans le dossier neuf qu'elle remplit
+  (`config/reprise-en-cours.json`, propre au poste) : de quel dossier du Drive il revient. Tant qu'elle est là, ce
+  dossier n'est pas une compagnie du poste (ni tuile, ni ouvert, et aucune route ne s'y sert : `routes::service::contexte`) ;
+  les reprises commencées se cherchent par elle (`installation::reprises_commencees`), et chacune se voit à l'accueil,
+  que son dossier du Drive se voie ou non, avec le geste qui l'abandonne (son dossier sur ce poste s'efface ; le Drive
+  ne change pas). Une reprise coupée (la connexion, un fichier à retenter) se continue dans ce dossier, et dans aucun
+  autre ; allée au bout (`Restauration::complete`, la fiche Entreprise revenue et lisible), elle s'efface. Commencée
+  dans `fictives/`, elle reste une fictive ; dans `compagnies/`, une compagnie réelle.
+- **provenance du coffre** : un coffre qu'une restauration laisse est descendu du Drive (par elle, ou dans le dossier
+  d'une reprise), ou il était là. Seul le premier, s'il ne s'ouvre pas ici, se met de côté
+  (`config/coffre-de-l-ancien-poste.bin`, propre au poste : il ne monte pas au Drive) ; un coffre qui était là n'est
+  jamais déplacé.
+- **après un geste** : ce que la page fait de la réponse d'un geste, que la route dit (`apres`) : poser l'écran qu'elle
+  rend, relire l'écran, ou ouvrir la compagnie qu'elle nomme ; la page ne le devine pas à la forme de la réponse.
+- **geste d'un écran de la reprise du Drive** : ce que porte le geste d'un rang de l'accueil « De mon Drive », la charge
+  de sa route et rien de plus : rien (lier, oublier le compte Google de l'accueil), un dossier du Drive (le reprendre),
+  une compagnie de ce poste (l'ouvrir), le dossier d'une reprise pas finie (l'abandonner). Le geste « Supprimer… »
+  d'une compagnie porte la charge de `drive-supprimer`.
+- **marque du dossier d'une compagnie** : ses propriétés privées à l'application (`appProperties`) : l'identité, la date
+  de la dernière sauvegarde qui a envoyé quelque chose, le volume ; telle que Drive la rend, du texte, que
+  `sur_le_drive` lit en ses types (ce qui ne s'en lit pas se dit, sans fermer la vue).
+- **dossier vu** : un dossier sous la racine du Drive, tel que la vue le montre (`sur_le_drive::voir`) : le dossier d'une
+  compagnie, l'ancienne sauvegarde commune (`sauvegarde`), ou un dossier d'une ancienne version ; ce que la vue du Drive,
+  la reprise à l'accueil, la suppression et `moteur restaurer` lisent.
 - **entrée mise de côté au tri d'un import** : une entrée d'archive dont le nom ne fait pas un chemin sous l'archive
   (`..`, `:`, un chemin absolu, rien qui reste), un fichier du disque dont le nom n'est pas un `NomDeFichier`, ou une
   entrée, d'archive ou du disque, qui ne se lit pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le
@@ -1199,6 +1254,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | où une case de fiche renvoie, rendu sous elle (le sous-onglet des métiers, ou la case d'une autre fiche : l'option de la déduction forfaitaire de l'entreprise) | `routes::fiches::RenvoiDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | ce qui se fait depuis la fiche d'un salarié enregistré, dans son en-tête (sa clé, d'où ses imprévus et ses droits se lisent, et le geste vers ses documents) | `routes::fiches::SalarieDeLEntete` | `routes/src/fiches/rendue.rs` |
 | fiche d'un salarié neuf à faire remplir par la personne, dans son en-tête (ce que la demande fait, son geste `fiche-demander` ou ce qui lui manque, la demande du mot de passe) | `routes::fiches::InvitationDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| ce que les cases de la demande de fiche montrent d'abord (le courriel que la fiche dit déjà) | `routes::fiches::ValeursDeLaDemande` | `routes/src/fiches/rendue.rs` |
 | charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge (`{}`) | `routes::SansCharge` | `routes/src/lib.rs` |
 | ce que le moteur sait de plus sur les cases d'une fiche qu'on saisit (celles de l'entreprise, celles d'un salarié) | `routes::fiches::Completer` | `routes/src/fiches/rendue.rs` |
 | listes que la fiche d'un salarié offre, lues une fois par réponse (les pays de naissance et de nationalité, les métiers, ce que l'entreprise dit de la déduction forfaitaire) | `routes::fiches::ListesDuSalarie` | `routes/src/fiches/rendue.rs` |
@@ -1223,6 +1279,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce que le contrat écrit d'un engagement appelle sur sa carte (contrat signé ici, modèles au choix, numéro à dire) | `routes::mois::ContratAppelle` | `routes/src/mois.rs` |
 | partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
 | clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le cadre qu'une carte disait de son métier, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
+| avis de la paie (sa phrase, s'il renseigne sans rien demander, et l'adresse de la convention qu'il renvoie à vérifier, à part de la phrase ; sa forme écrite, `AvisEcrit`, qui lit aussi l'adresse collée au bout de la phrase telle qu'elle s'écrivait ; sa forme rendue, `AvisVu`, sa phrase et son `LienDuTexte`) | `engagement::Avis` | `engagement/src/lib.rs` |
 | avenant d'un engagement (les termes qui changent à partir d'un jour, et ceux qui se retirent ; sa forme écrite, `AvenantEcrit`, dont chaque retiré, `Retire`, est un champ de la carte ou la clé gardée `cadre`) | `engagement::stock::Avenant` | `engagement/src/stock.rs` |
 | dernier jour engagé d'un spectacle (la fin la plus tardive des engagements actifs qui le nomment, importés compris, ou un contrat payé au mois sans fin qui le tient en cours ; seul le rangement des spectacles endormis le lit, `derniers_jours_engages`) | `engagement::stock::DernierJourEngage` | `engagement/src/stock.rs` |
 | ouverture d'une case (toujours, ou si un fait) | `engagement::carte::Ouverture` | `engagement/src/carte.rs` |
@@ -1263,7 +1320,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
 | paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
 | activité d'un mois repris (ses cachets, heures et jours de travail rémunéré, chacun vide quand les pièces le taisent ; une seule règle, `importe::activite_du_mois`, que lisent la carte du mois importé, la comparaison, la CASC-SVP et les états par `PaieDuMois::activite`) | `engagement::importe::ActiviteDuMois` | `engagement/src/importe.rs` |
-| paie reprise qui ne se range pas (celle d'un mois d'un contrat dont la nature reste à dire : ce qui lit les paies du mois la rend à part, ne la compte pas et la dit sur ce contrat, sans refuser le reste, `importe::paies_du_mois`, `etats::paies_du_mois`) | `engagement::importe::NatureADire` | `engagement/src/importe.rs` |
+| paie mise de côté (ce qui regarde les paies du mois, un état ou le coût de l'année, la rend à part, ne la compte pas et la dit sur son contrat, sans refuser le reste, `etats::paies_du_mois` ; ce qui fabrique la paie refuse avec elle) | `engagement::etats::PaieDeCote` | `engagement/src/etats.rs` |
+| pourquoi une paie est mise de côté (une paie reprise dont la nature du contrat reste à dire ; une paie validée qui ne se calcule pas faute d'une case, avec la phrase du refus) | `engagement::etats::PourquoiDeCote` | `engagement/src/etats.rs` |
 | paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
 | graine d'une paie versée (ce qui la reconnaît d'une comparaison à l'autre, la seule chose que son empreinte signe : la liste fixe des champs que ses pièces disaient quand l'empreinte est née, écrits comme ils l'étaient ; ce que l'import lui ajoute ensuite, l'abattement, les heures qu'une ligne imprime, n'y entre jamais, `PaieVersee::graine`, `ecarts::empreinte`) | `engagement::importe::GraineDUnePaie` | `engagement/src/importe.rs` |
 | paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
@@ -1300,6 +1358,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
+| lien vers le texte qu'une phrase nomme, rendu à côté d'elle et jamais dedans (son libellé, son adresse) : celui de la convention que l'avis du minimum conventionnel renvoie à vérifier (`engagement::Avis`, son adresse `convention`) | `LienDuTexte` | `routes/src/mois.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
@@ -1416,7 +1475,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | organisation patronale | `OrganisationPatronale` | `droit/src/forme_bareme.rs` |
 | catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
 | DFS d'un salarié (sa profession, son taux, ses lignes abattues, son plafond) | `DfsDuSalarie` | `engagement/src/calcul.rs` |
-| déduction forfaitaire spécifique d'une paie (sa catégorie, sa profession, son taux, ses lignes abattues, ce qu'elle retient, ce que l'année avait déjà déduit) | `DeductionForfaitaire` | `engagement/src/calcul.rs` |
+| déduction forfaitaire spécifique d'une paie (sa catégorie, sa profession, son taux, ses lignes abattues, ce qu'elle retient, les frais qu'elle réintègre, ce que l'année avait déjà déduit) | `DeductionForfaitaire` | `engagement/src/calcul.rs` |
 | option de l'employeur pour la DFS (une case de sa fiche, une condition de la DFS d'un salarié) | `droit::fiche::OptionDfs` | `droit/src/fiche.rs` |
 | jour du versement des salaires que la compagnie choisit (à la fin du mois, à la fin du contrat, un jour du mois, un jour du mois suivant ; les cases `date_de_versement_permanents` et `date_de_versement_intermittents` de la fiche entreprise l'écrivent dans sa forme, `droit::fiche::VersementEcrit` : un choix, `droit::fiche::QuandDuVersement`, et le numéro du jour pour les deux derniers) | `droit::versement::Versement` | `droit/src/versement.rs` |
 | taux de PAS reçu (son taux, son type, son identifiant, l'instant de sa mise à disposition, la DSN mensuelle à laquelle il répond ; la case `taux_pas` de la fiche d'un salarié le porte, qui ne se saisit pas ; il se reçoit pour un salarié, la clé de sa fiche à côté ; la paie applique celui en vigueur, `taux_dgfip`. Ses formes, à leur porte : ce qu'un compte rendu de nature 94 dit, `envois::retours::ReleveTauxPas` ; ce qu'un scénario du banc annonce, `envois::organismes_simules::TauxPasAnnonce` ; la situation du taux d'un salarié, `Situation`) | `droit::pas::TauxRecu` | `droit/src/pas.rs` |
@@ -1438,13 +1497,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | première embauche reprise (le plus ancien début de contrat que les pièces reprises disent, et la pièce qui le dit ; « Pour démarrer » le propose dans la case de la première embauche, la compagnie le valide ou le corrige) | `engagement::effectif_repris::PremiereEmbaucheReprise` | `engagement/src/effectif_repris.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
 | limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`, sur la part abattue que les assiettes plafonnées disent) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
-| régularisation du plafond (quelles paies régularisent leurs assiettes plafonnées sur l'année civile, CSS R. 242-2, II ; BOSS § 1250 ; le technicien intermittent, une tolérance retenue, `par_contrat`) | `droit::forme_bareme::RegularisationDuPlafond`, `droit::forme_bareme::PlafondDuTechnicienIntermittent` | `droit/src/forme_bareme.rs` |
+| régularisation du plafond (les textes, que le barème cite : CSS R. 242-2, II ; BOSS § 290, 1220-1250 ; la règle est dans le moteur : toute paie qui n'est pas celle d'un artiste se régularise, permanent ou technicien intermittent, `droit::plafond::se_regularise`) | `droit::forme_bareme::RegularisationDuPlafond` | `droit/src/forme_bareme.rs` |
 | tranches du plafond (les bornes des tranches d'une paie en nombre de plafonds, chacune avec son texte : la tranche 2 de la retraite complémentaire, ANI Agirc-Arrco art. 32 ; la tranche 2 de la prévoyance conventionnelle, CCNEAC XII.2 ; le chômage et l'AGS, règlement Unédic art. 49 ; l'Apec, Audiens) | `droit::forme_bareme::TranchesDuPlafond` | `droit/src/forme_bareme.rs` |
 | limite des tranches journalières d'un intermittent (le plafond journalier par jour du contrat, « dans la limite du plafond mensuel » : Audiens 2026, absente en 2025 ; le plafond qui limite) | `droit::forme_bareme::LimiteDuPlafondJournalier`, `droit::forme_bareme::PlafondQuiLimite` | `droit/src/forme_bareme.rs` |
 | jours sans rémunération d'une paie (les jours d'absence que l'employeur ne maintient pas, qui réduisent le plafond d'un permanent : CSS R. 242-2, I, al. 4 ; BOSS § 820-920 ; `engagement::conges::lignes_du_mois` les dit, l'engagement les porte, `Engagement::sans_remuneration`) | `droit::plafond::JoursSansRemuneration` | `droit/src/plafond.rs` |
-| assiettes plafonnées d'une paie (celles qui se régularisent : tranches 1 et 2, T2 conventionnelle, T1 + T2, CET, part abattue de la CSG, `Regularisees` ; et le brut dans la limite des plafonds du chômage, `chomage`, qui ne se régularise pas ; le seul calcul, `droit::plafond::assiettes_plafonnees`, qui exige le plafonnement) | `droit::plafond::AssiettesPlafonnees`, `droit::plafond::Regularisees` | `droit/src/plafond.rs` |
+| assiettes plafonnées d'une paie (celles qui se régularisent : tranches 1 et 2, T2 conventionnelle, T1 + T2, CET, part abattue de la CSG, `Regularisees` ; et le brut dans la limite des plafonds de l'Apec, `apec`, qui ne se régularise pas, comme l'assiette du chômage, `droit::plafond::chomage` ; le seul calcul, `droit::plafond::assiettes_plafonnees`, qui exige le plafonnement) | `droit::plafond::AssiettesPlafonnees`, `droit::plafond::Regularisees` | `droit/src/plafond.rs` |
 | bascule de la contribution d'équilibre technique (la paie où la rémunération de l'année passe au-dessus de la somme de ses plafonds, ou repasse dessous : la CET de l'année devient due, ou se rend ; jugée par `BasculeDeLaCet::entre` sur l'année avant la paie et l'année jusqu'à elle, un mois découpé entre l'année avant sa première période et l'année après sa dernière, dite par un avis de la paie du mois, `calcul::avis_de_la_bascule`) ; l'année de part et d'autre d'une période qui se régularise ou dont la retraite se compte sur le plafond de l'année, interne au calcul ; le plafond auquel la rémunération de l'année se compare (la somme des plafonds des paies d'un salarié au mois, ou le plafond annuel de la retraite d'un intermittent) | `droit::plafond::BasculeDeLaCet`, `engagement::calcul::AnneeDeLaPeriode`, `engagement::calcul::PlafondDeLAnnee` | `droit/src/plafond.rs`, `engagement/src/calcul.rs` |
-| ce qui précède une paie dans l'année (la somme des rémunérations, des plafonds et des assiettes appliquées des paies qui se régularisent, depuis le 1er janvier ou l'embauche ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois ; pour la retraite complémentaire d'un intermittent, ses paies d'intermittent de l'année sous le plafond annuel, `AnneeAnterieure::sous_le_plafond_annuel`, lues par `conges::retraite_des_mois_anterieurs`) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
+| ce qui précède une paie dans l'année (un cumul par assiette régularisée, `CumulDeLAssiette` : la somme des rémunérations, des plafonds et des assiettes appliquées des seules paies qui portent l'assiette, depuis le 1er janvier ou l'embauche, tous contrats confondus, BOSS § 1230 ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois ; pour la retraite complémentaire d'un intermittent, ses paies d'intermittent de l'année sous le plafond annuel, `AnneeAnterieure::sous_le_plafond_annuel`, lues par `conges::retraite_des_mois_anterieurs`) ; les rémunérations qu'une paie y compte (la base de calcul des cotisations, abattue sous DFS, pour les tranches ; le brut entier pour la part abattue de la CSG, § 290) ; les assiettes qu'une paie y porte (toutes pour une paie au mois ; la tranche 1 et la part abattue de la CSG pour un technicien intermittent) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::CumulDeLAssiette`, `droit::plafond::RemunerationsRegularisees`, `droit::plafond::PorteesParLaPaie`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
 | maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` ; ce que la reconstitution d'un maintien en net rend au calcul (son montant, son avis, les jours que son complement maintient) : `engagement::maintien::Reconstitue` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
@@ -1910,9 +1969,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.
 - **déduction forfaitaire spécifique d'une paie** : ce que le calcul d'un contrat abat (`calcul::abattement_dfs`, en
-  montants : le taux de l'année par rubrique de salaire, le plafond annuel, l'assiette minimum), et ce que la paie
-  écrite garde telle quelle (sa forme est la sienne, ses grandeurs en texte normalisé) ; le bulletin en imprime le taux
-  et le montant, la DSN le taux (40.023) et le montant (54 de type 10), sans le recomposer. Ce que l'année avait déjà
+  montants : le taux de l'année par rubrique de salaire, les remboursements de frais que l'annexe 2 de l'arrêté ne laisse
+  pas dehors réintégrés avant l'abattement, le plafond annuel, l'assiette minimum), et ce que la paie écrite garde telle
+  quelle (sa forme est la sienne, ses grandeurs en texte normalisé ; `frais_reintegres`, absent quand elle n'en
+  réintègre aucun) ; le bulletin en imprime le taux et le montant, la DSN le taux (40.023), le montant (54 de type 10) et
+  les frais réintégrés (54 de type 35), sans le recomposer. Ce que l'année avait déjà
   déduit (`deja`) est le cumul de l'année des paies validées (`conges::dfs_des_mois_anterieurs`) et des contrats
   précédents du mois ; un cumul de l'année est la grandeur de ce qu'il somme, pas une notion. La règle de l'année est
   la section du barème (`forme_bareme::DfsDuBareme`, une forme), dont `calcul::deduction_forfaitaire` tire la DFS d'un
@@ -2041,6 +2102,7 @@ navigateur (`AGENTS.md`, le flux « Tests »).
 
 À sa racine, à côté des routes : `service.rs` (la demande et la réponse de `moteur route`), `etat_garde.rs` (l'état
 d'un mois et de l'ouverture tels que l'écran les lit, refaits en fond), `veille.rs` (ce que la veille dit à la page),
+`envois_en_fond.rs` (les envois que la fenêtre fait partir en fond, et ce que le bandeau en dit),
 `horloge.rs` (l'horloge des compagnies fictives), `scenario.rs` (le scénario d'une compagnie et son rejeu, le circuit
 des fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_mois.rs`, `obligations.rs`,
 `regularisation.rs`, `simulation_courriels.rs`.
@@ -2256,8 +2318,8 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
     (déduction forfaitaire spécifique, heures supplémentaires, exonération des heures en plus). Ce lecteur prend ses
     paies telles que les pièces les disent (`importe::PaieReprise`), sans les ranger ni rien calculer d'elles : une
     nature encore à dire, le barème ou la convention de leur mois ne font refuser aucun de ces calculs. Le calcul qui les
-    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-au-mois <mois> <salarié>` pour les seules
-    validées de ses contrats payés au mois, que la régularisation du plafond lit sans calculer les autres, et
+    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-regularisees <mois> <salarié>` pour les seules
+    validées de ses contrats qui se régularisent (pas d'artiste), que la régularisation du plafond lit sans calculer les autres, et
     `paies-intermittentes <mois> <salarié>` pour celles de ses contrats d'intermittent, que l'année de sa retraite
     complémentaire lit) : un
     réimport, un bulletin qui complète une paie de DSN, une ligne rattachée font recalculer la paie validée qui les a
@@ -2544,8 +2606,10 @@ le module la dit avec ses textes (`atelier/reference/sources/`) :
 - un **artiste** engagé moins de cinq jours calendaires : 12 × le PSS horaire
   par journée de travail de la paie (arrêté du 24/01/1975, art. 3, al. 2) ;
 - tout **autre intermittent** (artiste engagé cinq jours ou plus, technicien) :
-  le PSS mensuel au prorata des jours rémunérés de la paie, mois par mois (la
-  tolérance du BOSS, § 1090, appliquée : le BOSS est opposable) ;
+  le PSS mensuel au prorata des jours calendaires du contrat dans la période de
+  la paie, mois par mois, quels que soient les jours travaillés (CSS R. 242-2,
+  I, al. 3 ; BOSS § 700 et 740 ; la tolérance du § 1090 sur les jours
+  rémunérés n'est pas appliquée) ;
 - un **permanent** : le PSS au prorata des jours de sa période de paie
   couverts par le contrat (CSS R. 242-2), moins les jours d'absence que
   l'employeur ne rémunère pas (R. 242-2, I, al. 4 ; BOSS § 820-920 : une
@@ -2579,8 +2643,15 @@ assoit, la DSN ne la déclare pas ; une paie qui ne l'écrit pas a abattu
 toutes ses rubriques soumises, ce que dit sa base de CSG, son brut soumis
 abattu plus la prévoyance patronale : sa part abattue est son brut,
 `FormeDePaie::part_abattue_csg`). Une tranche
-régularisée peut être négative, la DSN la déclare signée. L'artiste et le
-technicien intermittent gardent le plafond de chaque paie ; les paies reprises
+régularisée peut être négative, la DSN la déclare signée. L'artiste garde le
+plafond de chaque paie (BOSS § 1250). Le technicien intermittent se régularise
+(§ 1220-1230), tous ses contrats à la compagnie confondus, CDI compris : sa
+tranche 1 de la sécurité sociale (`brut_plafonne`, sous DFS `brut_plafonne_dfs`
+sur le brut abattu) et sa part abattue de la CSG (sur le brut entier, § 290) ;
+chaque assiette a son cumul, des seules paies qui la portent
+(`droit::plafond::CumulDeLAssiette`, `PorteesParLaPaie`) : sa retraite et sa
+prévoyance ont leurs règles (l'année, les tranches journalières) et n'entrent
+pas dans la tranche 2, la CET ni la T2 conventionnelle d'un CDI. Les paies reprises
 d'un ancien logiciel n'entrent pas dans le cumul (la régularisation commence
 au premier mois payé ici) ; le chômage, l'AGS et l'Apec ne se régularisent pas.
 Une paie corrigée (une saisie d'un mois passé) n'est pas reprise par les
@@ -3359,7 +3430,7 @@ tranches de l'année chez la compagnie sous le plafond annuel (`plafond_securite
 chemin qu'une paie qui se régularise (`droit::plafond::tranches_sous_le_plafond_annuel`) sur ses paies d'intermittent
 validées des mois d'avant (`conges::retraite_des_mois_anterieurs` ; une paie reprise d'un ancien logiciel n'y entre
 pas : l'année commence au premier mois payé ici), et les contrats précédents du mois. Le plafond de la Sécurité sociale de ses
-paies, lui, ne se régularise pas. Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut : rien ne change.
+paies se régularise à part, sur la somme de leurs plafonds, celui d'un technicien seulement (`droit::plafond::se_regularise`). Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut : rien ne change.
 Le 131 de sa tranche 1 (sa ligne `retraite_t1`) se déclare sous la base 43, `t1_annuelle` ; celui de sa tranche 2 et
 de sa CET (`retraite_t2`, `cet`) sous la base 23. Seule la paie dont le barème pose `retraite_t1` sur `t1_annuelle`
 écrit les tranches de l'année : un cadre intermittent retire la tranche 2 et la CET de l'année
@@ -3382,7 +3453,7 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 | numéro d'objet (40.050) | oui | **INTERDIT** — CCH-11 ne l'autorise que pour les natures 02 et 10 |
 | congés payés | caisse des Congés Spectacles (40.022, cotisation 15,5 %), sauf un CDDU de douze mois ou plus | chez l'employeur : compteur, indemnité, solde ; sauf le CDD de droit commun de moins de douze mois d'un artiste, déclaré à la caisse (`caisse_conges::affilie`) |
 | assiettes FNAL / taxe d'apprentissage | brut **majoré** de 11,5 % et de 10 % (CSS L. 243-1-3, D. 243-0-2), pour un contrat déclaré à la caisse des Congés Spectacles | brut nu ; tranche 1 majorée de 11,5 % (FNAL) et brut majoré de 11,5 % (taxe d'apprentissage) pour un contrat déclaré à la caisse (`par_caisse_conges.affilie` du barème) |
-| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours rémunérés (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
+| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours calendaires du contrat dans la paie (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
 | chômage | 9,75 / 2,40 dans la limite de quatre plafonds, recouvré par **France Travail** | 4,00 + AGS 0,25 dans la limite de quatre plafonds de la période, recouvré par l'**Urssaf** (CTP 772, 937) |
 | retraite complémentaire | taux Audiens, tranches **journalières** | droit commun, tranches **mensuelles** |
 | formation professionnelle | 2,00 % (CTP 983) | 0,55 % (CTP 959) |
@@ -4093,6 +4164,35 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   de passe ; dans le navigateur, sans second fil, celui qui attend un état fait le travail de la file avec les mêmes
   refus, le temps de ce travail (`fil_de_fond::LeTempsDUnTravail`). La veille (réseau, coffre, relève, sauvegarde) ne démarre qu'à l'ouverture d'une compagnie ; le tableau de
   l'accueil ne relève les comptes rendus qu'une fois le mot de passe de l'administrateur tapé dans la fenêtre.
+- **Les envois longs partent en fond** (#683 ; `routes::envois_en_fond`). Une route qui engage (sa fiche :
+  `Acte::Engage` : la signature, les documents, le dépôt, la demande de fiche, le dossier, la régularisation CASC-SVP)
+  se fait, dans la fenêtre, sur un fil à elle (`EnvoisEnFond::servir`) ; c'est la même route, la même fonction, de bout
+  en bout. La page attend ce que ce fil lui dit d'abord : un refus, ou la réponse entière, comme avant ; mais dès que la
+  route arrive au point où tout est vérifié, le mot de passe compris, et où seul le transport reste (`partir`, juste
+  avant le premier courriel ou le dépôt réel ; un essai se suit dans sa boîte et n'y va pas), la page reçoit « en cours
+  d'envoi » (`en_fond`, le numéro de l'envoi) et la route continue. Son issue se dit dans le bandeau
+  (`DitDuBandeau::envois` : en cours, partie avec la phrase de la route, ou échouée avec le geste qui rouvre la boîte d'où
+  elle est partie ; un dépôt réel parti se suit ensuite par `suivre-depot`) ; un refus en fond se note en incident comme
+  celui d'une route attendue. En ligne de commande, dans la veille, dans l'horloge d'une fictive, pour une compagnie aux
+  envois simulés et dans le navigateur, `partir` ne fait rien : la route va au bout avant de rendre. **Un envoi à la fois
+  par compagnie**, dans l'ordre des clics : le second attend que le premier soit au bout avant même de se vérifier, et lit
+  le journal qu'il a écrit. **Tant qu'un envoi est en cours, sa place le dit à la place du geste de ce qu'il emporte,
+  et de cela seul** (`PlaceDeLEnvoi`, `CeQuiPartDeLEtape` : ce que la route a vérifié, nommé au départ ; une seule
+  surcouche à la lecture, `etapes::LesDeuxEtats` et `EnvoisDuMois` : dans `etat-du-mois`, chaque case de son étape,
+  dont le geste couvre l'étape entière, et la prochaine étape quand c'est elle ; dans `etat-par-engagement`, les carrés
+  (et leur détail) et les choix de DPAE des engagements qu'il emporte, les autres gardant leur geste, qui ne vise
+  qu'eux ; un geste qui n'envoie rien, le dossier d'un contrat signé ailleurs, reste ; la demande de fiche se dit sur
+  la fiche d'où elle part, celle d'un salarié neuf, à la place de son geste) : un second clic ne le refait pas partir.
+  Un envoi qui part efface l'échec de la même route dont il reprend tout ce qui partait ; un échec dont une part
+  n'est pas reprise reste dit, avec son geste. Un envoi qui attend son tour derrière un autre se refuse si la fermeture ou le lâcher sont venus entre-temps. **Fermer ou redémarrer pour la mise à jour
+  attend les envois en vol** (`envois_en_fond::fermer_apres_les_envois`, dans `Fenetre::fermer_le_logiciel`, avant de
+  quitter la compagnie : son bandeau dit l'attente), et refuse dès lors tout envoi neuf, comme lâcher une compagnie
+  qui s'en va (`envois_en_fond::lacher`) : la version neuve ne s'installe qu'après eux, et ne se prend en compte qu'au
+  lancement suivant. **Sous le mois, le cadre « où en
+  est » le dit en entier** (`etat-du-mois` : `ou_en_est`, `OuEnEstLeMois`, et `envois`, ceux du mois partis en fond) :
+  le dernier fait du mois, lu au journal comme l'Historique le dit (son acte, ce qui en est revenu, les retours d'un
+  dépôt à mesure qu'ils arrivent), et la prochaine étape telle que la colonne des étapes la montre ; le bandeau garde sa
+  phrase courte.
 
 
 ## L'horloge des compagnies fictives

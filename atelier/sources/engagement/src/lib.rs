@@ -864,12 +864,52 @@ impl Engagement {
 // ------------------------------------------------------- depuis un fichier
 
 /// Un avertissement pose sur la paie ; `info` : renseigne sans rien demander. Il s'ecrit `{texte, info}` dans la paie
-/// ecrite et son compteur de conges.
+/// ecrite et son compteur de conges, et `convention` quand il renvoie a vérifier sur le texte d'une convention : son
+/// adresse, a part de la phrase, qui s'affiche (`routes::affiche::defaut`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "AvisEcrit")]
 pub struct Avis {
     pub texte: String,
     pub info: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub convention: Option<socle::garde_reseau::Url>,
+}
+
+impl Avis {
+    /// Un avis sans texte a voir a part.
+    pub fn de(texte: String, info: bool) -> Avis {
+        Avis { texte, info, convention: None }
+    }
+}
+
+/// UN AVIS TEL QU'IL S'ECRIT dans une paie ou un compteur. L'avis du minimum conventionnel (`minima::a_verifier`) s'est
+/// ecrit d'abord avec l'adresse de sa convention collee au bout de sa phrase (« … vérifiez-le sur le texte de la
+/// convention : https://… . ») : il se lit en sa forme d'aujourd'hui, la phrase en mots et l'adresse a part, sans
+/// rien reecrire dans le fichier.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AvisEcrit {
+    texte: String,
+    info: bool,
+    convention: Option<socle::garde_reseau::Url>,
+}
+
+impl From<AvisEcrit> for Avis {
+    fn from(a: AvisEcrit) -> Avis {
+        const AVANT: &str = " vérifiez-le sur le texte de la convention : ";
+        // L'ancienne phrase ecrivait « {phrase}{AVANT}{adresse}. » : seul ce dernier point se retire, et une adresse
+        // qui finit elle-meme par un point le garde. Une adresse qui ne se lit pas laisse l'avis tel qu'il s'ecrivait,
+        // la phrase entiere : le meme texte qu'avant, rien de perdu.
+        let ancienne = || {
+            let (phrase, adresse) = a.texte.rsplit_once(AVANT)?;
+            let adresse = socle::garde_reseau::Url::lire(adresse.strip_suffix('.')?).ok()?;
+            Some((format!("{} vérifiez-le sur le texte de la convention.", phrase), adresse))
+        };
+        match (a.convention.is_none().then(ancienne).flatten(), a.convention) {
+            (Some((texte, adresse)), _) => Avis { texte, info: a.info, convention: Some(adresse) },
+            (None, convention) => Avis { texte: a.texte, info: a.info, convention },
+        }
+    }
 }
 
 /// UNE LIGNE DE FRAIS NE FAIT PAS LES JOURS DE L'ENGAGEMENT (`ligne::Frais`, rangee comme telle a la porte : sa rubrique
@@ -1564,6 +1604,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
             };
             avis.push(Avis {
                 info: true,
+                convention: None,
                 texte: format!(
                     "{} : {} de {} au-dessus de la limite de {} : {} par {} entrent dans le brut. Cocher {}« justificatif conservé » si la compagnie garde la facture.",
                     qui,
@@ -1728,6 +1769,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
             if let Some((j0, lim, lieu)) = limites_du_jour.iter().find(|(j, _, _)| Some(*j) == premier) {
                 avis.push(Avis {
                     info: true,
+                    convention: None,
                     texte: format!(
                         "{} : à l'étranger ({}), la limite du {} est de {} pour la nuitée et les repas du jour : {} par jour entrent dans le brut. Cocher « justificatif conservé » si la compagnie garde la facture.",
                         qui,
@@ -1966,6 +2008,7 @@ fn suivre_permanent(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
         let fin = eng.contrat().fin().ok_or_else(|| refus("fin"))?;
         avis.push(Avis {
             info: true,
+            convention: None,
             texte: format!(
                 "{} : {}{}, dernier mois (fin le {}). Le bulletin porte le \
                  solde de tout compte ; ensuite, signaler la fin de contrat dans \
@@ -2001,6 +2044,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     if let PlaceDuMois::Dernier | PlaceDuMois::Milieu = place_du_mois {
         avis.push(Avis {
             info: true,
+            convention: None,
             texte: format!(
                 "{} : contrat {} en cours depuis {}{} ; le contrat et \
                  la DPAE sont faits avec son premier mois, ce mois-ci n'a que son bulletin.",
@@ -2021,6 +2065,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
         };
         avis.push(Avis {
             info: true,
+            convention: None,
             texte: format!(
                 "{} : contrat {}, se poursuit en {} ; ce mois-ci est payé \
                  maintenant, la suite le sera avec {}. Le certificat Congés \
@@ -2137,7 +2182,7 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
                 texte(&p.salarie.prenom_affichage).or_else(|| texte(&p.salarie.prenom)).ok_or_else(|| socle::fichiers::absent("prenom"))?,
                 libelle
             );
-            p.ecrire().avertissements.push(Avis { info: false, texte: msg });
+            p.ecrire().avertissements.push(Avis::de(msg, false));
         }
         // Un technicien que la liste de l'annexe 8 de la convention ne nomme pas (CDD ou CDDU) : on dit ce qui en suit
         // (`caisse_conges::hors_de_l_annexe8`, `cddu_hors_des_annexes`).
@@ -2160,11 +2205,11 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
                 idcc,
                 aer
             );
-            p.ecrire().avertissements.push(Avis { info: true, texte });
+            p.ecrire().avertissements.push(Avis::de(texte, true));
         }
         // Une journee au-dela de la duree quotidienne maximale : on le dit, l'employeur en repond.
         if let Some(texte) = duree::au_dela_du_maximum(ctx, e.lignes(), &qui_de(&p.salarie)?)? {
-            p.ecrire().avertissements.push(Avis { info: false, texte });
+            p.ecrire().avertissements.push(Avis::de(texte, false));
         }
     }
     // Les contrats qui debordent du mois.

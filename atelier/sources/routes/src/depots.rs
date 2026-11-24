@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
-use crate::catalogue::{Acte, Forme, Fiche, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Forme, Fiche, Refus, CASE_EXIGEE, MANQUE, OPERATION};
 use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use declarations::dpae::{Chemins, Embauche, Parametres};
@@ -59,7 +59,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &Designation::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
         rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel) ; les dépôts ouverts maintenant, gestes, chacun un geste de deposer (route, charge, libellé, rang, cases, phrases, demande du mot de passe), le principal par son rang (le test, ou le réel une fois le test conforme), sans_test (le réel sans test, avec son motif), et reel_ferme (pourquoi le réel n'est pas ouvert)",
-        refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
+        refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION, CASE_EXIGEE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 300,
@@ -70,13 +70,14 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Déposer la DSN ou la DPAE du mois : en test, ou en réel après son test.",
         charge: &ChargeDeposer::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
-        rend: "le dépôt : accepté ou non, le retour de l'organisme, ses suites (chaque demande de taux), phrase, avis (l'encart à montrer après la DSN réelle d'un mois qui a des salariés)",
+        rend: "le dépôt : accepté ou non, le retour de l'organisme, ses suites (chaque demande de taux), phrase ; ce qui suit se lit dans le cadre du mois (etat-du-mois, ou_en_est)",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
             Refus { classe: Classe::RepetitionManquante, corriger: "déposer d'abord ce fichier en test" },
             Refus { classe: Classe::DsnDejaDeposee, corriger: "rien, ou renvoyer avec forcer si l'annule-et-remplace est voulu" },
             ILLISIBLE_FICHIER,
             OPERATION,
+            CASE_EXIGEE,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
@@ -326,8 +327,8 @@ pub(crate) struct Dit<A> {
     demande: compagnie::demande::DemandeDuMotDePasse,
     encarts: Vec<Encart>,
     phrases: Vec<Phrase>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
+    avertissements: Vec<crate::mois::AvisVu>,
+    informations: Vec<crate::mois::AvisVu>,
     /// Les depots ouverts maintenant (`depots_ouverts`) : les gestes de la boite, le principal par son rang ; le reel
     /// sans test, a part.
     gestes: Vec<GesteDuDepot>,
@@ -348,15 +349,12 @@ pub(crate) enum DepotApercu {
     Dpae(Dit<ApercuDpae>),
 }
 
-/// La reponse de `deposer` : le depot fait, sa phrase, et l'avis a montrer apres la DSN reelle d'un mois qui a des
-/// salaries.
+/// La reponse de `deposer` : le depot fait, et sa phrase.
 #[derive(Debug, Serialize)]
 pub(crate) struct Deposee {
     phrase: Phrase,
     #[serde(flatten)]
     fait: DepotFait,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    avis: Option<Encart>,
 }
 
 /// La reponse de `suivre-depot` : le depot tranche ou non, passe ou refuse, ce que le releve a a dire, la phrase et sa
@@ -811,8 +809,8 @@ mod tests_dpae_partielles {
 #[derive(Debug, Default)]
 pub struct DitALEcriture {
     phrase: Option<Phrase>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
+    avertissements: Vec<crate::mois::AvisVu>,
+    informations: Vec<crate::mois::AvisVu>,
 }
 
 /// LA DECLARATION QUE LA DESIGNATION DESIGNE (son chemin), et ce que son ecriture a dit. La DSN du mois (`quoi` : dsn,
@@ -918,12 +916,14 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
         Phrase::fixe("Dépôt réel effectué — ses retours sont attendus.")
     };
     let phrase = socle::phrase!("{}{}", tranche, fait.suites.iter().map(|s| format!(" {}", s)).collect::<String>());
-    // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
-    let avis = (mode == Mode::Reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
-        .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
+    // Ce qui suit la DSN reelle (les documents des salaries) se lit dans le cadre du mois (`etat-du-mois`, `ou_en_est`).
     etats::poser_les_pastilles(&mut fait.ligne);
     poser_les_pastilles(&mut fait.deja);
-    Ok(Deposee { phrase, fait, avis })
+    // PARTI EN FOND, le depot reel se suit depuis le bandeau, comme la page le suit apres l'avoir attendu (`suivre-depot`).
+    if mode == Mode::Reel {
+        crate::envois_en_fond::a_suivre(ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) });
+    }
+    Ok(Deposee { phrase, fait })
 }
 
 impl Designation {
@@ -1226,8 +1226,8 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
 /// ecriture a dit (ce que deux engagements disent pareil se dit une fois) ; les encarts de la boite et sa phrase.
 fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
     let (fichier, dit) = designee(ctx, &d)?;
-    let une_fois = |l: Vec<String>| {
-        let mut vus: Vec<String> = Vec::new();
+    let une_fois = |l: Vec<crate::mois::AvisVu>| {
+        let mut vus: Vec<crate::mois::AvisVu> = Vec::new();
         l.into_iter().filter(|x| if vus.contains(x) { false } else { vus.push(x.clone()); true }).collect::<Vec<_>>()
     };
     let (avertissements, informations) = (une_fois(dit.avertissements), une_fois(dit.informations));
@@ -1280,13 +1280,13 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
     lignes.extend(encarts.iter().map(|e| socle::phrase!("{}", e.en_ligne())));
     match &mut a {
         DepotApercu::Dsn(dit) => {
-            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x.texte())));
             lignes.extend(dit.reel_ferme.clone());
             dit.encarts = encarts;
             dit.phrases = lignes;
         }
         DepotApercu::Dpae(dit) => {
-            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x.texte())));
             lignes.extend(dit.reel_ferme.clone());
             dit.encarts = encarts;
             dit.phrases = lignes;

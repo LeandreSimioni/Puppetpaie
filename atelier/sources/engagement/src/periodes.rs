@@ -1,7 +1,7 @@
 //! La paie d'un mois decoupee en periodes elementaires (`droit::periodes`, qui cite les textes) : chaque periode est une
 //! paie calculee par `calcul::calculer_periode`, sur un engagement borne (`Engagement::periode`) ; elle lit sa fiche sur
 //! ses bornes, sa pile de bareme (rien n'est empile ailleurs que dans `bareme_applique`), son plafond
-//! (`plafond::plafond_permanent` : le prorata calendaire de R. 242-2, sur les bornes de la periode), son salaire (la part
+//! (`plafond::plafond_de_la_periode` : le prorata calendaire de R. 242-2, sur les bornes de la periode), son salaire (la part
 //! du mois de ses heures, `droit::periodes::part_du_mois`). La paie du mois est leur somme (`assembler`).
 
 use std::collections::BTreeMap;
@@ -309,6 +309,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         .collect::<R<_>>()?;
     m.avertissements.push(Avis {
         info: true,
+        convention: None,
         texte: format!(
             "{} : le contrat (statut, categorie, duree du travail, salaire) change en cours de mois ; la paie se decoupe en {} periodes \
 elementaires, chacune payee pour ses heures (Cass. soc., 20/01/1999, n° 96-45.042), sur ses cotisations et sa part du plafond : {}. La DSN declare les remunerations et les bases de \

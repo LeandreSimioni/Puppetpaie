@@ -191,7 +191,6 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
             note: None,
         },
         regularisation_du_plafond: droit::forme_bareme::RegularisationDuPlafond {
-            technicien_intermittent: droit::forme_bareme::PlafondDuTechnicienIntermittent::ParContrat,
             source: None,
             note: None,
         },
