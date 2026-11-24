@@ -513,7 +513,8 @@ impl IdDeCompagnie {
 /// Le chemin absolu, liens suivis. UN DOSSIER QUI N'EXISTE PLUS (une compagnie effacee que le registre nomme encore) n'a
 /// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
 /// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
-fn absolu(p: &Path) -> R<PathBuf> {
+/// Sous Windows, sans le prefixe `\\?\` que `canonicalize` y ajoute.
+pub fn absolu(p: &Path) -> R<PathBuf> {
     let c = match socle::fichiers::resolu(p) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,

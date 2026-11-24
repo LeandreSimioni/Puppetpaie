@@ -130,7 +130,7 @@ pub const ROUTES: &[Fiche] = &[
 
 const LIER: Affiche = Affiche::new("Lier le Drive");
 const RELIER: Affiche = Affiche::new("Relier le Drive");
-/// Ce que dit une reprise que l'autorisation du compte Google arrete (`SorteDErreur::Autorisation`).
+/// Ce que dit une reprise que l'autorisation du compte Google arrete (`SorteDErreur::Arret`, `autorisation`).
 const RELIER_PUIS_REPRENDRE: &str = "L'autorisation du compte Google ne vaut plus : « Relier le Drive », puis « Reprendre ».";
 
 /// Le geste qui lie (ou relie) le compte Google de l'accueil, libelle `libelle`.
@@ -684,10 +684,11 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
     let r = match compagnie::restauration::restaurer(&racine, &vu, racine_drive, &mut client, &verrou) {
         Ok(r) => r,
         Err(e) if neuve => {
-            // Rien n'a ete redescendu : le dossier neuf ne porte que la marque de la reprise ; il s'efface cache d'abord.
+            // Le dossier neuf s'efface, cache d'abord, avec ce qu'il porte (la marque de la reprise, et ce qui serait
+            // revenu avant un refus du disque).
             crate::accueil::suppression::effacer(&racine, "La reprise ne s'est pas faite, et son dossier neuf ne s'efface pas : il se voit à l'accueil, l'abandonner.")?;
             // L'autorisation perdue se dit pour l'accueil (la phrase de Google renvoie a une compagnie).
-            if envois::drive::sorte(&e) == envois::drive::SorteDErreur::Autorisation {
+            if envois::drive::sorte(&e) == (envois::drive::SorteDErreur::Arret { autorisation: true }) {
                 return Err(erreur(Classe::Google, format!("{} Rien n'est repris.", RELIER_PUIS_REPRENDRE)));
             }
             // Le disque qui refuse en route : ce qui etait revenu part avec le dossier neuf.
@@ -702,7 +703,7 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
         // (et de la reprendre, sauf quand ce qu'elle a deja ramene a change : reprendre redirait la meme chose).
         Err(e) => {
             let retenter = e.echec.classe != Some(Classe::DossierNonVide);
-            let relier = envois::drive::sorte(&e) == envois::drive::SorteDErreur::Autorisation;
+            let relier = envois::drive::sorte(&e) == (envois::drive::SorteDErreur::Arret { autorisation: true });
             // Les refus de la restauration elle-meme sont en mots ; une reponse de Google peut porter une adresse.
             let pourquoi = match e.echec.classe {
                 _ if e.injoignable => "Google ne répond pas : la connexion est peut-être coupée. Rien n'est écrit.".to_string(),
@@ -829,6 +830,10 @@ fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, 
         encarts.push(Encart::de(EtatDEcran::AFaire, "La connexion est tombée", format!("{} fichier(s) sont revenus, puis la connexion est tombée. « Reprendre » continue où elle en était.", r.redescendus.len())));
     } else if r.arret == Some(ArretDeLaRestauration::AutorisationPerdue) {
         encarts.push(Encart::de(EtatDEcran::AFaire, "L'autorisation Google ne vaut plus", format!("{} fichier(s) sont revenus, puis Google a refusé l'autorisation. {} Ce qui est revenu reste ici.", r.redescendus.len(), RELIER_PUIS_REPRENDRE)));
+    } else if r.arret == Some(ArretDeLaRestauration::RefusDeGoogle) {
+        // La cause, en mots : la ligne du fichier sur lequel elle s'est arretee (`Restauration::a_retenter`).
+        let cause = r.a_retenter.last().map(|l| format!(" ({})", l)).unwrap_or_default();
+        encarts.push(Encart::de(EtatDEcran::AFaire, "Google a refusé de continuer", format!("{} fichier(s) sont revenus, puis Google a refusé{}. Ce qui est revenu reste ici ; « Reprendre », plus tard, continue où elle en était.", r.redescendus.len(), cause)));
     } else if r.arret == Some(ArretDeLaRestauration::VerrouPerdu) {
         encarts.push(Encart::de(EtatDEcran::AFaire, "Un autre geste a pris la main", format!("{} fichier(s) sont revenus, puis un autre geste a pris ce dossier : celle-ci s'est arrêtée. Relire la liste.", r.redescendus.len())));
     } else if !r.a_retenter.is_empty() {
@@ -846,7 +851,7 @@ fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, 
         encarts.push(Encart::de(
             EtatDEcran::AFaire,
             "Ce qui ne reviendra pas ainsi",
-            format!("{} fichier(s) ne peuvent pas revenir par cette voie (deux du même nom, un nom impossible ici, un document Google, un refus de Google) : ils restent dans le Drive.", r.incidents.len()),
+            format!("{} fichier(s) ne peuvent pas revenir par cette voie (deux du même nom, un nom impossible ici, un document Google, un fichier que Google ne donne pas) : ils restent dans le Drive.", r.incidents.len()),
         ));
     }
     let mut rangs = Vec::new();

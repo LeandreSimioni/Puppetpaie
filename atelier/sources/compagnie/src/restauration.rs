@@ -111,12 +111,13 @@ pub struct Restauration {
     pub ecartes: usize,
     /// CE QUI NE DESCENDRA JAMAIS PAR CETTE VOIE, quelle que soit la tentative : deux dossiers ou deux fichiers de meme
     /// nom au meme endroit du Drive, un nom impossible ici, un document sans empreinte (un document Google), un fichier
-    /// que Google refuse de donner (`envois::drive::SorteDErreur::Definitive` : un 404, un 403 qui n'est ni une
-    /// autorisation ni une limite de debit, un 410…), un fichier deja la qu'elle garde tel quel. Un fichier par ligne.
+    /// dont Google dit lui-meme qu'il ne se donne pas (`envois::drive::SorteDErreur::DuFichier`), un fichier deja la
+    /// qu'elle garde tel quel. Un fichier par ligne.
     pub incidents: Vec<String>,
-    /// CE QUI N'EST PAS DESCENDU ET SE RETENTE : ce que Google n'a pas rendu cette fois (passager, sans reponse, une autre
-    /// reponse qui n'est pas un refus), un contenu dont l'empreinte ne colle pas, une ecriture que le disque a refusee. Une
-    /// nouvelle restauration du meme dossier le retente. Un fichier par ligne.
+    /// CE QUI N'EST PAS DESCENDU ET SE RETENTE : ce que Google n'a pas rendu cette fois (`SorteDErreur::Passagere`), le
+    /// fichier sur lequel elle s'est arretee (`arret`, sa cause en derniere ligne), un contenu dont l'empreinte ne colle
+    /// pas, une ecriture que le disque a refusee. Une nouvelle restauration du meme dossier le retente. Un fichier par
+    /// ligne.
     pub a_retenter: Vec<String>,
     /// Arretee en route (`ArretDeLaRestauration`), et pourquoi ; aucune : elle a tente chaque fichier.
     pub arret: Option<ArretDeLaRestauration>,
@@ -129,8 +130,13 @@ pub struct Restauration {
 pub enum ArretDeLaRestauration {
     /// Le reseau est tombe (`ErreurGoogle::injoignable`).
     HorsLigne,
-    /// L'autorisation du compte Google ne vaut plus (`SorteDErreur::Autorisation`) : relier le Drive, puis reprendre.
+    /// L'autorisation du compte Google ne vaut plus (`SorteDErreur::Arret`, `autorisation`) : relier le Drive, puis
+    /// reprendre.
     AutorisationPerdue,
+    /// Google a refuse pour une autre raison que ce fichier-la (`SorteDErreur::Arret`, pas `autorisation` : une limite du
+    /// projet, « domainPolicy », la page d'un relais…) : sa phrase est la derniere ligne de `a_retenter` ; reprendre plus
+    /// tard.
+    RefusDeGoogle,
     /// Le verrou de cette restauration n'est plus le sien (`VerrouDeRestauration`) : un autre geste a pris la main, et
     /// elle n'ecrit plus rien, ni fichier ni index.
     VerrouPerdu,
@@ -144,6 +150,7 @@ impl Restauration {
                 ArretDeLaRestauration::HorsLigne => " Hors connexion en route : relancer la restauration reprend ou elle en est.",
                 ArretDeLaRestauration::AutorisationPerdue => " L'autorisation Google ne vaut plus : relier le Drive, puis relancer la restauration.",
                 ArretDeLaRestauration::VerrouPerdu => " Un autre geste a pris la main sur ce dossier : arretee.",
+                ArretDeLaRestauration::RefusDeGoogle => " Google a refuse de continuer (voir a retenter) : relancer la restauration plus tard reprend ou elle en est.",
             });
         } else if !self.a_retenter.is_empty() {
             t.push_str(&format!(" {} fichier(s) a retenter : relancer la restauration les retente.", self.a_retenter.len()));
@@ -289,17 +296,14 @@ impl VerrouDeRestauration {
     }
 
     /// Le verrou est-il encore le sien ? La date de son fichier repart de maintenant (`Verrou::rafraichir`). Le disque qui
-    /// refuse de le relire ou de le dater arrete la restauration et le dit pour ce qu'il est, avec ce qui est deja
-    /// revenu (`revenus` fichiers) ; chaque appelant dit ce qu'il en fait.
-    fn rafraichir(&self, revenus: usize) -> Result<bool, ErreurGoogle> {
+    /// refuse de le relire ou de le dater arrete la restauration et le dit pour ce qu'il est ; ce qui est deja
+    /// revenu, chaque appelant le dit (le garder, ou l'effacer avec un dossier neuf).
+    fn rafraichir(&self) -> Result<bool, ErreurGoogle> {
         match self.verrou.rafraichir() {
             Ok(r) => Ok(r.is_ok()),
             Err(e) => Err(ErreurGoogle::from(socle::echec::Echec {
                 classe: Some(socle::echec::Classe::Disque),
-                phrase: format!(
-                    "{} Le disque refuse le verrou de la restauration : elle s'arrête là, {} fichier(s) déjà revenus.",
-                    e.phrase, revenus
-                ),
+                phrase: format!("{} Le disque refuse le verrou de la restauration : elle s'arrête là.", e.phrase),
                 ..e
             })),
         }
@@ -446,7 +450,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
             continue;
         };
         // Le verrou se rafraichit a chaque fichier ; perdu (un autre geste a la main), la restauration s'arrete.
-        if !verrou.rafraichir(resultat.redescendus.len())? {
+        if !verrou.rafraichir()? {
             resultat.arret = Some(ArretDeLaRestauration::VerrouPerdu);
             return Ok(resultat);
         }
@@ -462,22 +466,25 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
                 resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
                 break;
             }
-            // LE SEUL CLASSEMENT DES ERREURS DE GOOGLE (`envois::drive::sorte`) : ce que Google refuse (un 4xx qui n'est ni
-            // une autorisation ni une limite de debit) ne descendra pas par cette voie, et la reprise peut aller au bout ;
-            // une autorisation qui ne vaut plus arrete tout (relier le Drive) ; le passager et le sans-reponse se retentent.
+            // LE SEUL CLASSEMENT DES ERREURS DE GOOGLE (`envois::drive::sorte`) : ce que Google dit de ce fichier-la ne
+            // descendra pas par cette voie, et la reprise peut aller au bout ; le passager se retente ; tout le reste
+            // arrete la restauration, pas au bout (la cause dite, ce qui la leve : relier le Drive, ou reprendre plus tard).
             Err(e) => match envois::drive::sorte(&e) {
-                SorteDErreur::Definitive => {
-                    resultat.incidents.push(format!("{} : {} Il reste dans le Drive.", relatif, e.echec.phrase));
+                SorteDErreur::DuFichier => {
+                    resultat.incidents.push(format!(
+                        "{} : Google ne le donne pas à PuppetPaie (introuvable pour l'application, pas un fichier qui se télécharge, ou restreint). Il reste dans le Drive.",
+                        relatif
+                    ));
                     continue;
                 }
-                SorteDErreur::Autorisation => {
-                    resultat.arret = Some(ArretDeLaRestauration::AutorisationPerdue);
+                SorteDErreur::Passagere => {
+                    resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
+                    continue;
+                }
+                SorteDErreur::Arret { autorisation } => {
+                    resultat.arret = Some(if autorisation { ArretDeLaRestauration::AutorisationPerdue } else { ArretDeLaRestauration::RefusDeGoogle });
                     resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
                     break;
-                }
-                SorteDErreur::Passagere | SorteDErreur::SansReponse | SorteDErreur::Autre => {
-                    resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
-                    continue;
                 }
             },
         };
@@ -494,7 +501,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
             continue;
         }
         // Le verrou encore le sien juste avant d'ecrire (le telechargement a pu durer) ; perdu, rien de plus ne s'ecrit.
-        if !verrou.rafraichir(resultat.redescendus.len())? {
+        if !verrou.rafraichir()? {
             resultat.arret = Some(ArretDeLaRestauration::VerrouPerdu);
             resultat.a_retenter.push(format!("{} : un autre geste a pris ce dossier, il n'est pas écrit ici.", relatif));
             return Ok(resultat);
@@ -516,7 +523,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         return Err(disparu());
     }
     // Ni index sous un verrou perdu.
-    if !verrou.rafraichir(resultat.redescendus.len())? {
+    if !verrou.rafraichir()? {
         resultat.arret = Some(ArretDeLaRestauration::VerrouPerdu);
         return Ok(resultat);
     }

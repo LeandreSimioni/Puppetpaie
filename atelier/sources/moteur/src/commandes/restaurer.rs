@@ -108,13 +108,10 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
         let e = socle::echec::du_disque(&cible, &e);
         return refus(e.classe, &e.en_lignes());
     }
-    // Resolu (`.`, `..`, un lien) : le verrou se pose a cote du dossier, sous son nom.
-    let cible = match socle::fichiers::resolu(&cible) {
+    // Resolu (`.`, `..`, un lien, sans le `\\?\` de Windows) : le verrou se pose a cote du dossier, sous son nom.
+    let cible = match compagnie::installation::absolu(&cible) {
         Ok(c) => c,
-        Err(e) => {
-            let e = socle::echec::du_disque(&cible, &e);
-            return refus(e.classe, &e.en_lignes());
-        }
+        Err(e) => return refus(e.classe, &e.en_lignes()),
     };
     let verrou = match restauration::VerrouDeRestauration::prendre(&cible) {
         Ok(v) => v,
