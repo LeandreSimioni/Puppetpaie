@@ -89,7 +89,8 @@ impl socle::liste::ListeFermee for SorteDImage {
 
 impl SorteDImage {
     /// La plus grande largeur, en points, à laquelle un document l'imprime : ce qu'il faut de pixels, et pas plus
-    /// (`fabrique_pdf::alleger`). Le logo : en tête des bulletins et des contrats (`bulletin::LOGO_LARGEUR`). La
+    /// (`fabrique_pdf::alleger`). Le logo : en tête des bulletins (`bulletin::LOGO_LARGEUR`), plus large qu'en tête
+    /// des contrats (`fabrique_pdf::style_contrat::LOGO_LARGEUR`). La
     /// signature : dans le contrat (`fabrique_pdf::style_contrat::SIGNATURE_LARGEUR`), le certificat Congés Spectacles
     /// (`conges_spectacles`, son cadre) et l'AER (`aer::cadre_signature` dans la case du formulaire, `aer::CASE_SIGNATURE`).
     /// Le tampon : la case cachet de l'AER (`aer::CASE_CACHET`).
