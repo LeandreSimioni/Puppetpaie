@@ -20,7 +20,7 @@
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -36,12 +36,13 @@ use crate::enveloppe::{en_json, Dite, Refus, Reponse};
 use crate::etapes::QuelleEtape;
 
 /// OU UN ENVOI SE DIT, en plus du bandeau : l'etape du mois d'ou il part (`etat-du-mois` la dit « en cours d'envoi » a
-/// la place de son geste, puis son issue dans le cadre du mois), la fiche d'un salarie neuf (la demande de fiche), ou
-/// ailleurs (un dossier, la regularisation CASC-SVP depuis les Exports, un signalement), ou son geste reste a sa place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// la place de son geste, puis son issue dans le cadre du mois), la demande de fiche a la personne d'adresse `adresse`
+/// (la fiche d'un salarie neuf la dit en cours, a cote de son geste : une demande a une autre personne reste a faire),
+/// ou ailleurs (un dossier, la regularisation CASC-SVP depuis les Exports, un signalement), ou son geste reste a sa place.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PlaceDeLEnvoi {
     Etape { mois: Mois, etape: QuelleEtape },
-    FicheNeuve,
+    Fiche { adresse: String },
     Ailleurs,
 }
 
@@ -167,12 +168,26 @@ struct EnvoiEnFond {
     dit_au_passage: bool,
 }
 
+impl EtatDUnEnvoi {
+    /// La couleur de l'encart qui le dit (`couleur_de_l_etat`) : en cours, une information ; parti, fait ; echoue, a
+    /// refaire.
+    fn couleur(&self) -> &'static str {
+        socle::ecran::couleur_de_l_etat(match self {
+            EtatDUnEnvoi::EnCours(_) => socle::ecran::EtatDEcran::Information,
+            EtatDUnEnvoi::Parti(_) => socle::ecran::EtatDEcran::Fait,
+            EtatDUnEnvoi::Echoue(_) => socle::ecran::EtatDEcran::AFaire,
+        })
+    }
+}
+
 /// UN ENVOI PARTI EN FOND, TEL QUE LE BANDEAU ET LE CADRE DU MOIS LE DISENT (`veille::DitDuBandeau`,
-/// `etat_garde::DuMois`) : son numero, ou il en est et sa phrase, ce qu'il avertit, le geste qui le refait (echoue, quand
-/// il en a un), et ce qui se suit apres lui (un depot reel parti : `suivre-depot`).
+/// `etat_garde::DuMois`) : son numero, ou il en est et sa phrase, la couleur de son encart, ce qu'il avertit (au bout
+/// seulement), le geste qui le refait (echoue, quand il en a un), et ce qui se suit apres lui (un depot reel parti :
+/// `suivre-depot`).
 #[derive(Debug, Clone, Serialize)]
 pub struct EnvoiDit {
     numero: NumeroDEnvoi,
+    couleur: &'static str,
     #[serde(flatten)]
     etat: EtatDUnEnvoi,
     avertissements: Vec<String>,
@@ -237,16 +252,95 @@ pub fn existants(racine: &Path) -> R<Option<Arc<EnvoisEnFond>>> {
     Ok(tenu(&PAR_COMPAGNIE).iter().find(|(k, _)| *k == c).map(|(_, e)| e.clone()))
 }
 
-/// Le logiciel se ferme (`fermer_apres_les_envois`) : aucun envoi neuf ne part, et le bandeau dit qu'il attend la fin
-/// de ceux en vol.
-static FERMETURE: AtomicBool = AtomicBool::new(false);
+/// Ceux de `racine` pour une lecture : un registre qui ne se trouve pas se note, et la lecture se rend sans lui (une
+/// lecture ne refuse pas en bloc).
+fn pour_une_lecture(racine: &Path) -> Option<Arc<EnvoisEnFond>> {
+    match existants(racine) {
+        Ok(e) => e,
+        Err(e) => {
+            compagnie::diagnostic::noter_moteur(&format!("Les envois en fond ne se lisent pas ; la lecture se rend sans eux ({}).", e.en_lignes()));
+            None
+        }
+    }
+}
+
+/// CE QUE LES ENVOIS EN FOND DISENT D'UN MOIS, a sa lecture (`etat-du-mois`, `etat-par-engagement`) : les etapes d'ou un
+/// envoi est en cours et ce qui en part (que `etapes::LesDeuxEtats` dit a la place de leurs gestes), et les envois du
+/// mois tels que le cadre les dit. Aucun en ligne de commande.
+pub(crate) struct EnvoisDuMois {
+    en_cours: Vec<(QuelleEtape, String)>,
+    pub(crate) dits: Vec<EnvoiDit>,
+}
+
+impl EnvoisDuMois {
+    /// Ceux du mois `mois` de la compagnie `racine`.
+    pub(crate) fn de(racine: &Path, mois: Mois) -> EnvoisDuMois {
+        let Some(e) = pour_une_lecture(racine) else { return EnvoisDuMois { en_cours: Vec::new(), dits: Vec::new() } };
+        let en_cours = e
+            .en_cours_ou()
+            .into_iter()
+            .filter_map(|(p, quoi)| match p {
+                PlaceDeLEnvoi::Etape { mois: m, etape } if m == mois => Some((etape, quoi)),
+                PlaceDeLEnvoi::Etape { .. } | PlaceDeLEnvoi::Fiche { .. } | PlaceDeLEnvoi::Ailleurs => None,
+            })
+            .collect();
+        EnvoisDuMois { en_cours, dits: e.dits_du_mois(mois) }
+    }
+
+    /// Ce qui part en cours de l'etape `etape` (« 2 contrats »), s'il y en a.
+    pub(crate) fn de_l_etape(&self, etape: QuelleEtape) -> Option<&str> {
+        self.en_cours.iter().find(|(e, _)| *e == etape).map(|(_, quoi)| quoi.as_str())
+    }
+
+    /// Aucun envoi en cours ce mois : la lecture est celle que l'etat garde.
+    pub(crate) fn aucun_en_cours(&self) -> bool {
+        self.en_cours.is_empty()
+    }
+}
+
+/// « 2 contrats en cours d'envoi… », telle que la case d'une etape la dit a la place de son geste.
+pub(crate) fn phrase_en_cours(quoi: &str) -> String {
+    en_cours(quoi).to_string()
+}
+
+/// Les demandes de fiche en cours de la compagnie `racine` (`EnvoisEnFond::fiches_en_cours`), pour la fiche d'un
+/// salarie neuf.
+pub(crate) fn fiches_en_cours(racine: &Path) -> Vec<String> {
+    match pour_une_lecture(racine) {
+        Some(e) => e.fiches_en_cours(),
+        None => Vec::new(),
+    }
+}
+
+/// LES FERMETURES EN COURS (`fermer_apres_les_envois`) : tant qu'il y en a une, aucun envoi neuf ne part, et le bandeau
+/// dit qu'on attend la fin de ceux en vol. Un compte, pour qu'une fermeture qui n'a pas eu lieu ne leve pas celle d'une
+/// autre (la croix et le bouton en meme temps).
+static FERMETURES: AtomicUsize = AtomicUsize::new(0);
+
+/// Le logiciel se ferme-t-il ?
+fn se_ferme() -> bool {
+    FERMETURES.load(Ordering::SeqCst) > 0
+}
+
+/// CE QUI EMPECHE UN ENVOI DE PARTIR, s'il y a lieu : le logiciel qui se ferme, la compagnie qu'on lache. Regarde a
+/// l'entree de `servir`, puis de nouveau quand vient son tour (`un_a_la_fois`), avant toute verification.
+fn empeche(lache: bool) -> Option<&'static str> {
+    if se_ferme() {
+        Some("PuppetPaie se ferme : rien n'est parti. Rouvrez-le, puis recommencez.")
+    } else if lache {
+        Some("Cette compagnie se ferme sur ce poste : rien n'est parti.")
+    } else {
+        None
+    }
+}
 
 /// FERMER LE LOGICIEL, OU REDEMARRER POUR LA MISE A JOUR, par son bouton ou par la croix de la fenetre : des maintenant,
 /// un envoi neuf se refuse ; ceux en vol, de toutes les compagnies, vont d'abord au bout, jamais coupes au milieu, et le
 /// bandeau le dit tant qu'il attend (`DitDuBandeau::fermeture`). Puis `fermer`, qui dit si la fermeture a eu lieu ; si
-/// elle n'a pas eu lieu, les envois repartent comme avant. Chaque transport a son delai : l'attente a une fin.
+/// elle n'a pas eu lieu, elle ne compte plus, et sans autre fermeture en cours les envois repartent comme avant. Chaque
+/// transport a son delai : l'attente a une fin.
 pub fn fermer_apres_les_envois(fermer: impl FnOnce() -> bool) {
-    FERMETURE.store(true, Ordering::SeqCst);
+    FERMETURES.fetch_add(1, Ordering::SeqCst);
     // Une compagnie dont le registre nait pendant l'attente y entre : on ne s'arrete qu'a un tour ou rien n'est en vol.
     loop {
         let toutes: Vec<Arc<EnvoisEnFond>> = tenu(&PAR_COMPAGNIE).iter().map(|(_, e)| e.clone()).collect();
@@ -258,7 +352,7 @@ pub fn fermer_apres_les_envois(fermer: impl FnOnce() -> bool) {
         }
     }
     if !fermer() {
-        FERMETURE.store(false, Ordering::SeqCst);
+        FERMETURES.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -289,18 +383,15 @@ impl EnvoisEnFond {
     /// sur un fil a elle. Rend ce que ce fil dit d'abord : la reponse entiere (un refus, ou une route allee au bout sans
     /// rien faire partir), ou, des que l'envoi part (`partir`), « en cours d'envoi » ; la route continue alors en fond, et
     /// son issue se range ici. Sans fil (`SANS_FIL`), la route se fait sur place. Le logiciel qui se ferme, ou la
-    /// compagnie qu'on lache, refuse l'envoi : rien ne part.
+    /// compagnie qu'on lache, refuse l'envoi, a son arrivee comme a son tour : rien ne part.
     pub fn servir(self: &Arc<Self>, route: Route, faire: impl FnOnce() -> Reponse + Send + 'static) -> Reponse {
         if crate::SANS_FIL {
             return faire();
         }
         {
             let mut vol = tenu(&self.vol);
-            if FERMETURE.load(Ordering::SeqCst) {
-                return Reponse::refusee_par(route, Refus::nouveau(Classe::Refuse, "PuppetPaie se ferme : rien n'est parti. Rouvrez-le, puis recommencez."));
-            }
-            if vol.lache {
-                return Reponse::refusee_par(route, Refus::nouveau(Classe::Refuse, "Cette compagnie se ferme sur ce poste : rien n'est parti."));
+            if let Some(pourquoi) = empeche(vol.lache) {
+                return Reponse::refusee_par(route, Refus::nouveau(Classe::Refuse, pourquoi));
             }
             vol.en_vol += 1;
         }
@@ -310,6 +401,14 @@ impl EnvoisEnFond {
         let demarre = crate::fil_de_routes(move || {
             let _en_vol = en_vol;
             let _un_seul = tenu(&moi.un_a_la_fois);
+            // Son tour venu, derriere un autre envoi : la fermeture ou le lacher demandes pendant l'attente le refusent.
+            let lache = tenu(&moi.vol).lache;
+            if let Some(pourquoi) = empeche(lache) {
+                if dire.send(Nouvelle::Fini(Reponse::refusee_par(route, Refus::nouveau(Classe::Refuse, pourquoi)))).is_err() {
+                    compagnie::diagnostic::noter_moteur("Un envoi refusé à son tour n'a pu le dire à la page qui l'attendait.");
+                }
+                return;
+            }
             ATTENTE.with(|a| *a.borrow_mut() = Some(Attente { registre: moi.clone(), route, dire: dire.clone(), numero: None, suivre: None }));
             let fait = std::panic::catch_unwind(std::panic::AssertUnwindSafe(faire));
             let attente = ATTENTE.with(|a| a.borrow_mut().take());
@@ -363,32 +462,19 @@ impl EnvoisEnFond {
         tenu(&self.envois).iter().any(|e| matches!(e.etat, EtatDUnEnvoi::EnCours(_)))
     }
 
-    /// LES ENVOIS EN COURS A LA PLACE `garder` : la phrase de chacun, que sa place dit a la place de son geste.
-    fn en_cours_a(&self, garder: impl Fn(&PlaceDeLEnvoi) -> bool) -> Vec<(PlaceDeLEnvoi, String)> {
+    /// LES ENVOIS EN COURS : leur place, et ce qui part (`quoi`).
+    fn en_cours_ou(&self) -> Vec<(PlaceDeLEnvoi, String)> {
         tenu(&self.envois)
             .iter()
-            .filter(|e| garder(&e.place))
-            .filter_map(|e| match &e.etat {
-                EtatDUnEnvoi::EnCours(p) => Some((e.place, p.clone())),
-                EtatDUnEnvoi::Parti(_) | EtatDUnEnvoi::Echoue(_) => None,
-            })
+            .filter(|e| matches!(e.etat, EtatDUnEnvoi::EnCours(_)))
+            .map(|e| (e.place.clone(), e.quoi.clone()))
             .collect()
     }
 
-    /// Les etapes de `mois` d'ou un envoi est en cours, et sa phrase (`etat-du-mois`).
-    pub(crate) fn en_cours_du_mois(&self, mois: Mois) -> Vec<(QuelleEtape, String)> {
-        self.en_cours_a(|p| matches!(p, PlaceDeLEnvoi::Etape { mois: m, .. } if *m == mois))
-            .into_iter()
-            .filter_map(|(p, phrase)| match p {
-                PlaceDeLEnvoi::Etape { etape, .. } => Some((etape, phrase)),
-                PlaceDeLEnvoi::FicheNeuve | PlaceDeLEnvoi::Ailleurs => None,
-            })
-            .collect()
-    }
-
-    /// La demande de fiche en cours, s'il y en a une : sa phrase (la fiche d'un salarie neuf la dit a la place du geste).
-    pub(crate) fn fiche_en_cours(&self) -> Option<String> {
-        self.en_cours_a(|p| *p == PlaceDeLEnvoi::FicheNeuve).into_iter().map(|(_, phrase)| phrase).next()
+    /// Les demandes de fiche en cours, chacune sa phrase (« Demande de fiche à … en cours d'envoi… ») : la fiche d'un
+    /// salarie neuf les dit a cote de son geste.
+    pub(crate) fn fiches_en_cours(&self) -> Vec<String> {
+        self.en_cours_ou().into_iter().filter(|(p, _)| matches!(p, PlaceDeLEnvoi::Fiche { .. })).map(|(_, quoi)| en_cours(&quoi).to_string()).collect()
     }
 
     /// Une route servie en fond est-elle en vol (partie ou non encore) ?
@@ -398,7 +484,7 @@ impl EnvoisEnFond {
 
     /// Le logiciel attend-il, pour se fermer, un envoi de cette compagnie (`fermer_apres_les_envois`) ?
     pub fn fermeture_attend(&self) -> bool {
-        FERMETURE.load(Ordering::SeqCst) && self.en_vol()
+        se_ferme() && self.en_vol()
     }
 
     /// ATTENDRE QUE TOUT SOIT AU BOUT : fermer le logiciel ou lacher la compagnie ne coupe aucun envoi au milieu. Chaque
@@ -428,7 +514,7 @@ impl EnvoisEnFond {
     }
 
     /// Ceux qui partent de `mois`, tels que le cadre du mois les dit (`etat-du-mois`).
-    pub(crate) fn dits_du_mois(&self, mois: Mois) -> Vec<EnvoiDit> {
+    fn dits_du_mois(&self, mois: Mois) -> Vec<EnvoiDit> {
         self.dits_de(|e| matches!(e.place, PlaceDeLEnvoi::Etape { mois: m, .. } if m == mois))
     }
 
@@ -437,12 +523,13 @@ impl EnvoisEnFond {
             .iter()
             .filter(|e| garder(e))
             .map(|e| {
-                let (refaire, suivre) = match e.etat {
-                    EtatDUnEnvoi::Echoue(_) => (e.refaire.clone(), None),
-                    EtatDUnEnvoi::Parti(_) => (None, e.suivre.clone()),
-                    EtatDUnEnvoi::EnCours(_) => (None, None),
+                // Ce qu'il avertit (un salarie sans courriel) se dit quand l'envoi est au bout, avec ce qui est parti.
+                let (refaire, suivre, avertissements) = match e.etat {
+                    EtatDUnEnvoi::Echoue(_) => (e.refaire.clone(), None, e.avertissements.clone()),
+                    EtatDUnEnvoi::Parti(_) => (None, e.suivre.clone(), e.avertissements.clone()),
+                    EtatDUnEnvoi::EnCours(_) => (None, None, Vec::new()),
                 };
-                EnvoiDit { numero: e.numero, etat: e.etat.clone(), avertissements: e.avertissements.clone(), refaire, suivre }
+                EnvoiDit { numero: e.numero, couleur: e.etat.couleur(), etat: e.etat.clone(), avertissements, refaire, suivre }
             })
             .collect()
     }

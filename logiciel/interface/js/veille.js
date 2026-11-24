@@ -133,7 +133,7 @@ function dessinerVeille(v) {
       afaire.push(`${echapper(e.phrase)}${e.refaire
         ? ` <button class="lien" data-refaire="${i}">${echapper(e.refaire.libelle)}</button>` : ""}`);
     }
-    // CE QUE L'ENVOI AVERTIT (un salarié sans courriel, la boîte qui envoie), que le moteur dit avec lui.
+    // CE QUE L'ENVOI AVERTIT (un salarié sans courriel, la boîte qui envoie), que le moteur dit avec lui, au bout.
     e.avertissements.forEach((a) => afaire.push(echapper(a)));
   });
   if (d) [...d.manquants, ...d.incidents].forEach((x) => afaire.push(echapper(x)));

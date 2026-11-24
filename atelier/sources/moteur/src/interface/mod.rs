@@ -824,19 +824,12 @@ impl Fenetre {
     /// et ne releve les comptes rendus (le reseau, le coffre) qu'une fois le mot de passe de l'administrateur tape ici.
     fn route_de_l_installation(&self, nom: Route, charge: &Charge) -> RouteReponse {
         let inst = installation::base();
-        // On ne lache que ce qui s'en va : les compagnies gardees (elles changent de dossier) et les supprimees ; une
-        // compagnie nommee nulle part reste, avec ses envois.
+        // On ne lache que ce qui s'en va, une fois decide qu'il s'en va (`accueil::garder_ou_supprimer`, compagnie par
+        // compagnie : une compagnie gardee avant qu'elle change de dossier, une supprimee apres sa preuve) ; une
+        // compagnie nommee nulle part reste, avec ses envois. Un echec a la lacher se dit pour elle.
         if nom == Route::CompagniesGarder {
-            let c: routes::accueil::ChargeGarder = match charge.lire() {
-                Ok(c) => c,
-                Err(e) => return RouteReponse::de(nom, Err(routes::case_nommee(nom, e))),
-            };
-            let lachees = suppression::a_garder(&inst).and_then(|cies| {
-                cies.iter().filter(|x| c.garder.contains(&x.id) || c.ne_pas_garder.contains(&x.id)).try_for_each(|x| self.lacher(&x.racine))
-            });
-            if let Err(e) = lachees {
-                return RouteReponse::de(nom, Err(e.reclasser(Classe::Refuse)));
-            }
+            let rendu = charge.lire::<routes::accueil::ChargeGarder>().map_err(|e| routes::case_nommee(nom, e)).and_then(|c| routes::accueil::garder_ou_supprimer(&inst, c, &|r| self.lacher(r)));
+            return RouteReponse::de(nom, rendu);
         }
         if nom == Route::AdministrateurTableau {
             let c: routes::accueil::ChargeTableau = match charge.lire() {
