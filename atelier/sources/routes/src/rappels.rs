@@ -49,7 +49,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie a à faire ce jour : DSN, fins de contrat, DPAE…",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton, la vue qu'il ouvre quand la route en a deux ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait »), fermer_dit : le bouton qui ferme la boîte ; ouvrir_a_l_ouverture : vrai quand il y a quelque chose à montrer (un rappel, une échéance du mois à faire, une ligne de « Pour démarrer » ou son refus, ce qu'une DSN donnerait)",
+        rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton, la vue qu'il ouvre quand la route en a deux ; gestes : ceux que sa boîte fait, chacun sa route, sa charge, son libellé et ses cases : « C'est fait »), fermer_dit : le bouton qui ferme la boîte ; ouvrir_a_l_ouverture : vrai quand il y a quelque chose à montrer (un rappel, une échéance du mois à faire, une case exigée de « Pour démarrer » ou son refus, ce qu'une DSN donnerait)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -873,8 +873,10 @@ fn rappels(ctx: &Contexte, demarrage: &DemarrageLu) -> socle::echec::R<Rappels> 
     let tout = echeances(&st)?;
     let rappels = dues(&tout)?;
     let courant = st.aujourdhui.mois_civil();
+    // Une case seulement utile (`Manque::bloque` vide) ne l'ouvre pas : elle se lit dans la boite quand on l'ouvre
+    // (Leandre, 24/11/2026, ticket 642 : « pourquoi ça s'affiche si ya rien à afficher »).
     let demarrage_a_quelque_chose = match demarrage {
-        Ok((d, _)) => !d.manques.is_empty() || d.dsn.is_some(),
+        Ok((d, _)) => d.manques.iter().any(|m| m.bloque.is_some()) || d.dsn.is_some(),
         Err(_) => true,
     };
     let ouvrir_a_l_ouverture = !rappels.is_empty() || tout.iter().any(|e| e.a_faire_dans(courant)) || demarrage_a_quelque_chose;
