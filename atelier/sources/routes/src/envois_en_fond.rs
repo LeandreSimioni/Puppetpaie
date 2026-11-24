@@ -38,14 +38,15 @@ use crate::enveloppe::{en_json, Dite, Refus, Reponse};
 use crate::etapes::QuelleEtape;
 
 /// OU UN ENVOI SE DIT, en plus du bandeau : l'etape du mois d'ou il part, et ce qu'il en emporte (`part` : `etat-du-mois`
-/// et `etat-par-engagement` disent « en cours d'envoi » a la place du geste de ce qu'il emporte, et de cela seul, puis
-/// son issue dans le cadre du mois), la demande de fiche a la personne d'adresse `adresse` (la fiche d'un salarie neuf
-/// a cette adresse la dit en cours a la place de son geste ; a une autre, le geste reste), ou ailleurs (un dossier, la
-/// regularisation CASC-SVP depuis les Exports, un signalement), ou son geste reste a sa place.
+/// dit « en cours d'envoi » a la place du geste de l'etape entiere, `etat-par-engagement` a la place du geste de ce qu'il
+/// emporte, et de cela seul, puis son issue dans le cadre du mois), la demande de fiche a `adresse`, partie de la fiche
+/// d'ou on la fait (`salarie` : la fiche de ce salarie ; aucun, la fiche d'un salarie neuf, que la route `fiche` designe
+/// sans cle ; cette fiche dit la demande en cours a la place de son geste), ou ailleurs (un dossier, la regularisation
+/// CASC-SVP depuis les Exports, un signalement), ou son geste reste a sa place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PlaceDeLEnvoi {
     Etape { mois: Mois, etape: QuelleEtape, part: CeQuiPartDeLEtape },
-    Fiche { adresse: Courriel },
+    Fiche { salarie: Option<IdSalarie>, adresse: Courriel },
     Ailleurs,
 }
 
@@ -66,22 +67,34 @@ impl CeQuiPartDeLEtape {
         match self {
             CeQuiPartDeLEtape::Contrats(cs) => cs.iter().any(|(x, n)| x == s && n.as_ref() == numero),
             CeQuiPartDeLEtape::Salaries(ss) => ss.contains(s),
-            // La DSN n'a pas de carre : elle se dit par etablissement (`emporte_la_dsn`).
+            // La DSN n'a pas de carre : sa case du bilan se dit pour l'etape entiere.
             CeQuiPartDeLEtape::Dsn(_) => false,
         }
     }
 
-    /// Emporte-t-il la DSN des etablissements `nics` (aucun : la compagnie n'en nomme pas) ?
-    pub(crate) fn emporte_la_dsn(&self, nics: &[Nic]) -> bool {
-        match self {
-            CeQuiPartDeLEtape::Dsn(None) => true,
-            CeQuiPartDeLEtape::Dsn(Some(n)) => nics.is_empty() || nics.contains(n),
-            CeQuiPartDeLEtape::Contrats(_) | CeQuiPartDeLEtape::Salaries(_) => false,
+    /// Tout ce qu'il emporte, `autre` l'emporte-t-il aussi ? Des ensembles : l'ordre ne compte pas.
+    fn compris_dans(&self, autre: &CeQuiPartDeLEtape) -> bool {
+        match (self, autre) {
+            (CeQuiPartDeLEtape::Contrats(a), CeQuiPartDeLEtape::Contrats(b)) => a.iter().all(|c| b.contains(c)),
+            (CeQuiPartDeLEtape::Salaries(a), CeQuiPartDeLEtape::Salaries(b)) => a.iter().all(|s| b.contains(s)),
+            (CeQuiPartDeLEtape::Dsn(a), CeQuiPartDeLEtape::Dsn(b)) => a == b,
+            (CeQuiPartDeLEtape::Contrats(_) | CeQuiPartDeLEtape::Salaries(_) | CeQuiPartDeLEtape::Dsn(_), _) => false,
         }
     }
 }
 
 impl PlaceDeLEnvoi {
+    /// CE QUI PARTAIT D'ICI, UN ENVOI QUI PART A `autre` LE REPREND-IL EN ENTIER ? La meme etape du meme mois, et tout ce
+    /// qui en partait est dans ce qu'il emporte ; la meme fiche, a la meme adresse ; ailleurs, la meme route suffit.
+    fn compris_dans(&self, autre: &PlaceDeLEnvoi) -> bool {
+        match (self, autre) {
+            (PlaceDeLEnvoi::Etape { mois, etape, part }, PlaceDeLEnvoi::Etape { mois: m, etape: e, part: p }) => mois == m && etape == e && part.compris_dans(p),
+            (PlaceDeLEnvoi::Fiche { salarie, adresse }, PlaceDeLEnvoi::Fiche { salarie: s, adresse: a }) => salarie == s && adresse == a,
+            (PlaceDeLEnvoi::Ailleurs, PlaceDeLEnvoi::Ailleurs) => true,
+            (PlaceDeLEnvoi::Etape { .. } | PlaceDeLEnvoi::Fiche { .. } | PlaceDeLEnvoi::Ailleurs, _) => false,
+        }
+    }
+
     /// UN SECOND ENVOI DE LA MEME ROUTE (les avenants apres les contrats) part sous le meme numero : ce qu'il emporte de
     /// la meme etape du meme mois s'ajoute a ce que le premier emporte.
     fn etendre(&mut self, autre: PlaceDeLEnvoi) {
@@ -147,11 +160,9 @@ thread_local! {
 pub(crate) fn partir(ctx: &Contexte, ce_qui_part: impl FnOnce() -> R<EnvoiQuiPart>) -> R<()> {
     let attendu = ATTENTE.with(|a| a.borrow().as_ref().map(|x| x.numero));
     let Some(deja) = attendu else { return Ok(()) };
-    if compagnie::bridage::branchement(&ctx.racine)?.joue() {
-        return Ok(());
-    }
-    let c = ce_qui_part()?;
+    // Deja parti : le branchement a ete lu au premier depart, et rien ne se relit ; seul s'ajoute ce que celui-ci emporte.
     if let Some(numero) = deja {
+        let c = ce_qui_part()?;
         ATTENTE.with(|a| {
             if let Some(x) = a.borrow().as_ref() {
                 x.registre.etendre(numero, c.place);
@@ -159,6 +170,10 @@ pub(crate) fn partir(ctx: &Contexte, ce_qui_part: impl FnOnce() -> R<EnvoiQuiPar
         });
         return Ok(());
     }
+    if compagnie::bridage::branchement(&ctx.racine)?.joue() {
+        return Ok(());
+    }
+    let c = ce_qui_part()?;
     ATTENTE.with(|a| {
         if let Some(x) = a.borrow_mut().as_mut() {
             let phrase = en_cours(&c.quoi);
@@ -378,6 +393,12 @@ impl EnvoisDuMois {
         (!quoi.is_empty()).then(|| quoi.join(", "))
     }
 
+    /// « 2 contrats » : ce qui part des envois en cours de l'etape `etape`, quoi qu'ils emportent ; rien s'il n'y en a
+    /// pas. Le geste d'une case du bilan couvre l'etape entiere : un envoi en vol de l'etape le prend tout.
+    pub(crate) fn de_l_etape(&self, etape: QuelleEtape) -> Option<String> {
+        self.ce_qui_part(etape, |_| true)
+    }
+
     /// Aucun envoi en cours ce mois : la lecture est celle que l'etat garde.
     pub(crate) fn aucun_en_cours(&self) -> bool {
         self.en_cours.is_empty()
@@ -389,11 +410,11 @@ pub(crate) fn phrase_en_cours(quoi: &str) -> String {
     en_cours(quoi).to_string()
 }
 
-/// LES DEMANDES DE FICHE EN COURS de la compagnie `racine`, chacune son adresse et sa phrase (« Demande de fiche à …
-/// en cours d'envoi… »), pour la fiche d'un salarie neuf.
-pub(crate) fn fiches_en_cours(racine: &Path) -> Vec<(Courriel, String)> {
+/// LES DEMANDES DE FICHE EN COURS PARTIES DE LA FICHE `salarie` (aucun : celle d'un salarie neuf) de la compagnie
+/// `racine`, chacune sa phrase (« Demande de fiche à … en cours d'envoi… »), que la fiche dit a la place de son geste.
+pub(crate) fn fiches_en_cours(racine: &Path, salarie: Option<&IdSalarie>) -> Vec<String> {
     match pour_une_lecture(racine) {
-        Some(e) => e.fiches_en_cours(),
+        Some(e) => e.fiches_en_cours(salarie),
         None => Vec::new(),
     }
 }
@@ -540,12 +561,13 @@ impl EnvoisEnFond {
         }
     }
 
-    /// L'envoi part : il prend son numero, et remplace ce que le bandeau disait d'un envoi au bout de la meme route et de
-    /// la meme place (le meme mois, ce qu'il emporte : l'echec d'un envoi pour d'autres reste dit).
+    /// L'envoi part : il prend son numero, et efface ce que le bandeau disait d'un envoi au bout de la meme route dont il
+    /// reprend tout ce qui partait (`PlaceDeLEnvoi::compris_dans` : le meme mois, et ce qui partait est dans ce qu'il
+    /// emporte). Un echec dont une part n'est pas reprise reste dit, avec son geste.
     fn inscrire(&self, route: Route, c: EnvoiQuiPart) -> NumeroDEnvoi {
         let numero = NumeroDEnvoi(self.dernier.fetch_add(1, Ordering::SeqCst) + 1);
         let mut envois = tenu(&self.envois);
-        envois.retain(|e| e.route != route || e.place != c.place || matches!(e.etat, EtatDUnEnvoi::EnCours(_)));
+        envois.retain(|e| e.route != route || matches!(e.etat, EtatDUnEnvoi::EnCours(_)) || !e.place.compris_dans(&c.place));
         let etat = EtatDUnEnvoi::EnCours(en_cours(&c.quoi).to_string());
         envois.push(EnvoiEnFond { numero, route, quoi: c.quoi, place: c.place, refaire: c.refaire, avertissements: c.avertissements, suivre: None, etat, dit_au_passage: false });
         numero
@@ -583,13 +605,14 @@ impl EnvoisEnFond {
             .collect()
     }
 
-    /// Les demandes de fiche en cours, chacune son adresse et sa phrase (« Demande de fiche à … en cours d'envoi… »).
-    fn fiches_en_cours(&self) -> Vec<(Courriel, String)> {
+    /// Les demandes de fiche en cours parties de la fiche `salarie`, chacune sa phrase (« Demande de fiche à … en cours
+    /// d'envoi… »).
+    fn fiches_en_cours(&self, salarie: Option<&IdSalarie>) -> Vec<String> {
         self.en_cours_ou()
             .into_iter()
             .filter_map(|(p, quoi)| match p {
-                PlaceDeLEnvoi::Fiche { adresse } => Some((adresse, en_cours(&quoi).to_string())),
-                PlaceDeLEnvoi::Etape { .. } | PlaceDeLEnvoi::Ailleurs => None,
+                PlaceDeLEnvoi::Fiche { salarie: s, .. } if s.as_ref() == salarie => Some(en_cours(&quoi).to_string()),
+                PlaceDeLEnvoi::Fiche { .. } | PlaceDeLEnvoi::Etape { .. } | PlaceDeLEnvoi::Ailleurs => None,
             })
             .collect()
     }
@@ -614,8 +637,8 @@ impl EnvoisEnFond {
     }
 
     /// UN PASSAGE DE LA VEILLE (`Veille::tour`) : un envoi parti sans refus se dit jusqu'au passage qui suit celui-ci (un
-    /// passage entier au moins), puis plus ; un envoi qui a echoue reste dit jusqu'a ce qu'un envoi de la meme route et
-    /// de la meme place (le meme mois, ce qu'il emporte) reparte.
+    /// passage entier au moins), puis plus ; un envoi qui a echoue reste dit jusqu'a ce qu'un envoi de la meme route qui
+    /// reprend tout ce qui en partait reparte (`inscrire`).
     pub fn oublier_les_partis(&self) {
         let mut envois = tenu(&self.envois);
         envois.retain(|e| !(e.dit_au_passage && matches!(e.etat, EtatDUnEnvoi::Parti(_))));

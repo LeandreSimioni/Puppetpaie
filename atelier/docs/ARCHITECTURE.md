@@ -629,7 +629,7 @@ un libellé, chacun sa forme.
 | un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
 | le temps d'un travail du fil de fond fait par qui l'attend (le navigateur, sans second fil) | `LeTempsDUnTravail` | `socle/src/fil_de_fond.rs` |
 | un envoi parti en fond, dans la fenêtre (ce qu'il dit en partant : `EnvoiQuiPart` ; où il en est, et sa phrase : `EtatDUnEnvoi` ; tel que le bandeau et le cadre du mois le disent : `EnvoiDit`) | `EnvoiEnFond` | `routes/src/envois_en_fond.rs` |
-| où un envoi parti en fond se dit, en plus du bandeau : l'étape du mois d'où il part, la demande de fiche à une personne, ailleurs | `PlaceDeLEnvoi` | `routes/src/envois_en_fond.rs` |
+| où un envoi parti en fond se dit, en plus du bandeau : l'étape du mois d'où il part, la fiche d'où part une demande de fiche, ailleurs | `PlaceDeLEnvoi` | `routes/src/envois_en_fond.rs` |
 | ce qu'un envoi parti en fond emporte de son étape, nommé au départ : des contrats ou des embauches (salarié et numéro), les documents de ces salariés, la DSN d'un établissement | `CeQuiPartDeLEtape` | `routes/src/envois_en_fond.rs` |
 | ce que les envois en fond disent d'un mois à sa lecture : les envois en cours (leur étape, ce qu'ils emportent), et les envois du mois | `EnvoisDuMois` | `routes/src/envois_en_fond.rs` |
 | les envois partis en fond d'une compagnie, que la fenêtre garde | `EnvoisEnFond` | `routes/src/envois_en_fond.rs` |
@@ -4129,11 +4129,13 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   par compagnie**, dans l'ordre des clics : le second attend que le premier soit au bout avant même de se vérifier, et lit
   le journal qu'il a écrit. **Tant qu'un envoi est en cours, sa place le dit à la place du geste de ce qu'il emporte,
   et de cela seul** (`PlaceDeLEnvoi`, `CeQuiPartDeLEtape` : ce que la route a vérifié, nommé au départ ; une seule
-  surcouche à la lecture, `etapes::LesDeuxEtats` et `EnvoisDuMois` : dans `etat-du-mois`, la case qu'il emporte en
-  entier, et la prochaine étape quand c'est elle, une case qu'il n'emporte qu'en partie gardant son geste ; dans
-  `etat-par-engagement`, les carrés et les choix de DPAE des engagements qu'il emporte ; un geste qui n'envoie rien,
-  le dossier d'un contrat signé ailleurs, reste ; la fiche d'un salarié neuf dit les demandes de fiche en cours, et
-  celle à son adresse prend la place de son geste) : un second clic ne le refait pas partir. Un envoi qui attend son tour derrière un autre se refuse si la fermeture ou le lâcher sont venus entre-temps. **Fermer ou redémarrer pour la mise à jour
+  surcouche à la lecture, `etapes::LesDeuxEtats` et `EnvoisDuMois` : dans `etat-du-mois`, chaque case de son étape,
+  dont le geste couvre l'étape entière, et la prochaine étape quand c'est elle ; dans `etat-par-engagement`, les carrés
+  (et leur détail) et les choix de DPAE des engagements qu'il emporte, les autres gardant leur geste, qui ne vise
+  qu'eux ; un geste qui n'envoie rien, le dossier d'un contrat signé ailleurs, reste ; la demande de fiche se dit sur
+  la fiche d'où elle part, celle d'un salarié neuf, à la place de son geste) : un second clic ne le refait pas partir.
+  Un envoi qui part efface l'échec de la même route dont il reprend tout ce qui partait ; un échec dont une part
+  n'est pas reprise reste dit, avec son geste. Un envoi qui attend son tour derrière un autre se refuse si la fermeture ou le lâcher sont venus entre-temps. **Fermer ou redémarrer pour la mise à jour
   attend les envois en vol** (`envois_en_fond::fermer_apres_les_envois`, dans `Fenetre::fermer_le_logiciel`, avant de
   quitter la compagnie : son bandeau dit l'attente), et refuse dès lors tout envoi neuf, comme lâcher une compagnie
   qui s'en va (`envois_en_fond::lacher`) : la version neuve ne s'installe qu'après eux, et ne se prend en compte qu'au

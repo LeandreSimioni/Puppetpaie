@@ -308,9 +308,7 @@ pub(crate) enum Compte {
 /// UN GROUPE D'UNE ETAPE, une case du panneau : son etat, son compte, ce qu'elle ecrit (`compte_texte` en gras : « 2 »,
 /// « 1/2 », « Lyon », ou rien ; `quoi` : « à déposer », « reçu »), sa phrase entiere (`phrase_du_groupe`), son echeance,
 /// le geste qu'ouvre un clic, les colonnes qu'elle couvre, sa couleur, et si elle se dessine coupee (une attente : la
-/// moitie faite, la moitie qui attend le retour). Ce qu'elle couvre, que la page ne lit pas : les engagements de ses
-/// colonnes a ce point (leur salarie, leur contrat), ou les etablissements de sa DSN ; un envoi en cours ne prend son
-/// geste que s'il emporte tout ce qu'elle couvre (`Groupe::pendant_les_envois`).
+/// moitie faite, la moitie qui attend le retour). Un envoi de son etape en vol prend son geste (`Groupe::pendant_les_envois`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Groupe {
     pub(crate) etat: EtatCase,
@@ -323,10 +321,6 @@ pub(crate) struct Groupe {
     colonnes: Vec<String>,
     couleur: &'static str,
     coupee: bool,
-    #[serde(skip)]
-    engagements: Vec<(Option<IdSalarie>, Option<NumeroContrat>)>,
-    #[serde(skip)]
-    etablissements: Vec<Nic>,
 }
 
 impl Groupe {
@@ -344,8 +338,6 @@ impl Groupe {
             colonnes: Vec::new(),
             couleur: etat.couleur(),
             coupee: etat == EtatCase::EnAttente,
-            engagements: Vec::new(),
-            etablissements: Vec::new(),
         }
     }
 
@@ -364,44 +356,19 @@ impl Groupe {
         self
     }
 
-    /// Le groupe couvre ces engagements (`siens`).
-    fn de_ceux(mut self, siens: &[&Vue]) -> Groupe {
-        self.engagements = siens.iter().map(|p| (p.salarie.clone(), p.numero.clone())).collect();
-        self
-    }
-
-    /// Le groupe couvre la DSN de ces etablissements.
-    fn des_etablissements(mut self, nics: &[Nic]) -> Groupe {
-        self.etablissements = nics.to_vec();
-        self
-    }
-
-    /// UN ENVOI DE SON ETAPE EN COURS (`envois`) : s'il emporte tout ce que le groupe couvre, le groupe dit « 1 contrat
-    /// en cours d'envoi… » a la place de son geste ; s'il n'en emporte qu'une part, le groupe garde son geste pour le
-    /// reste et dit ce qui part. Un geste qui n'envoie rien (l'Historique) reste. Rend ce qui part (« 1 contrat ») quand
-    /// l'envoi a pris le geste.
+    /// UN ENVOI DE SON ETAPE EN VOL CE MOIS (`envois`) : le geste du groupe couvre l'etape entiere (la boite du mois, ou
+    /// tout ce qui reste se coche d'abord), et le refaire attendrait cet envoi puis renverrait ce qui en est parti ; le
+    /// groupe dit donc « 1 contrat en cours d'envoi… » a la place de son geste, en entier, quoi que l'envoi emporte. Un
+    /// geste qui n'envoie rien (l'Historique) reste. Rend ce qui part (« 1 contrat ») quand l'envoi a pris le geste.
     fn pendant_les_envois(&mut self, cle: QuelleEtape, envois: &crate::envois_en_fond::EnvoisDuMois) -> Option<String> {
         if self.etat == EtatCase::Fait || !self.action.as_ref().is_some_and(Action::envoie) {
             return None;
         }
-        let (quoi, entier) = if cle == QuelleEtape::Dsn {
-            (envois.ce_qui_part(cle, |p| p.emporte_la_dsn(&self.etablissements)), true)
-        } else {
-            let emporte = |s: &Option<IdSalarie>, n: &Option<NumeroContrat>| envois.ce_qui_part(cle, |p| p.emporte(s.as_ref(), n.as_ref())).is_some();
-            let quoi = envois.ce_qui_part(cle, |p| self.engagements.iter().any(|(s, n)| p.emporte(s.as_ref(), n.as_ref())));
-            (quoi, self.engagements.iter().all(|(s, n)| emporte(s, n)))
-        };
-        let quoi = quoi?;
+        let quoi = envois.de_l_etape(cle)?;
         let en_cours = crate::envois_en_fond::phrase_en_cours(&quoi);
-        if entier {
-            let colonnes = std::mem::take(&mut self.colonnes);
-            *self = Groupe { colonnes, ..Groupe::de(EtatCase::EnAttente, None, String::new(), en_cours, self.echeance.clone(), None) };
-            Some(quoi)
-        } else {
-            self.quoi = format!("{} · {}", self.quoi, en_cours);
-            self.phrase = self.phrase.take().map(|p| format!("{} · {}", p, en_cours));
-            None
-        }
+        let colonnes = std::mem::take(&mut self.colonnes);
+        *self = Groupe { colonnes, ..Groupe::de(EtatCase::EnAttente, None, String::new(), en_cours, self.echeance.clone(), None) };
+        Some(quoi)
     }
 }
 
@@ -514,10 +481,9 @@ impl Bilan {
         &self.phrase
     }
 
-    /// DES ENVOIS DE CE MOIS SONT EN COURS (`envois_en_fond`, la fenetre) : chaque case dont un envoi emporte tout ce
-    /// qu'elle couvre dit « 1 contrat en cours d'envoi… » a la place de son geste, et la prochaine etape aussi quand
-    /// c'est elle ; une case dont il n'emporte qu'une part garde son geste pour le reste (`Groupe::pendant_les_envois`).
-    /// Un second clic ne refait pas partir ce qui part.
+    /// DES ENVOIS DE CE MOIS SONT EN COURS (`envois_en_fond`, la fenetre) : chaque case d'une etape dont un envoi est en
+    /// vol dit « 1 contrat en cours d'envoi… » a la place de son geste, et la prochaine etape aussi quand c'est elle
+    /// (`Groupe::pendant_les_envois`). Un second clic ne refait pas partir ce qui part.
     fn pendant_les_envois(&mut self, envois: &crate::envois_en_fond::EnvoisDuMois) {
         for e in self.etapes.iter_mut() {
             let cle = e.cle;
@@ -1566,24 +1532,32 @@ impl Carre {
     /// etape qui emporte cet engagement le dit a la place de son geste (`LesDeuxEtats`, la meme surcouche que les cases
     /// du bilan) ; un geste qui n'envoie rien (le dossier d'un contrat signe ailleurs, l'Historique) reste.
     fn pendant_les_envois(&self, envois: &crate::envois_en_fond::EnvoisDuMois, salarie: Option<&IdSalarie>, numero: Option<&NumeroContrat>) -> Carre {
-        let envoie = match &self.action {
-            Some(Geste::Route(a)) => a.envoie(),
-            Some(Geste::Dossier(_)) | None => false,
-        };
-        if !envoie || self.etat == EtatCase::Fait {
+        if !Geste::envoie(self.action.as_ref()) || self.etat == EtatCase::Fait {
             return self.clone();
         }
         match envois.ce_qui_part(self.cle, |p| p.emporte(salarie, numero)) {
+            // Son detail perd aussi les gestes qui le referaient partir ; ceux qui n'envoient rien restent.
             Some(quoi) => Carre {
                 etat: EtatCase::EnAttente,
                 couleur: EtatCase::EnAttente.couleur(),
                 phrase: crate::envois_en_fond::phrase_en_cours(&quoi),
                 action: None,
+                pieces: self.pieces.clone().map(|p| Pieces { gestes: p.gestes.into_iter().filter(|g| !Geste::envoie(g.action.as_ref())).collect(), ..p }),
                 coupee: None,
                 reste: None,
                 ..self.clone()
             },
             None => self.clone(),
+        }
+    }
+}
+
+impl Geste {
+    /// Envoie-t-il quelque chose (`Action::envoie`) ? Le dossier d'un contrat signe ailleurs, ou aucun geste, non.
+    fn envoie(geste: Option<&Geste>) -> bool {
+        match geste {
+            Some(Geste::Route(a)) => a.envoie(),
+            Some(Geste::Dossier(_)) | None => false,
         }
     }
 }
@@ -2490,7 +2464,7 @@ impl<'a> Moteur<'a> {
                 PointDpae::RienADeclarer => rien_ici("rien à déclarer"),
                 PointDpae::Fait => Groupe::fait(),
             };
-            dpae.push(g.sous(&noms).de_ceux(&siens));
+            dpae.push(g.sous(&noms));
         }
 
         // --- Contrats : un par embauche dont la nature a un contrat ecrit (`engagement::contrat_a_signer`).
@@ -2533,7 +2507,7 @@ impl<'a> Moteur<'a> {
                 PointContrat::RienASigner => rien_ici("rien à signer"),
                 PointContrat::Fait => Groupe::fait(),
             };
-            contrats.push(g.sous(&noms).de_ceux(&siens));
+            contrats.push(g.sous(&noms));
         }
 
         // --- DSN : par etablissement (`groupes_dsn`), chaque colonne sous la DSN de ses etablissements ; celle des cartes
@@ -2541,7 +2515,7 @@ impl<'a> Moteur<'a> {
         let dsn: Vec<Groupe> = cases_de_la_ligne(&cols, |c| c.dsn)
             .into_iter()
             .map(|(_, m, noms, k)| match k {
-                Some(k) => classes[k].1.clone().sous(&noms).des_etablissements(&classes[k].0),
+                Some(k) => classes[k].1.clone().sous(&noms),
                 None => a_completer(m.len()).sous(&noms),
             })
             .collect();
@@ -2560,7 +2534,7 @@ impl<'a> Moteur<'a> {
                 PointDocuments::AValider => a_valider(siens.len()),
                 PointDocuments::Fait => Groupe::fait(),
             };
-            documents.push(g.sous(&noms).de_ceux(&siens));
+            documents.push(g.sous(&noms));
         }
         // CE QUI PART CE MOIS-CI, NOMME PAR LE MOTEUR : les pieces des paies du mois, dans l'ordre de l'envoi.
         let noms_pieces = [("bulletin", "bulletin"), ("certificat_cs", "certificat Congés Spectacles"), ("aer", "AER")];
@@ -2917,10 +2891,13 @@ fn carres(p: &Vue, mois: Mois, signee: bool) -> R<Vec<Carre>> {
         _ => "Contrat".to_string(),
     };
     let par_dit = etats::mot_de_la_remise(s.par, etats::PlaceDeLaRemise::Phrase);
+    // LE CARRE NE VISE QUE SON ENGAGEMENT : sa boite ne coche d'abord que son contrat, comme son detail
+    // (`pieces_du_contrat`) ; pendant l'envoi d'autres contrats du mois, il ne les renvoie pas.
+    let sien = p.salarie.clone().map(|s| vec![s]);
     let (etat, phrase, geste) = match (pt.contrat, debut_du_contrat) {
-        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois, None, signee))),
-        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois, None, signee))),
-        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois, None, signee))),
+        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois, sien.clone(), signee))),
+        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois, sien.clone(), signee))),
+        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois, sien.clone(), signee))),
         // Un avenant parti, imprime ou par courriel, se note signe d'un clic, comme le contrat ; la relance est dans la
         // boite des contrats en attente. `par` est celui du dernier depart, l'avenant attendu.
         (PointContrat::EnAttente, _) if s.avenant_attendu => (
