@@ -225,14 +225,22 @@ fn poser_les_familles_generiques(polices: &mut usvg::fontdb::Database) {
     let sans = premiere(polices, &Family::SansSerif, &["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans", "Noto Sans", "FreeSans", "Segoe UI", "Verdana"])
         .or_else(|| polices.faces().find(|f| !f.monospaced).or_else(|| polices.faces().next()).and_then(|f| f.families.first()).map(|(n, _)| n.clone()));
     let Some(sans) = sans else { return };
-    let serif = premiere(polices, &Family::Serif, &["Times New Roman", "Times", "Liberation Serif", "DejaVu Serif", "Noto Serif", "FreeSerif", "Georgia"]);
-    let mono = premiere(polices, &Family::Monospace, &["Courier New", "Courier", "Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "FreeMono", "Consolas"]);
-    let cursive = premiere(polices, &Family::Cursive, &[]);
-    let fantasy = premiere(polices, &Family::Fantasy, &[]);
-    polices.set_serif_family(serif.unwrap_or_else(|| sans.clone()));
-    polices.set_monospace_family(mono.unwrap_or_else(|| sans.clone()));
-    polices.set_cursive_family(cursive.unwrap_or_else(|| sans.clone()));
-    polices.set_fantasy_family(fantasy.unwrap_or_else(|| sans.clone()));
+    // Chaque liste finit par la famille sans empattement du poste, presente : `premiere` trouve donc toujours.
+    let s = sans.as_str();
+    for (famille, liste) in [
+        (Family::Serif, vec!["Times New Roman", "Times", "Liberation Serif", "DejaVu Serif", "Noto Serif", "FreeSerif", "Georgia", s]),
+        (Family::Monospace, vec!["Courier New", "Courier", "Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "FreeMono", "Consolas", s]),
+        (Family::Cursive, vec![s]),
+        (Family::Fantasy, vec![s]),
+    ] {
+        let Some(nom) = premiere(polices, &famille, &liste) else { continue };
+        match famille {
+            Family::Serif => polices.set_serif_family(nom),
+            Family::Monospace => polices.set_monospace_family(nom),
+            Family::Cursive => polices.set_cursive_family(nom),
+            _ => polices.set_fantasy_family(nom),
+        }
+    }
     polices.set_sans_serif_family(sans);
 }
 
