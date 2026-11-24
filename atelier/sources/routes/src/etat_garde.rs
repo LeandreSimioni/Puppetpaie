@@ -53,6 +53,7 @@ use crate::catalogue::{Acte, Ecran, Fiche, Route, ILLISIBLE};
 use crate::declaration::{charge, dit, legendes};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Options, Phrase, Porte, Rendu, Reponse};
 use crate::etapes::{Bilan, ChargeMois};
+use crate::gestes::ouverture::PriseEnCompte;
 
 /// Le format du fichier de l'ouverture : un autre se refait avant de se montrer. 5 : le mois a ouvrir en sa forme
 /// (`ouvre`), les lectures ecrites.
@@ -92,7 +93,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire l'état de chaque engagement du mois : ses carrés DPAE, Contrat, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien)",
+        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part, copier : le geste qui le copie pour un autre salarié), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -126,6 +127,9 @@ const OUVERTURE: &str = "ouverture";
 /// rattachee (`administrateur::tableau_compagnie`), sous l'empreinte de l'ouverture (toute la compagnie).
 const TABLEAU: &str = "tableau";
 
+/// La cle de la PRISE EN COMPTE D'UNE MISE A JOUR dans la file (`gestes::ouverture::passer_la_version`).
+const VERSION_DU_CALCUL: &str = "version-du-calcul";
+
 /// Ce que la page lit en s'ouvrant, hors de l'ecran d'un mois (`js/demarrage.js`) : la route et sa charge. Chacune est
 /// rendue telle quelle (resultat ou refus), au format d'une reponse de la page. Le mois a ouvrir y est aussi, lu en sa
 /// forme (`etapes::le_mois_a_ouvrir`). Ce qui vit dans la memoire de la fenetre (la veille, la mise a jour) et ce que
@@ -148,29 +152,34 @@ fn chemin(racine: &Path) -> PathBuf {
 
 // ------------------------------------------------------------------------------------------------- les cles
 
-/// LA CLE D'UN ETAT GARDE : un mois, l'ouverture de la compagnie, ou le tableau de l'administrateur.
-/// Elle s'ecrit (le banc la nomme ainsi dans son scenario) `ouverture`, `tableau` ou un mois AAAA-MM.
+/// LA CLE D'UN TRAVAIL DE LA FILE : l'etat garde d'un mois, de l'ouverture de la compagnie, ou le tableau de
+/// l'administrateur ; et, avant eux, la prise en compte d'une mise a jour (`VersionDuCalcul`, inscrite en tete a la
+/// creation de la file : `Fil::file`), qui ne garde rien.
+/// Elle s'ecrit (le banc la nomme ainsi dans son scenario) `ouverture`, `tableau`, `version-du-calcul` ou un mois
+/// AAAA-MM.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(from = "CleEcrite")]
 pub enum Cle {
     Mois(Mois),
     Ouverture,
     Tableau,
+    VersionDuCalcul,
 }
 
 /// La cle telle qu'elle s'ecrit : un nom, ou un mois.
 #[derive(Deserialize)]
-#[serde(untagged, expecting = "le mois de l'état (AAAA-MM), « ouverture » ou « tableau »")]
+#[serde(untagged, expecting = "le mois de l'état (AAAA-MM), « ouverture », « tableau » ou « version-du-calcul »")]
 enum CleEcrite {
     Nommee(CleNommee),
     Mois(Mois),
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 enum CleNommee {
     Ouverture,
     Tableau,
+    VersionDuCalcul,
 }
 
 impl From<CleEcrite> for Cle {
@@ -179,18 +188,20 @@ impl From<CleEcrite> for Cle {
             CleEcrite::Mois(m) => Cle::Mois(m),
             CleEcrite::Nommee(CleNommee::Ouverture) => Cle::Ouverture,
             CleEcrite::Nommee(CleNommee::Tableau) => Cle::Tableau,
+            CleEcrite::Nommee(CleNommee::VersionDuCalcul) => Cle::VersionDuCalcul,
         }
     }
 }
 
 impl Cle {
     /// LA ROUTE QUE CET ETAT SERT DANS LA FENETRE, sans passer par la porte : l'ecran d'un mois (`mois`), l'ouverture
-    /// (`demarrage`), le tableau de l'administrateur. Le barrage d'une valeur a saisir de nouveau la lit
-    /// (`service::contexte_de_la_route`).
+    /// (`demarrage`), le tableau de l'administrateur. La prise en compte d'une mise a jour sert l'ouverture (elle passe
+    /// le barrage ; c'est `version_prise` qui la retient tant qu'une valeur attend d'etre saisie de nouveau). Le barrage
+    /// d'une valeur a saisir de nouveau la lit (`service::contexte_de_la_route`).
     fn route(self) -> Route {
         match self {
             Cle::Mois(_) => Route::Mois,
-            Cle::Ouverture => Route::Demarrage,
+            Cle::Ouverture | Cle::VersionDuCalcul => Route::Demarrage,
             Cle::Tableau => Route::AdministrateurTableau,
         }
     }
@@ -208,6 +219,7 @@ impl std::fmt::Display for Cle {
             Cle::Mois(m) => write!(f, "{}", m),
             Cle::Ouverture => f.write_str(OUVERTURE),
             Cle::Tableau => f.write_str(TABLEAU),
+            Cle::VersionDuCalcul => f.write_str(VERSION_DU_CALCUL),
         }
     }
 }
@@ -300,9 +312,15 @@ fn signer_dossier(h: &mut Sha256, base: &Path, rel: &str, profond: bool, garder:
 ///   veille ; lue par l'horloge seulement (le jour d'un `Contexte` ne la lit pas) ;
 /// - `journal/signalements.json` : « Un probleme, une idee ? » (`problemes.rs`) ; lu par `signalements` et
 ///   `importation-etat` ;
-/// - `journal/incidents.json` : le journal des incidents.
-const HORS_DE_L_ECRAN: [CheminRelatif; 7] = [
+/// - `journal/incidents.json` : le journal des incidents ;
+/// - `config/.ouverture-etape.json` : l'etape d'un passage de l'ouverture, reecrite a chaque etape ; lue par la veille
+///   de la fenetre seulement (`gestes::ouverture::etape_en_cours`) ;
+/// - `config/.version-du-calcul.verrou` : le verrou d'une prise en compte de la mise a jour, rafraichi avant chaque mois
+///   qu'elle relit ; lu par elle seule (`gestes::ouverture::passer_la_version`).
+const HORS_DE_L_ECRAN: [CheminRelatif; 9] = [
     socle::fichiers::TRACE_DE_L_OUVERTURE,
+    socle::fichiers::ETAPE_DE_L_OUVERTURE,
+    crate::gestes::ouverture::VERROU_DE_LA_VERSION,
     compagnie::sauvegarde::INDEX,
     compagnie::incidents::DIAGNOSTIC,
     compagnie::installation::FICHIER_HORLOGE,
@@ -407,12 +425,14 @@ struct EtatDeLOuverture {
 /// `administrateur::tableau_compagnie`) : son jour, ses declarations, l'empreinte de la compagnie qu'il a lue.
 use crate::gestes::administrateur::TableauCompagnie;
 
-/// Un etat garde : d'un mois, de l'ouverture, ou le tableau de l'administrateur (sa forme est la sienne).
+/// Un etat garde : d'un mois, de l'ouverture, ou le tableau de l'administrateur (sa forme est la sienne) ; ou ce qu'a
+/// fait la prise en compte de la mise a jour, qui ne garde rien.
 #[derive(Clone)]
 enum Garde {
     Mois(Arc<EtatDuMois>),
     Ouverture(Arc<EtatDeLOuverture>),
     Tableau(Arc<TableauCompagnie>),
+    VersionDuCalcul(PriseEnCompte),
 }
 
 impl Garde {
@@ -681,6 +701,27 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
     Ok(Garde::Tableau(Arc::new(crate::gestes::administrateur::tableau_compagnie(ctx)?)))
 }
 
+/// LA MISE A JOUR PRISE EN COMPTE sur les mois finis de la compagnie (`gestes::ouverture::passer_la_version`), avant
+/// ses etats : ce qu'elle reecrit les changerait. Une version deja passee ne fait rien. Son etape se dit par la phrase de
+/// la file (`FileDesEtats::phrase`), et non dans celle de la veille : chacun la sienne. Un refus se note (`faire`), la
+/// compagnie s'ouvre comme sans lui, et la route `ouverture` reprend la prise en compte au clic. Faite ailleurs en ce
+/// moment (un autre processus), la file attend qu'elle finisse (`FileDesEtats::rendre`).
+///
+/// UNE VALEUR A SAISIR DE NOUVEAU (`redire`) : rien ne se reecrit tant que la compagnie n'a pas repondu, comme a la route
+/// `ouverture` ; le refus qui renvoie a la demande reste le rendu de la cle, et la file la reprend en tete a la
+/// verification suivante (`tout_verifier`, apres la reponse).
+fn version_prise(ctx: &Contexte) -> R<Garde> {
+    if let Some(e) = crate::redire::refus_de_la_demande(ctx)? {
+        return Err(e);
+    }
+    Ok(Garde::VersionDuCalcul(crate::gestes::ouverture::passer_la_version(ctx, || Ok(()))?))
+}
+
+/// La prise en compte de la mise a jour a-t-elle ete retenue par une valeur a saisir de nouveau (`version_prise`) ?
+fn retenue_par_la_demande(fait: Option<&(u64, Fait)>) -> bool {
+    matches!(fait, Some((_, Err(e))) if e.classe == Some(Classe::ValeurARedire))
+}
+
 /// Refait l'etat de `cle` (un mois, ou l'ouverture, qui s'ecrit ; le tableau, s'il n'est plus juste). Ce qui se lit
 /// peut ecrire (une paie validee qui se recalcule d'elle-meme quand on la lit, `engagement::etats::du_mois`) :
 /// l'empreinte d'apres n'est alors plus celle d'avant, et un second passage, sans recalcul cette fois, la retrouve.
@@ -688,6 +729,7 @@ fn refaire(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
     for passage in 1..=2 {
         let mois = match cle {
             Cle::Tableau => return tableau_juste(ctx),
+            Cle::VersionDuCalcul => return version_prise(ctx),
             Cle::Mois(m) => Some(m),
             Cle::Ouverture => None,
         };
@@ -814,6 +856,10 @@ struct EtatDeLaFile {
     affiche: Option<Mois>,
     /// Ce que le fil refait en ce moment : la phrase d'attente le dit (`phrase`).
     en_cours: Option<Cle>,
+    /// LA MISE A JOUR SE PREND EN COMPTE AILLEURS (un autre passage tient son verrou, `PriseEnCompte::EnCoursAilleurs`) :
+    /// rien de cette compagnie ne se calcule (`prendre_travail`) avant qu'elle soit passee ; le fil la regarde de nouveau
+    /// (`Fil::tourner`, `retenter_la_version`).
+    version_ailleurs: bool,
     arretee: bool,
 }
 
@@ -840,6 +886,10 @@ pub struct Fil {
     /// le lit sous le sien, et le fil prend le sien avant celui d'une file (`choisir`).
     demarre: AtomicBool,
 }
+
+/// Tous les combien le fil regarde si une mise a jour prise en compte ailleurs a fini (`Fil::tourner`) : la lecture d'une
+/// marque et la tentative d'un verrou, rien de plus.
+const REGARD_DE_LA_VERSION: Duration = Duration::from_secs(1);
 
 struct EtatDuFil {
     files: Vec<Arc<FileDesEtats>>,
@@ -872,9 +922,11 @@ impl Fil {
     }
 
     /// SANS FIL, LE TRAVAIL SUIVANT, FAIT ICI par qui attend `cle` : le meme choix que le fil (`choisir`), le meme
-    /// passage (`faire`, `rendre`), avec les refus du fil (`fil_de_fond` : ni sortie, ni coffre). Rien a faire alors que
-    /// `cle` est attendue est un defaut du logiciel : l'attente ne finirait pas.
-    fn pomper(&self, cle: Cle) -> R<()> {
+    /// passage (`faire`, `rendre`), avec les refus du fil (`fil_de_fond` : ni sortie, ni coffre). `true` : un travail
+    /// s'est fait. `false` : rien ne se fait maintenant parce qu'une mise a jour se prend en compte ailleurs
+    /// (`version_ailleurs`) ; sa cle revient en tete, et la demande suivante la regarde de nouveau. Rien a faire sinon,
+    /// alors que `cle` est attendue, est un defaut du logiciel : l'attente ne finirait pas.
+    fn pomper(&self, cle: Cle) -> R<bool> {
         let pris = Self::choisir(&mut self.verrou());
         match pris {
             Some((file, prise, numero)) => {
@@ -883,9 +935,19 @@ impl Fil {
                     file.faire(prise)
                 };
                 file.rendre(prise, numero, rendu);
-                Ok(())
+                Ok(true)
             }
-            None => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} est attendu, et la file n'a plus rien à calculer.", cle))),
+            None => {
+                let g = self.verrou();
+                let mut ailleurs = false;
+                for f in &g.files {
+                    ailleurs |= f.retenter_la_version();
+                }
+                if ailleurs {
+                    return Ok(false);
+                }
+                Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} est attendu, et la file n'a plus rien à calculer.", cle)))
+            }
         }
     }
 
@@ -912,29 +974,30 @@ impl Fil {
     }
 
     /// La file de la compagnie `racine`, sur ce fil. `date` : la date des calculs (les tests).
+    ///
+    /// RIEN NE SE CALCULE AVANT LA MISE A JOUR : la file nait avec sa prise en compte en tete (`Cle::VersionDuCalcul`),
+    /// avant qu'aucune demande puisse y entrer ; ce qu'elle reecrit changerait l'etat qu'on ferait avant elle.
     pub fn file(self: &Arc<Self>, racine: &Path, date: Option<Jour>) -> Arc<FileDesEtats> {
         let o = Options { racine: Some(racine.to_path_buf()), date };
-        let f = Arc::new(FileDesEtats {
-            o,
-            racine: racine.to_path_buf(),
-            // Rien a verifier, aucune demande encore (numero 0), rien d'affiche.
-            etat: Mutex::new(EtatDeLaFile {
-                attente: VecDeque::new(),
-                voulu: HashMap::new(),
-                fait: HashMap::new(),
-                numero: 0,
-                affiche: None,
-                en_cours: None,
-                arretee: false,
-            }),
-            signal: Condvar::new(),
-            fil: self.clone(),
-        });
+        // Aucune demande encore (numero 0), rien d'affiche ; puis la mise a jour a prendre en compte, seule en tete.
+        let mut etat = EtatDeLaFile {
+            attente: VecDeque::new(),
+            voulu: HashMap::new(),
+            fait: HashMap::new(),
+            numero: 0,
+            affiche: None,
+            en_cours: None,
+            version_ailleurs: false,
+            arretee: false,
+        };
+        FileDesEtats::inscrire(&mut etat, Cle::VersionDuCalcul, true);
+        let f = Arc::new(FileDesEtats { o, racine: racine.to_path_buf(), etat: Mutex::new(etat), signal: Condvar::new(), fil: self.clone() });
         let mut g = self.verrou();
         g.files.push(f.clone());
         if g.jour.is_none() {
             g.jour = Fil::jour_suivi();
         }
+        self.reveil.notify_all();
         drop(g);
         f
     }
@@ -975,16 +1038,29 @@ impl Fil {
     }
 
     fn tourner(&self) {
+        let mut regarde = Instant::now();
         loop {
             let mut g = self.verrou();
             let (file, cle, numero) = loop {
                 if g.arrete {
                     return;
                 }
+                // UNE MISE A JOUR PRISE EN COMPTE AILLEURS (un autre processus) : le fil regarde si elle a fini (sa marque
+                // ecrite, son verrou rendu) a chaque tour, avant de choisir le travail suivant -- qu'il ait d'autres
+                // compagnies a servir ou non --, au plus une fois par `REGARD_DE_LA_VERSION` : c'est cet etat qu'il
+                // attend.
+                if regarde.elapsed() >= REGARD_DE_LA_VERSION {
+                    regarde = Instant::now();
+                    for f in &g.files {
+                        f.retenter_la_version();
+                    }
+                }
                 if let Some(x) = Self::choisir(&mut g) {
                     break x;
                 }
-                let (h, attente) = repris(self.reveil.wait_timeout(g, Duration::from_secs(60)));
+                let attend_la_version = g.files.iter().any(|f| f.verrou().version_ailleurs);
+                let regard = if attend_la_version { REGARD_DE_LA_VERSION } else { Duration::from_secs(60) };
+                let (h, attente) = repris(self.reveil.wait_timeout(g, regard));
                 g = h;
                 // LE JOUR A CHANGE : tout se reverifie (hors du verrou du fil : `tout_verifier` le reprend pour reveiller).
                 if attente.timed_out() && !g.files.is_empty() {
@@ -1042,7 +1118,8 @@ impl FileDesEtats {
     }
 
     /// Le dernier etat connu de `cle`, JUSTE OU NON : celui de l'ouverture, ecrit (`ouverture_ecrite`) ; celui d'un mois,
-    /// que la file garde en memoire depuis son dernier passage. Aucun pour le tableau (`tableau_juste` le lit).
+    /// que la file garde en memoire depuis son dernier passage. Aucun pour le tableau (`tableau_juste` le lit), ni pour
+    /// la mise a jour (`passer_la_version` lit sa marque).
     fn connu(&self, cle: Cle, jour: &Jour) -> Option<(Garde, bool)> {
         match cle {
             Cle::Ouverture => ouverture_ecrite(&self.racine).map(|e| {
@@ -1057,14 +1134,14 @@ impl FileDesEtats {
                 let juste = e.empreinte == empreinte_de(&self.racine, Some(m), *jour);
                 Some((Garde::Mois(e), juste))
             }
-            Cle::Tableau => None,
+            Cle::Tableau | Cle::VersionDuCalcul => None,
         }
     }
 
     /// La prochaine cle a refaire, si la file en a une (sous le verrou du fil, `Fil::choisir`).
     fn prendre_travail(&self) -> Option<(Cle, u64)> {
         let mut e = self.verrou();
-        if e.arretee {
+        if e.arretee || e.version_ailleurs {
             return None;
         }
         let m = e.attente.pop_front()?;
@@ -1082,8 +1159,12 @@ impl FileDesEtats {
         // Un autre etat, ou un refus : rien ne passe devant ; le refus est le rendu garde ci-dessous avec son passage.
         let ouvre = rendu.iter().find_map(|g| match g {
             Garde::Ouverture(o) => o.ouvre,
-            Garde::Mois(_) | Garde::Tableau(_) => None,
+            Garde::Mois(_) | Garde::Tableau(_) | Garde::VersionDuCalcul(_) => None,
         });
+        // LA MISE A JOUR SE PREND EN COMPTE AILLEURS : rien de la compagnie ne se calcule tant qu'elle n'est pas passee.
+        if matches!(rendu, Ok(Garde::VersionDuCalcul(PriseEnCompte::EnCoursAilleurs))) {
+            e.version_ailleurs = true;
+        }
         if let (true, Some(m)) = (e.affiche.is_none(), ouvre) {
             Self::inscrire(&mut e, Cle::Mois(m), true);
         }
@@ -1118,11 +1199,20 @@ impl FileDesEtats {
         };
         #[cfg(not(feature = "atelier"))]
         let rendu = refaire();
-        match rendu {
+        let fait = match rendu {
             Ok(Ok(g)) => Ok(g),
             Ok(Err(e)) => Err(e),
             Err(p) => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} ne s'est pas refait (le calcul s'est arrêté : {}).", cle, pourquoi(p.as_ref())))),
+        };
+        // LA PRISE EN COMPTE DE LA MISE A JOUR, aucun ecran ne lit son refus (celui d'un etat se lit quand il s'affiche) :
+        // il se note (le contexte refuse, `passer_la_version` refuse, le calcul tombe). Retenue par une valeur a saisir de
+        // nouveau, elle n'a pas echoue : elle attend la reponse, et se reprend apres (`tout_verifier`).
+        if let (Cle::VersionDuCalcul, Err(e)) = (cle, &fait) {
+            if e.classe != Some(Classe::ValeurARedire) {
+                noter("la prise en compte de la mise à jour ne s'est pas faite", e);
+            }
         }
+        fait
     }
 
     /// `cle` a verifier : devant (elle est attendue), ou a la suite si elle n'est pas deja dans la file. Rend le numero
@@ -1141,16 +1231,63 @@ impl FileDesEtats {
         let n = e.numero;
         e.voulu.insert(cle, n);
         let deja = e.attente.iter().position(|m| *m == cle);
+        if let Some(i) = deja.filter(|_| devant) {
+            e.attente.remove(i);
+        }
+        // LA MISE A JOUR A PRENDRE EN COMPTE reste en tete : ce qu'elle reecrit changerait l'etat qu'on ferait avant elle.
+        let tete = usize::from(cle != Cle::VersionDuCalcul && e.attente.front() == Some(&Cle::VersionDuCalcul));
         match (deja, devant) {
-            (Some(i), true) => {
-                e.attente.remove(i);
-                e.attente.push_front(cle);
-            }
+            (_, true) => e.attente.insert(tete, cle),
             (Some(_), false) => {}
-            (None, true) => e.attente.push_front(cle),
             (None, false) => e.attente.push_back(cle),
         }
         n
+    }
+
+    /// LA MISE A JOUR PRISE EN COMPTE AILLEURS, REGARDEE DE NOUVEAU (`Fil::tourner`, `Fil::pomper`, sous le verrou du fil,
+    /// qui ne se reprend pas ici) : sa cle revient en tete, et le fil refait `passer_la_version` -- passee, les etats
+    /// suivent ; encore tenue ailleurs, la file attend de nouveau. Rend si elle l'attendait.
+    fn retenter_la_version(&self) -> bool {
+        let mut e = self.verrou();
+        let attendait = std::mem::take(&mut e.version_ailleurs);
+        if attendait {
+            Self::inscrire(&mut e, Cle::VersionDuCalcul, true);
+        }
+        attendait
+    }
+
+    /// LA FILE A-T-ELLE FINI LA MISE A JOUR (`Cle::VersionDuCalcul`) : ni en attente, ni en cours, ni prise en compte
+    /// ailleurs. Faite, deja a jour, ou refusee (la route `ouverture` la reprend alors) : la veille peut partir.
+    fn a_fini_la_version(e: &EtatDeLaFile) -> bool {
+        !e.version_ailleurs && e.en_cours != Some(Cle::VersionDuCalcul) && !e.attente.contains(&Cle::VersionDuCalcul)
+    }
+
+    /// LA VEILLE ATTEND LA MISE A JOUR (`moteur::interface::veille`, avant chaque tour) : dans la fenetre, l'ordre fait la
+    /// surete -- la file prend en compte la mise a jour d'abord, et rien de la veille (relever, envoyer, sauvegarder) ne
+    /// croise la reecriture des paies. Avec un fil, on attend que la file l'ait finie ; sans fil, on fait le travail de la
+    /// file jusqu'a elle (`Fil::pomper`), et une prise en compte en cours ailleurs refuse (`EN_COURS_AILLEURS`) : la
+    /// demande suivante regarde de nouveau. La compagnie fermee en attendant refuse aussi.
+    pub fn attendre_la_version(&self) -> R<()> {
+        loop {
+            {
+                let mut e = self.verrou();
+                loop {
+                    if e.arretee {
+                        return Err(erreur(Classe::Refuse, "La compagnie a été fermée."));
+                    }
+                    if Self::a_fini_la_version(&e) {
+                        return Ok(());
+                    }
+                    if self.fil.sans_fil() {
+                        break;
+                    }
+                    e = repris(self.signal.wait(e));
+                }
+            }
+            if !self.fil.pomper(Cle::VersionDuCalcul)? {
+                return Err(socle::echec::refus(crate::gestes::ouverture::EN_COURS_AILLEURS));
+            }
+        }
     }
 
     /// TOUS LES MOIS SUIVIS A VERIFIER (au lancement, apres une ecriture, a l'ouverture, apres un tour de veille) : le mois
@@ -1192,6 +1329,11 @@ impl FileDesEtats {
             for m in premiers.iter().rev() {
                 Self::inscrire(&mut e, Cle::Mois(*m), true);
             }
+            // LA MISE A JOUR RETENUE PAR UNE VALEUR A SAISIR DE NOUVEAU (`version_prise`) se reprend, en tete : la
+            // compagnie a peut-etre repondu.
+            if retenue_par_la_demande(e.fait.get(&Cle::VersionDuCalcul)) {
+                Self::inscrire(&mut e, Cle::VersionDuCalcul, true);
+            }
         }
         self.fil.reveiller();
     }
@@ -1218,7 +1360,10 @@ impl FileDesEtats {
                     e = repris(self.signal.wait(e));
                 }
             }
-            self.fil.pomper(cle)?;
+            // Sans fil, la mise a jour prise en compte ailleurs : la phrase d'attente, et la demande suivante regarde.
+            if !self.fil.pomper(cle)? {
+                return Err(socle::echec::refus(crate::gestes::ouverture::EN_COURS_AILLEURS));
+            }
         }
     }
 
@@ -1289,16 +1434,25 @@ impl FileDesEtats {
                     e = repris(self.signal.wait_timeout(e, reste)).0;
                 }
             }
-            self.fil.pomper(cle)?;
+            // Sans fil, la mise a jour prise en compte ailleurs : rien encore, la page redemande (sa phrase le dit).
+            if !self.fil.pomper(cle)? {
+                return Ok(None);
+            }
         }
     }
 
     /// CE QUE FAIT LE MOTEUR, en une phrase (jamais une roue qui tourne sans dire pourquoi) : ce que le fil refait en ce
     /// moment.
     pub fn phrase(&self) -> Phrase {
-        match self.verrou().en_cours {
+        let e = self.verrou();
+        // La mise a jour attendue ailleurs, ou la prochaine a se faire (sans fil, regardee de nouveau a la demande suivante).
+        if e.version_ailleurs || (e.en_cours.is_none() && e.attente.front() == Some(&Cle::VersionDuCalcul)) {
+            return Phrase::fixe(crate::gestes::ouverture::PRISE_EN_COMPTE);
+        }
+        match e.en_cours {
             Some(Cle::Ouverture) => Phrase::fixe("Lecture de la compagnie : sa configuration, ses échéances, ses rappels…"),
             Some(Cle::Tableau) => Phrase::fixe("Tableau des déclarations de la compagnie…"),
+            Some(Cle::VersionDuCalcul) => Phrase::fixe(crate::gestes::ouverture::PRISE_EN_COMPTE),
             Some(Cle::Mois(m)) => socle::phrase!("Calcul de {}…", m.libelle(socle::mois::Graphie::Accentuee)),
             None => Phrase::fixe("Préparation de l'écran…"),
         }

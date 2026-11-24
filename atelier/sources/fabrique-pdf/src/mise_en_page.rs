@@ -841,6 +841,18 @@ fn charger_image(chemin: &Path, largeur: Mesure, ou: &str, quoi: &str) -> Result
     Image::lire(&donnees, largeur, svg).map_err(|e| e.reformuler(|p| format!("{} : {} {} : {}", ou, quoi, dit, p)))
 }
 
+/// L'image qui tient dans la boîte `largeur` x `hauteur`, proportions gardées : d'abord à la pleine largeur, puis, si
+/// elle déborde en hauteur, à la largeur qui remplit la hauteur.
+fn charger_dans_la_boite(chemin: &Path, largeur: Mesure, hauteur: Mesure, ou: &str, quoi: &str) -> Result<Image, Refus> {
+    let image = charger_image(chemin, largeur, ou, quoi)?;
+    if image.hauteur() > hauteur + EPS {
+        if let Some(reduite) = largeur.fois_rapport(hauteur, image.hauteur()) {
+            return charger_image(chemin, reduite, ou, quoi);
+        }
+    }
+    Ok(image)
+}
+
 /// Refuse un texte dont un caractère manque à la police elle-même (un idéogramme, un emoji) : tout ce que
 /// Liberation possède — latin étendu, grec, cyrillique — s'imprime.
 fn verifier_texte(ctx: &Ctx<'_>, style: Style, texte: &str, ou: &str) -> Result<(), Refus> {
@@ -958,16 +970,9 @@ fn construire(
         Bloc::ImageFixe { chemin, x, y, largeur: l, hauteur: h, centree } => {
             // L'image tient dans la boîte (l × h), proportions gardées : d'abord à la pleine largeur, puis, si elle
             // déborde en hauteur, à la largeur qui remplit la hauteur.
-            let mut image = charger_image(chemin, *l, ou, "image")?;
-            let mut largeur_image = *l;
-            if image.hauteur() > *h + EPS {
-                if let Some(reduite) = l.fois_rapport(*h, image.hauteur()) {
-                    largeur_image = reduite;
-                    image = charger_image(chemin, largeur_image, ou, "image")?;
-                }
-            }
+            let image = charger_dans_la_boite(chemin, *l, *h, ou, "image")?;
             let (dx, dy) =
-                if *centree { ((*l - largeur_image) * mesure!("0.5"), (*h - image.hauteur()) * mesure!("0.5")) } else { (Mesure::ZERO, Mesure::ZERO) };
+                if *centree { ((*l - image.largeur()) * mesure!("0.5"), (*h - image.hauteur()) * mesure!("0.5")) } else { (Mesure::ZERO, Mesure::ZERO) };
             Noeud::Fixe(Fixe {
                 origine: cadre.origine,
                 page: cadre.page,
@@ -1125,14 +1130,18 @@ fn fabriquer_passe(
     description: &crate::forme::Description,
     total: usize,
 ) -> Result<(Dessin, Option<String>, bool), Refus> {
-    let d = resoudre(description)?;
+    // Le logo se lit d'abord, dans son carré (sa largeur dite de côté) : sa taille posée place la tête des documents
+    // d'un style à côté de lui.
+    let image_du_logo = match &description.logo {
+        Some(l) => Some(charger_dans_la_boite(&l.chemin, l.largeur, l.largeur, "logo", "fichier")?),
+        None => None,
+    };
+    let d = resoudre(description, image_du_logo.as_ref().map(|i| (i.largeur(), i.hauteur())))?;
     let ctx = Ctx { polices, base: Style::new(d.police.taille) };
     let cadre = Cadre { origine: (d.page.gauche, d.page.haut), page: (d.page.largeur, d.page.hauteur) };
 
-    let logo = match &d.logo {
-        Some(l) => Some((charger_image(&l.chemin, l.largeur, "logo", "fichier")?, l.marge_haut, l.marge_droite)),
-        None => None,
-    };
+    // Le logo de chaque page (sans style : un style le pose en tête de chacun de ses documents, `style_contrat::blocs`).
+    let logo = d.logo.as_ref().zip(image_du_logo).map(|(l, image)| (image, l.marge_haut, l.marge_droite));
     let mut reperes = Vec::new();
     for (r, en_bas, nom) in [(&d.entete_page, false, "entete_page"), (&d.pied_page, true, "pied_page")] {
         if let Some(r) = r {

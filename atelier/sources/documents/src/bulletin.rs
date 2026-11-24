@@ -1244,10 +1244,17 @@ pub(crate) fn chemin_net(p: &Path) -> PathBuf {
 }
 
 /// `identite_de` : le fichier d'identite (`logo`, `signature`) de la compagnie dont `gabarits` est le dossier de
-/// gabarits (`Contexte::gabarits`), ou `None`.
-pub fn identite_de(gabarits: &Path, nom: &str) -> Option<PathBuf> {
+/// gabarits (`Contexte::gabarits`), ou `None` ; un fichier que le disque ne dit ni present ni absent est une erreur, pas
+/// une absence.
+pub fn identite_de(gabarits: &Path, nom: &str) -> R<Option<PathBuf>> {
     let dossier = gabarits.join("identite");
-    IDENTITE_EXTENSIONS.iter().map(|ext| dossier.join(format!("{}{}", nom, ext))).find(|f| f.exists())
+    for ext in IDENTITE_EXTENSIONS {
+        let f = dossier.join(format!("{}{}", nom, ext));
+        if f.try_exists().map_err(|e| socle::echec::du_disque(&f, &e).reclasser(socle::echec::Classe::Disque))? {
+            return Ok(Some(f));
+        }
+    }
+    Ok(None)
 }
 
 /// `description` : un document par jeu, chacun sur sa page ; au modele complet (la case du salarie, sinon celle de la
@@ -1271,7 +1278,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
         }),
         police: Some(f::Police { taille: mesure!("7.4"), interligne: mesure!("1.2"), couleur: ARDOISE.to_string() }),
         style: None,
-        logo: identite_de(&ent.gabarits, "logo").map(|logo| f::Logo {
+        logo: identite_de(&ent.gabarits, "logo")?.map(|logo| f::Logo {
             chemin: chemin_net(&logo),
             largeur: LOGO_LARGEUR,
             marge_haut: LOGO_MARGE_HAUT,

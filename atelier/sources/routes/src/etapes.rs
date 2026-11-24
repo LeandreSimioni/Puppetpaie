@@ -229,6 +229,8 @@ pub(crate) enum ChargeDuGeste {
     Annee(ChargeAnnee),
     Faite(crate::rappels::ChargeFaite),
     Piece(crate::documents::ChargePiecePartie),
+    Proposee(crate::mois::ChargeCarteProposee),
+    Carte(crate::mois::ChargeCase),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -267,6 +269,8 @@ charge_du_geste! {
     ChargeAnnee => Annee,
     crate::rappels::ChargeFaite => Faite,
     crate::documents::ChargePiecePartie => Piece,
+    crate::mois::ChargeCarteProposee => Proposee,
+    crate::mois::ChargeCase => Carte,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
@@ -445,10 +449,16 @@ fn echeance_dsn(limite: Moment, source: &str) -> Echeance {
 }
 
 /// Faire signer les contrats du mois : l'apercu, puis la demande. `salaries` : ceux dont les contrats se cochent d'abord
-/// (le detail d'un engagement) ; aucun, tous ceux a envoyer.
-fn faire_signer(mois: Mois, salaries: Option<Vec<IdSalarie>>) -> Action {
-    vers(VueDuGeste::ContratsAEnvoyer, crate::contrats::ChargeApercuSignature { mois, salaries }, Some(Route::DemanderSignature), "Demander la signature…".into())
+/// (le detail d'un engagement) ; aucun, tous ceux a envoyer. `signee` : la signature de l'employeur est posee
+/// (`contrats::signature_posee`) ; sans elle, rien ne part se faire signer, et le libelle dit ce qui est a faire.
+fn faire_signer(mois: Mois, salaries: Option<Vec<IdSalarie>>, signee: bool) -> Action {
+    let libelle = if signee { "Demander la signature…" } else { SIGNATURE_A_POSER };
+    vers(VueDuGeste::ContratsAEnvoyer, crate::contrats::ChargeApercuSignature { mois, salaries }, Some(Route::DemanderSignature), libelle.into())
 }
+
+/// Le geste qui fait signer, sans signature de l'employeur posee : ce qui est a faire d'abord ; sa boite dit ou la poser
+/// et offre d'imprimer.
+const SIGNATURE_A_POSER: &str = "Signature de l'employeur à poser…";
 
 /// Les contrats partis du mois, recus ou a relancer : l'apercu, puis noter chacun recu.
 fn contrats_en_attente(mois: Mois) -> Action {
@@ -1298,8 +1308,8 @@ pub(crate) struct Ligne {
 }
 
 impl Ligne {
-    fn de(vue: Vue, mois: Mois, versions: Option<engagement::versions::Frise>, engagement: engagement::stock::Identite) -> R<Ligne> {
-        Ok(Ligne { carres: carres(&vue, mois)?, dpae_choix: choix_dpae(&vue)?, vue, versions, engagement })
+    fn de(vue: Vue, mois: Mois, versions: Option<engagement::versions::Frise>, engagement: engagement::stock::Identite, signee: bool) -> R<Ligne> {
+        Ok(Ligne { carres: carres(&vue, mois, signee)?, dpae_choix: choix_dpae(&vue)?, vue, versions, engagement })
     }
 }
 
@@ -1331,6 +1341,8 @@ struct LigneDePage<'a> {
     repris_dit: Option<&'static str>,
     embauche_dit: Option<String>,
     numero_dit: Option<String>,
+    /// Le geste qui copie l'engagement pour un autre salarie (`copier-engagement`, puis `enregistrer-saisie`).
+    copier: Action,
 }
 
 #[derive(Debug, Serialize)]
@@ -1344,7 +1356,7 @@ struct DpaeDePage<'a> {
 }
 
 impl<'a> LigneDePage<'a> {
-    fn de(l: &'a Ligne) -> LigneDePage<'a> {
+    fn de(l: &'a Ligne, mois: Mois) -> LigneDePage<'a> {
         let v = &l.vue;
         let valide = v.valide.map(Moment::dit);
         let debut = match (&v.bornes, &v.contrat) {
@@ -1363,6 +1375,12 @@ impl<'a> LigneDePage<'a> {
                 (_, e) => e,
             },
             numero_dit: v.numero.as_ref().map(|n| format!("contrat n° {}", n)),
+            copier: action(
+                Route::CopierEngagement,
+                crate::mois::ChargeCarteProposee { mois, engagement: l.engagement.clone() },
+                Some(Route::EnregistrerSaisie),
+                "Copier pour un autre salarié".into(),
+            ),
             engagement: &l.engagement,
             salarie: v.salarie.as_ref(),
             nom: v.nom.as_deref(),
@@ -1656,6 +1674,7 @@ impl<'a> Moteur<'a> {
         }
         // LES DPAE A DEPOSER DU MOIS : la seule liste (`embauches_a_declarer`), que lisent aussi les rappels et le depot.
         let a_declarer: HashSet<Paire> = self.embauches_a_declarer(Some(le_mois))?.into_iter().map(|d| (d.salarie, d.numero)).collect();
+        let signee = crate::contrats::signature_posee(self.ctx)?;
 
         // Chaque ligne porte `engagement` : l'identite par laquelle sa carte le designe. Un engagement auquel il manque un
         // fait a sa ligne a lui (`ligne_a_completer`) ; les autres retrouvent leur paie parmi ceux qui ne manquent de rien.
@@ -1663,7 +1682,7 @@ impl<'a> Moteur<'a> {
         for (j, (e, id)) in etats_eng.iter().zip(&ids).enumerate() {
             if let Some(Some(manque)) = s.manques.get(j) {
                 let vue = self.ligne_a_completer(mois, e.objet(), &manque.phrase)?;
-                out.push(Ligne::de(vue, le_mois, None, id.clone())?);
+                out.push(Ligne::de(vue, le_mois, None, id.clone(), signee)?);
                 continue;
             }
             let Some(k) = s.identites.iter().position(|x| x == id) else { continue };
@@ -1814,7 +1833,7 @@ impl<'a> Moteur<'a> {
                 Some(v) => engagement::versions::frise(self.ctx, v, &departs, le_mois)?,
                 None => None,
             };
-            out.push(Ligne::de(vue, le_mois, frise, id.clone())?);
+            out.push(Ligne::de(vue, le_mois, frise, id.clone(), signee)?);
         }
         Ok(out)
     }
@@ -2229,6 +2248,7 @@ impl<'a> Moteur<'a> {
             return Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(None, &etapes), colonnes, etapes });
         }
         let paies = self.etat_par_engagement(le_mois)?;
+        let signee = crate::contrats::signature_posee(self.ctx)?;
         let echeance_de = |ps: &[&Vue], dpae: bool| -> Option<Echeance> {
             ps.iter().filter_map(|p| p.echeances.as_ref()).map(|e| if dpae { &e.dpae } else { &e.contrat }).min_by_key(|e| e.jour()).cloned()
         };
@@ -2316,8 +2336,8 @@ impl<'a> Moteur<'a> {
                 }
                 // L'AVENANT n'a pas d'echeance : L. 1242-13 date la remise du contrat a l'embauche, aucun texte depose ne
                 // date celle d'un avenant (regle 1 : rien ne se devine).
-                PointContrat::ARefaire => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois, None))),
-                PointContrat::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois, None))),
+                PointContrat::ARefaire => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois, None, signee))),
+                PointContrat::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois, None, signee))),
                 PointContrat::ACompleter => a_completer(n),
                 PointContrat::AValider => a_valider(n),
                 PointContrat::RienASigner => rien_ici("rien à signer"),
@@ -2654,7 +2674,7 @@ fn carre(cle: QuelleEtape, nom: impl Into<String>, etat: EtatCase, phrase: Strin
 /// (`Point::de`) : chacun son nom, son etat (`fait`, `a_faire`, `en_attente`, `refuse`), sa phrase (l'infobulle), le
 /// geste qu'ouvre un clic, et le titre de sa boite. Le contrat ou l'avenant parti et pas revenu se note signe d'un clic
 /// (`contrat-recu`).
-fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
+fn carres(p: &Vue, mois: Mois, signee: bool) -> R<Vec<Carre>> {
     // Les carres ne lisent pas la classe DSN du point (la DSN n'a pas de carre).
     let pt = Point::de(p, None);
     // A COMPLETER, OU A VALIDER : rien n'est parti de lui ; chaque carre qui l'attend dit ce qui reste, sans geste.
@@ -2706,9 +2726,9 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     };
     let par_dit = etats::mot_de_la_remise(s.par, etats::PlaceDeLaRemise::Phrase);
     let (etat, phrase, geste) = match (pt.contrat, debut_du_contrat) {
-        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois, None))),
-        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois, None))),
-        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois, None))),
+        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois, None, signee))),
+        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois, None, signee))),
+        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois, None, signee))),
         // Un avenant parti, imprime ou par courriel, se note signe d'un clic, comme le contrat ; la relance est dans la
         // boite des contrats en attente. `par` est celui du dernier depart, l'avenant attendu.
         (PointContrat::EnAttente, _) if s.avenant_attendu => (
@@ -2727,7 +2747,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         (PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider, DebutDansLeMois::CeMois) if !p.contrat.ecrit() => (EtatCase::Fait, "Pas de contrat à faire signer ici".to_string(), None),
         (PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider, DebutDansLeMois::CeMois) => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(Moment::jour_de_paris))?), None),
     };
-    let contrat = Carre { pieces: Some(pieces_du_contrat(p, mois, s, dossier)), ..carre(QuelleEtape::Signature, nom_contrat, etat, phrase, geste, None) };
+    let contrat = Carre { pieces: Some(pieces_du_contrat(p, mois, s, dossier, signee)), ..carre(QuelleEtape::Signature, nom_contrat, etat, phrase, geste, None) };
 
     let (etat, phrase, geste) = match pt.documents {
         PointDocuments::ARenvoyer => (EtatCase::AFaire, format!("Documents à renvoyer : {}", o.pourquoi), route(envoyer_documents(mois, "Renvoyer les documents corrigés…".into()))),
@@ -2776,7 +2796,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
 /// parti se modifie par un avenant, signe ou non, commence ou non ; un contrat jamais parti part a la signature. Un
 /// contrat signe hors du logiciel (`dossier` : son dossier, `signature::contrat_signe_dit`) ne part pas : son PDF se range
 /// dans son dossier, et il se modifie par un avenant.
-fn pieces_du_contrat(p: &Vue, mois: Mois, s: &Signature, dossier: Option<&ContratSigneDit>) -> Pieces {
+fn pieces_du_contrat(p: &Vue, mois: Mois, s: &Signature, dossier: Option<&ContratSigneDit>, signee: bool) -> Pieces {
     let (fait, recu, caduc) = (s.parti(), s.recu.is_some(), s.caduc);
     let ailleurs = dossier.is_some();
     // Un contrat ou un avenant parti (`fait`, imprime ou par courriel) est une piece : le detail la nomme, il n'a pas de
@@ -2811,7 +2831,8 @@ fn pieces_du_contrat(p: &Vue, mois: Mois, s: &Signature, dossier: Option<&Contra
     if !fait {
         // Depuis le detail de l'engagement, seul son contrat se coche d'abord.
         let siens = p.salarie.clone().map(|s| vec![s]);
-        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois, siens)), rang: RangDuGeste::Principal });
+        let libelle = if signee { "Envoyer à la signature…" } else { SIGNATURE_A_POSER };
+        gestes.push(GesteDePiece { libelle, titre: None, action: route(faire_signer(mois, siens, signee)), rang: RangDuGeste::Principal });
     }
     Pieces { vide, encart, gestes }
 }
@@ -3073,7 +3094,7 @@ pub(crate) struct LesDeuxEtats {
 impl LesDeuxEtats {
     /// `etat-par-engagement` : la phrase du mois, et ce que la page lit de chaque engagement.
     pub(crate) fn par_engagement(&self) -> R<EtatParEngagement<'_>> {
-        let engagements: Vec<LigneDePage> = self.lignes.iter().map(LigneDePage::de).collect();
+        let engagements: Vec<LigneDePage> = self.lignes.iter().map(|l| LigneDePage::de(l, self.mois)).collect();
         let phrase = match engagements.len() {
             0 => socle::phrase!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
             n => socle::phrase!("Engagements du mois : {}.", n),

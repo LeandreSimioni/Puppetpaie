@@ -144,10 +144,15 @@ pub fn fini(siens: &[Depart], mois: Mois) -> bool {
 /// LE PASSAGE D'UNE VERSION SUR LES MOIS FINIS : chaque mois qui a des paies, du plus ancien au plus recent, se relit
 /// une fois comme un mois dont les documents sont partis (`rafraichir`) : une decision de l'editeur (le code qui calcule,
 /// une regle datee) refait sa paie, en rectificatif, avec une version ; le reste ne bouge pas. La couche du dessus
-/// l'appelle une fois par version installee. Rend les mois dont une paie s'est refaite.
-pub fn corriger_les_mois_finis(ctx: &Contexte, departs: &Departs) -> R<Vec<Mois>> {
+/// l'appelle une fois par version installee. Rend les mois dont une paie s'est refaite. `avant_chaque_mois` passe
+/// avant chaque mois : le passage y dit qu'il vit (son verrou rafraichi) ; ce qu'il rend l'arrete, tel quel (`Err(arret)` :
+/// le verrou n'est plus le sien), comme son refus.
+pub fn corriger_les_mois_finis<A>(ctx: &Contexte, departs: &Departs, avant_chaque_mois: &mut dyn FnMut() -> R<Result<(), A>>) -> R<Result<Vec<Mois>, A>> {
     let mut refaits = Vec::new();
     for mois in crate::paies::mois_payes(&ctx.racine)? {
+        if let Err(arret) = avant_chaque_mois()? {
+            return Ok(Err(arret));
+        }
         let avant: Vec<Option<Arc<PaieEcrite>>> = tels_qu_ecrits(ctx, mois, departs)?.iter().map(|e| e.paie_ecrite(mois)).collect::<R<_>>()?;
         let apres: Vec<Option<Arc<PaieEcrite>>> = lu_et_rafraichi(ctx, mois, departs, true)?.iter().map(|e| e.paie_ecrite(mois)).collect::<R<_>>()?;
         let change = |a: &Option<Arc<PaieEcrite>>, b: &Option<Arc<PaieEcrite>>| match (a, b) {
@@ -158,7 +163,7 @@ pub fn corriger_les_mois_finis(ctx: &Contexte, departs: &Departs) -> R<Vec<Mois>
             refaits.push(mois);
         }
     }
-    Ok(refaits)
+    Ok(Ok(refaits))
 }
 
 /// Quand les documents de `mois` de cet engagement sont partis (le premier envoi) ; `None` s'ils ne le sont pas.

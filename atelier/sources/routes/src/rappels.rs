@@ -1709,8 +1709,10 @@ fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<Manque>, Option<(Pose,
         }
         out.push(acces_propose(format!("acces.{}", s.service), s.libelle.to_string(), format!("{} depuis le logiciel", s.sert_a), "vous le faites vous-même, hors du logiciel"));
     }
-    // Le Drive de la sauvegarde : se lie au meme endroit (« Lier le Drive »), sans reseau pour le savoir.
-    if super::coffre::compte_autorise(&ctx.racine).is_none() {
+    // Le Drive de la sauvegarde : se lie au meme endroit (« Lier le Drive »), sans reseau pour le savoir. Le jeton
+    // scelle existe ou non, sans l'ouvrir : cette liste se calcule aussi sur le fil de fond, qui n'ouvre aucun coffre
+    // (`socle::fil_de_fond`), ou dechiffrer le jeton echouerait toujours.
+    if super::coffre::lie_le(&ctx.racine)?.is_none() {
         out.push(acces_propose("acces.google".into(), "Google Drive".into(), "sauvegarder la compagnie dans votre Drive".into(), "rien ne se sauvegarde hors de ce poste"));
     }
     Ok((out, None))

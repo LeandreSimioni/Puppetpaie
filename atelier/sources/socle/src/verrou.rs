@@ -86,8 +86,17 @@ fn age_du_verrou(chemin: &Path) -> std::io::Result<AgeDuVerrou> {
     })
 }
 
+/// Le verrou tel que le disque le dit : son age et sa marque ; aucun s'il n'est pas sur le disque.
+fn lu(chemin: &Path) -> std::io::Result<Option<(AgeDuVerrou, String)>> {
+    match age_du_verrou(chemin).and_then(|age| std::fs::read(chemin).map(|b| (age, String::from_utf8_lossy(&b).trim().to_string()))) {
+        Ok(l) => Ok(Some(l)),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Prend le verrou, ou rend qui le tient. Un verrou plus vieux que `delai`
-/// est leve, une fois, puis on retente. Une erreur d'ecriture (dossier
+/// est leve, une fois (`lever`), puis on retente. Une erreur d'ecriture (dossier
 /// absent...) est une erreur, pas un verrou tenu.
 pub fn prendre(chemin: &Path, marque: &str, delai: Duration) -> R<Result<(), Verrouille>> {
     let disque = |e: std::io::Error| crate::echec::du_disque(&chemin, &e);
@@ -99,22 +108,53 @@ pub fn prendre(chemin: &Path, marque: &str, delai: Duration) -> R<Result<(), Ver
                 return Ok(Ok(()));
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                let lu = age_du_verrou(chemin).and_then(|age| std::fs::read(chemin).map(|b| (age, String::from_utf8_lossy(&b).trim().to_string())));
-                let (age, detenteur) = match lu {
-                    Ok(l) => l,
+                let (age, detenteur) = match lu(chemin).map_err(disque)? {
+                    Some(l) => l,
                     // Disparu entre-temps : on retente.
-                    Err(e) if e.kind() == ErrorKind::NotFound => continue,
-                    Err(e) => return Err(disque(e)),
+                    None => continue,
                 };
                 if age.tient(delai) || leve {
                     return Ok(Err(Verrouille { chemin: chemin.to_path_buf(), detenteur, age }));
                 }
-                crate::fichiers::effacer(chemin)?;
+                lever(chemin, &detenteur)?;
                 leve = true;
             }
             Err(e) => return Err(disque(e)),
         }
     }
+}
+
+/// Le detenteur d'un verrou qui n'est plus sur le disque quand son preneur le rafraichit (`Verrou::rafraichir`).
+const LEVE_PAR_UN_AUTRE: &str = "un autre preneur, qui le lève";
+
+/// Le numero de la prochaine levee dans ce processus : il entre dans le nom ou le verrou leve est mis a part.
+static LEVEES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// LEVER LE VERROU ABANDONNE QUI PORTE `abandonne`, et lui seul : deux preneurs qui l'ont juge abandonne ensemble ne le
+/// levent pas deux fois. Le verrou est d'abord mis a part sous un nom a ce preneur (un renommage : un seul preneur
+/// emporte un meme fichier), puis relu : c'est celui qu'on a juge abandonne, il s'efface ; c'en est un autre (un
+/// preneur l'a leve et repris juste avant), il retrouve sa place, et ce preneur-ci n'a rien leve. Disparu avant d'etre
+/// mis a part : un autre l'a leve.
+fn lever(chemin: &Path, abandonne: &str) -> R<()> {
+    let mut nom = chemin.as_os_str().to_os_string();
+    nom.push(format!(".leve-{}-{}", crate::processus::numero(), LEVEES.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+    let a_part = PathBuf::from(nom);
+    match std::fs::rename(chemin, &a_part) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(crate::echec::du_disque(chemin, &e)),
+    }
+    let relu = std::fs::read(&a_part).map_err(|e| crate::echec::du_disque(&a_part, &e))?;
+    if String::from_utf8_lossy(&relu).trim() == abandonne {
+        return crate::fichiers::effacer(&a_part);
+    }
+    std::fs::rename(&a_part, chemin).map_err(|e| crate::echec::du_disque(chemin, &e))
+}
+
+/// LE VERROU EST-IL TENU, sans le prendre : par qui, s'il est sur le disque et ne passe pas pour abandonne a ce `delai` ;
+/// aucun sinon (un verrou abandonne se levera a la prochaine prise).
+pub fn tenu(chemin: &Path, delai: Duration) -> R<Option<Verrouille>> {
+    Ok(lu(chemin).map_err(|e| crate::echec::du_disque(chemin, &e))?.filter(|(age, _)| age.tient(delai)).map(|(age, detenteur)| Verrouille { chemin: chemin.to_path_buf(), detenteur, age }))
 }
 
 /// Retire le verrou s'il porte encore NOTRE marque : si le delai a joue, un
@@ -142,6 +182,24 @@ pub struct Verrou {
 impl Verrou {
     pub fn prendre(chemin: &Path, marque: &str, delai: Duration) -> R<Result<Verrou, Verrouille>> {
         Ok(prendre(chemin, marque, delai)?.map(|_| Verrou { chemin: chemin.to_path_buf(), marque: marque.to_string() }))
+    }
+
+    /// UN LONG PASSAGE DIT QU'IL VIT : la date du fichier redevient maintenant, et son age repart de zero ; un passage
+    /// plus long que le delai ne passe donc pas pour abandonne tant qu'il se rafraichit. Un verrou qui ne porte plus
+    /// notre marque (le delai a joue, un autre l'a repris) le dit, tenu par l'autre (`Verrouille`) : le passage s'arrete,
+    /// l'autre le fait. Un verrou qui n'est plus sur le disque est en train d'etre leve par un autre preneur (`lever`) :
+    /// il n'est plus le notre non plus.
+    pub fn rafraichir(&self) -> R<Result<(), Verrouille>> {
+        let disque = |e: std::io::Error| crate::echec::du_disque(&self.chemin, &e);
+        let (age, detenteur) = match lu(&self.chemin).map_err(disque)? {
+            Some(l) => l,
+            None => (AgeDuVerrou::Ecoule(Duration::ZERO), LEVE_PAR_UN_AUTRE.to_string()),
+        };
+        if detenteur != self.marque {
+            return Ok(Err(Verrouille { chemin: self.chemin.clone(), detenteur, age }));
+        }
+        OpenOptions::new().write(true).open(&self.chemin).and_then(|f| f.set_modified(SystemTime::now())).map_err(disque)?;
+        Ok(Ok(()))
     }
 }
 

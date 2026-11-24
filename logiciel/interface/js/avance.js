@@ -308,6 +308,45 @@ function lireLaCase(x) {
   return CASES[x.dataset.forme].lire(x);
 }
 
+/** UN FICHIER DÉPOSÉ SUR `zone` (glissé depuis le poste) : `preneur()`, au moment du glisser, rend ce qui le prend (une
+ *  fonction des fichiers déposés), ou rien quand personne ne le prend ici. Un dépôt qui ne porte pas de fichier ne fait
+ *  rien. La zone ne se branche qu'une fois (la boîte sert à toutes les boîtes). */
+function recevoirLeFichier(zone, preneur) {
+  if (zone.dataset.depot) return;
+  zone.dataset.depot = "1";
+  const porteUnFichier = (ev) => ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+  zone.addEventListener("dragover", (ev) => {
+    if (!porteUnFichier(ev) || !preneur()) return;
+    ev.preventDefault();
+    zone.classList.add("depot-survole");
+  });
+  zone.addEventListener("dragleave", (ev) => { if (!zone.contains(ev.relatedTarget)) zone.classList.remove("depot-survole"); });
+  zone.addEventListener("drop", (ev) => {
+    zone.classList.remove("depot-survole");
+    if (!porteUnFichier(ev) || !ev.dataTransfer.files.length) return;
+    ev.preventDefault();
+    const prendre = preneur();
+    if (!prendre) return;
+    ev.stopPropagation();
+    prendre(ev.dataTransfer.files);
+  });
+}
+
+/** Ce qui pose un dépôt dans la case fichier `x` (`deposerLeFichier`), si elle est à l'écran. */
+const dansLaCase = (x) => (x && x.isConnected ? (fichiers) => deposerLeFichier(x, fichiers) : null);
+
+/** La case fichier de `bloc` quand il n'en a qu'une, sinon rien. */
+function seuleCaseFichier(bloc) {
+  const l = bloc.querySelectorAll('input[type="file"][data-case]');
+  return l.length === 1 ? l[0] : null;
+}
+
+/** Pose `fichiers` (ceux d'un dépôt) dans la case fichier `x`, et la fait lire. */
+function deposerLeFichier(x, fichiers) {
+  x.files = fichiers;
+  x.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 /** Branche ce qu'une case fait seule dans `bloc` : le « + » d'une liste, les calendriers (`o` : ce que le calendrier lit
  *  des mois passés, `o.passes(mois, salarie)`, quand l'écran qui l'appelle le sait). */
 function brancherLesCases(bloc, o = {}) {
@@ -337,22 +376,30 @@ function brancherLesCases(bloc, o = {}) {
       const f = x.files && x.files[0];
       if (!f) return;
       const l = new FileReader();
-      l.onload = () => { x.dataset.contenu = String(l.result).split(",").pop(); };
+      // Lu, il le dit (`case-lue`) : l'aperçu d'un geste attend ses octets (`montrerLApercu`).
+      l.onload = () => {
+        x.dataset.contenu = String(l.result).split(",").pop();
+        x.dispatchEvent(new Event("case-lue", { bubbles: true }));
+      };
       l.onerror = () => dire(String(l.error), "erreur");
       l.readAsDataURL(f);
     };
+    // Un fichier se dépose aussi sur sa case, ou sur la boîte quand elle n'en a qu'une : c'est le même choix.
+    recevoirLeFichier(x.closest(".case") || x, () => dansLaCase(x));
+    const boite = x.closest("#boite");
+    if (boite) recevoirLeFichier(boite, () => dansLaCase(seuleCaseFichier(boite)));
   });
   // Les rangées : « + » en ajoute une (le modèle vide), la croix retire la sienne ; la case le dit comme une saisie.
-  const dire = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
+  const changer = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
   bloc.querySelectorAll("[data-rangee-plus]").forEach((b) => {
     b.onclick = () => {
       b.before(b.previousElementSibling.content.cloneNode(true));
       brancherLesCases(b.parentElement, o);
-      dire(b.parentElement);
+      changer(b.parentElement);
     };
   });
   bloc.querySelectorAll(".retirer-rangee").forEach((b) => {
-    b.onclick = () => { const liste = b.closest(".case-rangees"); b.closest(".rangee").remove(); dire(liste); };
+    b.onclick = () => { const liste = b.closest(".case-rangees"); b.closest(".rangee").remove(); changer(liste); };
   });
   poserLesCalendriers(bloc, o);
 }
@@ -739,16 +786,51 @@ function casesDuGeste(g, o = {}) {
 
 // Un choix qui ouvre des cases change : son bloc se redessine avec les cases que le choix fait ouvre, chaque case
 // gardant ce qu'on y a tapé, même fermée puis rouverte (`tape`) ; une case fermée n'est pas dans la page, et ne part
-// donc pas dans la charge.
+// donc pas dans la charge. Une case fichier ne se redessine pas avec son fichier : elle reste telle quelle, choisie.
 document.addEventListener("change", (ev) => {
   const bloc = ev.target.closest && ev.target.closest("[data-ouvre-geste]");
   const geste = bloc && GESTES_QUI_OUVRENT.get(bloc.dataset.ouvreGeste);
   const c = geste && ev.target.closest(".case[data-cle]");
   if (!c || !clesQuiOuvrent(geste.g).includes(c.dataset.cle)) return;
   geste.tape = { ...geste.tape, ...lireLesCases(bloc) };
+  const fichiers = [...bloc.querySelectorAll(".case[data-cle]")].filter((x) => x.querySelector(':scope > input[type="file"][data-case]'));
   bloc.innerHTML = casesOuvertes(geste.g, { ...geste.g.valeurs, ...geste.tape }, geste.o);
+  fichiers.forEach((x) => {
+    const neuve = bloc.querySelector(`.case[data-cle="${CSS.escape(x.dataset.cle)}"]`);
+    if (neuve) neuve.replaceWith(x);
+  });
   brancherLesCases(bloc);
 });
+
+/** L'APERÇU D'UN GESTE (`apercu` : la lecture que la route nomme avec lui) : à chaque case changée de `bloc` (un
+ *  fichier, une fois lu), la lecture reçoit la charge en cours, celle que le geste enverrait, et ce qu'elle rend se
+ *  pose dans `cible`, sous les cases : ses phrases, puis l'image qu'elle montre (`media`, `image` en base64), qui
+ *  s'ouvre en grand d'un clic ; un refus s'y dit. Tant qu'une case que la lecture exige (sa fiche) est vide, rien ne se
+ *  montre ; seule la dernière réponse se pose. */
+function montrerLApercu(bloc, g, cible) {
+  let numero = 0;
+  const montrer = async () => {
+    const n = ++numero;
+    // Aucune case lue : rien ne s'appelle.
+    const charge = chargeDuGeste(bloc, g);
+    if (!charge || CATALOGUE[g.apercu].charge.some((c) => c.obligatoire && charge[c.nom] == null)) { cible.innerHTML = ""; return; }
+    let r;
+    try { r = await api(g.apercu, charge); } catch (e) {
+      if (n === numero) cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
+      return;
+    }
+    if (n !== numero) return;
+    cible.innerHTML = `${phrasesDe(r).map((p) => `<p class="note">${echapper(p)}</p>`).join("")}${r.image && r.media
+      ? `<img src="data:${echapper(r.media)};base64,${echapper(r.image)}" alt="">` : ""}`;
+    const img = cible.querySelector("img");
+    if (img) img.onclick = () => montrerEnGrand(img.src, img.alt);
+  };
+  // Après le changement entier : le bloc des cases qu'un choix ouvre se redessine d'abord (plus haut, sur `document`).
+  const ensuite = () => setTimeout(montrer);
+  bloc.addEventListener("change", ensuite);
+  bloc.addEventListener("case-lue", ensuite);
+  montrer();
+}
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */
 function chargeDuGeste(bloc, g) {
@@ -808,12 +890,14 @@ async function faireLeGeste(g, entete, apres, bouton) {
     <h3>${echapper(g.libelle)}${entete.titre ? ` — ${echapper(entete.titre)}` : ""}</h3>
     ${entete.dit ? `<p class="discret">${echapper(entete.dit)}</p>` : ""}
     <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
+    ${g.apercu ? `<div id="geste-apercu" class="geste-apercu"></div>` : ""}
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
       <button class="${classeDuGeste({ ...g, rang: "principal" })}" id="geste-ok">${echapper(g.libelle.replace(/…$/, ""))}</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesCases(bloc);
+  if (g.apercu) montrerLApercu(bloc, g, document.getElementById("geste-apercu"));
   // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface) ; une case que
   // la route exige, vide, retient le geste et le dit sur elle.
   const enregistrer = async () => {
@@ -925,6 +1009,18 @@ function routeQuiRend(place) {
   return Object.values(CATALOGUE).find((f) => f.affichage === "rendu" && f.ecran === place);
 }
 
+/** L'IMAGE `src` EN GRAND, par-dessus la page ; un clic ou Échap la referme. */
+function montrerEnGrand(src, alt) {
+  const voile = document.createElement("div");
+  voile.className = "image-en-grand";
+  voile.innerHTML = `<img src="${echapper(src)}" alt="${echapper(alt || "")}">`;
+  const fermer = () => { voile.remove(); document.removeEventListener("keydown", echap, true); };
+  const echap = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); fermer(); } };
+  voile.onclick = fermer;
+  document.addEventListener("keydown", echap, true);
+  document.body.appendChild(voile);
+}
+
 /** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (`routeQuiRend`). Sa charge : le mois de l'écran quand sa fiche le
  *  prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
 async function dessinerLEcranRendu(cible, f) {
@@ -969,6 +1065,19 @@ function poserLEcranRendu(cible, r, relire) {
   cible.querySelectorAll("[data-rang]").forEach((b) => {
     const x = rangs[+b.dataset.rang];
     brancherLesGestes(b, x.gestes, { titre: x.titre }, relire);
+    // Un fichier déposé sur le rang ouvre le geste du rang qui prend un fichier (quand il n'y en a qu'un), le fichier
+    // déjà choisi dans sa case.
+    const prenants = x.gestes.filter((g) => champsDuGeste(g).some((c) => c.forme === "fichier"));
+    if (prenants.length === 1) {
+      recevoirLeFichier(b, () => (b.isConnected ? (fichiers) => {
+        faireLeGeste(prenants[0], { titre: x.titre }, relire);
+        const c = seuleCaseFichier(document.getElementById("geste-cases"));
+        if (c) deposerLeFichier(c, fichiers);
+      } : null));
+    }
+    // L'image du rang s'ouvre en grand d'un clic.
+    const img = b.querySelector(".rang-apercu img");
+    if (img) img.onclick = () => montrerEnGrand(img.src, img.alt);
   });
   if (!r.cases) return;
   const bloc = cible.querySelector("[data-ecran-cases]");

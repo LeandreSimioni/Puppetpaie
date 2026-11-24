@@ -123,6 +123,21 @@ pub const ROUTES: &[Fiche] = &[
         ecran: ECRAN,
     },
     Fiche {
+        route: Route::CopierEngagement,
+        geste: "Copier un engagement du mois pour un autre salarié, sans rien écrire.",
+        charge: &ChargeCarteProposee::CHARGE,
+        exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0}}"#,
+        rend: "phrase, brouillon (la carte neuve proposée : le spectacle, les lignes et leurs dates, le métier, les termes du contrat et la date du paiement ; vides : le salarié, le numéro, ce que la carte rend sans le faire saisir, ce que le salarié a fait ou pris ce mois, la fin du contrat, le justificatif des frais), enregistrer (le geste qui l'écrit : enregistrer-saisie sur une carte neuve, avec les changements qui la font ; s'y ajoutent ceux qu'on y fait) ; rien n'est écrit",
+        refus: &[OPERATION, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
+        acte: Acte::Lit,
+        phrase: 200,
+        // `etat-par-engagement` la rend en geste sur la ligne de chaque engagement (`copier`) ; le menu « … » de la
+        // ligne la montre, et la page de la paie l'appelle et dessine la carte proposée (`js/carte.js`,
+        // `copierLEngagement`), comme une carte neuve.
+        ecran: Ecran::Dessine(Place::Paie),
+    },
+    Fiche {
         route: Route::Ajuster,
         geste: "Trouver le taux qui donne un net, un brut ou un coût voulu.",
         charge: &ChargeAjuster::CHARGE,
@@ -148,9 +163,9 @@ pub(crate) struct ModificationEnCours {
     pub(crate) changements: Changements,
 }
 
-/// LA CARTE QU'UN CHANGEMENT VISE : une carte neuve, nee dans sa nature (`nouvelle_carte` de la route saisie), ou celle
-/// d'un engagement ecrit, par son identite.
-#[derive(Debug, Clone, Deserialize)]
+/// LA CARTE QU'UN CHANGEMENT VISE : une carte neuve, nee dans sa nature (`nouvelle_carte` de la route saisie, ou la
+/// carte proposee de `copier-engagement`), ou celle d'un engagement ecrit, par son identite.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum CarteVisee {
     Neuve(NatureDeContrat),
@@ -167,12 +182,22 @@ impl ValeurDeLaCharge<ParSaForme> for CarteVisee {
 
 charge! {
     /// LA CHARGE DES CHANGEMENTS D'UNE CARTE (`enregistrer-saisie`) : le mois de l'ecran, la carte visee, et ses
-    /// changements, dans l'ordre.
-    #[derive(Debug, Clone)]
+    /// changements, dans l'ordre. La carte proposee a un autre salarie la rend (`copier-engagement`, `enregistrer`).
+    #[derive(Debug, Clone, Serialize)]
     pub(crate) struct ChargeCase {
         pub(crate) mois: Mois = legendes::MOIS,
         pub(crate) carte: CarteVisee = dit("Carte", "{\"neuve\": sa nature (l'une des `nouvelle_carte.natures` de la route saisie)} pour une carte neuve, ou {\"ecrite\": son identité, celle que le moteur a rendue}"),
         pub(crate) changements: Changements = CHANGEMENTS,
+    }
+}
+
+charge! {
+    /// La charge de la carte proposee a un autre salarie (`copier-engagement`) : le mois de l'ecran, et l'identite de
+    /// l'engagement copie. `etat-par-engagement` la rend dans le geste de chaque ligne (`copier`).
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeCarteProposee {
+        pub(crate) mois: Mois = legendes::MOIS,
+        pub(crate) engagement: Identite = IDENTITE,
     }
 }
 
@@ -270,6 +295,17 @@ struct CarteEcrite {
     #[serde(with = "socle::paris::ecrit::seconde")]
     enregistre_a: socle::paris::Moment,
     enregistre_dit: String,
+}
+
+/// LA CARTE PROPOSEE A UN AUTRE SALARIE, copiee d'un engagement du mois (`copier-engagement`,
+/// `Brouillon::proposee_a_un_autre_salarie`) : la carte neuve telle qu'elle s'ouvre, et le geste qui l'ecrit
+/// (`enregistrer-saisie` sur une carte neuve, avec les changements qui la font, ceux-la memes dont la carte montree est
+/// faite). Rien n'est ecrit : elle s'ecrit a son premier changement, qui s'ajoute aux siens.
+#[derive(Debug, Serialize)]
+struct CarteProposee {
+    phrase: Phrase,
+    brouillon: Brouillon,
+    enregistrer: crate::etapes::Action,
 }
 
 /// UN CONTRAT D'USAGE REPRIS D'UN AUTRE LOGICIEL QUI COURT SUR LE MOIS, et l'engagement qui le reprend.
@@ -413,6 +449,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ContratsEnCours => en_json(contrats_en_cours_route(ctx, charge.lire::<ChargeMois>()?.mois)?),
         Route::ContratsPasses => en_json(contrats_passes_route(ctx, charge.lire()?)?),
         Route::EnregistrerSaisie => en_json(enregistrer_saisie(ctx, charge.lire()?)?),
+        Route::CopierEngagement => en_json(copier_engagement(ctx, charge.lire()?)?),
         Route::Ajuster => en_json(ajuster(ctx, charge.lire()?)?),
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
     }
@@ -428,7 +465,7 @@ macro_rules! dites {
     };
 }
 
-dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, CarteEcrite, Ajuste, Apercu);
+dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, CarteEcrite, CarteProposee, Ajuste, Apercu);
 
 // ------------------------------------------------------------------ outils
 
@@ -1120,10 +1157,41 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
 /// LE BROUILLON QU'ECRIT L'ENGAGEMENT `id` de l'ecran de `mois` : sa vue de ce mois (`engagement::stock::Objet::vue`),
 /// lue en brouillon.
 pub(crate) fn brouillon_ecrit(ctx: &Contexte, mois: Mois, id: &Identite) -> R<Brouillon> {
+    Ok(brouillon_et_qui(ctx, mois, id)?.0)
+}
+
+/// Le brouillon qu'ecrit l'engagement `id` de l'ecran de `mois` (`brouillon_ecrit`), et son salarie tel qu'un refus le
+/// nomme.
+fn brouillon_et_qui(ctx: &Contexte, mois: Mois, id: &Identite) -> R<(Brouillon, String)> {
     let (_, o) = engagement::stock::designe(&ctx.racine, mois, id).map_err(|m| m.reclasser(Classe::Refuse))?;
     let qui = engagement::etats::qui_de(ctx, &o);
     let vue = o.vue(mois)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
-    Brouillon::de_la_carte(&vue, &qui).map_err(|m| m.reclasser(Classe::Refuse))
+    let b = Brouillon::de_la_carte(&vue, &qui).map_err(|m| m.reclasser(Classe::Refuse))?;
+    Ok((b, qui))
+}
+
+/// `copier-engagement` : la carte proposee a un autre salarie, copiee de l'engagement `c.engagement`
+/// (`Brouillon::proposee_a_un_autre_salarie`) ; rien n'est ecrit. La carte montree est faite des changements que son
+/// geste ecrira, appliques a une carte neuve par le seul chemin d'une carte (`Changements::appliquer`) : ce qui s'ecrit
+/// est ce qu'elle montrait, et un refus nomme la carte neuve (`qui_de_la_carte`).
+fn copier_engagement(ctx: &Contexte, c: ChargeCarteProposee) -> R<CarteProposee> {
+    let mois = c.mois;
+    let (source, qui) = brouillon_et_qui(ctx, mois, &c.engagement)?;
+    let n = source.nature();
+    let changements = source.proposee_a_un_autre_salarie();
+    let mut brouillon = Brouillon::neuf(n);
+    let metiers = metiers_de_la_compagnie(ctx)?;
+    changements.clone().appliquer(ctx, mois, &mut brouillon, &metiers, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    Ok(CarteProposee {
+        phrase: socle::phrase!("Copie de l'engagement de {}, sans son salarié : choisissez-le. La carte s'écrit à sa première case changée.", qui),
+        brouillon,
+        enregistrer: crate::etapes::action(
+            Route::EnregistrerSaisie,
+            ChargeCase { mois, carte: CarteVisee::Neuve(n), changements },
+            None,
+            "Enregistrer".into(),
+        ),
+    })
 }
 
 /// UNE ECRITURE A LA FOIS, celle d'un engagement (`avant_d_ecrire`) ou des metiers de la compagnie (`metiers`) : la

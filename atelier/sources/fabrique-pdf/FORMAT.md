@@ -109,9 +109,14 @@ largeur, une page), par le numéro du bloc (« bloc 12 : … »).
 - `police` : Liberation Sans (les métriques d'Helvetica), embarquée **en
   sous-ensemble** : le PDF ne porte que les glyphes des caractères imprimés.
   `interligne` est un facteur de la taille.
-- `logo` (facultatif) : posé en haut à droite de **chaque page**, largeur
-  fixée, hauteur selon les proportions, à `marge_haut` du haut et `marge_droite`
-  du bord droit (exigées). SVG (vectoriel), PNG ou JPEG.
+- `logo` (facultatif) : posé en haut à droite de **chaque page**, dans un
+  carré de `largeur` de côté, proportions gardées (un logo plus haut que large
+  y est moins large), à `marge_haut` du haut et `marge_droite` du bord droit
+  (exigées). SVG (vectoriel), PNG ou JPEG. Avec un `style`, il se pose en
+  **tête de chaque document modèle**, sur sa première page seulement, à côté du
+  titre : le titre et le sous-titre commencent à la marge du haut, dans la
+  largeur que le logo leur laisse (8 pt d'écart), et ce qui suit ne descend
+  que si le logo dépasse le sous-titre (8 pt sous le logo).
 - `documents` : chacun **commence sur une nouvelle page** (un contrat par
   salarié) ; un document long continue sur les pages suivantes. Un document
   porte `blocs` **ou** `modele` : l'un des deux, ni les deux ni aucun.

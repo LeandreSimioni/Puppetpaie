@@ -246,6 +246,61 @@ impl Image {
         self.largeur
     }
 
+    /// LE FLUX QU'ELLE ECRIT DANS LE PDF ; son masque de transparence, s'il en a un, est remis a `masque`, qui rend ce
+    /// que le flux de l'image en cite (`SMask`).
+    fn flux(&self, masque: impl FnOnce(Stream) -> Object) -> Result<Stream, Refus> {
+        match (&*self.contenu, &self.forme) {
+            (Contenu::Pixels { largeur, hauteur, espace, filtre, donnees, alpha }, _) => {
+                let mut d = Dictionary::new();
+                d.set("Type", Object::Name(b"XObject".to_vec()));
+                d.set("Subtype", Object::Name(b"Image".to_vec()));
+                d.set("Width", Object::Integer(*largeur as i64));
+                d.set("Height", Object::Integer(*hauteur as i64));
+                d.set("ColorSpace", Object::Name(espace.as_bytes().to_vec()));
+                d.set("BitsPerComponent", Object::Integer(8));
+                d.set("Interpolate", Object::Boolean(true));
+                if let Some(f) = filtre {
+                    d.set("Filter", Object::Name(f.as_bytes().to_vec()));
+                }
+                if let Some(a) = alpha {
+                    let mut m = Dictionary::new();
+                    m.set("Type", Object::Name(b"XObject".to_vec()));
+                    m.set("Subtype", Object::Name(b"Image".to_vec()));
+                    m.set("Width", Object::Integer(*largeur as i64));
+                    m.set("Height", Object::Integer(*hauteur as i64));
+                    m.set("ColorSpace", Object::Name(b"DeviceGray".to_vec()));
+                    m.set("BitsPerComponent", Object::Integer(8));
+                    let mut s = Stream::new(m, a.clone());
+                    crate::ecriture::predire_image(&mut s)?;
+                    d.set("SMask", masque(s));
+                }
+                let mut s = Stream::new(d, donnees.clone());
+                crate::ecriture::predire_image(&mut s)?;
+                Ok(s)
+            }
+            (Contenu::Svg { .. }, Some(forme)) => Ok((**forme).clone()),
+            (Contenu::Svg { .. }, None) => defaut("écriture du PDF impossible : un SVG sans dessin"),
+        }
+    }
+
+    /// CE QU'ELLE PESE DANS LE PDF : ses flux (l'image et son masque), comprimes comme `finir` les ecrit.
+    pub fn poids_ecrit(&self) -> Result<usize, Refus> {
+        let comprime = |mut s: Stream| -> Result<usize, Refus> {
+            s.compress().map_err(|e| Refus::defaut(format!("une image ne se comprime pas ({})", e)))?;
+            Ok(s.content.len())
+        };
+        let mut masque = None;
+        let s = self.flux(|m| {
+            masque = Some(m);
+            Object::Null
+        })?;
+        let mut poids = comprime(s)?;
+        if let Some(m) = masque {
+            poids += comprime(m)?;
+        }
+        Ok(poids)
+    }
+
     pub fn hauteur(&self) -> Mesure {
         self.hauteur
     }
@@ -627,39 +682,8 @@ impl Dessin {
         }
         let mut images: Vec<ObjectId> = Vec::new();
         for i in &self.images {
-            let objet = match (&*i.contenu, &i.forme) {
-                (Contenu::Pixels { largeur, hauteur, espace, filtre, donnees, alpha }, _) => {
-                    let mut d = Dictionary::new();
-                    d.set("Type", Object::Name(b"XObject".to_vec()));
-                    d.set("Subtype", Object::Name(b"Image".to_vec()));
-                    d.set("Width", Object::Integer(*largeur as i64));
-                    d.set("Height", Object::Integer(*hauteur as i64));
-                    d.set("ColorSpace", Object::Name(espace.as_bytes().to_vec()));
-                    d.set("BitsPerComponent", Object::Integer(8));
-                    d.set("Interpolate", Object::Boolean(true));
-                    if let Some(f) = filtre {
-                        d.set("Filter", Object::Name(f.as_bytes().to_vec()));
-                    }
-                    if let Some(a) = alpha {
-                        let mut m = Dictionary::new();
-                        m.set("Type", Object::Name(b"XObject".to_vec()));
-                        m.set("Subtype", Object::Name(b"Image".to_vec()));
-                        m.set("Width", Object::Integer(*largeur as i64));
-                        m.set("Height", Object::Integer(*hauteur as i64));
-                        m.set("ColorSpace", Object::Name(b"DeviceGray".to_vec()));
-                        m.set("BitsPerComponent", Object::Integer(8));
-                        let mut masque = Stream::new(m, a.clone());
-                        crate::ecriture::predire_image(&mut masque)?;
-                        d.set("SMask", Object::Reference(doc.add_object(Object::Stream(masque))));
-                    }
-                    let mut s = Stream::new(d, donnees.clone());
-                    crate::ecriture::predire_image(&mut s)?;
-                    Object::Stream(s)
-                }
-                (Contenu::Svg { .. }, Some(forme)) => Object::Stream((**forme).clone()),
-                (Contenu::Svg { .. }, None) => return defaut("écriture du PDF impossible : un SVG sans dessin"),
-            };
-            images.push(doc.add_object(objet));
+            let objet = i.flux(|masque| Object::Reference(doc.add_object(Object::Stream(masque))))?;
+            images.push(doc.add_object(Object::Stream(objet)));
         }
         let arbre = doc.new_object_id();
         let mut enfants = Vec::new();

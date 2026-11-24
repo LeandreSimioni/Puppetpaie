@@ -65,12 +65,12 @@
       "logiciel": "coolpaie",
       "cotisation": "reduction_generale",
       "constate": { "grandeur": "absente_du_calcul", "effet": "deduction" },
-      "de": "2026-01",
+      "de": "2025-01",
       "a": "2026-02",
       "statut": "artiste",
       "pour": "la sécurité sociale, la retraite complémentaire et l'assurance chômage de ses salariés",
       "explication": "Coolpaie a appliqué la réduction générale, que la loi n'accorde pas sur la paie d'un artiste du spectacle, dont les taux sont déjà spécifiques.",
-      "note": "Tri de l'import Coolpaie du 23/11/2026, 8b et #620 : « EXONERATIONS ET ALLEGEMENTS DE COTISATIONS » sur 7 paies d'artistes de janvier et février 2026. Le barème 2026 livré ne la fait qu'au technicien (`baremes/2026.json`, `par_statut.technicien.reduction_generale`). Son effet est une déduction (arrêté du 25/02/2016, art. 4, la dernière source) : la carte dit que la compagnie a cotisé de moins la somme des lignes que le bulletin imprime, signes compris, en valeur absolue, quel que soit le signe qu'il lui donne ; le signe que Coolpaie imprime n'est pas encore vu sur une de ses paies (question posée à Léandre le 24/11/2026).",
+      "note": "Tri de l'import Coolpaie du 23/11/2026, 8b et #620 : « EXONERATIONS ET ALLEGEMENTS DE COTISATIONS » sur 7 paies d'artistes de janvier et février 2026 ; puis #649 et #653 (24/11/2026) : la même ligne sur des paies d'artistes de 2025-06 à 2025-12. Étendu à toute la période des bulletins Coolpaie importés, de 2025-01 (les plus anciens, tri 4) à 2026-02 (Léandre, 24/11/2026). En 2025 comme en 2026, le barème livré ne la fait qu'au technicien (`baremes/2025.json` et `baremes/2026.json`, `par_statut.technicien.reduction_generale`). Son effet est une déduction (arrêté du 25/02/2016, art. 4, la dernière source) : la carte dit que la compagnie a cotisé de moins la somme des lignes que le bulletin imprime, signes compris, en valeur absolue, quel que soit le signe qu'il lui donne ; le signe que Coolpaie imprime n'est pas encore vu sur une de ses paies (question posée à Léandre le 24/11/2026).",
       "source": {
         "sources": [
           {

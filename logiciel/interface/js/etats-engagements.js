@@ -130,12 +130,6 @@ async function dessinerEtatsDesEngagements(mois) {
   peindreEtats();
 }
 
-/* UN ENGAGEMENT VALIDÉ DONT LA PAIE S'EST RECALCULÉE D'ELLE-MÊME : le moteur dit quand et pourquoi (`recalcul` de
- * `etat-par-engagement`) ; la carte le montre tel quel. */
-function recalculDe(ligne) {
-  return ligne && ligne.recalcul ? `<div class="encart carte-recalcul">${echapper(ligne.recalcul)}</div>` : "";
-}
-
 /* UN ENGAGEMENT MODIFIÉ APRÈS UN ENVOI : la ligne que le moteur écrit (« Modifié le 12/11, après l'envoi du contrat »,
  * `versions.phrase` d'`etat-par-engagement`) ouvre la frise de ses versions. Jamais modifié après un envoi : rien. */
 function versionsDe(ligne) {

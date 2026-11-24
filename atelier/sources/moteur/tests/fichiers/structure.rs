@@ -269,6 +269,9 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         ("enregistrer-fiche", entreprise),
         ("organismes-enregistrer", json!({"contrats": {"prevoyance_permanents": {"libelle": "PREVOYANCE", "organisme": "P0983"}, "sante_permanents": {"libelle": "SANTE", "organisme": "P0983"}}})),
         ("enregistrer-fiche", svoboda),
+        // La signature de l'employeur, sans laquelle aucun contrat ne part se faire signer (l'exemple de
+        // `demander-signature`).
+        ("poser-identite", json!({"quoi": "signature", "contenu": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTIgMTUgQzEwIDIgMjAgMjAgNzggNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIi8+PC9zdmc+", "allegement": "garder"})),
         // Le metier cree (CIE-1) que modifie l'exemple de `metier-modifie`, qui se joue ainsi seul.
         ("metier-cree", json!({"copie_de": "MAR010", "libelle": "Marionnettiste principal", "cadre": "non_cadre"})),
     ] {
@@ -1466,7 +1469,7 @@ fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
 #[test]
 fn le_formulaire_publie_est_celui_que_le_moteur_declare() {
     let exemple = routes::fiches::exemple_dfs().unwrap_or_else(|e| panic!("l'exemple de la déduction forfaitaire ne se calcule pas : {}", e.en_lignes()));
-    let f = documents::fiche_questionnaire::formulaire_publie(exemple.as_ref());
+    let f = documents::fiche_questionnaire::formulaire_publie(exemple.as_ref()).unwrap_or_else(|e| panic!("le formulaire ne se publie pas : {}", e.en_lignes()));
     let chemin = espace().join("../site/fiche/formulaires").join(f.nom_du_fichier());
     let commite = std::fs::read_to_string(&chemin).unwrap_or_else(|e| panic!("{} : {} ; `moteur-atelier formulaire-fiche` l'écrit, puis on le commite", chemin.display(), e));
     assert_eq!(commite, f.contenu, "{} n'est pas le formulaire que le moteur déclare : `moteur-atelier formulaire-fiche` le réécrit", chemin.display());

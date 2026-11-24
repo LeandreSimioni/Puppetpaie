@@ -14,7 +14,7 @@ pub const FORMULAIRES: &str = "atelier/site/fiche/formulaires";
 
 /// Ecrit le formulaire de ce moteur sous `depot` ; rend son chemin. Un fichier deja la, au meme contenu, ne change pas.
 pub fn ecrire(depot: &Path) -> R<PathBuf> {
-    let f = documents::fiche_questionnaire::formulaire_publie(routes::fiches::exemple_dfs()?.as_ref());
+    let f = documents::fiche_questionnaire::formulaire_publie(routes::fiches::exemple_dfs()?.as_ref())?;
     let dossier = depot.join(FORMULAIRES);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e))?;
     let chemin = dossier.join(f.nom_du_fichier());

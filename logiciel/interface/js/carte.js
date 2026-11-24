@@ -286,9 +286,14 @@ async function changer(div, changements) {
   noteSaisie("Enregistrement…");
   let r;
   try {
-    // La carte visée se lit à son tour : une carte neuve écrite par l'appel d'avant a désormais son identité.
-    r = await aSonTour(() => api("enregistrer-saisie", { mois, changements,
-      carte: div.dataset.engagement ? { ecrite: JSON.parse(div.dataset.engagement) } : { neuve: div._carte.nature } }));
+    // La carte visée se lit à son tour : une carte neuve écrite par l'appel d'avant a désormais son identité. Une carte
+    // proposée pas encore écrite s'écrit par le geste que sa route a rendu (`enregistrer`), ses changements d'abord.
+    r = await aSonTour(() => {
+      if (div.dataset.engagement) return api("enregistrer-saisie", { mois, changements, carte: { ecrite: JSON.parse(div.dataset.engagement) } });
+      const g = div._proposee;
+      if (g) return api(g.route, { ...g.charge, changements: g.charge.changements.concat(changements) });
+      return api("enregistrer-saisie", { mois, changements, carte: { neuve: div._carte.nature } });
+    });
   } catch (e) {
     noteSaisie("Non enregistré — " + e.message);
     dire(e.message, "erreur");
@@ -296,6 +301,7 @@ async function changer(div, changements) {
     return;
   }
   div.dataset.engagement = JSON.stringify(r.engagement);
+  div._proposee = null;
   div._carte = r.brouillon;
   div._aCompleter = r.a_completer;
   // Un engagement auquel il manque un fait s'enregistre aussi : sa carte dit ce qui manque, et la ligne d'état le rappelle.
@@ -480,7 +486,8 @@ function dessinerLaLigne(div) {
   const ligne = div._ligne, p = div._paie;
   const q = p ? p.quand : null;
   const pourquoi = [pourQuoi(ligne), p && p.paye_dit, ligne.repris_dit].filter(Boolean).join(" · ");
-  const detail = [p && p.bulletin_dit, ligne.numero_dit, ligne.validee_dit].filter(Boolean).join(" · ");
+  // Le recalcul (« Recalculé le 24/11/2026 : taux de PAS reçu. ») se lit au survol, avec le reste du détail (ticket 642).
+  const detail = [p && p.bulletin_dit, ligne.numero_dit, ligne.validee_dit, ligne.recalcul].filter(Boolean).join(" · ");
   div.innerHTML = `
     <div class="e-resume">
       <div class="carte-quand"${q ? ` title="${echapper(q.titre)}"` : ""}>
@@ -489,15 +496,15 @@ function dessinerLaLigne(div) {
         <span class="discret">${echapper(pourquoi)}</span></div>
       <div class="carte-actes">${bandeauEtats(ligne, false)}</div>
       <div class="carte-net" title="net payé">${p ? echapper(netPaye(p.net_paye)) : ""}</div>
-      ${recalculDe(ligne)}${versionsDe(ligne)}
+      ${versionsDe(ligne)}
       <span class="carte-modifier"><button class="lien carte-imprevu" title="Imprévu" aria-label="Un imprévu">&hellip;</button></span>
     </div>
     <div class="e-imprevus"></div>`;
   poserLesChevrons(div);
   const resume = div.querySelector(".e-resume");
-  rendreOuvrable(resume, () => ouvrirEnModification(div), "Modifier l'engagement");
+  rendreOuvrable(resume, () => ouvrirEnModification(div), "Voir l'engagement");
   const porte = div.querySelector(".carte-imprevu");
-  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuImprevu(porte, { div }); };
+  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuImprevu(porte, { div, copier: ligne.copier }); };
   const frise = div.querySelector(".carte-versions");
   if (frise) frise.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); boiteFrise(ligne); };
   peindreImprevusDesCartes();
@@ -728,6 +735,24 @@ function rafraichirReferentiels() {
 document.getElementById("ajouter-engagement").onclick = () => {
   document.getElementById("engagements").appendChild(carteDEngagement({ nature: NOUVELLE_CARTE.nature }, null));
 };
+
+/** « COPIER POUR UN AUTRE SALARIÉ » (`copier` de la ligne d'un engagement, route `etat-par-engagement`) : la route du
+ *  geste rend la carte proposée, sans son salarié, et le geste qui l'écrit (`enregistrer`) ; une carte neuve s'ouvre,
+ *  remplie de ce qu'elle rend, et rien ne s'écrit avant sa première case changée, qui part avec ce geste. Le mois quitté
+ *  pendant la lecture : la carte ne s'ouvre pas dans un autre mois, et la page le dit. */
+async function copierLEngagement(geste) {
+  let r;
+  try { r = await api(geste.route, geste.charge); } catch (e) { dire(e.message, "erreur"); return; }
+  if (MOIS_AFFICHE !== geste.charge.mois) {
+    dire(`${r.phrase} Elle ne s'ouvre pas ici : l'écran a quitté le mois de l'engagement. Revenez-y et copiez de nouveau.`, "erreur");
+    return;
+  }
+  const div = carteDEngagement(r.brouillon, null);
+  div._proposee = r.enregistrer;
+  document.getElementById("engagements").appendChild(div);
+  noteSaisie(r.phrase);
+  div.scrollIntoView({ block: "center" });
+}
 
 /* LES CONTRATS REPRIS D'UN AUTRE LOGICIEL QUI COURENT ENCORE (`contrats-en-cours`) : chacun se montre avec ce que la route
  * en dit, et « Reprendre » écrit l'engagement qu'elle rend pour lui, case par case. */
