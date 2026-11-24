@@ -790,27 +790,12 @@ pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<
     paies_validees_dont(ctx, mois, salarie, LectureDatee::Paies { mois, salarie: salarie.clone() }, &|_| Ok(true))
 }
 
-/// LES PAIES VALIDEES DE `mois` DU SALARIE `salarie` DONT LE CONTRAT EST PAYE AU MOIS (`Carte::mensuelle`), telles que
-/// les relit la regularisation du plafond (`conges::plafonds_des_mois_anterieurs`) : seules elles peuvent se regulariser
-/// (`droit::forme_bareme::RegularisationDuPlafond::regularise`), et une paie d'artiste ou de technicien intermittent,
-/// qui n'entre pas dans le cumul, ne se lit ni ne se calcule : son refus reste le sien et ne ferme pas la paie d'un CDI
-/// du meme salarie (« Le logiciel est doux »). La lecture notee est la leur (`paies-au-mois <mois> <salarie>`,
-/// `empreinte_des_paies_validees_au_mois`).
-pub fn paies_validees_au_mois(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<Paie>> {
-    paies_validees_dont(ctx, mois, salarie, LectureDatee::PaiesAuMois { mois, salarie: salarie.clone() }, &au_mois)
-}
-
 /// LES PAIES VALIDEES DE `mois` DU SALARIE `salarie` DONT LE CONTRAT N'EST PAS PAYE AU MOIS (ses contrats d'intermittent),
 /// telles que les relit l'annee de sa retraite complementaire (`conges::retraite_des_mois_anterieurs`) : une paie d'un
 /// CDI du meme salarie n'y entre pas, ne se lit ni ne se calcule, et son refus ne ferme pas celle d'un intermittent. La
 /// lecture notee est la leur (`paies-intermittentes <mois> <salarie>`, `empreinte_des_paies_validees_intermittentes`).
 pub fn paies_validees_intermittentes(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<Paie>> {
     paies_validees_dont(ctx, mois, salarie, LectureDatee::PaiesIntermittentes { mois, salarie: salarie.clone() }, &intermittent)
-}
-
-/// Un engagement dont le contrat est paye au mois.
-fn au_mois(o: &Objet) -> R<bool> {
-    o.carte().mensuelle()
 }
 
 /// Un engagement d'intermittent : son contrat n'est pas paye au mois.
@@ -914,11 +899,6 @@ pub fn paies_du_salarie(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Ve
 /// (la cle de sa fiche), ou toutes avec `None` (ce que la DSN du mois declare) ; ce qui ne se lit pas se refuse.
 pub fn empreinte_des_paies_validees(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<socle::fichiers::Empreinte> {
     empreinte_des_paies(&valides_lues(ctx, mois, salarie, &|_| Ok(true))?, mois)
-}
-
-/// Ce que vaut la lecture `paies-au-mois <mois> <salarie>` (`paies_validees_au_mois`).
-pub fn empreinte_des_paies_validees_au_mois(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<socle::fichiers::Empreinte> {
-    empreinte_des_paies(&valides_lues(ctx, mois, Some(salarie), &au_mois)?, mois)
 }
 
 /// Ce que vaut la lecture `paies-intermittentes <mois> <salarie>` (`paies_validees_intermittentes`).

@@ -222,8 +222,9 @@ impl JoursSansRemuneration {
 /// - `abattue_csg` : la part de la remuneration que l'abattement de la CSG abat, dans la limite de `limite_abattement_csg`
 ///   plafonds (CSS L. 136-2, I ; BOSS, assiette generale, § 290 : le « plafond annuel », calcule comme celui de la
 ///   vieillesse, « voir le chapitre 6 », sa section 3, la regularisation, comprise).
-/// Textes : `atelier/reference/sources/` (le barème, `regularisation_du_plafond`, les cite). Une assiette regularisee
-/// peut etre negative (la FAQ des organismes complementaires le dit de la tranche B) : la DSN la declare signee.
+/// Chacune se regularise sur son propre cumul (`CumulDeLAssiette`), des paies qui la portent (`PorteesParLaPaie`) et sur
+/// la remuneration qu'elle compte (`RemunerationsRegularisees`). Textes : `atelier/reference/sources/` (le barème,
+/// `regularisation_du_plafond`, les cite). Une assiette regularisee peut etre negative (la FAQ des organismes complementaires le dit de la tranche B) : la DSN la declare signee.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Regularisees {
     pub t1: Montant,
@@ -261,51 +262,98 @@ impl Regularisees {
     }
 }
 
-impl std::ops::Add for Regularisees {
-    type Output = Regularisees;
-    fn add(self, o: Regularisees) -> Regularisees {
-        Regularisees {
-            t1: self.t1 + o.t1,
-            t2: self.t2 + o.t2,
-            t2_conventionnelle: self.t2_conventionnelle + o.t2_conventionnelle,
-            t1_t2: self.t1_t2 + o.t1_t2,
-            cet: self.cet + o.cet,
-            abattue_csg: self.abattue_csg + o.abattue_csg,
-        }
+/// LES REMUNERATIONS QU'UNE PAIE COMPTE DANS SES ASSIETTES REGULARISEES, chacune la sienne :
+/// - `cotisations` : la base de calcul des cotisations de securite sociale (BOSS, assiette generale, § 1220 : « la somme
+///   des bases de calcul des cotisations »), son brut soumis, le brut abattu quand la deduction forfaitaire specifique
+///   abat la vieillesse plafonnee (arrete du 4 septembre 2025, art. 9 : la deduction abat « la base de calcul des
+///   cotisations ») ; la tranche 1 et les tranches au-dela la comptent ;
+/// - `brut` : son brut soumis entier, que compte la part abattue de la CSG (BOSS, assiette generale, § 290 :
+///   « L'abattement de l'assiette de la CSG de 1,75 % est calcule sur le montant brut des remunerations » ; la CSG n'a
+///   pas la deduction forfaitaire specifique, CSS L. 136-1-1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RemunerationsRegularisees {
+    pub cotisations: Montant,
+    pub brut: Montant,
+}
+
+impl RemunerationsRegularisees {
+    /// Une remuneration que chaque assiette compte telle quelle : sans deduction forfaitaire specifique, ou celle que
+    /// compte la retraite complementaire d'un intermittent sur l'annee.
+    pub fn la_meme(remuneration: Montant) -> RemunerationsRegularisees {
+        RemunerationsRegularisees { cotisations: remuneration, brut: remuneration }
     }
 }
 
-impl std::ops::Sub for Regularisees {
-    type Output = Regularisees;
-    fn sub(self, o: Regularisees) -> Regularisees {
-        Regularisees {
-            t1: self.t1 - o.t1,
-            t2: self.t2 - o.t2,
-            t2_conventionnelle: self.t2_conventionnelle - o.t2_conventionnelle,
-            t1_t2: self.t1_t2 - o.t1_t2,
-            cet: self.cet - o.cet,
-            abattue_csg: self.abattue_csg - o.abattue_csg,
-        }
+/// LES ASSIETTES REGULARISEES QU'UNE PAIE PORTE, celles ou elle entre dans le cumul de l'annee (`AnneeAnterieure::ajouter`) :
+/// chaque assiette ne cumule que les paies qui la portent.
+/// - `Toutes` : la paie d'un salarie au mois, qui applique chacune (`Regularisees`) ;
+/// - `SecuriteSociale` : la paie d'un technicien intermittent, qui n'applique que la tranche 1 de la securite sociale (la
+///   vieillesse plafonnee et le FNAL : BOSS, assiette generale, § 1230, « l'ensemble des remunerations dues par un meme
+///   employeur a un meme salarie, y compris au titre de plusieurs contrats, successifs ou non ») et la part abattue de la
+///   CSG (§ 290, « Les regles de calcul du plafond sont les memes »). Les autres tranches ont chez lui leurs propres
+///   regles, et ses paies n'entrent pas dans le cumul d'un contrat au mois du meme salarie : sa retraite complementaire
+///   se compte sur le plafond de l'annee, a part (circulaire Agirc-Arrco 2018-09-DC, annexe A, art. 1, « les
+///   remunerations versees dans l'annee par chaque employeur sont traitees de facon distincte, dans les limites
+///   annuelles des assiettes T1 et T2 », `tranches_sous_le_plafond_annuel`) : la tranche 2, la tranche 1 + 2 et la CET ;
+///   sa prevoyance sur les tranches journalieres (Audiens, Parametres 2026, l. 41-46, « les plafonds applicables sont
+///   les plafonds journaliers ») : la tranche 2 conventionnelle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PorteesParLaPaie {
+    Toutes,
+    SecuriteSociale,
+}
+
+/// LE CUMUL DE L'ANNEE D'UNE ASSIETTE REGULARISEE (BOSS, assiette generale, § 1230) : « la somme des remunerations dues
+/// depuis le debut de l'annee », « la somme des plafonds applicables au titre de l'ensemble de cette periode d'emploi »,
+/// et « le montant des assiettes plafonnees appliquees sur chaque echeance de paie precedente », des seules paies qui la
+/// portent (`PorteesParLaPaie`), chacune sur la remuneration qu'elle compte (`RemunerationsRegularisees`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CumulDeLAssiette {
+    remunerations: Montant,
+    plafonds: Montant,
+    appliquee: Montant,
+}
+
+impl CumulDeLAssiette {
+    const RIEN: CumulDeLAssiette = CumulDeLAssiette { remunerations: Montant::ZERO, plafonds: Montant::ZERO, appliquee: Montant::ZERO };
+
+    fn sous_le_plafond(plafond: Montant) -> CumulDeLAssiette {
+        CumulDeLAssiette { plafonds: plafond, ..CumulDeLAssiette::RIEN }
+    }
+
+    fn ajouter(&mut self, remuneration: Montant, plafond: Montant, appliquee: Montant) {
+        self.remunerations += remuneration;
+        self.plafonds += plafond;
+        self.appliquee += appliquee;
+    }
+
+    /// Les assiettes de la somme des remunerations sous la somme des plafonds, la paie de remuneration `remuneration` et
+    /// de plafond `plafond` comprise ; l'appelant en prend celle de ce cumul et en retire `appliquee`.
+    fn jusqu_a(&self, remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond) -> Regularisees {
+        Regularisees::sous(self.remunerations + remuneration, self.plafonds + plafond, limite_csg, tranches)
     }
 }
 
 /// CE QUI PRECEDE UNE PAIE DANS L'ANNEE CIVILE, chez la compagnie (CSS R. 242-2, II : l'employeur « fait masse [...] des
 /// sommes dues au titre des periodes de travail comprises entre cette echeance et le premier jour de l'annee ou le jour
-/// de l'embauche » ; BOSS, assiette generale, § 1230 : « la somme des remunerations dues depuis le debut de l'annee »,
-/// « la somme des plafonds applicables », « le montant des assiettes plafonnees appliquees sur chaque echeance de paie
-/// precedente ») : la somme des remunerations, celle des plafonds de ces paies, et celle des assiettes qu'elles ont
-/// appliquees. Elle part de rien (`debut`), et chaque paie qui se regularise s'y ajoute (`ajouter`).
+/// de l'embauche » ; BOSS, assiette generale, § 1230) : un cumul par assiette regularisee (`CumulDeLAssiette`), chacun
+/// des paies qui portent l'assiette et sur la remuneration qu'elle compte : la vieillesse plafonnee sur la base de calcul
+/// des cotisations, la part abattue de la CSG sur le brut entier. Elle part de rien (`debut`), et chaque paie qui se
+/// regularise s'y ajoute (`ajouter`). Elle ne s'ecrit pas : elle se refait des paies ecrites de l'annee.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AnneeAnterieure {
-    remunerations: Montant,
-    plafonds: Montant,
-    appliquees: Regularisees,
+    t1: CumulDeLAssiette,
+    t2: CumulDeLAssiette,
+    t2_conventionnelle: CumulDeLAssiette,
+    t1_t2: CumulDeLAssiette,
+    cet: CumulDeLAssiette,
+    abattue_csg: CumulDeLAssiette,
 }
 
 impl AnneeAnterieure {
     /// Rien avant : le premier jour de l'annee, ou de l'embauche.
     pub fn debut() -> AnneeAnterieure {
-        AnneeAnterieure { remunerations: Montant::ZERO, plafonds: Montant::ZERO, appliquees: Regularisees::ZERO }
+        AnneeAnterieure::sous_le_plafond_annuel(Montant::ZERO)
     }
 
     /// RIEN AVANT, SOUS LE PLAFOND DE L'ANNEE `plafond_annuel` : l'annee de la retraite complementaire d'un intermittent
@@ -313,21 +361,29 @@ impl AnneeAnterieure {
     /// la duree du travail » (Audiens, Parametres 2026, l. 67-69) : une paie ne l'augmente pas (elle s'ajoute avec un
     /// plafond nul, `ajouter`).
     pub fn sous_le_plafond_annuel(plafond_annuel: Montant) -> AnneeAnterieure {
-        AnneeAnterieure { remunerations: Montant::ZERO, plafonds: plafond_annuel, appliquees: Regularisees::ZERO }
+        let c = CumulDeLAssiette::sous_le_plafond(plafond_annuel);
+        AnneeAnterieure { t1: c, t2: c, t2_conventionnelle: c, t1_t2: c, cet: c, abattue_csg: c }
     }
 
-    /// Une paie anterieure qui se regularise : sa remuneration, son plafond, et les assiettes qu'elle a appliquees, telles
-    /// qu'elle les a ecrites (celles d'une paie corrigee depuis comprises : la suivante rattrape l'ecart).
-    pub fn ajouter(&mut self, remuneration: Montant, plafond: Montant, appliquees: Regularisees) {
-        self.remunerations += remuneration;
-        self.plafonds += plafond;
-        self.appliquees = self.appliquees + appliquees;
+    /// Une paie anterieure qui se regularise : les remunerations qu'elle compte, son plafond, et les assiettes qu'elle a
+    /// appliquees, telles qu'elle les a ecrites (celles d'une paie corrigee depuis comprises : la suivante rattrape
+    /// l'ecart), dans les seules assiettes qu'elle porte (`portees`).
+    pub fn ajouter(&mut self, portees: PorteesParLaPaie, remunerations: RemunerationsRegularisees, plafond: Montant, appliquees: Regularisees) {
+        let (c, b) = (remunerations.cotisations, remunerations.brut);
+        self.t1.ajouter(c, plafond, appliquees.t1);
+        self.abattue_csg.ajouter(b, plafond, appliquees.abattue_csg);
+        if portees == PorteesParLaPaie::Toutes {
+            self.t2.ajouter(c, plafond, appliquees.t2);
+            self.t2_conventionnelle.ajouter(c, plafond, appliquees.t2_conventionnelle);
+            self.t1_t2.ajouter(c, plafond, appliquees.t1_t2);
+            self.cet.ajouter(c, plafond, appliquees.cet);
+        }
     }
 
-    /// La somme des plafonds a laquelle la remuneration de l'annee se compare (le plafond de l'annee, sous
-    /// `sous_le_plafond_annuel`).
+    /// La somme des plafonds a laquelle la remuneration de l'annee se compare pour la contribution d'equilibre technique
+    /// (le plafond de l'annee, sous `sous_le_plafond_annuel`).
     pub fn plafonds(&self) -> Montant {
-        self.plafonds
+        self.cet.plafonds
     }
 }
 
@@ -336,11 +392,24 @@ impl AnneeAnterieure {
 /// beneficiant de taux, d'assiettes ou de montants specifiques ou forfaitaires de cotisations [...] ne sont pas eligibles
 /// au principe de regularisation des cotisations plafonnees : pour ces salaries, l'assiette plafonnee applicable lors de
 /// chaque paie ne prend pas en compte la ou les assiettes plafonnees appliquees lors des echeances precedentes » ; qui
-/// l'est, le bareme le dit (`forme_bareme::RegularisationDuPlafond::regularise`).
+/// l'est, `se_regularise` le dit.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Plafonnement {
     ParPaie,
     Regularise(AnneeAnterieure),
+}
+
+/// LA PAIE D'UN ARTISTE (`artiste`) OU D'UN TECHNICIEN, PERMANENT OU INTERMITTENT, SE REGULARISE-T-ELLE SUR L'ANNEE CIVILE ?
+/// Le droit commun regularise (CSS R. 242-2, II ; BOSS, assiette generale, § 1220-1230), quel que soit le contrat : « Les
+/// remunerations prises en compte sont l'ensemble des remunerations dues par un meme employeur a un meme salarie, y
+/// compris au titre de plusieurs contrats, successifs ou non » (§ 1230) ; l'artiste en sort, permanent ou non (§ 1250, les
+/// salaries a taux specifiques ; § 1090 : « Sont notamment vises les artistes du spectacle »). Ses paies n'entrent pas
+/// dans le cumul des autres : celles d'un artiste qui a aussi un contrat de technicien a la compagnie (INFERENCE retenue
+/// par Leandre, 19/11/2026 : le § 1230 fait masse de tous les contrats, le § 1250 sort l'artiste, aucun texte ne joint
+/// les deux). Textes : `boss/boss-assiette-generale-20260801.txt`, l. 1697-1740 ; le bareme les cite
+/// (`regularisation_du_plafond`).
+pub fn se_regularise(artiste: bool) -> bool {
+    !artiste
 }
 
 /// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), et le brut dans la limite des
@@ -363,7 +432,7 @@ pub fn chomage(remuneration: Montant, plafond: Montant, tranches: &TranchesDuPla
 }
 
 /// LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE : le critere de `Regularisees::sous` (la somme des
-/// remunerations de l'annee depasse la somme des plafonds) change avec elle. `Due` : la somme passe au-dessus, de
+/// remunerations de l'annee depasse la somme des plafonds, celles du cumul de la CET) change avec elle. `Due` : la somme passe au-dessus, de
 /// `depassement` ; la CET devient due sur toute la remuneration de l'annee. `Rendue` : elle repasse au plus a la somme
 /// des plafonds, `ecart` en dessous ; la CET de l'annee se rend.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -376,6 +445,7 @@ impl BasculeDeLaCet {
     /// La bascule d'une paie (ou d'un mois decoupe en periodes), de l'annee qui la precede, `avant`, a l'annee jusqu'a
     /// elle comprise, `apres` ; aucune quand le critere est le meme des deux cotes.
     pub fn entre(avant: &AnneeAnterieure, apres: &AnneeAnterieure) -> Option<BasculeDeLaCet> {
+        let (avant, apres) = (&avant.cet, &apres.cet);
         match (avant.remunerations > avant.plafonds, apres.remunerations > apres.plafonds) {
             (false, true) => Some(BasculeDeLaCet::Due { depassement: apres.remunerations - apres.plafonds }),
             (true, false) => Some(BasculeDeLaCet::Rendue { ecart: apres.plafonds - apres.remunerations }),
@@ -384,28 +454,42 @@ impl BasculeDeLaCet {
     }
 }
 
-/// LES ASSIETTES PLAFONNEES de la paie de remuneration `remuneration` (son brut soumis) et de plafond `plafond` (le
-/// plafond de la paie, `pour_paie`), `limite_csg` le nombre de plafonds sous lequel la CSG abat (le bareme,
-/// `limite_abattement_csg`), `tranches` les bornes des tranches en nombre de plafonds (le bareme, `tranches_du_plafond`) :
-/// le seul endroit ou elles se calculent, et elles ne se calculent pas sans dire ce qui precede la paie dans l'annee
-/// (`plafonnement`).
+/// LES ASSIETTES PLAFONNEES de la paie qui compte les remunerations `remunerations` (`RemunerationsRegularisees`) et de
+/// plafond `plafond` (le plafond de la paie, `pour_paie`), `limite_csg` le nombre de plafonds sous lequel la CSG abat (le
+/// bareme, `limite_abattement_csg`), `tranches` les bornes des tranches en nombre de plafonds (le bareme,
+/// `tranches_du_plafond`) : le seul endroit ou elles se calculent, et elles ne se calculent pas sans dire ce qui precede
+/// la paie dans l'annee (`plafonnement`). La part abattue de la CSG se compte sur le brut, les autres sur la base de
+/// calcul des cotisations ; l'Apec, sur la base de calcul (un permanent n'a pas de deduction forfaitaire specifique).
 ///
-/// Regularisee : chacune est celle de la somme des remunerations sous la somme des plafonds, de l'annee jusqu'a cette
-/// paie comprise, moins ce que les paies d'avant ont applique (BOSS, assiette generale, § 1230 : « si la somme des
-/// remunerations est inferieure a la somme des plafonds, l'assiette plafonnee a retenir pour une echeance de paie donnee
-/// est egale a la somme des remunerations, diminuee du montant des assiettes plafonnees appliquees sur chaque echeance de
-/// paie precedente » ; au-dessus, « egale a la somme des plafonds » diminuee de meme). Elle peut etre negative, ou depasser
-/// la remuneration de la paie.
+/// Regularisee : chacune est celle de la somme des remunerations sous la somme des plafonds de son cumul
+/// (`CumulDeLAssiette`), de l'annee jusqu'a cette paie comprise, moins ce que les paies d'avant y ont applique (BOSS,
+/// assiette generale, § 1230 : « si la somme des remunerations est inferieure a la somme des plafonds, l'assiette
+/// plafonnee a retenir pour une echeance de paie donnee est egale a la somme des remunerations, diminuee du montant des
+/// assiettes plafonnees appliquees sur chaque echeance de paie precedente » ; au-dessus, « egale a la somme des
+/// plafonds » diminuee de meme). Elle peut etre negative, ou depasser la remuneration de la paie.
 pub fn assiettes_plafonnees(
-    remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond, plafonnement: &Plafonnement,
+    remunerations: RemunerationsRegularisees, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond,
+    plafonnement: &Plafonnement,
 ) -> AssiettesPlafonnees {
+    let (c, b) = (remunerations.cotisations, remunerations.brut);
     let regularisees = match plafonnement {
-        Plafonnement::ParPaie => Regularisees::sous(remuneration, plafond, limite_csg, tranches),
+        Plafonnement::ParPaie => Regularisees {
+            abattue_csg: Regularisees::sous(b, plafond, limite_csg, tranches).abattue_csg,
+            ..Regularisees::sous(c, plafond, limite_csg, tranches)
+        },
         Plafonnement::Regularise(a) => {
-            Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg, tranches) - a.appliquees
+            let de = |cumul: &CumulDeLAssiette, r: Montant| cumul.jusqu_a(r, plafond, limite_csg, tranches);
+            Regularisees {
+                t1: de(&a.t1, c).t1 - a.t1.appliquee,
+                t2: de(&a.t2, c).t2 - a.t2.appliquee,
+                t2_conventionnelle: de(&a.t2_conventionnelle, c).t2_conventionnelle - a.t2_conventionnelle.appliquee,
+                t1_t2: de(&a.t1_t2, c).t1_t2 - a.t1_t2.appliquee,
+                cet: de(&a.cet, c).cet - a.cet.appliquee,
+                abattue_csg: de(&a.abattue_csg, b).abattue_csg - a.abattue_csg.appliquee,
+            }
         }
     };
-    AssiettesPlafonnees { regularisees, apec: remuneration.min(plafond * tranches.apec) }
+    AssiettesPlafonnees { regularisees, apec: c.min(plafond * tranches.apec) }
 }
 
 /// LES TRANCHES DE LA RETRAITE COMPLEMENTAIRE D'UNE PAIE D'INTERMITTENT, SUR LE PLAFOND DE L'ANNEE : la tranche 1, la
@@ -425,7 +509,8 @@ pub fn assiettes_plafonnees(
 /// Le moment de la CET est celui d'une paie qui se regularise (`Regularisees`, l'exemple 2 d'Audiens) : rien tant que la
 /// remuneration de l'annee reste sous le plafond, toute celle de l'annee a la paie qui le passe (`BasculeDeLaCet`).
 pub fn tranches_sous_le_plafond_annuel(remuneration: Montant, tranches: &TranchesDuPlafond, annee: &AnneeAnterieure) -> Regularisees {
-    assiettes_plafonnees(remuneration, Montant::ZERO, Coefficient::ZERO, tranches, &Plafonnement::Regularise(*annee)).regularisees
+    let remunerations = RemunerationsRegularisees::la_meme(remuneration);
+    assiettes_plafonnees(remunerations, Montant::ZERO, Coefficient::ZERO, tranches, &Plafonnement::Regularise(*annee)).regularisees
 }
 
 use crate::forme_bareme::TranchesDuPlafond;

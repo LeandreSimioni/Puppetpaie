@@ -34,6 +34,16 @@ Ce que le moteur en lit (chapitre 6) :
   PSS mensuel × jours calendaires du contrat dans la période de paie / jours du mois (CSS R. 242-2, I, al. 3 ; la
   formule du § 700 et le § 740), quels que soient les jours travaillés. La première phrase du § 1090 (l'artiste
   « n'est pas éligible à la réduction du plafond ») fait qu'aucun jour d'absence ne sort de son prorata.
+- **§ 1220-1230** (l. 1697-1717) : la régularisation progressive : à chaque paie, « la somme des bases de calcul des
+  cotisations » de l'année (ou depuis l'embauche) contre « la somme des plafonds applicables », moins les assiettes
+  plafonnées déjà appliquées ; « Les rémunérations prises en compte sont l'ensemble des rémunérations dues par un même
+  employeur à un même salarié, y compris au titre de plusieurs contrats, successifs ou non. » **§ 1250** : les salariés
+  à taux spécifiques (l'artiste, § 1090) n'y sont pas éligibles. **§ 290** (l. 352-360) : l'abattement de la CSG se
+  calcule « sur le montant brut des rémunérations », dans la limite de quatre plafonds calculés selon « les mêmes »
+  règles que celui de la vieillesse. Le moteur régularise toute paie qui n'est pas celle d'un artiste, le technicien
+  intermittent compris, chaque assiette sur son cumul : la tranche 1 sur la base de calcul des cotisations (le brut
+  abattu sous DFS), la part abattue de la CSG sur le brut entier (`droit::plafond::se_regularise`,
+  `AnneeAnterieure`, `assiettes_plafonnees` ; `engagement::calcul::ajouter_a_l_annee`).
 - § 1100 : « 12 fois le plafond horaire par jour d'engagement » pour un artiste engagé moins de cinq jours ; le moteur
   suit l'arrêté (« par journée de travail accomplie »).
 

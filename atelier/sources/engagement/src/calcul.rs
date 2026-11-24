@@ -1617,9 +1617,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     };
     // Sans deduction, aucun frais ne se reintegre.
     let reintegres = dfs_du_salarie.as_ref().map_or(Montant::ZERO, |(_, r)| *r);
-    let plafonnement = plafonnement(ctx, eng, &nat, &sal, &bar.regularisation_du_plafond, precedentes)?;
+    let plafonnement = plafonnement(ctx, eng, &sal, precedentes)?;
     let limite_csg = bar.limite_abattement_csg.plafonds;
-    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond_urssaf, limite_csg, &bar.tranches_du_plafond, &plafonnement);
+    // Le brut, base de calcul de toute assiette ici ; sous deduction forfaitaire specifique, la tranche 1 de la securite
+    // sociale se refait sur le brut abattu, une fois l'abattement connu (7.6).
+    let remunerations = droit::plafond::RemunerationsRegularisees::la_meme(brut);
+    let plafonnees = droit::plafond::assiettes_plafonnees(remunerations, plafond_urssaf, limite_csg, &bar.tranches_du_plafond, &plafonnement);
     let regularisees = plafonnees.regularisees;
 
     // 7.3 : la prevoyance dans l'assiette CSG.
@@ -1955,8 +1958,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // 15/11/2024, art. 49). Sous le plafond, rien ne bouge : les bases sont le brut, et le brut majore tel qu'il
         // etait.
         plafond_intermittent = Some(plafond_urssaf);
-        bases.insert(Assiette::BrutPlafonne, regularisees.t1);
-        bases.insert(Assiette::BrutX115Plafonne, majoree(regularisees.t1, brut, bases[&Assiette::BrutX115]));
+        // Sous deduction forfaitaire specifique, la tranche 1 se regularise sur le brut abattu (`brut_plafonne_dfs`, plus
+        // bas, que la DSN declare : `dsn::cle_abattue`) ; la forme non abattue, que rien ne cotise ni ne declare alors,
+        // est celle de la paie seule.
+        let t1 = if brut_abattu.is_some() { brut.min(plafond_urssaf) } else { regularisees.t1 };
+        bases.insert(Assiette::BrutPlafonne, t1);
+        bases.insert(Assiette::BrutX115Plafonne, majoree(t1, brut, bases[&Assiette::BrutX115]));
         bases.insert(Assiette::BrutChomage, brut_chomage);
         // Les tranches de l'annee de sa retraite complementaire (7.5 ter) : la tranche 1 de la paie, sa tranche 2 et sa CET.
         if let Some((_, t)) = &retraite_de_l_annee {
@@ -1972,8 +1979,11 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         bases.insert(Assiette::BrutX110Dfs, par_rubrique.iter().filter_map(|b| b.x110_dfs).fold(zero, |a, x| a + x));
         if let Some(plafond_ss) = plafond_intermittent {
             // Le plafond limite l'assiette abattue : la vieillesse plafonnee et la base 02 sur le brut abattu dans la
-            // limite du plafond du contrat (un intermittent ne se regularise pas : `RegularisationDuPlafond`).
-            let t1 = droit::plafond::assiettes_plafonnees(s, plafond_ss, limite_csg, &bar.tranches_du_plafond, &plafonnement).regularisees.t1;
+            // limite du plafond, regularise sur l'annee quand la paie se regularise, le brut abattu etant la base de
+            // calcul des cotisations qu'elle compte (BOSS, assiette generale, § 1220 ;
+            // `droit::plafond::RemunerationsRegularisees`).
+            let remunerations = droit::plafond::RemunerationsRegularisees { cotisations: s, brut };
+            let t1 = droit::plafond::assiettes_plafonnees(remunerations, plafond_ss, limite_csg, &bar.tranches_du_plafond, &plafonnement).regularisees.t1;
             bases.insert(Assiette::BrutPlafonneDfs, t1);
             bases.insert(Assiette::BrutX115PlafonneDfs, majoree(t1, s, x115));
         }
@@ -2257,7 +2267,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // L'annee de part et d'autre de la periode, quand elle se regularise, ou celle de la retraite d'un intermittent : la
     // bascule de la CET s'en juge (`AnneeDeLaPeriode`).
     // La CET d'un intermittent est sur l'annee de sa retraite (7.5 ter), qu'il se regularise ou non pour le plafond de la
-    // Securite sociale : c'est elle que son avis juge ; celle d'un salarie au mois, sur sa regularisation.
+    // Securite sociale : c'est elle que son avis juge ; celle d'un salarie au mois, sur sa regularisation. Un cadre
+    // intermittent, qui cotise sur ses tranches journalieres, n'a pas d'annee de la CET.
     let t2 = bar.tranches_du_plafond.t2;
     let annee = match (retraite_de_l_annee, plafonnement) {
         (Some((avant, _)), _) => {
@@ -2265,12 +2276,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             ajouter_a_la_retraite_de_l_annee(&mut apres, &paie)?;
             Some(AnneeDeLaPeriode { avant, apres, t2, plafond: PlafondDeLAnnee::Annuel })
         }
-        (None, droit::plafond::Plafonnement::Regularise(avant)) => {
+        (None, droit::plafond::Plafonnement::Regularise(avant)) if nat.mensuelle() => {
             let mut apres = avant;
-            ajouter_a_l_annee(&mut apres, &paie, &bar.regularisation_du_plafond)?;
+            ajouter_a_l_annee(&mut apres, &paie)?;
             Some(AnneeDeLaPeriode { avant, apres, t2, plafond: PlafondDeLAnnee::SommeDesPlafonds })
         }
-        (None, droit::plafond::Plafonnement::ParPaie) => None,
+        (None, _) => None,
     };
     Ok((paie, annee))
 }
@@ -2376,52 +2387,67 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
     pour_paie(&ep, &pss_du_contexte(ctx))
 }
 
-/// COMMENT LE PLAFOND DE LA PAIE DE `eng` TIENT COMPTE DE L'ANNEE (`droit::plafond::Plafonnement`) : une paie que le
-/// bareme regularise (`regle`, `RegularisationDuPlafond::regularise`) lit ce qui la precede dans l'annee civile chez la
-/// compagnie : les paies de son salarie des mois d'avant (`conges::plafonds_des_mois_anterieurs`), puis celles des
-/// contrats precedents du meme mois (`precedentes`), « a chaque echeance de paie » (BOSS, assiette generale, § 1230) ;
-/// INFERENCE, ecrite comme telle : les contrats d'un mois se suivent dans l'ordre de la saisie (le total du mois n'en
-/// depend pas).
-fn plafonnement(
-    ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &SalarieDuContrat, regle: &droit::forme_bareme::RegularisationDuPlafond,
-    precedentes: &[Paie],
-) -> R<droit::plafond::Plafonnement> {
-    if !regle.regularise(nat.mensuelle(), statut_de(sal)? == Statut::Artiste) {
+/// COMMENT LE PLAFOND DE LA PAIE DE `eng` TIENT COMPTE DE L'ANNEE (`droit::plafond::Plafonnement`) : une paie qui se
+/// regularise (`droit::plafond::se_regularise` : toute paie qui n'est pas celle d'un artiste) lit ce qui la precede dans
+/// l'annee civile chez la compagnie : les paies de son salarie des mois d'avant (`conges::plafonds_des_mois_anterieurs`),
+/// puis celles des contrats precedents du meme mois (`precedentes`), « a chaque echeance de paie » (BOSS, assiette
+/// generale, § 1230), tous contrats confondus ; INFERENCE, ecrite comme telle : les contrats d'un mois se suivent dans
+/// l'ordre de la saisie (le total du mois n'en depend pas).
+fn plafonnement(ctx: &Contexte, eng: &Engagement, sal: &SalarieDuContrat, precedentes: &[Paie]) -> R<droit::plafond::Plafonnement> {
+    if !droit::plafond::se_regularise(statut_de(sal)? == Statut::Artiste) {
         return Ok(droit::plafond::Plafonnement::ParPaie);
     }
     let mois = eng.periode_payee()?.fin().mois_civil();
-    let mut annee = crate::conges::plafonds_des_mois_anterieurs(ctx, mois, &sal.id, regle)?;
+    let mut annee = crate::conges::plafonds_des_mois_anterieurs(ctx, mois, &sal.id)?;
     for p in precedentes.iter().filter(|p| p.salarie.id == sal.id || p.engagement.salarie == eng.salarie) {
-        ajouter_a_l_annee(&mut annee, p, regle)?;
+        ajouter_a_l_annee(&mut annee, p)?;
     }
     Ok(droit::plafond::Plafonnement::Regularise(annee))
 }
 
 /// LA PAIE `p`, D'AVANT DANS L'ANNEE, AJOUTEE A CE QUI PRECEDE UNE PAIE (`droit::plafond::AnneeAnterieure`) quand elle se
-/// regularise (`regle`) : son brut, son plafond et les assiettes plafonnees qu'elle a ecrites ; une paie decoupee, periode
-/// par periode (chacune sa fiche et sa nature). Une paie qui ne se regularise pas n'y entre pas.
-pub(crate) fn ajouter_a_l_annee(
-    annee: &mut droit::plafond::AnneeAnterieure, p: &Paie, regle: &droit::forme_bareme::RegularisationDuPlafond,
-) -> R<()> {
+/// regularise (`droit::plafond::se_regularise`) : les remunerations qu'elle compte, son plafond et les assiettes
+/// plafonnees qu'elle a ecrites, dans celles qu'elle porte (`droit::plafond::PorteesParLaPaie`) ; une paie decoupee,
+/// periode par periode (chacune sa fiche et sa nature). Une paie d'artiste n'y entre pas.
+///
+/// Une paie au mois porte toutes les assiettes regularisees, sur son brut (la deduction forfaitaire specifique refuse un
+/// contrat au mois : `dfs_applicable`) : sa tranche 1 (`t1_mensuelle`), ses tranches au-dela et sa part abattue de la CSG.
+/// Une paie de technicien intermittent ne porte que la tranche 1 de la securite sociale, sur sa base de calcul des
+/// cotisations (`brut_plafonne` ; sous deduction forfaitaire specifique, le brut abattu et `brut_plafonne_dfs`, ceux que
+/// la DSN declare en base 02 : `dsn::cle_abattue`), et sa part abattue de la CSG, sur son brut. Une paie ecrite se relit
+/// avec ce qu'elle a applique, quel qu'il soit, et la paie suivante rattrape l'ecart (§ 1230).
+pub(crate) fn ajouter_a_l_annee(annee: &mut droit::plafond::AnneeAnterieure, p: &Paie) -> R<()> {
     if !p.periodes.is_empty() {
         for part in &p.periodes {
-            ajouter_a_l_annee(annee, part, regle)?;
+            ajouter_a_l_annee(annee, part)?;
         }
         return Ok(());
     }
-    if !regle.regularise(p.engagement.nat()?.mensuelle(), statut_de(&p.salarie)? == Statut::Artiste) {
+    if !droit::plafond::se_regularise(statut_de(&p.salarie)? == Statut::Artiste) {
         return Ok(());
     }
     let lue = |a: Assiette| assiette_de_l_annee(p, a, "la régularisation du plafond sur l'année lit (CSS R. 242-2, II)");
-    let appliquees = droit::plafond::Regularisees {
-        t1: lue(Assiette::T1Mensuelle)?,
-        t2: lue(Assiette::T2Mensuelle)?,
-        t2_conventionnelle: lue(Assiette::T2Conventionnelle)?,
-        t1_t2: lue(Assiette::T1T2Mensuelle)?,
-        cet: lue(Assiette::CetMensuelle)?,
-        abattue_csg: p.part_abattue_csg,
+    if p.engagement.nat()?.mensuelle() {
+        let appliquees = droit::plafond::Regularisees {
+            t1: lue(Assiette::T1Mensuelle)?,
+            t2: lue(Assiette::T2Mensuelle)?,
+            t2_conventionnelle: lue(Assiette::T2Conventionnelle)?,
+            t1_t2: lue(Assiette::T1T2Mensuelle)?,
+            cet: lue(Assiette::CetMensuelle)?,
+            abattue_csg: p.part_abattue_csg,
+        };
+        let remunerations = droit::plafond::RemunerationsRegularisees::la_meme(p.brut);
+        annee.ajouter(droit::plafond::PorteesParLaPaie::Toutes, remunerations, p.plafond_urssaf, appliquees);
+        return Ok(());
+    }
+    let (cotisations, t1) = if p.deduction_forfaitaire.is_some() {
+        (lue(Assiette::BrutDfs)?, lue(Assiette::BrutPlafonneDfs)?)
+    } else {
+        (p.brut, lue(Assiette::BrutPlafonne)?)
     };
-    annee.ajouter(p.brut, p.plafond_urssaf, appliquees);
+    let appliquees = droit::plafond::Regularisees { t1, abattue_csg: p.part_abattue_csg, ..droit::plafond::Regularisees::ZERO };
+    let remunerations = droit::plafond::RemunerationsRegularisees { cotisations, brut: p.brut };
+    annee.ajouter(droit::plafond::PorteesParLaPaie::SecuriteSociale, remunerations, p.plafond_urssaf, appliquees);
     Ok(())
 }
 
@@ -2496,7 +2522,9 @@ pub(crate) fn ajouter_a_la_retraite_de_l_annee(annee: &mut droit::plafond::Annee
         abattue_csg: Montant::ZERO,
     };
     let abattu = p.bases.get(&Assiette::BrutDfs).map(|b| b.en_euros(Assiette::BrutDfs)).transpose()?;
-    annee.ajouter(remuneration_de_la_retraite(p.brut, abattu, p.deduction_forfaitaire.as_ref())?, Montant::ZERO, appliquees);
+    let remuneration = remuneration_de_la_retraite(p.brut, abattu, p.deduction_forfaitaire.as_ref())?;
+    let remunerations = droit::plafond::RemunerationsRegularisees::la_meme(remuneration);
+    annee.ajouter(droit::plafond::PorteesParLaPaie::Toutes, remunerations, Montant::ZERO, appliquees);
     Ok(())
 }
 

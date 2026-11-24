@@ -221,3 +221,73 @@ fn bornes_incluses_et_exemples_des_bulletins() {
     let r = plafond_urssaf(&du_au(j("2026-05-13"), j("2026-05-22")), true, &pss, &[j("2026-05-15")]).unwrap();
     assert_eq!(r, montant("1291.94"));
 }
+
+/// LA REGULARISATION SUR L'ANNEE, UN CUMUL PAR ASSIETTE (CSS R. 242-2, II ; BOSS, assiette generale, § 1220-1230 et
+/// § 290 : `boss/boss-assiette-generale-20260801.txt`, l. 352-360 et 1697-1717). Chaque paie de l'annee, dans l'ordre :
+/// ses assiettes regularisees calculees sur ce qui la precede, puis ajoutees a l'annee telles qu'elle les applique, dans
+/// les assiettes qu'elle porte. Les plafonds de 2026 (4 005 par mois ; 5 jours d'un contrat de janvier, 4 005 x 5 / 31 =
+/// 645,97 ; 10 jours de mai, 1 291,94) et les bornes du bareme livre (huit plafonds pour la tranche 2, quatre pour la
+/// tranche 2 conventionnelle, l'Apec et l'abattement de la CSG). Tout recalcule a la main.
+#[test]
+fn la_regularisation_cumule_chaque_assiette_sur_sa_base_et_ses_paies() {
+    use droit::plafond::{assiettes_plafonnees, AnneeAnterieure, Plafonnement, PorteesParLaPaie, Regularisees, RemunerationsRegularisees};
+    let quatre = socle::grandeurs::Coefficient::entier_fixe(4);
+    let tranches = droit::forme_bareme::TranchesDuPlafond {
+        t2: socle::grandeurs::Coefficient::entier_fixe(8),
+        t2_conventionnelle: quatre,
+        chomage: quatre,
+        apec: quatre,
+        source: None,
+        note: None,
+    };
+    // Une paie : ses remunerations, son plafond, les assiettes qu'elle porte ; rend ses assiettes regularisees et les
+    // ajoute a l'annee (une paie d'intermittent n'applique que la tranche 1 et la part abattue de la CSG).
+    let payer = |annee: &mut AnneeAnterieure, cotisations: &str, brut: &str, plafond: &str, portees: PorteesParLaPaie| -> Regularisees {
+        let r = RemunerationsRegularisees { cotisations: montant(cotisations), brut: montant(brut) };
+        let a = assiettes_plafonnees(r, montant(plafond), quatre, &tranches, &Plafonnement::Regularise(*annee)).regularisees;
+        let appliquees = match portees {
+            PorteesParLaPaie::Toutes => a,
+            PorteesParLaPaie::SecuriteSociale => Regularisees { t1: a.t1, abattue_csg: a.abattue_csg, ..Regularisees::ZERO },
+        };
+        annee.ajouter(portees, r, montant(plafond), appliquees);
+        a
+    };
+    let intermittent = PorteesParLaPaie::SecuriteSociale;
+
+    // 1. Un technicien, deux contrats : A (5 jours, 645,97, 1 000 €), B (10 jours, 1 291,94, 500 €). Contrat par
+    // contrat : 645,97 + 500 = 1 145,97 en vieillesse plafonnee ; regularise : 1 500, sous 1 937,91.
+    let mut annee = AnneeAnterieure::debut();
+    let a = payer(&mut annee, "1000", "1000", "645.97", intermittent);
+    assert_eq!((a.t1, a.abattue_csg), (montant("645.97"), montant("1000")));
+    let b = payer(&mut annee, "500", "500", "1291.94", intermittent);
+    // 1 500 - 645,97 ; la CSG : 1 500 sous 4 x 1 937,91, moins 1 000.
+    assert_eq!((b.t1, b.abattue_csg), (montant("854.03"), montant("500")));
+
+    // 2. Le meme technicien sous deduction forfaitaire specifique (regisseur, 16 % en 2026) : la vieillesse sur le brut
+    // abattu (840, puis 420), la CSG sur le brut entier. Contrat par contrat : 645,97 + 420 = 1 065,97 ; regularise :
+    // 1 260 (840 + 420, sous 1 937,91), et la CSG abat 1 000 puis 500.
+    let mut annee = AnneeAnterieure::debut();
+    let a = payer(&mut annee, "840", "1000", "645.97", intermittent);
+    assert_eq!((a.t1, a.abattue_csg), (montant("645.97"), montant("1000")));
+    let b = payer(&mut annee, "420", "500", "1291.94", intermittent);
+    // 1 260 - 645,97 : plus que le brut abattu de B, il rattrape A.
+    assert_eq!((b.t1, b.abattue_csg), (montant("614.03"), montant("500")));
+
+    // 3. Un CDI (janvier : 3 000 sur 4 005 ; mars : 4 700 sur 4 005) et un contrat de technicien en fevrier (5 jours,
+    // 645,97, 1 000 €) : une seule masse pour la tranche 1 et la CSG ; la tranche 2 et la CET du CDI ne cumulent que ses
+    // paies.
+    let mut annee = AnneeAnterieure::debut();
+    let janvier = payer(&mut annee, "3000", "3000", "4005", PorteesParLaPaie::Toutes);
+    assert_eq!((janvier.t1, janvier.t2, janvier.cet), (montant("3000"), Montant::ZERO, Montant::ZERO));
+    // Le technicien prend le plafond que le CDI n'a pas use : 4 000 sous 4 650,97, moins 3 000 (645,97 contrat seul).
+    let fevrier = payer(&mut annee, "1000", "1000", "645.97", intermittent);
+    assert_eq!((fevrier.t1, fevrier.abattue_csg), (montant("1000"), montant("1000")));
+    let mars = payer(&mut annee, "4700", "4700", "4005", PorteesParLaPaie::Toutes);
+    // Tranche 1 : 8 700 au-dessus de 8 655,97 (4 005 + 645,97 + 4 005), donc 8 655,97 - 3 000 - 1 000.
+    assert_eq!(mars.t1, montant("4655.97"));
+    // Tranche 2 et CET, sur les seules paies du CDI : 7 700 sous 8 010 ; ni tranche 2 ni CET (melees au technicien,
+    // 8 700 au-dessus de 8 655,97, la CET serait due).
+    assert_eq!((mars.t2, mars.cet, mars.t1_t2), (Montant::ZERO, Montant::ZERO, montant("4700")));
+    // La CSG : 8 700 sous 4 x 8 655,97, moins 3 000 et 1 000.
+    assert_eq!(mars.abattue_csg, montant("4700"));
+}

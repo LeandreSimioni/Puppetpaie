@@ -499,7 +499,8 @@ pub enum LectureDatee<S, L> {
     Mensuels { mois: crate::mois::Mois, salarie: S },
     /// `paies <mois> <salarie>` : les paies validees d'un salarie au mois.
     Paies { mois: crate::mois::Mois, salarie: S },
-    /// `paies-au-mois <mois> <salarie>` : celles de ses contrats payes au mois.
+    /// `paies-au-mois <mois> <salarie>` : celles de ses contrats payes au mois. Aucun calcul ne la note plus ; celle
+    /// qu'une compagnie a ecrite se relit, et ne tient pas (`engagement::empreinte`).
     PaiesAuMois { mois: crate::mois::Mois, salarie: S },
     /// `paies-intermittentes <mois> <salarie>` : celles de ses contrats d'intermittent (qui ne sont pas payes au mois).
     PaiesIntermittentes { mois: crate::mois::Mois, salarie: S },

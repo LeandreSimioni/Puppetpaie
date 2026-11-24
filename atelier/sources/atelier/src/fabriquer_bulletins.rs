@@ -176,7 +176,8 @@ fn assiette_csg(brut: Montant, plafond: Montant, annee: socle::mois::Annee) -> R
             annee
         ));
     };
-    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond, pile.limite_abattement_csg.plafonds, &pile.tranches_du_plafond, &droit::plafond::Plafonnement::ParPaie);
+    let remunerations = droit::plafond::RemunerationsRegularisees::la_meme(brut);
+    let plafonnees = droit::plafond::assiettes_plafonnees(remunerations, plafond, pile.limite_abattement_csg.plafonds, &pile.tranches_du_plafond, &droit::plafond::Plafonnement::ParPaie);
     Ok(pile.assiette_csg(brut, brut, plafonnees.regularisees.abattue_csg).au_centime())
 }
 

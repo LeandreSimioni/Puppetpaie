@@ -117,7 +117,8 @@ fn entree_tient(ctx: &Contexte, k: &CleLue, v: &ValeurLue) -> R<bool> {
         CleLue::Datee(LectureDatee::Pas { salarie, le, mois }) => *v == droit::pas::empreinte(ctx, salarie, *le, *mois)?,
         CleLue::Datee(LectureDatee::Mensuels { mois, salarie }) => *v == ValeurLue::Empreinte(crate::conges::empreinte_des_mensuels_d_avant(ctx, *mois, salarie)?),
         CleLue::Datee(LectureDatee::Paies { mois, salarie }) => *v == ValeurLue::Empreinte(crate::etats::empreinte_des_paies_validees(ctx, *mois, Some(salarie))?),
-        CleLue::Datee(LectureDatee::PaiesAuMois { mois, salarie }) => *v == ValeurLue::Empreinte(crate::etats::empreinte_des_paies_validees_au_mois(ctx, *mois, salarie)?),
+        // Une lecture qu'aucun calcul ne note : celle qu'une compagnie a ecrite ne tient pas, et la paie se recalcule.
+        CleLue::Datee(LectureDatee::PaiesAuMois { .. }) => false,
         CleLue::Datee(LectureDatee::PaiesIntermittentes { mois, salarie }) => *v == ValeurLue::Empreinte(crate::etats::empreinte_des_paies_validees_intermittentes(ctx, *mois, salarie)?),
         CleLue::Datee(LectureDatee::Reprises { mois, salarie }) => *v == ValeurLue::Empreinte(crate::importe::empreinte_des_reprises(racine, *mois, salarie)?),
         CleLue::Datee(LectureDatee::Saisie { mois, salarie }) => stock::empreinte_de_la_saisie_du_mois(racine, *mois, salarie.as_ref())?.is_some_and(|e| *v == ValeurLue::Saisie(e)),
