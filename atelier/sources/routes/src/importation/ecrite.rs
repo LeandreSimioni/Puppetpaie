@@ -99,7 +99,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     let r = match crate::importation::casc::regularisation(ctx, &demande) {
         Ok(crate::importation::casc::ARegulariser::Dossier(r)) => r,
         Ok(crate::importation::casc::ARegulariser::Rien(_)) => return Ok(None),
-        Err(e) if e.classe == Some(Classe::Refuse) => return Ok(Some(format!("CASC-SVP : {}", e.phrase))),
+        Err(e) if matches!(e.classe, Some(Classe::Refuse | Classe::CaseExigee)) => return Ok(Some(format!("CASC-SVP : {}", e.phrase))),
         Err(e) => return Err(e),
     };
     Ok(Some(format!(

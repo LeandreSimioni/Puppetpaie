@@ -21,7 +21,7 @@ use socle::grandeurs::Montant;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
 fn est_erreur_operation(e: &Echec) -> bool {
-    matches!(e.classe, None | Some(Classe::Refuse | Classe::SaisieIncomplete | Classe::Manque))
+    matches!(e.classe, None | Some(Classe::Refuse | Classe::SaisieIncomplete | Classe::Manque | Classe::CaseExigee))
 }
 
 fn copie(e: &Echec) -> Echec {

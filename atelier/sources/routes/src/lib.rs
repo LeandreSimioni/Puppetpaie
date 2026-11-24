@@ -348,6 +348,9 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
             match declarations::demarrage::a_la_suite(&ctx, &e.phrase) {
                 Ok(Some(suite)) => Err(e.reformuler(|p| format!("{}{}", p, suite))),
                 Ok(None) => Err(e),
+                // « Pour demarrer » qui ne se lit pas : une panne remonte telle quelle, sa classe avec elle ; un manque
+                // qu'il rencontre se dit a la suite du refus.
+                Err(m) if !m.dit_un_manque() => Err(m),
                 Err(m) => Err(Echec { a_part: m.a_part, ..e.reformuler(|p| format!("{} {}", p, m.phrase)) }),
             }
         }

@@ -540,9 +540,13 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
 /// ecrit rien : la ligne du salarie dont la fiche ne dit pas la profession, et dont un bulletin repris imprime un
 /// abattement non nul, la propose (le plus recent), a valider ou a corriger. La profession dont le taux de l'annee de ce
 /// bulletin est celui-la (`DfsDuBareme::professions_au_taux`, art. 9, II et III) se propose quand elle est seule ; un
-/// taux que plusieurs professions partagent ne choisit rien, et la phrase les nomme. L'option de la compagnie ne se lit
-/// sur aucun bulletin : la phrase dit ou elle se pose. Rien ne se refuse sans elle.
+/// taux que plusieurs professions partagent ne choisit rien, et la phrase les nomme. La case de la profession ne
+/// s'ouvre que si la compagnie exerce l'option (`si_entreprise` de `champs-base.json`) : sans elle, aucune ligne. Rien ne
+/// se refuse sans elle.
 fn abattements_a_dire(ctx: &Contexte) -> R<Vec<Manque>> {
+    if ctx.entreprise.deduction_forfaitaire_option.code().is_none() {
+        return Ok(Vec::new());
+    }
     let importes = engagement::importe::tous(&ctx.racine)?;
     let mut out = Vec::new();
     for (cle, s) in ctx.salaries.iter().filter(|(_, s)| !s.archivee() && !s.deduction_forfaitaire.est_dite()) {
@@ -559,23 +563,21 @@ fn abattements_a_dire(ctx: &Contexte) -> R<Vec<Manque>> {
         };
         let an = mois.annee();
         let debut = format!("Un bulletin de l'ancien logiciel ({}) imprime un abattement de {} %", mois.libelle(socle::mois::Graphie::Accentuee), socle::texte::virgule(taux));
-        let option = "l'option de la compagnie se pose sur sa fiche (« Déduction forfaitaire spécifique »)";
         let professions = match ctx.socle_repris(an)? {
             Ok(pile) => pile.deduction_forfaitaire.as_ref().map(|d| d.professions_au_taux(taux).into_iter().map(|(p, f)| (p, f.libelle.to_lowercase())).collect::<Vec<_>>()),
             Err(_) => None,
         };
         let (propose, trouver) = match professions.as_deref() {
-            None => (None, format!("{} ; le logiciel n'a pas la déduction forfaitaire spécifique de {} : dites la profession du salarié, si la compagnie l'abat ; {}.", debut, an, option)),
-            Some([]) => (None, format!("{} : aucune profession n'a ce taux en {} ; dites la sienne, si la compagnie l'abat ; {}.", debut, an, option)),
-            Some([(p, libelle)]) => (Some(ValeurProposee::DejaDite(p.to_string())), format!("{} : en {}, c'est le taux de la profession « {} ». Validez-la ou corrigez-la ; {}.", debut, an, libelle, option)),
+            None => (None, format!("{} ; le logiciel n'a pas la déduction forfaitaire spécifique de {} : dites la profession du salarié, si la compagnie l'abat.", debut, an)),
+            Some([]) => (None, format!("{} : aucune profession n'a ce taux en {} ; dites la sienne, si la compagnie l'abat.", debut, an)),
+            Some([(p, libelle)]) => (Some(ValeurProposee::DejaDite(p.to_string())), format!("{} : en {}, c'est le taux de la profession « {} ». Validez-la ou corrigez-la.", debut, an, libelle)),
             Some(plusieurs) => (
                 None,
                 format!(
-                    "{} : en {}, c'est le taux de plusieurs professions ({}) ; choisissez la sienne ; {}.",
+                    "{} : en {}, c'est le taux de plusieurs professions ({}) ; choisissez la sienne.",
                     debut,
                     an,
-                    plusieurs.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join(", "),
-                    option
+                    plusieurs.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join(", ")
                 ),
             ),
         };

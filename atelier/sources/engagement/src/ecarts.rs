@@ -389,7 +389,7 @@ impl SorteDeNonComparaison {
     fn du_calcul(raison: &Echec) -> SorteDeNonComparaison {
         use socle::echec::Classe;
         match raison.classe {
-            Some(Classe::Manque | Classe::FicheRefusee | Classe::ValeurARedire) => SorteDeNonComparaison::CaseDeLaCompagnie,
+            Some(Classe::Manque | Classe::CaseExigee | Classe::FicheRefusee | Classe::ValeurARedire) => SorteDeNonComparaison::CaseDeLaCompagnie,
             _ => SorteDeNonComparaison::SaisieRefusee,
         }
     }

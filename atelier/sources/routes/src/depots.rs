@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
-use crate::catalogue::{Acte, Forme, Fiche, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Forme, Fiche, Refus, CASE_EXIGEE, MANQUE, OPERATION};
 use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use declarations::dpae::{Chemins, Embauche, Parametres};
@@ -59,7 +59,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &Designation::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
         rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel) ; les dépôts ouverts maintenant, gestes, chacun un geste de deposer (route, charge, libellé, rang, cases, phrases, demande du mot de passe), le principal par son rang (le test, ou le réel une fois le test conforme), sans_test (le réel sans test, avec son motif), et reel_ferme (pourquoi le réel n'est pas ouvert)",
-        refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
+        refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION, CASE_EXIGEE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 300,
@@ -77,6 +77,7 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::DsnDejaDeposee, corriger: "rien, ou renvoyer avec forcer si l'annule-et-remplace est voulu" },
             ILLISIBLE_FICHIER,
             OPERATION,
+            CASE_EXIGEE,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,

@@ -1437,7 +1437,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
                     SANTE_SUSPENSION.nom(),
                     SANTE_SUSPENSION_SUSPENDUE,
                     SANTE_SUSPENSION_MAINTENUE
-                )));
+                )).reclasser(socle::echec::Classe::CaseExigee));
             }
         }
     };

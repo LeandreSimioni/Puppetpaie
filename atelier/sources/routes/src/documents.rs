@@ -15,7 +15,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
-use crate::catalogue::{Acte, Fiche, Refus, ILLISIBLE, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Fiche, Refus, CASE_EXIGEE, ILLISIBLE, MANQUE, OPERATION};
 use crate::declaration::{charge, dit, legendes, Legende};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
@@ -51,7 +51,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "titre, colonnes, changements_titre, pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja (titre, quand_dit) ; les départs ouverts, gestes, chacun un geste (route, charge, libellé, rang, la case salaries, plusieurs choix : choix.salaries, la clé et le nom de chaque message, et valeurs.salaries, ceux qui partent si l'on n'en décoche aucun, tous ; demande du mot de passe), le principal par son rang (envoyer par courriel quand la boîte est posée, imprimer sinon) ; aucun tant que rien n'est prêt",
-        refus: &[MANQUE, ILLISIBLE],
+        refus: &[MANQUE, ILLISIBLE, CASE_EXIGEE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
@@ -68,6 +68,7 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::AucunDocument, corriger: "valider un engagement du mois" },
             Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe), ou imprimer" },
             OPERATION,
+            CASE_EXIGEE,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
@@ -81,7 +82,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &ChargeDocumentsImprimer::CHARGE,
         exemple: r#"{"mois":"2026-11","salaries":["SVOBODA"]}"#,
         rend: "impression (le PDF, dans sorties/<mois>/) et son chemin, salaries, avertissements",
-        refus: &[Refus { classe: Classe::AucunDocument, corriger: "valider un engagement du mois" }, OPERATION],
+        refus: &[Refus { classe: Classe::AucunDocument, corriger: "valider un engagement du mois" }, OPERATION, CASE_EXIGEE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,

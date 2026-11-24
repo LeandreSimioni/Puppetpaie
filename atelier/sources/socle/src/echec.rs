@@ -81,8 +81,9 @@ classes! {
     PreuveInsuffisante,
     /// La saisie n'est pas finie.
     SaisieIncomplete,
-    /// Un acte refuse : une case qu'il exige est vide dans une fiche (`declarations::champs::refus_des_manques`) ; la
-    /// phrase les nomme toutes, avec leur fiche.
+    /// Un acte ou un calcul refuse : une case que la compagnie n'a pas dite et qu'il exige (une case d'une fiche,
+    /// `declarations::champs::refus_des_manques` ; la licence, le CSE, la taxe sur les salaires, les contrats des
+    /// organismes), celle qu'une ligne bloquante de « Pour démarrer » demande (`declarations::demarrage::manques`).
     CaseExigee,
     /// Aucun document a envoyer ou a imprimer.
     AucunDocument,

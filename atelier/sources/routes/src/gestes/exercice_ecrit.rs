@@ -46,7 +46,7 @@ fn en_os(e: &std::io::Error, p: &Path) -> Echec {
 /// Une erreur d'operation, que l'appelant rattrape : celles que le moteur nomme, et
 /// les refus du calcul (sans classe, `SaisieIncomplete`, une case qui manque), qui en sont.
 fn est_une_erreur_d_operation(e: &Echec) -> bool {
-    matches!(e.classe, None | Some(Classe::Refuse | Classe::SaisieIncomplete | Classe::Manque))
+    matches!(e.classe, None | Some(Classe::Refuse | Classe::SaisieIncomplete | Classe::Manque | Classe::CaseExigee))
 }
 
 /// L'heure de Paris, a la seconde.
