@@ -114,13 +114,15 @@ const SUPPRIMER_LE_SALARIE: crate::catalogue::Affiche = crate::catalogue::Affich
 
 /// LA FICHE D'UN SALARIE NEUF A FAIRE REMPLIR PAR LA PERSONNE (son en-tete) : le titre de l'encart, ce que la demande
 /// fait, le geste qui l'envoie (`fiche-demander`, ses cases : le courriel et le prenom) quand la boite courriel est liee,
-/// sinon ce qui lui manque, et la demande du mot de passe du logiciel avant l'envoi.
+/// sinon ce qui lui manque, les demandes en cours d'envoi (`en_cours`, chacune nomme sa personne : une demande a une
+/// autre reste a faire), et la demande du mot de passe du logiciel avant l'envoi.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct InvitationDeLaFiche {
     titre: &'static str,
     aide: &'static str,
     geste: Option<GesteDeRoute<crate::SansCharge>>,
     sans_boite: Option<&'static str>,
+    en_cours: Vec<String>,
     demande: compagnie::demande::DemandeDuMotDePasse,
 }
 
@@ -170,6 +172,7 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
             titre: "À faire remplir",
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; le métier se choisit ensuite à chaque engagement.",
             sans_boite: geste.is_none().then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe)."),
+            en_cours: crate::envois_en_fond::fiches_en_cours(&ctx.racine),
             geste,
             demande: crate::coffre::demande(&ctx.racine, super::GESTE_DEMANDER_FICHE)?,
         };

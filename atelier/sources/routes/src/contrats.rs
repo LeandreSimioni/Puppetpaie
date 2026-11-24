@@ -893,7 +893,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         if !c.remplace() {
             refuser_les_contrats_partis(ctx, c.mois, &choisis)?;
         }
-        let demande = crate::gestes::signature::DemandeDeSignature { mois: c.mois, remplace: c.remplace(), choisis, etats_des_contrats: &etats_des_contrats };
+        let demande = crate::gestes::signature::DemandeDeSignature { mois: c.mois, remplace: c.remplace(), choisis, etats_des_contrats: &etats_des_contrats, avenants_ensuite: avenants.len() };
         // Un refus se dit d'abord : la boite et la preuve ne se demandent que pour ce qui part.
         let verifiee = crate::gestes::signature::verifier_demande(ctx, &demande)?;
         let mut client = ouvrir()?;
@@ -910,7 +910,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         r.contrats.extend(av.avenants);
         r.avertissements.extend(avertissements);
     }
-    let quoi = [(n_contrats, "contrat", "contrats"), (n_avenants, "avenant", "avenants")].iter().filter(|(n, _, _)| *n > 0).map(|(n, un, des)| socle::ecran::compte(*n, un, des)).collect::<Vec<_>>().join(" et ");
+    let quoi = crate::gestes::signature::contrats_et_avenants(n_contrats, n_avenants);
     let avertissements = r.avertissements.join(" ");
     // Chaque piece dit si elle est partie en rappel (`relance`, que le journal note) : toutes, la phrase dit « relancé » ;
     // quelques-unes, elle les nomme.

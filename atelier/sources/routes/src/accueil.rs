@@ -210,7 +210,7 @@ charge! {
 charge! {
     /// La charge de `compagnies-garder` : les compagnies a garder, et celles a supprimer.
     #[derive(Debug)]
-    struct ChargeGarder {
+    pub struct ChargeGarder {
         garder: Vec<IdDeCompagnie> = dit("À garder", "les identifiants des compagnies à garder (elles deviennent réelles)"),
         ne_pas_garder: Vec<IdDeCompagnie> = dit("À supprimer", "les identifiants des compagnies à supprimer"),
     }
@@ -356,6 +356,17 @@ impl Dite for Gardees {
 
 /// Une route de l'installation, branchee sur l'enveloppe. Le tableau de l'administrateur, son depot groupe et le dossier
 /// portable rendent ce que `gestes::administrateur` et `compagnie::maj` ecrivent.
+/// `compagnies-garder` sur l'installation `inst` : chaque compagnie nommee est gardee ou supprimee
+/// (`suppression::repondre`) ; `lacher`, ce que la fenetre tient de chacune, une fois decide qu'elle s'en va, et un
+/// echec a la lacher se dit pour elle seule. La fenetre la sert avec son `lacher`, `moteur route` sans rien a lacher.
+pub fn garder_ou_supprimer(inst: &Path, c: ChargeGarder, lacher: &dyn Fn(&Path) -> R<()>) -> R<Rendu> {
+    let poste = administrateur::Poste::de_ce_poste();
+    let reponse = suppression::repondre(inst, &c.garder, &c.ne_pas_garder, &poste, lacher).map_err(|e| e.reclasser(Classe::Refuse))?;
+    let erreurs: String = reponse.erreurs.iter().map(|e| format!(" {}", e)).collect();
+    let phrase = socle::phrase!("{} compagnie(s) gardée(s), {} supprimée(s).{}", reponse.gardees.len(), reponse.supprimees.len(), erreurs);
+    en_json(Gardees { phrase, reponse })
+}
+
 pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // `--racine` nomme une compagnie (son dossier porte sa fiche entreprise) : l'installation est la sienne. Un autre
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.
@@ -399,14 +410,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(Dit { phrase: socle::phrase!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" }) })
         }
-        Route::CompagniesGarder => {
-            let c: ChargeGarder = charge.lire()?;
-            let poste = administrateur::Poste::de_ce_poste();
-            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(|e| e.reclasser(Classe::Refuse))?;
-            let erreurs: String = reponse.erreurs.iter().map(|e| format!(" {}", e)).collect();
-            let phrase = socle::phrase!("{} compagnie(s) gardée(s), {} supprimée(s).{}", reponse.gardees.len(), reponse.supprimees.len(), erreurs);
-            en_json(Gardees { phrase, reponse })
-        }
+        Route::CompagniesGarder => garder_ou_supprimer(&inst, charge.lire()?, &|_| Ok(())),
         Route::AdministrateurTableau => {
             let c: ChargeTableau = charge.lire()?;
             let tableau: administrateur::TableauAdministrateur = match c.garde {

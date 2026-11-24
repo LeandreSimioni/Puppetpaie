@@ -206,7 +206,7 @@ impl crate::enveloppe::Dite for Suppression {
 /// qui dit ce qui sera efface ; rien ne bouge. Avec `confirme` : la suppression (`supprimer`), la preuve d'une compagnie
 /// reelle comprise (`motdepasse`, que la page a fait taper ; sinon le moteur le demande lui-meme a un humain). `avant` :
 /// ce que la fenetre lache de la compagnie avant qu'elle parte (rien, par `moteur route`).
-pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::secret::Secret>, avant: &dyn Fn(&Path)) -> R<Suppression> {
+pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::secret::Secret>, avant: &dyn Fn(&Path) -> R<()>) -> R<Suppression> {
     if charge.confirme != Some(true) {
         return question(racine);
     }
@@ -241,13 +241,13 @@ fn geste_supprimer(nom: &str) -> String {
 /// SUPPRIMER `racine`, compagnie de l'installation `inst` : la preuve d'abord (une compagnie reelle), puis `avant` (la
 /// fenetre lache ce qu'elle tient de la compagnie), puis l'effacement (`effacer`). Rend le nom de la compagnie. Un refus
 /// n'efface rien et n'appelle pas `avant`.
-pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&socle::secret::Secret>, poste: &Poste, avant: &dyn Fn(&Path)) -> R<String> {
+pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&socle::secret::Secret>, poste: &Poste, avant: &dyn Fn(&Path) -> R<()>) -> R<String> {
     let g = genre(inst, racine)?;
     let nom = installation::nom_de(racine)?;
     if g == Genre::Reelle {
         prouver(racine, &nom, motdepasse, poste)?;
     }
-    avant(racine);
+    avant(racine)?;
     // L'ouverture gardee de son coffre part avec elle ; qu'il y en ait eu une ou non ne change rien.
     poste.coffre(racine).oublier_ouverture_gardee()?;
     crate::gestes::administrateur::oublier(inst, racine)?;
@@ -358,7 +358,7 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
 /// parmi `a_garder`. Chacune est gardee ou supprimee ; une fictive ajoutee nommee nulle part reste, et la question
 /// reviendra pour elle. `lacher` : ce que la fenetre tient de chacune (sa file sur le fil des calculs), avant qu'elle
 /// bouge. Rend ce qui est garde, supprime, et chaque echec : un echec sur l'une n'arrete pas les autres.
-pub fn repondre(inst: &Path, garder_ids: &[installation::IdDeCompagnie], ne_pas_garder: &[installation::IdDeCompagnie], poste: &Poste, lacher: &dyn Fn(&Path)) -> R<Reponse> {
+pub fn repondre(inst: &Path, garder_ids: &[installation::IdDeCompagnie], ne_pas_garder: &[installation::IdDeCompagnie], poste: &Poste, lacher: &dyn Fn(&Path) -> R<()>) -> R<Reponse> {
     if compagnie::bridage::est_bride_de(inst) {
         return Err(refus("Le logiciel est bridé : ses compagnies ajoutées restent des compagnies fictives."));
     }
@@ -373,8 +373,7 @@ pub fn repondre(inst: &Path, garder_ids: &[installation::IdDeCompagnie], ne_pas_
     let (mut gardees, mut supprimees, mut erreurs) = (Vec::new(), Vec::new(), Vec::new());
     for c in proposees {
         if garder_ids.contains(&c.id) {
-            lacher(&c.racine);
-            match garder(inst, &c.racine) {
+            match lacher(&c.racine).and_then(|()| garder(inst, &c.racine)) {
                 Ok(r) => gardees.push(Gardee { id: r.id, nom: r.nom }),
                 Err(m) => erreurs.push(m.phrase),
             }

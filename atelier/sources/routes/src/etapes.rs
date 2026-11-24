@@ -367,6 +367,45 @@ pub(crate) struct Bilan {
     phrase: Phrase,
     colonnes: Vec<String>,
     pub(crate) etapes: Vec<Etape>,
+    /// Le cadre sous le mois : son dernier fait et sa prochaine etape (`OuEnEstLeMois`).
+    ou_en_est: OuEnEstLeMois,
+}
+
+/// OU EN EST LE MOIS, le cadre que la page pose sous lui : son titre, le dernier fait du mois tel que l'Historique le dit
+/// (la derniere ligne du journal de ce mois, son acte et ce qui en est revenu : `historique_mois::fait_du_journal`), et
+/// la prochaine etape, telle que la colonne des etapes la montre (la premiere case a faire
+/// de l'etape suivante, sinon la premiere qui attend : `phrase_du_groupe`). Lu de l'etat du mois, jamais de la page : il
+/// est juste apres reouverture, et le meme en ligne de commande. Ce qui part en fond s'y ajoute a la lecture
+/// (`etat_garde::DuMois::envois`).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct OuEnEstLeMois {
+    titre: String,
+    /// Le dernier fait, dans le ton de ce qui en est revenu (`historique_mois::fait_du_journal`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dernier: Option<crate::Encart>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prochaine: Option<String>,
+    /// L'etape d'ou vient `prochaine` : un envoi en cours de cette etape la dit a sa place (`Bilan::pendant_l_envoi`).
+    #[serde(skip)]
+    prochaine_de: Option<QuelleEtape>,
+}
+
+impl OuEnEstLeMois {
+    /// Le cadre de `mois` : `lignes`, le journal (`envois::journal::lu`), ses etapes deja faites.
+    fn de(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], etapes: &[Etape]) -> OuEnEstLeMois {
+        let du_mois: Vec<&envois::journal::Ligne> = envois::journal::filtrer(lignes, None, Some(mois), None).collect();
+        // Le plus recent ; a la meme heure, le reel devant son test (l'ordre de l'Historique).
+        let dernier = du_mois.iter().max_by(|a, b| (a.quand(), a.mode()).cmp(&(b.quand(), b.mode()))).map(|l| crate::historique_mois::fait_du_journal(ctx, l, lignes));
+        let groupes = || etapes.iter().flat_map(|e| e.groupes.iter().map(move |g| (e, g)));
+        let a_faire = groupes().find(|(e, g)| e.suivante && matches!(g.etat, EtatCase::AFaire | EtatCase::Refuse)).and_then(|(e, g)| g.phrase.clone().map(|p| (e.cle, p)));
+        let attend = groupes().find(|(_, g)| g.etat == EtatCase::EnAttente).and_then(|(e, g)| g.phrase.clone().map(|p| (e.cle, p)));
+        let (prochaine, prochaine_de) = match (a_faire, attend) {
+            (Some((e, p)), _) => (Some(format!("Prochaine étape — {}.", p)), Some(e)),
+            (None, Some((e, p))) => (Some(format!("En attente — {}.", p)), Some(e)),
+            (None, None) => (None, None),
+        };
+        OuEnEstLeMois { titre: format!("Où en est {}", mois.libelle(Graphie::Accentuee)), dernier, prochaine, prochaine_de }
+    }
 }
 
 /// `mois-a-ouvrir` : le mois a ouvrir, celui du jour, et les etapes qui restent au premier.
@@ -407,6 +446,22 @@ impl Bilan {
     /// La phrase du bilan, celle de l'ecran du mois.
     pub(crate) fn phrase(&self) -> &Phrase {
         &self.phrase
+    }
+
+    /// DES ENVOIS DE CE MOIS SONT EN COURS (`envois_en_fond`, la fenetre) : chaque case d'une etape d'ou un envoi part,
+    /// qui a un geste, dit « 2 contrats en cours d'envoi… » a la place de ce geste, et la prochaine etape aussi quand
+    /// c'est elle ; un second clic ne refait pas partir ce qui part.
+    fn pendant_les_envois(&mut self, envois: &crate::envois_en_fond::EnvoisDuMois) {
+        for e in self.etapes.iter_mut() {
+            let Some(quoi) = envois.de_l_etape(e.cle) else { continue };
+            for g in e.groupes.iter_mut().filter(|g| g.action.is_some() && g.etat != EtatCase::Fait) {
+                let colonnes = std::mem::take(&mut g.colonnes);
+                *g = Groupe { colonnes, ..Groupe::de(EtatCase::EnAttente, None, String::new(), crate::envois_en_fond::phrase_en_cours(quoi), g.echeance.clone(), None) };
+            }
+        }
+        if let Some(quoi) = self.ou_en_est.prochaine_de.and_then(|e| envois.de_l_etape(e)) {
+            self.ou_en_est.prochaine = Some(format!("En cours d'envoi — {}.", quoi));
+        }
     }
 }
 
@@ -459,6 +514,24 @@ fn faire_signer(mois: Mois, salaries: Option<Vec<IdSalarie>>, signee: bool) -> A
 /// Le geste qui fait signer, sans signature de l'employeur posee : ce qui est a faire d'abord ; sa boite dit ou la poser
 /// et offre d'imprimer.
 const SIGNATURE_A_POSER: &str = "Signature de l'employeur à poser…";
+
+/// LES GESTES QUI REFONT UN ENVOI PARTI EN FOND QUI N'EST PAS ALLE AU BOUT (`envois_en_fond::EnvoiQuiPart`) : la boite d'ou
+/// il est parti, rouverte ; ce qui n'est pas parti y est encore a faire partir.
+pub(crate) fn refaire_la_signature(mois: Mois) -> Action {
+    vers(VueDuGeste::ContratsAEnvoyer, crate::contrats::ChargeApercuSignature { mois, salaries: None }, Some(Route::DemanderSignature), REFAIRE_L_ENVOI.into())
+}
+
+/// Les documents du mois, rouverts pour un envoi qui n'est pas alle au bout.
+pub(crate) fn refaire_les_documents(mois: Mois) -> Action {
+    envoyer_documents(mois, REFAIRE_L_ENVOI.into())
+}
+
+/// Le depot designe, rouvert pour un depot qui n'est pas alle au bout.
+pub(crate) fn refaire_le_depot(d: Designation) -> Action {
+    vers(VueDuGeste::Depot, d, Some(Route::Deposer), "Refaire le dépôt…".into())
+}
+
+const REFAIRE_L_ENVOI: &str = "Refaire l'envoi…";
 
 /// Les contrats partis du mois, recus ou a relancer : l'apercu, puis noter chacun recu.
 fn contrats_en_attente(mois: Mois) -> Action {
@@ -1332,8 +1405,8 @@ struct LigneDePage<'a> {
     recalcul: Option<&'a str>,
     contrat: &'a ContratDit,
     versions: Option<&'a engagement::versions::Frise>,
-    carres: &'a [Carre],
-    dpae_choix: &'a Choix,
+    carres: Vec<Carre>,
+    dpae_choix: Choix,
     etats: EtatsDePage<'a>,
     periode_dit: Option<String>,
     valide_dit: Option<String>,
@@ -1356,7 +1429,7 @@ struct DpaeDePage<'a> {
 }
 
 impl<'a> LigneDePage<'a> {
-    fn de(l: &'a Ligne, mois: Mois) -> LigneDePage<'a> {
+    fn de(l: &'a Ligne, mois: Mois, envois: &crate::envois_en_fond::EnvoisDuMois) -> LigneDePage<'a> {
         let v = &l.vue;
         let valide = v.valide.map(Moment::dit);
         let debut = match (&v.bornes, &v.contrat) {
@@ -1392,8 +1465,8 @@ impl<'a> LigneDePage<'a> {
             recalcul: v.recalcul.as_deref(),
             contrat: &v.contrat,
             versions: l.versions.as_ref(),
-            carres: &l.carres,
-            dpae_choix: &l.dpae_choix,
+            carres: l.carres.iter().map(|c| c.pendant_les_envois(envois)).collect(),
+            dpae_choix: l.dpae_choix.pendant_les_envois(envois),
             etats: EtatsDePage { dpae: DpaeDePage { date_changee: v.etats.dpae.date_changee.as_ref() } },
         }
     }
@@ -1420,6 +1493,25 @@ struct Carre {
     #[serde(skip_serializing_if = "Option::is_none")]
     lien: Option<Option<&'static str>>,
     titre: &'static str,
+}
+
+impl Carre {
+    /// Le carre tel que la page le lit : un envoi de son etape en cours, il le dit a la place de son geste
+    /// (`LesDeuxEtats`, la meme surcouche que les cases du bilan).
+    fn pendant_les_envois(&self, envois: &crate::envois_en_fond::EnvoisDuMois) -> Carre {
+        match envois.de_l_etape(self.cle) {
+            Some(quoi) if self.action.is_some() && self.etat != EtatCase::Fait => Carre {
+                etat: EtatCase::EnAttente,
+                couleur: EtatCase::EnAttente.couleur(),
+                phrase: crate::envois_en_fond::phrase_en_cours(quoi),
+                action: None,
+                coupee: None,
+                reste: None,
+                ..self.clone()
+            },
+            Some(_) | None => self.clone(),
+        }
+    }
 }
 
 /// Le geste d'un carre : une route du catalogue, ou le dossier d'un contrat signe hors du logiciel (`geste_du_dossier`).
@@ -1474,6 +1566,24 @@ struct Choix {
     phrase: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     part: Option<EmbaucheDesignee>,
+}
+
+impl Choix {
+    /// Le choix tel que la boite des DPAE le lit : une DPAE du mois en cours d'envoi, ce qui se cochait le dit, et ne
+    /// se coche plus.
+    fn pendant_les_envois(&self, envois: &crate::envois_en_fond::EnvoisDuMois) -> Choix {
+        match envois.de_l_etape(QuelleEtape::Dpae) {
+            Some(quoi) if self.cochable => Choix {
+                cochable: false,
+                cochee: false,
+                etat: EtatCase::EnAttente,
+                couleur: EtatCase::EnAttente.couleur(),
+                phrase: crate::envois_en_fond::phrase_en_cours(quoi),
+                part: None,
+            },
+            Some(_) | None => self.clone(),
+        }
+    }
 }
 
 /// UNE DPAE A FAIRE (`embauches_a_declarer`) : le mois, le contrat, qui, pour quoi, ses bornes, l'empreinte de ce qu'elle
@@ -2245,7 +2355,9 @@ impl<'a> Moteur<'a> {
                 })
                 .collect();
             let etapes = suivante(etapes);
-            return Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(None, &etapes), colonnes, etapes });
+            let lignes = envois::journal::lu(&self.ctx.racine)?.lignes;
+            let ou_en_est = OuEnEstLeMois::de(self.ctx, le_mois, &lignes, &etapes);
+            return Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(None, &etapes), colonnes, etapes, ou_en_est });
         }
         let paies = self.etat_par_engagement(le_mois)?;
         let signee = crate::contrats::signature_posee(self.ctx)?;
@@ -2400,7 +2512,9 @@ impl<'a> Moteur<'a> {
         ];
         let noms: Vec<String> = cols.iter().map(|c| c.nom.clone()).collect();
         let etapes = suivante(etapes);
-        Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(debut, &etapes), colonnes: noms, etapes })
+        let lignes = envois::journal::lu(&self.ctx.racine)?.lignes;
+        let ou_en_est = OuEnEstLeMois::de(self.ctx, le_mois, &lignes, &etapes);
+        Ok(Bilan { mois: le_mois, phrase: phrase_du_mois(debut, &etapes), colonnes: noms, etapes, ou_en_est })
     }
 
     /// LA DSN DU MOIS, par etablissement. Elle « est mensuelle et produite par établissement employeur » (cahier technique
@@ -3082,26 +3196,43 @@ impl Dite for MoisAOuvrir {
 }
 
 /// LES DEUX ETATS DE `mois`, servis par une meme lecture (`Moteur`) : les lignes de chaque engagement et ceux qui ne sont
-/// pas actifs (ce que `etat-par-engagement` rend : `par_engagement`), et le bilan du mois, tels que l'etat garde d'un mois
-/// les garde (`etat_garde`).
+/// pas actifs (ce que `etat-par-engagement` rend : `par_engagement`), et le bilan du mois (`etat-du-mois` : `bilan`), tels
+/// que l'etat garde d'un mois les garde (`etat_garde`). A LA LECTURE, UNE SEULE SURCOUCHE : les envois du mois en cours
+/// (`envois_en_fond::EnvoisDuMois`) se disent a la place des gestes qu'ils font, dans l'un comme dans l'autre.
 pub(crate) struct LesDeuxEtats {
     mois: Mois,
-    lignes: Rc<Vec<Ligne>>,
+    lignes: Vec<Ligne>,
     non_actifs: Vec<NonActif>,
-    pub(crate) bilan: Bilan,
+    bilan: Bilan,
 }
 
 impl LesDeuxEtats {
-    /// `etat-par-engagement` : la phrase du mois, et ce que la page lit de chaque engagement.
-    pub(crate) fn par_engagement(&self) -> R<EtatParEngagement<'_>> {
-        let engagements: Vec<LigneDePage> = self.lignes.iter().map(|l| LigneDePage::de(l, self.mois)).collect();
+    /// Le bilan du mois, tel que la page le lit : celui qui est garde, et les envois en cours a la place de leurs gestes.
+    pub(crate) fn bilan(&self, envois: &crate::envois_en_fond::EnvoisDuMois) -> std::borrow::Cow<'_, Bilan> {
+        if envois.aucun_en_cours() {
+            return std::borrow::Cow::Borrowed(&self.bilan);
+        }
+        let mut b = self.bilan.clone();
+        b.pendant_les_envois(envois);
+        std::borrow::Cow::Owned(b)
+    }
+
+    /// Le bilan garde, sans les envois (ce que le filet emporte, la phrase de l'ecran du mois).
+    pub(crate) fn bilan_garde(&self) -> &Bilan {
+        &self.bilan
+    }
+
+    /// `etat-par-engagement` : la phrase du mois, et ce que la page lit de chaque engagement ; un envoi en cours de ce
+    /// mois se dit a la place des gestes de son etape (les carres, la boite des DPAE).
+    pub(crate) fn par_engagement(&self, envois: &crate::envois_en_fond::EnvoisDuMois) -> R<EtatParEngagement<'_>> {
+        let engagements: Vec<LigneDePage> = self.lignes.iter().map(|l| LigneDePage::de(l, self.mois, envois)).collect();
         let phrase = match engagements.len() {
             0 => socle::phrase!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
             n => socle::phrase!("Engagements du mois : {}.", n),
         };
         let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
         // Les embauches cochees partent par l'apercu du depot, qui ecrit leur DPAE ; son test part tout de suite.
-        let dpae_envoyer = self.lignes.iter().any(|l| l.dpae_choix.cochable).then(|| {
+        let dpae_envoyer = (envois.de_l_etape(QuelleEtape::Dpae).is_none() && self.lignes.iter().any(|l| l.dpae_choix.cochable)).then(|| {
             let mut charge = Designation::du_mois(Quoi::Dpae, self.mois);
             charge.engagements = Some(Vec::new());
             Action { tester: true, ..vers(VueDuGeste::Depot, charge, Some(Route::Deposer), "Envoyer le test".into()) }
@@ -3125,7 +3256,7 @@ pub(crate) fn les_deux_etats(ctx: &Contexte, mois: Mois) -> R<LesDeuxEtats> {
     let lignes = m.etat_par_engagement(mois)?;
     let non_actifs = non_actifs(ctx, mois)?;
     let bilan = m.bilan_du_mois(mois)?;
-    Ok(LesDeuxEtats { mois, lignes, non_actifs, bilan })
+    Ok(LesDeuxEtats { mois, lignes: lignes.as_ref().clone(), non_actifs, bilan })
 }
 
 /// LE MOIS A OUVRIR (`mois-a-ouvrir`), tel que l'etat garde de l'ouverture le garde : le mois, et la reponse rendue.

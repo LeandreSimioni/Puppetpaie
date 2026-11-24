@@ -70,7 +70,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Déposer la DSN ou la DPAE du mois : en test, ou en réel après son test.",
         charge: &ChargeDeposer::CHARGE,
         exemple: DPAE_DE_L_EXEMPLE,
-        rend: "le dépôt : accepté ou non, le retour de l'organisme, ses suites (chaque demande de taux), phrase, avis (l'encart à montrer après la DSN réelle d'un mois qui a des salariés)",
+        rend: "le dépôt : accepté ou non, le retour de l'organisme, ses suites (chaque demande de taux), phrase ; ce qui suit se lit dans le cadre du mois (etat-du-mois, ou_en_est)",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
             Refus { classe: Classe::RepetitionManquante, corriger: "déposer d'abord ce fichier en test" },
@@ -349,15 +349,12 @@ pub(crate) enum DepotApercu {
     Dpae(Dit<ApercuDpae>),
 }
 
-/// La reponse de `deposer` : le depot fait, sa phrase, et l'avis a montrer apres la DSN reelle d'un mois qui a des
-/// salaries.
+/// La reponse de `deposer` : le depot fait, et sa phrase.
 #[derive(Debug, Serialize)]
 pub(crate) struct Deposee {
     phrase: Phrase,
     #[serde(flatten)]
     fait: DepotFait,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    avis: Option<Encart>,
 }
 
 /// La reponse de `suivre-depot` : le depot tranche ou non, passe ou refuse, ce que le releve a a dire, la phrase et sa
@@ -919,12 +916,14 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
         Phrase::fixe("Dépôt réel effectué — ses retours sont attendus.")
     };
     let phrase = socle::phrase!("{}{}", tranche, fait.suites.iter().map(|s| format!(" {}", s)).collect::<String>());
-    // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
-    let avis = (mode == Mode::Reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
-        .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
+    // Ce qui suit la DSN reelle (les documents des salaries) se lit dans le cadre du mois (`etat-du-mois`, `ou_en_est`).
     etats::poser_les_pastilles(&mut fait.ligne);
     poser_les_pastilles(&mut fait.deja);
-    Ok(Deposee { phrase, fait, avis })
+    // PARTI EN FOND, le depot reel se suit depuis le bandeau, comme la page le suit apres l'avoir attendu (`suivre-depot`).
+    if mode == Mode::Reel {
+        crate::envois_en_fond::a_suivre(ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) });
+    }
+    Ok(Deposee { phrase, fait })
 }
 
 impl Designation {

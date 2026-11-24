@@ -93,7 +93,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire l'état de chaque engagement du mois : ses carrés DPAE, Contrat, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part, copier : le geste qui le copie pour un autre salarié), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien)",
+        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part, copier : le geste qui le copie pour un autre salarié), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien) ; un envoi en fond de ce mois en cours se dit « en cours d'envoi » à la place des gestes et des choix de son étape",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -105,7 +105,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les quatre étapes du mois : DPAE, Contrats, DSN, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux)",
+        rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic (sa route, sa charge, puis, son libellé, et la vue qu'il ouvre quand la route en a deux ; une étape d'où un envoi part en fond dit « en cours d'envoi » à la place de son geste) ; ou_en_est, le cadre sous le mois (titre, dernier : l'encart du dernier fait du mois et de ce qui en est revenu, dans son ton, prochaine : la prochaine étape et son échéance) ; envois (ce qui part en fond de ce mois : etat et phrase, en cours, parti, ou échoué et le geste qui le refait ; avertissements)",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -397,13 +397,13 @@ fn noter(quoi: &str, e: &Echec) {
 
 // ------------------------------------------------------------------------------------------------- ce qui se garde
 
-/// L'ETAT GARDE D'UN MOIS, en memoire : son empreinte, `etat-par-engagement` rendu, le bilan du mois en sa forme (ce que
-/// dit le coffre s'y ajoute a chaque lecture : `du_mois`), et les autres lectures de l'ecran, ecrites.
+/// L'ETAT GARDE D'UN MOIS, en memoire : son empreinte, ses deux etats en leur forme (`etat-par-engagement` et le bilan
+/// du mois : ce que disent le coffre et les envois en cours s'y ajoute a chaque lecture, `du_mois`), et les autres
+/// lectures de l'ecran, ecrites.
 struct EtatDuMois {
     mois: Mois,
     empreinte: Empreinte,
-    par_engagement: Rendu,
-    bilan: Bilan,
+    etats: crate::etapes::LesDeuxEtats,
     lectures: Vec<(Route, String)>,
 }
 
@@ -470,13 +470,16 @@ impl Serialize for ALaPage<'_> {
     }
 }
 
-/// `etat-du-mois` tel que la page le recoit : le bilan, et si le mot de passe du logiciel est pose. LE COFFRE N'EST PAS
-/// DANS L'EMPREINTE (un `.bin`, qu'on ne lit pas) : ce qu'il dit se relit a chaque fois.
+/// `etat-du-mois` tel que la page le recoit : le bilan, si le mot de passe du logiciel est pose, et ce qui part en fond de
+/// ce mois (`envois` : en cours, parti, ou echoue avec le geste qui le refait ; la fenetre seule en fait partir, la ligne
+/// de commande va au bout avant de rendre). LE COFFRE ET LES ENVOIS EN FOND NE SONT PAS DANS L'EMPREINTE (un `.bin`
+/// qu'on ne lit pas ; la memoire de ce processus) : ce qu'ils disent se relit a chaque fois.
 #[derive(Serialize)]
 struct DuMois<'a> {
     #[serde(flatten)]
-    bilan: &'a Bilan,
+    bilan: std::borrow::Cow<'a, Bilan>,
     mot_de_passe_pose: bool,
+    envois: Vec<crate::envois_en_fond::EnvoiDit>,
 }
 
 impl Dite for DuMois<'_> {
@@ -485,10 +488,13 @@ impl Dite for DuMois<'_> {
     }
 }
 
-fn du_mois<'a>(racine: &Path, bilan: &'a Bilan) -> R<DuMois<'a>> {
+/// Le mois tel que la page le lit : les envois de ce mois en cours se disent a la place des gestes de leur etape
+/// (`LesDeuxEtats::bilan`) ; l'etat garde n'en change pas.
+fn du_mois<'a>(racine: &Path, etats: &'a crate::etapes::LesDeuxEtats, envois: crate::envois_en_fond::EnvoisDuMois) -> R<DuMois<'a>> {
     let pose = compagnie::coffre::Coffre::du_poste(racine)
         .ouverture_exigee()?;
-    Ok(DuMois { bilan, mot_de_passe_pose: pose })
+    let bilan = etats.bilan(&envois);
+    Ok(DuMois { bilan, mot_de_passe_pose: pose, envois: envois.dits })
 }
 
 /// TOUT L'ECRAN D'UN MOIS, tel que la page le lit (`chargerMois`) : la phrase de ses etapes, le mois, `lectures` (une
@@ -510,9 +516,11 @@ impl Dite for EcranDuMois<'_> {
 impl EtatDuMois {
     fn ecran(&self, racine: &Path, perime: bool) -> EcranDuMois<'_> {
         let mut lectures: BTreeMap<&'static str, ALaPage> = self.lectures.iter().map(|(r, t)| (r.nom(), ALaPage::Ecrite(t))).collect();
-        lectures.insert(Route::EtatParEngagement.nom(), ALaPage::Faite(Reponse::de(Route::EtatParEngagement, Ok(self.par_engagement.clone()))));
-        lectures.insert(Route::EtatDuMois.nom(), ALaPage::Faite(Reponse::de(Route::EtatDuMois, du_mois(racine, &self.bilan).and_then(en_json))));
-        EcranDuMois { phrase: self.bilan.phrase(), mois: self.mois, lectures, perime }
+        // Les envois du mois en cours, lus une fois pour les deux etats : la meme surcouche.
+        let envois = crate::envois_en_fond::EnvoisDuMois::de(racine, self.mois);
+        lectures.insert(Route::EtatParEngagement.nom(), ALaPage::Faite(Reponse::de(Route::EtatParEngagement, self.etats.par_engagement(&envois).and_then(en_json))));
+        lectures.insert(Route::EtatDuMois.nom(), ALaPage::Faite(Reponse::de(Route::EtatDuMois, du_mois(racine, &self.etats, envois).and_then(en_json))));
+        EcranDuMois { phrase: self.etats.bilan_garde().phrase(), mois: self.mois, lectures, perime }
     }
 }
 
@@ -648,8 +656,7 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: Empreinte
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let etats = crate::etapes::les_deux_etats(ctx, mois)?;
-    let par_engagement = Rendu::de(&etats.par_engagement()?)?;
-    Ok(EtatDuMois { mois, empreinte, par_engagement, bilan: etats.bilan, lectures })
+    Ok(EtatDuMois { mois, empreinte, etats, lectures })
 }
 
 /// L'etat de l'ouverture, refait : les lectures de la page qui s'ouvre (`LECTURES_OUVERTURE`), telles quelles, et le
@@ -793,13 +800,13 @@ pub fn route(o: &Options, porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::EtatParEngagement => {
             let ChargeMois { mois } = charge.lire()?;
             let etats = crate::etapes::les_deux_etats(porte.ctx, mois)?;
-            let par: crate::etapes::EtatParEngagement = etats.par_engagement()?;
+            let par: crate::etapes::EtatParEngagement = etats.par_engagement(&crate::envois_en_fond::EnvoisDuMois::de(&porte.ctx.racine, mois))?;
             en_json(par)
         }
         Route::EtatDuMois => {
             let ChargeMois { mois } = charge.lire()?;
             let etats = crate::etapes::les_deux_etats(porte.ctx, mois)?;
-            let dit: DuMois = du_mois(&porte.ctx.racine, &etats.bilan)?;
+            let dit: DuMois = du_mois(&porte.ctx.racine, &etats, crate::envois_en_fond::EnvoisDuMois::de(&porte.ctx.racine, mois))?;
             en_json(dit)
         }
         // Hors de la fenetre, l'etat se refait toujours : `attendre` n'y change rien.

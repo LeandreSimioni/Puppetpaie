@@ -38,7 +38,7 @@
 //! compagnie qui appellent des routes (`gestes`), le metier qu'elles partagent (`metier`), ce que l'import compose et
 //! ecrit pour elles (`importation`), les obligations d'un arret (`obligations`), les regularisations
 //! (`regularisation`), l'Historique d'un mois (`historique_mois`), l'apercu d'une DSN (`apercu_dsn`), ce que la veille
-//! dit a la page (`veille`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
+//! dit a la page (`veille`), les envois que la fenetre fait partir en fond (`envois_en_fond`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
 //! (`scenario`), l'horloge fictive (`horloge`), les courriels joues (`simulation_courriels`). Au-dessus, le moteur : la
 //! ligne de commande, l'interface, l'atelier.
 #![forbid(unsafe_code)]
@@ -102,6 +102,7 @@ pub mod scenario;
 pub mod service;
 mod simulation_courriels;
 pub mod veille;
+pub mod envois_en_fond;
 
 /// LE NOM D'UN SALARIE A L'ECRAN : celui que sa fiche porte (`ChampsSalarie::nomme`) ; une fiche qui ne nomme personne se
 /// designe par sa cle, `cle`.
@@ -162,19 +163,29 @@ pub(crate) fn remettre_le_fil() {
 /// `moteur route` et la ligne de commande (`commandes::Cadre`) appellent `commande` directement : le processus meurt avec
 /// sa commande, et le mot de passe qu'elle a fait taper (`demande::autoriser_acte`) sert a toute la commande.
 pub fn dans_la_fenetre(o: &Options, route: Route, charge: &Charge) -> Reponse {
-    let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| servir_la_route(o, route, charge)));
+    garde_dans_la_fenetre(route, || servir_la_route(o, route, charge))
+}
+
+/// LA GARDE D'UNE ROUTE DANS LA FENETRE (`dans_la_fenetre`), pour une route que la fenetre fait elle-meme parce qu'elle y
+/// joint ce qu'elle seule tient (`compagnies-garder` et le lacher de ses envois en fond) : la panique gardee, le fil remis.
+pub fn garde_dans_la_fenetre(route: Route, faire: impl FnOnce() -> Reponse) -> Reponse {
+    let rendu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(faire));
     remettre_le_fil();
     match rendu {
         Ok(rep) => rep,
-        Err(panique) => {
-            let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
-                (Some(s), _) => format!(" ({})", s),
-                (None, Some(s)) => format!(" ({})", s),
-                (None, None) => String::new(),
-            };
-            Reponse::de(route, Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée{}.", route, pourquoi))))
-        }
+        Err(panique) => Reponse::de(route, Err(route_tombee(route, panique.as_ref()))),
     }
+}
+
+/// UNE ROUTE TOMBEE (une panique gardee : `dans_la_fenetre`, `envois_en_fond::EnvoisEnFond::servir`) : un defaut du
+/// logiciel, qui dit la route et ce que la panique a dit, quand elle a dit un texte.
+pub(crate) fn route_tombee(route: Route, panique: &(dyn std::any::Any + Send)) -> Echec {
+    let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
+        (Some(s), _) => format!(" ({})", s),
+        (None, Some(s)) => format!(" ({})", s),
+        (None, None) => String::new(),
+    };
+    erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la route {} s'est arrêtée{}.", route, pourquoi))
 }
 
 /// `moteur route [--racine R] [--date D]` : la demande lue en sa forme (`Demande::lire`), sans ses secrets

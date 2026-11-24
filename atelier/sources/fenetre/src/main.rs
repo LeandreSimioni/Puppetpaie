@@ -131,12 +131,16 @@ fn main() -> std::process::ExitCode {
     let adresse = fenetre.adresse("127.0.0.1", port);
     let pour_fermer: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
     let poignee = pour_fermer.clone();
-    *fenetre.fermer.lock().unwrap() =Some(Box::new(move || {
-        if let Some(a) = poignee.lock().unwrap().clone() {
+    *fenetre.fermer.lock().unwrap() =Some(Box::new(move || match poignee.lock().unwrap().clone() {
+        Some(a) => {
             a.exit(0);
+            true
         }
+        None => false,
     }));
 
+    // LA CROIX FERME PAR LE CHEMIN DU BOUTON (`Fenetre::fermer_le_logiciel`) : un envoi en fond va d'abord au bout.
+    let pour_la_croix = fenetre.clone();
     let resultat = tauri::Builder::default()
         .setup(move |app| {
             if APPLICATION.set(app.handle().clone()).is_err() {
@@ -184,14 +188,27 @@ fn main() -> std::process::ExitCode {
             w.on_window_event(move |evenement| {
                 let WindowEvent::CloseRequested { api, .. } = evenement else { return };
                 let mut etat = fermeture.lock().unwrap();
+                // La fenetre reste le temps qu'un envoi en fond aille au bout (le bandeau le dit), puis le logiciel se
+                // ferme ; sur un fil a part : la fenetre continue de se dessiner pendant l'attente.
+                let fermer_apres_les_envois = || {
+                    api.prevent_close();
+                    let f = pour_la_croix.clone();
+                    if std::thread::Builder::new().spawn(move || f.fermer_le_logiciel()).is_err() {
+                        eprintln!("Le fil de la fermeture ne demarre pas : la fenetre attend ici la fin des envois, figee.");
+                        pour_la_croix.fermer_le_logiciel();
+                    }
+                };
                 match *etat {
-                    Fermeture::Libre | Fermeture::Remise => {}
+                    Fermeture::Libre | Fermeture::Remise => fermer_apres_les_envois(),
                     Fermeture::Tenue => match page.eval("window.fenetrePuppetPaie && window.fenetrePuppetPaie.fermer()") {
                         Ok(()) => {
                             api.prevent_close();
                             *etat = Fermeture::Remise;
                         }
-                        Err(e) => eprintln!("La demande de fermeture ne parvient pas a la page ({}) : la fenetre se ferme.", e),
+                        Err(e) => {
+                            eprintln!("La demande de fermeture ne parvient pas a la page ({}) : la fenetre se ferme, apres les envois.", e);
+                            fermer_apres_les_envois();
+                        }
                     },
                 }
             });

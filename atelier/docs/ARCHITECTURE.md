@@ -636,6 +636,12 @@ un libellé, chacun sa forme.
 | adresse | `Url` | `socle/src/garde_reseau.rs` |
 | un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
 | le temps d'un travail du fil de fond fait par qui l'attend (le navigateur, sans second fil) | `LeTempsDUnTravail` | `socle/src/fil_de_fond.rs` |
+| un envoi parti en fond, dans la fenêtre (ce qu'il dit en partant : `EnvoiQuiPart` ; où il en est, et sa phrase : `EtatDUnEnvoi` ; tel que le bandeau et le cadre du mois le disent : `EnvoiDit`) | `EnvoiEnFond` | `routes/src/envois_en_fond.rs` |
+| où un envoi parti en fond se dit, en plus du bandeau : l'étape du mois d'où il part, la demande de fiche à une personne, ailleurs | `PlaceDeLEnvoi` | `routes/src/envois_en_fond.rs` |
+| ce que les envois en fond disent d'un mois à sa lecture : les étapes d'où un envoi est en cours, et les envois du mois | `EnvoisDuMois` | `routes/src/envois_en_fond.rs` |
+| les envois partis en fond d'une compagnie, que la fenêtre garde | `EnvoisEnFond` | `routes/src/envois_en_fond.rs` |
+| numéro d'un envoi parti en fond | `NumeroDEnvoi` | `routes/src/envois_en_fond.rs` |
+| où en est le mois, le cadre sous lui : son dernier fait et sa prochaine étape | `OuEnEstLeMois` | `routes/src/etapes.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -2079,6 +2085,7 @@ navigateur (`AGENTS.md`, le flux « Tests »).
 
 À sa racine, à côté des routes : `service.rs` (la demande et la réponse de `moteur route`), `etat_garde.rs` (l'état
 d'un mois et de l'ouverture tels que l'écran les lit, refaits en fond), `veille.rs` (ce que la veille dit à la page),
+`envois_en_fond.rs` (les envois que la fenêtre fait partir en fond, et ce que le bandeau en dit),
 `horloge.rs` (l'horloge des compagnies fictives), `scenario.rs` (le scénario d'une compagnie et son rejeu, le circuit
 des fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_mois.rs`, `obligations.rs`,
 `regularisation.rs`, `simulation_courriels.rs`.
@@ -4140,6 +4147,31 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   de passe ; dans le navigateur, sans second fil, celui qui attend un état fait le travail de la file avec les mêmes
   refus, le temps de ce travail (`fil_de_fond::LeTempsDUnTravail`). La veille (réseau, coffre, relève, sauvegarde) ne démarre qu'à l'ouverture d'une compagnie ; le tableau de
   l'accueil ne relève les comptes rendus qu'une fois le mot de passe de l'administrateur tapé dans la fenêtre.
+- **Les envois longs partent en fond** (#683 ; `routes::envois_en_fond`). Une route qui engage (sa fiche :
+  `Acte::Engage` : la signature, les documents, le dépôt, la demande de fiche, le dossier, la régularisation CASC-SVP)
+  se fait, dans la fenêtre, sur un fil à elle (`EnvoisEnFond::servir`) ; c'est la même route, la même fonction, de bout
+  en bout. La page attend ce que ce fil lui dit d'abord : un refus, ou la réponse entière, comme avant ; mais dès que la
+  route arrive au point où tout est vérifié, le mot de passe compris, et où seul le transport reste (`partir`, juste
+  avant le premier courriel ou le dépôt réel ; un essai se suit dans sa boîte et n'y va pas), la page reçoit « en cours
+  d'envoi » (`en_fond`, le numéro de l'envoi) et la route continue. Son issue se dit dans le bandeau
+  (`DitDuBandeau::envois` : en cours, partie avec la phrase de la route, ou échouée avec le geste qui rouvre la boîte d'où
+  elle est partie ; un dépôt réel parti se suit ensuite par `suivre-depot`) ; un refus en fond se note en incident comme
+  celui d'une route attendue. En ligne de commande, dans la veille, dans l'horloge d'une fictive, pour une compagnie aux
+  envois simulés et dans le navigateur, `partir` ne fait rien : la route va au bout avant de rendre. **Un envoi à la fois
+  par compagnie**, dans l'ordre des clics : le second attend que le premier soit au bout avant même de se vérifier, et lit
+  le journal qu'il a écrit. **Tant qu'un envoi est en cours, sa place le dit à la place de son geste**
+  (`PlaceDeLEnvoi` ; une seule surcouche à la lecture, `etapes::LesDeuxEtats` et `EnvoisDuMois` : l'étape du mois dans
+  `etat-du-mois` et la prochaine étape quand c'est elle, les carrés et la boîte des DPAE dans `etat-par-engagement` ; la
+  fiche d'un salarié neuf dit les demandes de fiche en cours, chacune à sa personne) : un second clic ne le refait pas
+  partir. Un envoi qui attend son tour derrière un autre se refuse si la fermeture ou le lâcher sont venus entre-temps. **Fermer ou redémarrer pour la mise à jour
+  attend les envois en vol** (`envois_en_fond::fermer_apres_les_envois`, dans `Fenetre::fermer_le_logiciel`, avant de
+  quitter la compagnie : son bandeau dit l'attente), et refuse dès lors tout envoi neuf, comme lâcher une compagnie
+  qui s'en va (`envois_en_fond::lacher`) : la version neuve ne s'installe qu'après eux, et ne se prend en compte qu'au
+  lancement suivant. **Sous le mois, le cadre « où en
+  est » le dit en entier** (`etat-du-mois` : `ou_en_est`, `OuEnEstLeMois`, et `envois`, ceux du mois partis en fond) :
+  le dernier fait du mois, lu au journal comme l'Historique le dit (son acte, ce qui en est revenu, les retours d'un
+  dépôt à mesure qu'ils arrivent), et la prochaine étape telle que la colonne des étapes la montre ; le bandeau garde sa
+  phrase courte.
 
 
 ## L'horloge des compagnies fictives

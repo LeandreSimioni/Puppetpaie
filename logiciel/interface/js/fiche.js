@@ -84,6 +84,7 @@ async function ouvrirLaFicheRendue(fiche) {
       ${inv ? `<div class="encart invitation">
         <h3>${echapper(inv.titre)}</h3>
         <p class="aide">${echapper(inv.aide)}</p>
+        ${inv.en_cours.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
         ${inv.geste ? `<div data-invitation>${casesDuGeste(inv.geste)}</div>
           <div class="actions"><button type="button" class="primaire" data-inviter>${echapper(inv.geste.libelle)}</button></div>`
           : `<p class="note">${echapper(inv.sans_boite)}</p>`}
@@ -208,12 +209,17 @@ async function demanderFiche(bouton, inv, bloc) {
   try {
     // Un prénom non tapé part absent : le courriel dit alors « Bonjour, ».
     const r = await api(inv.geste.route, { ...charge, motdepasse: mdp });
+    // Partie en fond, la demande s'attend dans le bandeau ; la fiche d'un salarié neuf la dit « en cours d'envoi » à la
+    // place de son geste tant qu'elle n'est pas au bout (la route `fiche`), et la liste se relit à son bout
+    // (`relireFichesAttendues`).
+    const enFond = partiEnFond(r);
     // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
     ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
     oublierLEcran(casesDeLaFicheOuverte());
     CLE_ACTIVE = null;
     FICHE_NEUVE = false;
     dessinerConfig();
+    if (enFond) return;
     dire(r.phrase, "envoye");
     fenetreCourrielsFictifs("fiche", repere);
   } catch (e) {
