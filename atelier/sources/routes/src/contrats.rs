@@ -65,7 +65,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &ChargeApercuSignature::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "titre, titre_en_attente ; les départs ouverts, gestes, chacun un geste (route, charge, libellé, rang, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe), le principal par son rang (envoyer à la signature quand la boîte et la signature de l'employeur sont posées, imprimer sinon), aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), coche (coché à l'ouverture), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic, ou, sans signature de l'employeur posée, pourquoi rien ne part et où la poser ; relancer est alors absent), rien_a_envoyer, rien_en_attente",
+        rend: "titre, titre_en_attente ; les départs ouverts, gestes, chacun un geste (route, charge, libellé, rang, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe), le principal par son rang (envoyer à la signature quand la boîte et la signature de l'employeur sont posées, imprimer sinon), aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), coche (coché à l'ouverture), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic, ou, sans signature de l'employeur posée, pourquoi rien ne part et où la poser ; relancer est alors absent), signature_en_attente (l'encart de la boîte des contrats en attente, seulement quand relancer y manque faute de signature de l'employeur), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -420,9 +420,9 @@ const SANS_SIGNATURE: &str = "Aucune signature de l'employeur n'est posée : un 
 /// LA SIGNATURE DE L'EMPLOYEUR EST POSEE : le fichier que porte chaque contrat et chaque avenant qui part
 /// (`documents::contrat::description`, `documents::bulletin::identite_de`). Le logo est facultatif ; elle, non : sans elle,
 /// rien ne part se faire signer (`demander_signature`), et `signature-apercu` et `avenant-apercu` n'en ouvrent pas le
-/// geste. Imprime, un contrat se signe a la main.
-fn signature_posee(ctx: &Contexte) -> bool {
-    documents::bulletin::identite_de(&ctx.gabarits(), documents::SorteDImage::Signature.nom()).is_some()
+/// geste. Imprime, un contrat se signe a la main. Un disque qui ne repond pas est une erreur, pas une signature absente.
+pub(crate) fn signature_posee(ctx: &Contexte) -> R<bool> {
+    Ok(documents::bulletin::identite_de(&ctx.gabarits(), documents::SorteDImage::Signature.nom())?.is_some())
 }
 
 /// L'encart qui dit pourquoi aucun envoi a la signature n'est ouvert.
@@ -517,6 +517,10 @@ pub(crate) struct ApercuSignature {
     /// celui qui dit pourquoi rien ne part se faire signer (`encart_sans_signature`).
     #[serde(skip_serializing_if = "Option::is_none")]
     signature: Option<Encart>,
+    /// L'encart de la boite des contrats en attente : present seulement quand un contrat parti n'y a pas « Relancer »
+    /// faute de signature de l'employeur posee (`encart_sans_signature`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signature_en_attente: Option<Encart>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rien_a_envoyer: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -871,7 +875,7 @@ fn prochain_avenant(deja: &[AvenantParti]) -> R<NumeroDAvenant> {
 /// RAPPEL, l'etat des contrats du mois (`signature-apercu`, lu au journal) le dit, piece par piece : un contrat ou un
 /// avenant qu'un courriel a deja demande ; la phrase les nomme.
 pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse: Option<socle::secret::Secret>, ouvrir: Ouvrir) -> R<SignaturesDemandees> {
-    if !signature_posee(ctx) {
+    if !signature_posee(ctx)? {
         return Err(refus(format!("{} Rien n'est parti.", SANS_SIGNATURE)));
     }
     c.aucun_coche()?;
@@ -1079,7 +1083,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
     let avenants = crate::etapes::avenants_a_faire(ctx, mois)?;
     let boite_liee = crate::ouverture::boite_liee(ctx)?;
     // Sans la signature de l'employeur, rien ne part se faire signer : ni le depart, ni la relance (`demander_signature`).
-    let signee = signature_posee(ctx);
+    let signee = signature_posee(ctx)?;
     let mut contrats = Vec::new();
     for p in &paies {
         // SEUL UN CONTRAT ECRIT SE FAIT SIGNER ICI (`engagement::contrat_a_signer`) ; un contrat signe hors du logiciel
@@ -1242,6 +1246,8 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
         }
     });
     let phrases: Vec<String> = phrases.into_iter().chain(signature.iter().filter(|_| !signee).map(Encart::en_ligne)).collect();
+    // « Relancer » ferme faute de signature : la meme condition que celle du geste de chaque contrat en attente.
+    let signature_en_attente = (boite_liee && !signee && contrats.iter().any(|c| c.en_attente && c.par.is_some())).then(encart_sans_signature);
     // Les departs ouverts : imprimer, et envoyer a la signature quand la boite est posee et la signature de l'employeur
     // aussi ; aucun sans contrat a envoyer.
     let demande = ChargeSignature::des_contrats(mois, Vec::new()).demande(ctx)?;
@@ -1270,6 +1276,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois, seulement: Option<&[I
         gestes,
         mois,
         signature,
+        signature_en_attente,
         rien_a_envoyer: (!contrats.iter().any(|c| c.a_envoyer)).then_some("Aucun contrat à faire partir ce mois-ci."),
         rien_en_attente: (!contrats.iter().any(|c| c.en_attente)).then_some("Aucun contrat n'attend sa signature."),
         a_envoyer: contrats.iter().filter(|c| c.a_envoyer).cloned().collect(),
@@ -1316,7 +1323,7 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
     // contrat refait, de plus, quand il n'a pas commence. L'avenant part avec la date d'effet que l'apercu propose, que
     // sa case laisse changer ; le mois de l'ecran dit QUEL contrat du jour (`avenant_neuf`).
     // Sans la signature de l'employeur, aucun envoi ne s'ouvre, et l'encart dit pourquoi (`demander_signature`).
-    let sans_signature = !brut.modifications.is_empty() && brut.boite_liee && !signature_posee(ctx);
+    let sans_signature = !brut.modifications.is_empty() && brut.boite_liee && !signature_posee(ctx)?;
     let (gestes, cases) = if brut.modifications.is_empty() || !brut.boite_liee || sans_signature {
         (Vec::new(), Vec::new())
     } else {

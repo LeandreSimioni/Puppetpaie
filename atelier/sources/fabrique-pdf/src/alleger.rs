@@ -3,7 +3,8 @@
 //! ramenée à la largeur qu'un document imprime, à `RESOLUTION`, puis écrite dans le format qui lui va (PNG pour un
 //! dessin à aplats ou une image transparente, JPEG pour une photo) ; la résolution ne baisse, jusqu'à
 //! `RESOLUTION_MIN`, que si l'objectif de poids l'exige. Un SVG reste tel quel (un dessin vectoriel, net à toute
-//! taille). Une image déjà assez fine et assez légère reste telle quelle, octet pour octet.
+//! taille) ; son texte, que les documents n'impriment pas, se dessine en tracés à la pose (`textes_en_traces`). Une
+//! image déjà assez fine et assez légère reste telle quelle, octet pour octet.
 
 use image::{DynamicImage, GenericImageView};
 
@@ -192,4 +193,85 @@ pub fn alleger(octets: &[u8], largeur_points: Mesure, objectif: usize) -> Result
 /// se lit pas est un refus, celui-la meme que la fabrique opposerait au document.
 pub fn poids_dans_un_document(octets: &[u8], largeur_points: Mesure) -> Result<usize, Refus> {
     crate::dessin::Image::lire(octets, largeur_points, false)?.poids_ecrit()
+}
+
+/// LE TEXTE D'UN SVG MIS EN TRACES : le SVG reecrit sans texte, chaque lettre dessinee ; ce que ses textes disaient ; et
+/// les polices qu'il nomme et que ce poste n'a pas (une autre les a remplacees : l'image le montre).
+pub struct TexteEnTraces {
+    pub octets: Vec<u8>,
+    pub textes: Vec<String>,
+    pub polices_absentes: Vec<String>,
+}
+
+/// Les familles generiques du CSS : elles designent toujours une police du poste, jamais une absente.
+const FAMILLES_GENERIQUES: [&str; 5] = ["serif", "sans-serif", "cursive", "fantasy", "monospace"];
+
+/// LE SVG `octets` SANS TEXTE : les documents n'impriment pas le texte d'un SVG (`dessin::Image::svg`), il se dessine
+/// donc une fois, a la pose, avec les polices du poste (usvg, `fontdb::Database::load_system_fonts`), et c'est le SVG
+/// reecrit qui se garde ; aucun texte, rien a faire (`None`). Un texte qu'aucune police du poste ne dessine se refuse
+/// (sur un poste sans police, la demo du navigateur, tout texte).
+pub fn textes_en_traces(octets: &[u8]) -> Result<Option<TexteEnTraces>, Refus> {
+    use usvg::{TreeParsing as _, TreeWriting as _};
+    // Le SVG seul fait foi : une image qu'il citerait par un chemin n'est pas lue.
+    let options = usvg::Options {
+        image_href_resolver: usvg::ImageHrefResolver { resolve_string: Box::new(|_, _| None), ..usvg::ImageHrefResolver::default() },
+        ..usvg::Options::default()
+    };
+    let arbre = usvg::Tree::from_data(octets, &options).map_err(|e| Refus::illisible(format!("SVG illisible : {}", e)))?;
+    let mut noeuds = Vec::new();
+    noeuds_de_texte(&arbre.root, &mut noeuds);
+    if noeuds.is_empty() {
+        return Ok(None);
+    }
+    let mut polices = usvg::fontdb::Database::new();
+    polices.load_system_fonts();
+    let mut textes = Vec::new();
+    let mut polices_absentes: Vec<String> = Vec::new();
+    for noeud in &noeuds {
+        let (dessin, dit) = {
+            let usvg::NodeKind::Text(ref t) = *noeud.borrow() else { continue };
+            let dit = t.chunks.iter().map(|c| c.text.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+            for famille in t.chunks.iter().flat_map(|c| &c.spans).flat_map(|s| &s.font.families) {
+                let connue = FAMILLES_GENERIQUES.contains(&famille.as_str()) || polices.faces().any(|f| f.families.iter().any(|(n, _)| n == famille));
+                if !connue && !polices_absentes.contains(famille) {
+                    polices_absentes.push(famille.clone());
+                }
+            }
+            let Some(parent) = noeud.parent() else {
+                return Err(Refus::defaut("SVG : un texte sans parent dans l'arbre lu"));
+            };
+            use usvg::{NodeExt as _, TextToPath as _};
+            (t.convert(&polices, parent.abs_transform().pre_concat(t.transform)), dit)
+        };
+        match dessin {
+            Some(d) => noeud.insert_after(d),
+            // Un texte fait de blancs ne dessine rien, et n'a rien a dessiner.
+            None if dit.is_empty() => {}
+            None if polices.is_empty() => {
+                return Err(Refus::a_corriger(format!(
+                    "le texte « {} » du SVG ne se dessine pas : aucune police n'est installée ici. Le convertir en tracés dans le logiciel de dessin, ou poser l'image depuis le logiciel installé",
+                    dit
+                )))
+            }
+            None => return Err(Refus::a_corriger(format!("le texte « {} » du SVG ne se dessine avec aucune police de ce poste : le convertir en tracés dans le logiciel de dessin", dit))),
+        }
+        if !dit.is_empty() {
+            textes.push(dit);
+        }
+    }
+    for noeud in noeuds {
+        noeud.detach();
+    }
+    Ok(Some(TexteEnTraces { octets: arbre.to_string(&usvg::XmlOptions::default()).into_bytes(), textes, polices_absentes }))
+}
+
+/// Les noeuds de texte sous `racine`, ceux des masques, des motifs et des chemins de decoupe compris.
+fn noeuds_de_texte(racine: &usvg::Node, noeuds: &mut Vec<usvg::Node>) {
+    use usvg::NodeExt as _;
+    for noeud in racine.descendants() {
+        if let usvg::NodeKind::Text(_) = *noeud.borrow() {
+            noeuds.push(noeud.clone());
+        }
+        noeud.subroots(|sous| noeuds_de_texte(&sous, noeuds));
+    }
 }

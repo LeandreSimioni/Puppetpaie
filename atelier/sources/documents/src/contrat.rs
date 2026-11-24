@@ -28,13 +28,13 @@ use droit::marqueurs::Marqueur;
 
 /// Une description de documents modeles : le format, le style (sa page, qui laisse la place du logo), le logo de la
 /// compagnie, en haut a droite, son bord droit sur celui du texte (`style_contrat::LOGO_LARGEUR`), et ses documents.
-pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Document>) -> Description {
-    Description {
+pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Document>) -> R<Description> {
+    Ok(Description {
         format: FORMAT,
         page: None,
         police: None,
         style: Some(style),
-        logo: identite_de(&ent.gabarits, "logo").map(|logo| forme::Logo {
+        logo: identite_de(&ent.gabarits, "logo")?.map(|logo| forme::Logo {
             chemin: chemin_net(&logo),
             largeur: mise_en_page::LOGO_LARGEUR,
             marge_haut: mise_en_page::LOGO_HAUT,
@@ -44,7 +44,7 @@ pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Docume
         documents,
         entete_page: None,
         pied_page: None,
-    }
+    })
 }
 
 /// Un document modele : le texte du modele `lu` et ses valeurs, rien d'autre.
@@ -84,7 +84,7 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
     if paies.len() != modeles.len() {
         return Err(refus("description illisible : chaque contrat a son modèle"));
     }
-    let signature = identite_de(&ent.gabarits, "signature");
+    let signature = identite_de(&ent.gabarits, "signature")?;
     let mut documents = Vec::new();
     for (p, modele) in paies.iter().zip(modeles) {
         let nat = p.engagement.nat()?;
@@ -101,7 +101,7 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
         crate::contrat_ecrit::refuser_un_modele_incomplet(modele, &nat, &v)?;
         documents.push(Document::Modele(un));
     }
-    Ok(enveloppe(Style::Contrat, ent, documents))
+    enveloppe(Style::Contrat, ent, documents)
 }
 
 /// Les valeurs qu'un modele de contrat DOIT citer des qu'elles ne sont pas vides. `remuneration.detail` ne cite que
@@ -183,8 +183,8 @@ fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu:
     }
     let mut un = document_modele(lu, &v);
     un.modifications = Some(modifs.to_vec());
-    un.signature = identite_de(&ent.gabarits, "signature").as_deref().map(chemin_net);
-    Ok(enveloppe(Style::Avenant, ent, vec![Document::Modele(un)]))
+    un.signature = identite_de(&ent.gabarits, "signature")?.as_deref().map(chemin_net);
+    enveloppe(Style::Avenant, ent, vec![Document::Modele(un)])
 }
 
 /// Le contrat que l'avenant modifie, comme il le nomme (`{{avenant.reference}}`) : « n° FA1.26.13 du 12/10/2026 », ou,

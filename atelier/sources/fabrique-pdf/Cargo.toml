@@ -62,6 +62,9 @@ getrandom = "0.2"
 # objet formulaire par svg2pdf (dans un formulaire, son texte mis en tracés avec Liberation), un PNG ou un JPEG lu
 # par `image`.
 usvg = { version = "0.35", default-features = false, features = ["text"] }
+# Les polices du poste (`fs` : `load_system_fonts`), celle d'usvg : le texte d'une image posée se dessine en tracés à
+# sa pose (src/alleger.rs, `textes_en_traces`).
+fontdb = { version = "0.14", default-features = false, features = ["fs"] }
 svg2pdf = "0.8"
 pdf-writer = "0.9"
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg"] }

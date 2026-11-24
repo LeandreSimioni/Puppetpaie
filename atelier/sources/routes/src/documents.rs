@@ -429,12 +429,6 @@ fn periodes_attendues(
     attendues.map(Some)
 }
 
-/// `chemin_identite("cachet")` : le tampon pose, quelle que soit son extension (png, jpg, svg).
-fn cachet_pose(gabarits: &Path) -> Option<String> {
-    let dossier = gabarits.join("identite");
-    [".png", ".jpg", ".svg"].iter().map(|e| dossier.join(format!("cachet{}", e))).find(|f| f.exists()).map(|f| f.to_string_lossy().into_owned())
-}
-
 /// `RangementAer` : ce que le rangement des AER a fait -- les PDF ecrits `(periode, cle, chemin)`, les attestations sans salarie
 /// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`, les archives qui ne se lisent pas.
 #[derive(Default)]
@@ -502,8 +496,8 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
                 continue;
             }
         }
-        let signature = documents::bulletin::identite_de(&ctx.gabarits(), "signature").map(|f| f.to_string_lossy().into_owned());
-        let cachet = cachet_pose(&ctx.gabarits());
+        let signature = documents::bulletin::identite_de(&ctx.gabarits(), "signature")?.map(|f| f.to_string_lossy().into_owned());
+        let cachet = documents::bulletin::identite_de(&ctx.gabarits(), "cachet")?;
         let ent = &ctx.entreprise;
         let mut signees: Vec<Vec<u8>> = Vec::new();
         for att in groupe {
@@ -514,7 +508,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
                 // Deja verifiee ci-dessus, sur l'ensemble des attestations du salarie.
                 paies: None,
                 forcer,
-                cachet_fichier: cachet.as_deref().map(std::path::Path::new),
+                cachet_fichier: cachet.as_deref(),
             };
             match authentifier(&att.donnees, &a) {
                 Ok(octets) => signees.push(octets),
