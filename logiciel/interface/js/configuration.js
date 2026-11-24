@@ -698,7 +698,8 @@ async function peindreCoutAnnee() {
   const an = anneeDuJour();
   const ligne = (r, annee) => {
     const d = r[el.dataset.cote][el.dataset.coutDe];
-    if (!d || (!d.bulletins && !Number(d.prevu))) return "";
+    // La route ne rend que les lignes qui disent quelque chose.
+    if (!d) return "";
     return `<div><b>${annee}</b> : ${echapper(d.phrase)}</div>`;
   };
   el.innerHTML = `<span class="discret">${aideDe("cout_attente")}</span>`;

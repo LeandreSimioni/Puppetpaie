@@ -41,7 +41,7 @@ pub struct CoutsDeLAnnee {
     /// Les paies reprises que le cout ne compte pas (`etats_paie::livre_des_etats`) : la nature de leur contrat reste a
     /// dire.
     #[serde(skip)]
-    pub non_comptees: Vec<engagement::importe::NatureADire>,
+    pub non_comptees: Vec<engagement::etats::PaieDeCote>,
 }
 
 /// Le cout d'un spectacle ou d'un salarie : ses bulletins, ses sommes (en texte), ce qui n'est que prevu, et si une paie
@@ -58,6 +58,10 @@ pub struct Cout {
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     pub prevu: Montant,
     pub incomplet: bool,
+    /// Les paies du salarie que le cout ne compte pas (`engagement::etats::PaieDeCote`) : sa ligne les dit. Vide pour un
+    /// spectacle : elles se disent sur leur salarie.
+    #[serde(skip)]
+    pub de_cote: Vec<engagement::etats::PaieDeCote>,
 }
 
 /// Les deux etats de la periode, lus une fois chacun pour tous les salaries du dossier.
@@ -112,12 +116,23 @@ impl<'a> Recapitulatifs<'a> {
                 .map(|(k, _)| {
                     let (f, prevu) = (cumul_de(&faits, &k), cumul_de(&prevus, &k).cout_employeur.montant);
                     let incomplet = f.cout_employeur.dite < f.bulletins;
-                    (k, Cout { bulletins: f.bulletins, brut: f.brut.montant, charges: f.cotisations_patronales.montant, cout: f.cout_employeur.montant, prevu, incomplet })
+                    (k, Cout { bulletins: f.bulletins, brut: f.brut.montant, charges: f.cotisations_patronales.montant, cout: f.cout_employeur.montant, prevu, incomplet, de_cote: Vec::new() })
                 })
                 .collect()
         };
         out.spectacles = couts(&|l| Some(l.spectacle.clone()).filter(|s| !s.is_empty()));
         out.salaries = couts(&|l| Some(l.cle_salarie.to_string()));
+        // Chaque paie mise de cote, sur la ligne de son salarie ; un salarie dont aucune paie ne se compte a la sienne.
+        for d in &out.non_comptees {
+            let Some(cle) = d.salarie.as_ref().map(|c| c.to_string()) else { continue };
+            match out.salaries.iter_mut().find(|(k, _)| *k == cle) {
+                Some((_, c)) => c.de_cote.push(d.clone()),
+                None => out.salaries.push((
+                    cle,
+                    Cout { bulletins: 0, brut: Montant::ZERO, charges: Montant::ZERO, cout: Montant::ZERO, prevu: Montant::ZERO, incomplet: false, de_cote: vec![d.clone()] },
+                )),
+            }
+        }
         Ok(out)
     }
 

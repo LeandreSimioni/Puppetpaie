@@ -1360,20 +1360,19 @@ fn provision_d_une_annee_importee(
         }
         Ok(Some((total, premier_importe <= du.mois_civil())))
     }
-    // UNE PAIE REPRISE DONT LA NATURE RESTE A DIRE n'est pas comptee (`engagement::importe::NatureADire`) : la provision du
-    // salarie qui en a une sur ses periodes ne se fait pas, et se dit, sur lui seul ; les autres se provisionnent.
-    let pas_comptee = |cle: &droit::contexte::IdSalarie, manquent: &[engagement::importe::NatureADire]| -> String {
-        let mois: Vec<String> = manquent.iter().map(|a| a.mois.libelle(socle::mois::Graphie::Accentuee)).collect();
+    // UNE PAIE MISE DE COTE n'est pas comptee (`engagement::etats::PaieDeCote`) : la provision du salarie qui en a une sur
+    // ses periodes ne se fait pas, et se dit, sur lui seul ; les autres se provisionnent.
+    let pas_comptee = |cle: &droit::contexte::IdSalarie, manquent: &[engagement::etats::PaieDeCote]| -> String {
         format!(
-            "{} : sa paie reprise de {} n'est pas comptée, la nature de son contrat reste à dire (Configuration, « Reprendre l'historique ») : sa provision ne se calcule pas sans elle, il n'est pas dans la provision.",
+            "{} : {} ; sa provision ne se calcule pas sans elle, il n'est pas dans la provision.",
             ctx.nomme(cle),
-            mois.join(", ")
+            engagement::etats::PaieDeCote::non_comptees(manquent)
         )
     };
     // Les salaries deja vus : un salarie se provisionne, ou se dit, une fois.
     let mut vus: BTreeSet<droit::contexte::IdSalarie> = a_provisionner.iter().map(|(c, ..)| c.clone()).collect();
     // Les paies a dire que la phrase d'un salarie a deja nommees (`pas_comptee`) : elles ne se redisent pas.
-    let mut dites: Vec<engagement::importe::NatureADire> = Vec::new();
+    let mut dites: Vec<engagement::etats::PaieDeCote> = Vec::new();
     for pa in paies.iter().filter_map(engagement::etats::PaieDuMois::importee) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
         let cle = cle_de(pa);
@@ -1445,7 +1444,7 @@ fn provision_d_une_annee_importee(
             sans_compteur += 1;
         }
     }
-    avert.extend(lecture.a_dire().iter().filter(|a| !dites.contains(a)).map(engagement::importe::NatureADire::phrase));
+    avert.extend(lecture.a_dire().iter().filter(|a| !dites.contains(a)).map(engagement::etats::PaieDeCote::phrase));
     Ok(sans_compteur)
 }
 
@@ -1530,9 +1529,9 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         match (taux, n) {
             _ if !manquent.is_empty() => avert.push(format!(
-                "{} : sa paie reprise de {} n'est pas comptée, la nature de son contrat reste à dire — le taux des charges patronales ne se lit pas sans elle, la colonne reste vide.",
+                "{} : {} — le taux des charges patronales ne se lit pas sans elle, la colonne reste vide.",
                 qui,
-                manquent.iter().map(|a| a.mois.libelle(socle::mois::Graphie::Accentuee)).collect::<Vec<_>>().join(", ")
+                engagement::etats::PaieDeCote::non_comptees(&manquent)
             )),
             (Some(_), _) => {}
             (None, 0) => avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", qui)),
@@ -1664,7 +1663,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Ok((paies, a_dire)) => {
                 // Une paie reprise dont la nature reste a dire ne se compte pas : le total est incomplet, et l'etat la nomme.
                 ecartees |= !a_dire.is_empty();
-                avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
+                avert.extend(a_dire.iter().map(engagement::etats::PaieDeCote::phrase));
                 paies
             }
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {

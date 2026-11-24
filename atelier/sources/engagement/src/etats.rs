@@ -510,10 +510,31 @@ pub fn validees_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<Opti
 /// `validees_du_mois`, reduite aux engagements valides que `garder` retient : la paie d'un engagement que l'appelant ne
 /// lit pas ne se relit pas.
 pub fn validees_du_mois_parmi(ctx: &Contexte, mois: Mois, departs: &Departs, garder: &dyn Fn(&Valide) -> bool) -> R<Option<(crate::saisie::VueDuMois, Vec<Paie>)>> {
+    Ok(validees_lues(ctx, mois, departs, garder, Lire::TouteLaPaie)?.map(|(data, paies, _)| (data, paies)))
+}
+
+/// Ce que lit `validees_lues` d'une paie qui ne se calcule pas faute d'une case : ce qui la fabrique (son bulletin, sa
+/// DSN, ses documents) refuse avec elle (`TouteLaPaie`) ; ce qui ne fait que regarder les paies du mois (un etat, le cout
+/// de l'annee : `paies_du_mois`) la met de cote, la dit (`PaieDeCote`), et lit les autres (`CeQuiSeLit`).
+#[derive(Clone, Copy, PartialEq)]
+enum Lire {
+    TouteLaPaie,
+    CeQuiSeLit,
+}
+
+/// `validees_du_mois_parmi`, et les paies mises de cote (`Lire::CeQuiSeLit`) : celle d'un engagement valide qui ne se
+/// calcule pas faute d'une case (`Echec::dit_un_manque`) n'entre ni dans la saisie rendue ni dans les paies, et se dit a
+/// part ; une panne remonte toujours. Les paies a venir se calculent d'un calcul du mois ; s'il refuse un manque, chaque
+/// salarie se calcule seul (`calculer_les_rangs` ne lit que les engagements de son salarie), et seul celui a qui la case
+/// manque est mis de cote.
+fn validees_lues(
+    ctx: &Contexte, mois: Mois, departs: &Departs, garder: &dyn Fn(&Valide) -> bool, lire: Lire,
+) -> R<Option<(crate::saisie::VueDuMois, Vec<Paie>, Vec<PaieDeCote>)>> {
     let etats = du_mois(ctx, mois, departs)?;
     let Some(data) = stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(None) };
     let mut gardes = Vec::new();
     let mut paies = Vec::new();
+    let mut de_cote = Vec::new();
     let mut a_venir: Vec<RangDansLeMois> = Vec::new();
     if mois > mois_present(ctx) {
         for (i, e) in RangDansLeMois::de_chacun(&etats) {
@@ -522,31 +543,126 @@ pub fn validees_du_mois_parmi(ctx: &Contexte, mois: Mois, departs: &Departs, gar
             }
         }
     }
-    let mut calculees = if a_venir.is_empty() { Vec::new() } else { calculer_les_rangs(ctx, mois, &a_venir)? }.into_iter();
+    // La paie calculee de chaque rang a venir, ou ce qui la refuse.
+    let mut calculees: BTreeMap<RangDansLeMois, R<PaieEcrite>> = BTreeMap::new();
+    if !a_venir.is_empty() {
+        match calculer_les_rangs(ctx, mois, &a_venir) {
+            Ok(v) => calculees.extend(a_venir.iter().copied().zip(v.into_iter().map(Ok))),
+            Err(e) if lire == Lire::CeQuiSeLit && e.dit_un_manque() => {
+                let mut salaries: Vec<Option<IdSalarie>> = Vec::new();
+                let salarie_de = |i: &RangDansLeMois| i.dans(&data.engagements).and_then(|x| x.salarie.clone());
+                for i in &a_venir {
+                    if !salaries.contains(&salarie_de(i)) {
+                        salaries.push(salarie_de(i));
+                    }
+                }
+                for s in salaries {
+                    let siens: Vec<RangDansLeMois> = a_venir.iter().copied().filter(|i| salarie_de(i) == s).collect();
+                    match calculer_les_rangs(ctx, mois, &siens) {
+                        Ok(v) => calculees.extend(siens.iter().copied().zip(v.into_iter().map(Ok))),
+                        Err(e) if e.dit_un_manque() => calculees.extend(siens.iter().map(|i| (*i, Err(e.clone())))),
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
     for (i, e) in RangDansLeMois::de_chacun(&etats) {
         let Some(v) = e.valide().filter(|v| garder(v)) else { continue };
-        let paie = match a_venir.contains(&i).then(|| calculees.next()).flatten() {
-            Some(p) => Valide { en_cours: Some((mois, Arc::new(p))), ..v.clone() }.paie(ctx, &data, i)?,
-            None => v.paie(ctx, &data, i)?,
+        let paie = match calculees.remove(&i) {
+            Some(Ok(p)) => Valide { en_cours: Some((mois, Arc::new(p))), ..v.clone() }.paie(ctx, &data, i),
+            Some(Err(pourquoi)) => Err(pourquoi),
+            None => v.paie(ctx, &data, i),
+        };
+        let paie = match paie {
+            Ok(p) => p,
+            Err(pourquoi) if lire == Lire::CeQuiSeLit && pourquoi.dit_un_manque() => {
+                // Le refus du calcul tel qu'il est ne : `Valide::paie` le redit avec le contrat, que `PaieDeCote` nomme deja.
+                let raison = match (&v.refus, v.paie_ecrite(mois)?) {
+                    (Some(r), None) => r.phrase.clone(),
+                    _ => pourquoi.phrase,
+                };
+                de_cote.push(PaieDeCote { mois, salarie: v.objet.carte().salarie.clone(), qui: qui_de(ctx, &v.objet), pourquoi: PourquoiDeCote::Calcul(raison) });
+                continue;
+            }
+            Err(pourquoi) => return Err(pourquoi),
         };
         paies.push(paie);
         gardes.push(i.dans(&data.engagements).cloned().ok_or_else(|| socle::echec::paie_illisible("engagements"))?);
     }
-    Ok(Some((crate::saisie::VueDuMois { engagements: gardes, ..data }, paies)))
+    Ok(Some((crate::saisie::VueDuMois { engagements: gardes, ..data }, paies, de_cote)))
+}
+
+/// UNE PAIE DU MOIS MISE DE COTE PAR CE QUI REGARDE LES PAIES DU MOIS (`paies_du_mois` : un etat, le cout de l'annee) :
+/// elle ne se compte pas, et se dit sur son contrat, sans refuser les autres (« Le logiciel est doux »). Ce qui fabrique
+/// cette paie (son bulletin, sa DSN) refuse avec elle, et le dit la ou on en a besoin.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaieDeCote {
+    pub mois: Mois,
+    /// Le salarie du contrat (la cle de sa fiche) ; `None` : l'engagement ne le dit pas. Un calcul d'un salarie qui a
+    /// besoin de cette paie refuse pour lui seul, en la nommant.
+    pub salarie: Option<IdSalarie>,
+    /// Le contrat, tel qu'une phrase le nomme (`qui_de`).
+    pub qui: String,
+    pub pourquoi: PourquoiDeCote,
+}
+
+/// Pourquoi une paie est mise de cote (`PaieDeCote`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum PourquoiDeCote {
+    /// Une paie reprise d'un contrat dont la nature reste a dire (`importe::Importe::a_dire`) : une nature ne se devine
+    /// pas (regle 6), ce qui a ete verse ne se range sous aucune.
+    NatureADire,
+    /// Une paie d'un engagement valide qui ne se calcule pas faute d'une case : la phrase du refus du calcul, qui nomme la
+    /// case et ou elle se dit.
+    Calcul(String),
+}
+
+impl PaieDeCote {
+    /// Ce qui lui manque, en une phrase courte, sans nommer le contrat : ce que la ligne de son salarie en dit.
+    pub fn manque(&self) -> String {
+        match &self.pourquoi {
+            PourquoiDeCote::NatureADire => "la nature de son contrat reste à dire (Configuration, « Reprendre l'historique »)".to_string(),
+            PourquoiDeCote::Calcul(phrase) => format!("elle ne se calcule pas : {}", phrase.trim_end_matches('.')),
+        }
+    }
+
+    /// Ce que la lecture en dit, sans nommer le contrat : « sa paie de juillet 2026 n'est pas comptée, … ».
+    pub fn non_comptee(&self) -> String {
+        let quelle = match self.pourquoi {
+            PourquoiDeCote::NatureADire => "sa paie reprise",
+            PourquoiDeCote::Calcul(_) => "sa paie",
+        };
+        format!("{} de {} n'est pas comptée, {}", quelle, self.mois.libelle(Graphie::Accentuee), self.manque())
+    }
+
+    /// Ce que la lecture dit de plusieurs paies d'un meme salarie, sans le nommer (`non_comptee`, separees).
+    pub fn non_comptees(liste: &[PaieDeCote]) -> String {
+        liste.iter().map(PaieDeCote::non_comptee).collect::<Vec<_>>().join(" ; ")
+    }
+
+    /// Ce que la lecture en dit.
+    pub fn phrase(&self) -> String {
+        format!("{} : {}.", self.qui, self.non_comptee())
+    }
 }
 
 /// LES PAIES DE `mois`, CE QUE LISENT LES ETATS : la paie ecrite de chaque engagement valide de la saisie qui en a une
 /// (`validees_du_mois`), puis celle de chaque engagement importe paye ce mois (`importe::paies_du_mois` : ce que les
-/// pieces de l'ancien logiciel en disent, dans les mots du moteur). Un engagement en saisie n'est pas paye ; rien ne se
-/// calcule. Ce qui part (DSN, documents) ne lit que la saisie (`validees_du_mois`) : un mois importe a deja ete declare.
-/// Une paie reprise d'un contrat dont la nature reste a dire n'y est pas : elle se rend a part (`importe::NatureADire`),
-/// et l'etat qui lit le mois la dit sans refuser le reste.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<(Vec<PaieDuMois>, Vec<crate::importe::NatureADire>)> {
-    let mut paies: Vec<PaieDuMois> =
-        validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, p)| p).filter(|p| !p.engagement.sans_paie()).map(PaieDuMois::Validee).collect();
+/// pieces de l'ancien logiciel en disent, dans les mots du moteur). Un engagement en saisie n'est pas paye. Ce qui part
+/// (DSN, documents) ne lit que la saisie (`validees_du_mois`) : un mois importe a deja ete declare. Une paie qui ne se
+/// compte pas (`PaieDeCote` : une paie reprise dont la nature reste a dire, une paie validee qui ne se calcule pas faute
+/// d'une case) n'y est pas : elle se rend a part, et l'etat qui lit le mois la dit sans refuser le reste.
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<(Vec<PaieDuMois>, Vec<PaieDeCote>)> {
+    let (mut paies, mut de_cote) = match validees_lues(ctx, mois, departs, &|_| true, Lire::CeQuiSeLit)? {
+        Some((_, p, d)) => (p.into_iter().filter(|p| !p.engagement.sans_paie()).map(PaieDuMois::Validee).collect::<Vec<_>>(), d),
+        None => (Vec::new(), Vec::new()),
+    };
     let (importees, a_dire) = crate::importe::paies_du_mois(ctx, mois)?;
     paies.extend(importees.into_iter().map(PaieDuMois::Importee));
-    Ok((paies, a_dire))
+    de_cote.extend(a_dire);
+    Ok((paies, de_cote))
 }
 
 /// UNE PAIE DU MOIS, CE QUE LIT UN ETAT : la paie ecrite d'un engagement valide, ou celle d'un engagement importe, que
