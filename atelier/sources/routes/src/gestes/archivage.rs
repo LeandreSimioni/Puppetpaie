@@ -81,7 +81,7 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
     let mut deposes = Vec::new();
     for f in &fichiers {
         let nom_local = socle::fichiers::NomDeFichier::du(f)?;
-        let r = client.televerser(f, &cible, None, deja.get(nom_local.texte()))?;
+        let r = client.televerser(f, &cible, None, deja.le_seul(nom_local.texte())?)?;
         let octets = socle::grandeurs::Octets::du_disque(&std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?);
         // Le fichier porte dans Drive le nom sous lequel il y est depose (`televerser`, sans nom : celui du fichier).
         deposes.push(FichierArchive { nom: nom_local, octets, remplace: r.remplace });
@@ -100,8 +100,8 @@ impl Drive for DriveJoue {
     fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
         Ok(IdDrive::lire(&format!("{}/{}", depuis, noms.join("/")))?)
     }
-    fn lister(&mut self, _parent: &IdDrive) -> Result<std::collections::BTreeMap<String, envois::drive::Distant>, ErreurGoogle> {
-        Ok(Default::default())
+    fn lister(&mut self, _parent: &IdDrive) -> Result<envois::drive::FichiersDuDossier, ErreurGoogle> {
+        Ok(envois::drive::FichiersDuDossier::default())
     }
     fn televerser(&mut self, fichier: &Path, _parent: &IdDrive, nom: Option<&str>, _connu: Option<&envois::drive::Distant>) -> Result<envois::drive::Depose, ErreurGoogle> {
         let nom = nom.map(String::from).or_else(|| fichier.file_name().map(|n| n.to_string_lossy().into_owned()));
@@ -121,8 +121,5 @@ impl Drive for DriveJoue {
     }
     fn en_place(&mut self, _id: &IdDrive) -> Result<bool, ErreurGoogle> {
         Ok(true)
-    }
-    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
-        Err(ErreurGoogle::nouvelle(Classe::Refuse, format!("Le Drive d'une compagnie fictive ne garde rien : {} n'y est pas.", id)))
     }
 }

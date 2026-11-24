@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use compagnie::sur_le_drive::{DossierVu, GenreDuDossier};
-use envois::drive::{Drive, IdDrive};
+use envois::drive::{CorbeilleDuDrive, IdDrive};
 use socle::echec::{Classe, R};
 use socle::ecran::{EtatDEcran, Pastille};
 
@@ -31,7 +31,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que le Drive lié porte : chaque dossier, sa dernière sauvegarde, son volume.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "phrase, encarts, rangs : chaque dossier sous PuppetPaie (le dossier de cette compagnie, celui d'une autre, l'ancienne sauvegarde commune, un dossier d'une ancienne version), sa dernière sauvegarde, son volume, et le geste qui le supprime ; un Drive qui ne se lit pas se dit en encart",
+        rend: "phrase, encarts, rangs : chaque dossier sous PuppetPaie (le dossier de cette compagnie, celui d'une autre, l'ancienne sauvegarde commune, un dossier d'une ancienne version), sa dernière sauvegarde, son volume, et le geste qui le supprime quand le mot de passe du logiciel est posé (sinon un encart dit pourquoi) ; ce qui ne se lit pas se dit en encart",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -65,10 +65,12 @@ charge! {
     }
 }
 
-/// Ce que l'ecran du Drive donne au geste d'un rang : son dossier.
+/// CE QU'UN ECRAN DU DRIVE DONNE AU GESTE D'UN RANG : le dossier du Drive sur lequel il porte (le supprimer, ici ; le
+/// reprendre, a l'accueil), ou aucun (lier ou oublier le compte Google de l'accueil).
 #[derive(Debug, Clone, Serialize)]
-struct DossierDuRang {
-    dossier: IdDrive,
+pub(crate) struct DossierDuRang {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) dossier: Option<IdDrive>,
 }
 
 type EcranDuDrive = EcranRendu<DossierDuRang>;
@@ -159,9 +161,10 @@ fn avant_de_supprimer(vu: &DossierVu, le_sien: bool, maintenant: socle::paris::M
 
 // ------------------------------------------------------------------ drive-etat
 
-/// L'ECRAN DU DRIVE : un rang par dossier sous `PuppetPaie/`, son geste « Supprimer… » (la demande du mot de passe du
-/// logiciel quand il est pose). Doux : une compagnie fictive, un Drive non lie, un Drive qui ne se lit pas se disent en
-/// encart, et rien ne se refuse.
+/// L'ECRAN DU DRIVE : un rang par dossier sous `PuppetPaie/`, et son geste « Supprimer… » quand le mot de passe du
+/// logiciel est pose (sa demande ; sans lui, le geste ne se propose pas et un encart dit pourquoi). Doux : une compagnie
+/// fictive, un Drive non lie, un Drive qui ne se lit pas, une identite ou un coffre illisibles se disent en encart, et
+/// rien ne se refuse.
 fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
     let mut encarts = vec![Encart::de(EtatDEcran::Information, "", "Ce que votre compte Google porte dans son dossier PuppetPaie : un dossier par compagnie, et ce qu'ont laissé les anciennes versions.")];
     let fini = |encarts: Vec<Encart>, phrase: Phrase| DriveDit { phrase, ecran: EcranRendu { encarts, rangs: Vec::new(), cases: Vec::new(), historique: Vec::new(), enregistrer: None } };
@@ -181,9 +184,30 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
             return Ok(fini(encarts, socle::phrase!("Le Drive de {} ne se lit pas.", compte)));
         }
     };
-    let la_sienne = compagnie::sauvegarde::identite_ecrite(&ctx.racine)?;
-    let pose = compagnie::coffre::Coffre::du_poste(&ctx.racine).ouverture_exigee()?;
-    let demande = if pose { Some(crate::coffre::demande(&ctx.racine, GESTE_SUPPRIMER)?) } else { None };
+    // Ce qui ne se lit pas ici se dit en encart ; le reste de l'ecran se montre.
+    let la_sienne = match compagnie::sauvegarde::identite_ecrite(&ctx.racine) {
+        Ok(i) => i,
+        Err(e) => {
+            encarts.push(Encart::de(EtatDEcran::Refuse, "Le dossier de cette compagnie ne se reconnaît pas", e.phrase));
+            None
+        }
+    };
+    // SUPPRIMER DEMANDE LE MOT DE PASSE DU LOGICIEL : sans lui, le geste ne se propose pas, et l'ecran dit pourquoi.
+    let demande = match compagnie::coffre::Coffre::du_poste(&ctx.racine).ouverture_exigee().and_then(|pose| pose.then(|| crate::coffre::demande(&ctx.racine, GESTE_SUPPRIMER)).transpose()) {
+        Ok(Some(d)) => Some(d),
+        Ok(None) => {
+            encarts.push(Encart::de(
+                EtatDEcran::Information,
+                "Supprimer un dossier demande le mot de passe du logiciel",
+                "Aucun n'est posé pour cette compagnie : le poser d'abord, dans Configuration › Mots de passe.",
+            ));
+            None
+        }
+        Err(e) => {
+            encarts.push(Encart::de(EtatDEcran::Refuse, "Le mot de passe du logiciel ne se lit pas : supprimer un dossier attend", e.phrase));
+            None
+        }
+    };
     let maintenant = socle::temps::secondes();
     if vus.is_empty() {
         encarts.push(Encart::de(EtatDEcran::Information, "Rien encore dans le Drive", "La prochaine sauvegarde y crée le dossier de cette compagnie."));
@@ -195,7 +219,7 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
         if let Some(o) = vu.octets {
             dit.push(format!("Volume : {}.", o));
         }
-        dit.extend(vu.illisible.iter().map(|i| format!("Sa marque : {}.", i)));
+        dit.extend(vu.illisible.iter().cloned());
         let pastille = if le_sien {
             Pastille::de(EtatDEcran::Fait, "cette compagnie")
         } else if recent(vu, maintenant) {
@@ -203,10 +227,13 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
         } else {
             Pastille::de(EtatDEcran::Information, "ancien ou d'une autre compagnie")
         };
-        let geste = GesteDeRoute::avec_cases(Route::DriveSupprimer, DossierDuRang { dossier: vu.id.clone() }, SUPPRIMER, Vec::new(), SansCharge {}, SansCharge {})
-            .disant(avant_de_supprimer(vu, le_sien, maintenant))
-            .exigeant(demande.clone());
-        rangs.push(RangDeLEcran { titre: vu.nom.clone(), dit, pastille, etat: None, montre: None, gestes: vec![geste] });
+        let gestes = match &demande {
+            Some(d) => vec![GesteDeRoute::avec_cases(Route::DriveSupprimer, DossierDuRang { dossier: Some(vu.id.clone()) }, SUPPRIMER, Vec::new(), SansCharge {}, SansCharge {})
+                .disant(avant_de_supprimer(vu, le_sien, maintenant))
+                .exigeant(Some(d.clone()))],
+            None => Vec::new(),
+        };
+        rangs.push(RangDeLEcran { titre: vu.nom.clone(), dit, pastille, etat: None, montre: None, gestes });
     }
     let phrase = socle::phrase!("Le Drive de {} : {} dossier(s).", compte, vus.len());
     Ok(DriveDit { phrase, ecran: EcranRendu { encarts, rangs, cases: Vec::new(), historique: Vec::new(), enregistrer: None } })

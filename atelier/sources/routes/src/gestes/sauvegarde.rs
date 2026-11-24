@@ -104,7 +104,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             en_echec.extend(fichiers.iter().cloned());
             continue;
         }
-        let essai: Result<(envois::drive::IdDrive, BTreeMap<String, envois::drive::Distant>), ErreurGoogle> = (|| {
+        let essai: Result<(envois::drive::IdDrive, envois::drive::FichiersDuDossier), ErreurGoogle> = (|| {
             let parent = match dossiers.get(&cle) {
                 Some(p) => p.clone(),
                 None => client.chemin(cie, &segments)?,
@@ -152,8 +152,9 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             let nom = relatif.nom();
             let mut faire = || -> Result<Option<EtatFichier>, ErreurGoogle> {
                 let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
-                // Le fichier de ce nom que `lister` connait (le meme pour decider ET pour remplacer).
-                let connu = deja.get(nom.texte());
+                // Le fichier de ce nom que `lister` connait (le meme pour decider ET pour remplacer) ; deux de ce nom dans
+                // le Drive : le fichier est reporte, en le disant, et rien ne se choisit.
+                let connu = deja.le_seul(nom.texte())?;
                 let distante = if tout { None } else { connu.and_then(|d| d.md5.as_ref()) };
                 if distante == Some(&locale) {
                     return Ok(None);

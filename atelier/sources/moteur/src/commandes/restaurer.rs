@@ -80,7 +80,8 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
         Ok(v) => v,
         Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
-    let depuis = match args.texte("dossier-drive").filter(|d| !d.is_empty()) {
+    // Dit, `--dossier-drive` se lit tel quel : vide, il se refuse (`IdDrive::lire`), il ne vaut pas absent.
+    let depuis = match args.texte("dossier-drive") {
         Some(d) => match envois::drive::IdDrive::lire(d).map_err(envois::drive::ErreurGoogle::from).and_then(|id| sur_le_drive::le_dossier(vus, &id, racine_drive)) {
             Ok(v) => v,
             Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),

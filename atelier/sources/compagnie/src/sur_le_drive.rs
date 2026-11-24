@@ -30,7 +30,7 @@ pub struct DossierVu {
     pub genre: GenreDuDossier,
     pub derniere: Option<Moment>,
     pub octets: Option<Octets>,
-    /// Ce qui ne se lit pas dans sa marque, en clair : le dossier se montre quand meme.
+    /// Ce qui ne se lit pas dans sa marque, une phrase par chose, en mots : le dossier se montre quand meme.
     pub illisible: Vec<String>,
 }
 
@@ -43,12 +43,16 @@ impl DossierVu {
 
 /// Le dossier `d`, lu depuis sa marque : ce qui ne s'en lit pas se dit dans `illisible`, sans fermer la vue.
 fn vu(d: envois::drive::SousDossier) -> DossierVu {
-    let MarqueDuDossier { compagnie, derniere, octets } = d.marque;
+    // Sans marque, le dossier ne dit ni identite, ni date, ni volume.
+    let (compagnie, derniere, octets) = match d.marque {
+        Some(MarqueDuDossier { compagnie, derniere, octets }) => (compagnie, derniere, octets),
+        None => (None, None, None),
+    };
     let mut illisible = Vec::new();
     let genre = match compagnie.map(|c| IdentiteSurLeDrive::lire(&c)) {
         Some(Ok(i)) => GenreDuDossier::Compagnie(i),
         Some(Err(e)) => {
-            illisible.push(format!("sa marque ne se lit pas ({})", e.phrase));
+            illisible.push(format!("Sa marque ne se lit pas : {}", e.phrase));
             GenreDuDossier::Ancien
         }
         None if d.nom == SAUVEGARDE => GenreDuDossier::AncienneSauvegarde,
@@ -59,7 +63,7 @@ fn vu(d: envois::drive::SousDossier) -> DossierVu {
         match lu {
             Ok(m) => Some(m),
             Err(_) => {
-                illisible.push(format!("la date de sa dernière sauvegarde ne se lit pas ({})", t));
+                illisible.push("La date de sa dernière sauvegarde, notée sur le Drive, ne se lit pas.".to_string());
                 None
             }
         }
@@ -67,7 +71,7 @@ fn vu(d: envois::drive::SousDossier) -> DossierVu {
     let octets = octets.and_then(|t| match Octets::ecrite(&t) {
         Some(o) => Some(o),
         None => {
-            illisible.push(format!("son volume ne se lit pas ({})", t));
+            illisible.push("Son volume, noté sur le Drive, ne se lit pas.".to_string());
             None
         }
     });

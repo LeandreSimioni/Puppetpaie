@@ -11,7 +11,7 @@ use crate::faux_drive;
 use std::path::{Path, PathBuf};
 
 use faux_drive::{ecrire, racine as racine_de, FauxDrive};
-use envois::drive::Drive;
+use envois::drive::{CorbeilleDuDrive, Drive};
 use compagnie::sauvegarde::{EtatFichier, Sauvegarde};
 use routes::gestes::sauvegarde::sauvegarder;
 

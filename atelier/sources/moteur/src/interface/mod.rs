@@ -502,7 +502,8 @@ pub fn page_logiciel(racine: &Path, jeton: &socle::secret::Secret) -> R<String> 
         .replace("{{PHRASES}}", &socle::ecriture::json_en_ligne(&PHRASES_DE_LA_FENETRE))
         .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
     let cale = CALE.replace("{{JETON}}", jeton.devoiler()).replace("{{NOMS}}", NOMS_LOGICIEL);
-    // Avant le PREMIER script de la page (`/js/tuyau.js`, qui definit `api`) : la cale doit exister avant lui.
+    // Avant le PREMIER script de la page (`/js/montrer.js`, puis `/js/tuyau.js`, qui definit `api`) : la cale doit exister
+    // avant eux.
     p = p.replacen("<script src=\"/js/", &format!("{}<script src=\"/js/", cale), 1);
     Ok(p)
 }

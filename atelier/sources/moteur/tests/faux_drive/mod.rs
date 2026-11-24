@@ -2,7 +2,7 @@
 //! `routes/ouverture.rs`.
 //!
 //! AUCUN RESEAU : il ne tient que des dossiers (et leur marque) et des fichiers en memoire, et un journal des appels.
-//! Comme le vrai client : `lister` rend les FICHIERS d'un dossier par nom (le dernier de deux homonymes gagne), jamais les
+//! Comme le vrai client : `lister` rend les FICHIERS d'un dossier par nom (homonymes compris), jamais les
 //! sous-dossiers ; `televerser` remplace le fichier `connu` ou en cree un nouveau (un homonyme reste, rien n'est cherche
 //! par nom) ; `sous_dossiers` rend les dossiers d'un dossier (`root` compris), homonymes compris, avec leur marque, sans
 //! rien creer ; `telecharger` rend le contenu tel qu'il est tenu ; un dossier mis a la corbeille n'est plus en place, ni
@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use envois::drive::{Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle, IdDrive, MarqueDuDossier, SousDossier};
+use envois::drive::{CorbeilleDuDrive, Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle, FichiersDuDossier, IdDrive, MarqueDuDossier, SousDossier};
 
 pub struct FichierDrive {
     pub id: IdDrive,
@@ -186,7 +186,7 @@ impl Drive for FauxDrive {
         Ok(parent)
     }
 
-    fn lister(&mut self, parent: &IdDrive) -> Result<BTreeMap<String, Distant>, ErreurGoogle> {
+    fn lister(&mut self, parent: &IdDrive) -> Result<FichiersDuDossier, ErreurGoogle> {
         let chemin = self.chemin_de(parent);
         self.journal.push(format!("lister {}", chemin));
         if let Some(e) = self.panne("lister", &chemin) {
@@ -197,9 +197,9 @@ impl Drive for FauxDrive {
                 let _ = std::fs::remove_file(p);
             }
         }
-        let mut l = BTreeMap::new();
+        let mut l = FichiersDuDossier::default();
         for f in self.fichiers.iter().filter(|f| f.parent == *parent) {
-            l.insert(f.nom.clone(), Distant { id: f.id.clone(), md5: f.md5.clone(), octets: Some(socle::grandeurs::Octets::de(&f.contenu)) });
+            l.ajouter(f.nom.clone(), Distant { id: f.id.clone(), md5: f.md5.clone(), octets: Some(socle::grandeurs::Octets::de(&f.contenu)) });
         }
         Ok(l)
     }
@@ -240,7 +240,7 @@ impl Drive for FauxDrive {
             .dossiers
             .iter()
             .filter(|(i, p, _)| p == parent && !self.jete(i))
-            .map(|(i, _, c)| SousDossier { nom: c.rsplit('/').next().unwrap_or(c).to_string(), id: i.clone(), marque: self.marques.get(i).cloned().unwrap_or_default() })
+            .map(|(i, _, c)| SousDossier { nom: c.rsplit('/').next().unwrap_or(c).to_string(), id: i.clone(), marque: self.marques.get(i).cloned() })
             .collect())
     }
 
@@ -274,12 +274,6 @@ impl Drive for FauxDrive {
         Ok(!self.jete(id))
     }
 
-    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
-        self.journal.push(format!("corbeille {}", self.chemin_de(id)));
-        self.corbeille.push(id.clone());
-        Ok(())
-    }
-
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {
         let f = self.fichiers.iter().find(|f| f.id == *id).unwrap_or_else(|| panic!("fichier inconnu : {}", id));
         let chemin = format!("{}/{}", self.chemin_de(&f.parent), f.nom);
@@ -289,6 +283,14 @@ impl Drive for FauxDrive {
             return Err(e);
         }
         Ok(contenu)
+    }
+}
+
+impl CorbeilleDuDrive for FauxDrive {
+    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
+        self.journal.push(format!("corbeille {}", self.chemin_de(id)));
+        self.corbeille.push(id.clone());
+        Ok(())
     }
 }
 

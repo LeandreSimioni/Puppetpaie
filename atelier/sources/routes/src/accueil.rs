@@ -70,12 +70,12 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire les compagnies que le Drive lié à l'accueil porte, et le geste qui reprend chacune.",
         charge: &crate::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "phrase, encarts, rangs : le compte Google de l'accueil (le lier), puis chaque compagnie du Drive (sa dernière sauvegarde, son volume) et le geste qui la reprend ; un Drive qui ne se lit pas se dit en encart",
+        rend: "phrase, encarts, rangs : le compte Google de l'accueil (le lier, l'oublier), puis chaque compagnie du Drive (sa dernière sauvegarde, son volume, une reprise pas finie sur ce poste) et le geste qui la reprend ; ce qui ne se lit pas se dit en encart",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 120,
-        ecran: ECRAN,
+        ecran: Ecran::Rendu(Place::AccueilDrive),
     },
     Fiche {
         route: Route::DriveLier,
@@ -87,23 +87,35 @@ pub const ROUTES: &[Fiche] = &[
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 120,
-        ecran: ECRAN,
+        ecran: Ecran::Geste(Place::AccueilDrive),
     },
     Fiche {
         route: Route::DriveReprendre,
-        geste: "Ramener sur ce poste une compagnie du Drive lié à l'accueil.",
+        geste: "Ramener sur ce poste une compagnie du Drive lié à l'accueil, dans un dossier neuf (une reprise pas finie se continue dans le sien).",
         charge: &drive::ChargeReprendre::CHARGE,
         exemple: r#"{"dossier":"cie-essai"}"#,
-        rend: "id, nom, chemin (le --racine de ses routes), redescendus, incidents (les fichiers qui ne sont pas revenus), a_faire (ce qui reste à faire pour son coffre), phrase",
+        rend: "nom, chemin (le --racine de ses routes), redescendus, incidents (le détail de ce qui n'est pas revenu, un fichier par ligne), a_faire (ce qui reste à faire pour son coffre), phrase ; ouvrir (la compagnie, que la fenêtre ouvre) quand tout est revenu",
         refus: &[
             Refus { classe: Classe::Refuse, corriger: "lier d'abord le Drive, ou un dossier que drive-compagnies montre ; rien n'est repris" },
-            Refus { classe: Classe::DossierNonVide, corriger: "la compagnie de ce poste qui porte déjà cette identité diffère de sa sauvegarde ; rien n'est écrit" },
+            Refus { classe: Classe::DossierNonVide, corriger: "la compagnie d'une reprise pas finie a changé depuis : mettre ses fichiers de côté ; rien n'est écrit" },
             OPERATION,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 200,
-        ecran: ECRAN,
+        ecran: Ecran::Geste(Place::AccueilDrive),
+    },
+    Fiche {
+        route: Route::DriveOublier,
+        geste: "Oublier le compte Google de l'accueil : son jeton s'efface de ce poste.",
+        charge: &crate::SansCharge::CHARGE,
+        exemple: r#"{}"#,
+        rend: "efface (un jeton s'est effacé), phrase",
+        refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
+        acte: Acte::Ecrit,
+        phrase: 120,
+        ecran: Ecran::Geste(Place::AccueilDrive),
     },
     Fiche {
         route: Route::CompagnieCouleur,
@@ -453,6 +465,10 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::DriveLier => {
             let super::SansCharge {} = charge.lire()?;
             en_json(drive::lier(&inst)?)
+        }
+        Route::DriveOublier => {
+            let super::SansCharge {} = charge.lire()?;
+            en_json(drive::oublier(&inst)?)
         }
         Route::DriveReprendre => {
             let c: drive::ChargeReprendre = charge.lire()?;

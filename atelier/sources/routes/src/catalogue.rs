@@ -121,6 +121,7 @@ routes! {
         DriveCompagnies = "drive-compagnies",
         DriveLier = "drive-lier",
         DriveReprendre = "drive-reprendre",
+        DriveOublier = "drive-oublier",
         AdministrateurEtat = "administrateur-etat",
         AdministrateurRattacher = "administrateur-rattacher",
         AdministrateurDetacher = "administrateur-detacher",
@@ -299,6 +300,8 @@ pub enum Place {
     Signaler,
     Bandeau,
     Accueil,
+    /// Le « + » de l'accueil, « De mon Drive » : reprendre une compagnie de son Drive (`accueil::drive`).
+    AccueilDrive,
 }
 
 impl Place {
@@ -319,6 +322,7 @@ impl Place {
             Place::Signaler => "Un problème, une idée ?",
             Place::Bandeau => "Le bandeau",
             Place::Accueil => "L'accueil des compagnies",
+            Place::AccueilDrive => "L'accueil des compagnies › De mon Drive",
         }
     }
 }

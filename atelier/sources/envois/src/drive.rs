@@ -42,13 +42,21 @@ struct FichierDrive {
     type_mime: Option<String>,
     #[serde(rename = "webViewLink")]
     lien: Option<Url>,
-    /// Ce que l'application a pose sur un dossier (`appProperties`) ; absent : rien.
+    /// Ce que l'application a pose sur un dossier (`appProperties`) ; absent : il n'en porte aucune.
     #[serde(rename = "appProperties", default)]
     marque: Option<MarqueDuDossier>,
-    /// A la corbeille, lui ou un dossier qui le porte.
-    trashed: Option<bool>,
 }
 impl socle::forme::ReponseDUnTiers for FichierDrive {}
+
+/// CE QUE DRIVE REND D'UN DOSSIER QU'ON DEMANDE S'IL EST EN PLACE (`Drive::en_place`, `fields=trashed`) : s'il est a la
+/// corbeille, lui ou un dossier qui le porte (« Whether the file was trashed, either explicitly or from a trashed parent
+/// folder » : `atelier/reference/sources/google-drive-api/google-drive-api-corbeille-20261124.txt`, « Determine a trashed
+/// file's properties »). Le champ est demande : il est requis, et une reponse qui ne le dit pas ne se lit pas.
+#[derive(Debug, Deserialize)]
+struct EtatALaCorbeille {
+    trashed: bool,
+}
+impl socle::forme::ReponseDUnTiers for EtatALaCorbeille {}
 
 /// LA MARQUE QUE PUPPETPAIE POSE SUR LE DOSSIER D'UNE COMPAGNIE DANS LE DRIVE, ses proprietes privees a l'application
 /// (`appProperties` : « To add properties restricted to your app, use the appProperties field of the files resource »,
@@ -70,12 +78,43 @@ pub struct MarqueDuDossier {
 }
 impl socle::forme::ReponseDUnTiers for MarqueDuDossier {}
 
-/// UN SOUS-DOSSIER, tel que `Drive::sous_dossiers` le rend : son nom, son identifiant, sa marque (vide : aucune).
+/// UN SOUS-DOSSIER, tel que `Drive::sous_dossiers` le rend : son nom, son identifiant, sa marque (`None` : il n'en porte
+/// aucune).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SousDossier {
     pub nom: String,
     pub id: IdDrive,
-    pub marque: MarqueDuDossier,
+    pub marque: Option<MarqueDuDossier>,
+}
+
+/// LES FICHIERS D'UN DOSSIER DU DRIVE, tels que `Drive::lister` les rend : par nom, chaque fichier de ce nom dans
+/// l'ordre ou Drive les rend. Le Drive admet deux fichiers du meme nom dans un dossier ; le logiciel ne choisit pas entre
+/// eux : `le_seul` les refuse en les nommant.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FichiersDuDossier(BTreeMap<String, Vec<Distant>>);
+
+impl FichiersDuDossier {
+    /// Ajoute le fichier `nom`, a la suite de ceux du meme nom.
+    pub fn ajouter(&mut self, nom: String, distant: Distant) {
+        self.0.entry(nom).or_default().push(distant);
+    }
+
+    /// Le fichier `nom`, s'il y en a un ; deux du meme nom se refusent (`SauvegardeAmbigue`), en le nommant.
+    pub fn le_seul(&self, nom: &str) -> Result<Option<&Distant>, ErreurGoogle> {
+        match self.0.get(nom).map(Vec::as_slice) {
+            None | Some([]) => Ok(None),
+            Some([seul]) => Ok(Some(seul)),
+            Some(plusieurs) => Err(ErreurGoogle::nouvelle(
+                Classe::SauvegardeAmbigue,
+                format!("{} fichiers « {} » dans le même dossier du Drive : le logiciel ne choisit pas entre eux. N'en garder qu'un dans le Drive.", plusieurs.len(), nom),
+            )),
+        }
+    }
+
+    /// Chaque nom, et les fichiers de ce nom (un seul, sauf homonymes).
+    pub fn par_nom(&self) -> impl Iterator<Item = (&str, &[Distant])> {
+        self.0.iter().map(|(n, l)| (n.as_str(), l.as_slice()))
+    }
 }
 
 /// Le `md5Checksum` d'un fichier : Google dit l'absence par un texte vide comme en omettant la cle ; c'est la meme.
@@ -370,17 +409,16 @@ pub struct Depose {
     pub remplace: bool,
 }
 
-/// Ce que la sauvegarde, l'archivage, la restauration et la vue du Drive demandent a Drive. La seule suppression est
-/// `mettre_a_la_corbeille`, que seul le geste « Supprimer » d'un dossier appelle (`routes::drive`) : la sauvegarde,
-/// l'archivage et la restauration n'effacent jamais rien.
+/// Ce que la sauvegarde, l'archivage, la restauration et la vue du Drive demandent a Drive. Il n'efface rien : la seule
+/// suppression est a part (`CorbeilleDuDrive`), et ce qui recoit un `Drive` ne l'a pas.
 pub trait Drive {
     /// `Client.compte` : l'adresse du compte autorise, lue sans reseau.
     fn compte(&self) -> Option<String>;
     /// `Client.chemin` : sous `depuis`, cree au besoin toute une suite de dossiers et rend le dernier.
     fn chemin(&mut self, depuis: &IdDrive, noms: &[&str]) -> Result<IdDrive, ErreurGoogle>;
-    /// `Client.lister` : les FICHIERS deja deposes dans un dossier, par nom ; les sous-dossiers
+    /// `Client.lister` : les FICHIERS deja deposes dans un dossier, par nom, homonymes compris ; les sous-dossiers
     /// sont ecartes.
-    fn lister(&mut self, parent: &IdDrive) -> Result<BTreeMap<String, Distant>, ErreurGoogle>;
+    fn lister(&mut self, parent: &IdDrive) -> Result<FichiersDuDossier, ErreurGoogle>;
     /// `Client.televerser` : depose un fichier. `connu` : le fichier de meme nom que `lister` a trouve dans ce dossier ;
     /// s'il y en a un, son contenu est REMPLACE (`Depose::remplace`, meme identifiant, meme lien), sinon le fichier est
     /// CREE. Le client ne cherche pas lui-meme (une recherche par nom seul confondrait un dossier et un fichier, et
@@ -401,6 +439,12 @@ pub trait Drive {
     fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle>;
     /// Le dossier `id` est-il en place : il existe, et ni lui ni un dossier qui le porte n'est a la corbeille ?
     fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle>;
+}
+
+/// LA CORBEILLE DU DRIVE, A PART DU TRAIT `Drive` : la sauvegarde, l'archivage et la restauration recoivent un `Drive`
+/// et n'ont pas de quoi effacer ; seul le geste qui supprime un dossier (`routes::drive`, avec le mot de passe du
+/// logiciel) recoit une corbeille.
+pub trait CorbeilleDuDrive: Drive {
     /// Met `id` (un dossier : tout ce qu'il porte) a la corbeille de Google, d'ou on le sort pendant 30 jours.
     fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle>;
 }
@@ -620,8 +664,8 @@ impl Drive for Client {
         Ok(parent)
     }
 
-    fn lister(&mut self, parent: &IdDrive) -> Result<BTreeMap<String, Distant>, ErreurGoogle> {
-        let mut fichiers = BTreeMap::new();
+    fn lister(&mut self, parent: &IdDrive) -> Result<FichiersDuDossier, ErreurGoogle> {
+        let mut fichiers = FichiersDuDossier::default();
         let mut page: Option<String> = None;
         loop {
             let mut champs = vec![
@@ -639,7 +683,7 @@ impl Drive for Client {
                     continue;
                 }
                 let octets = f.size.as_deref().filter(|t| !t.is_empty()).map(octets_de).transpose()?;
-                fichiers.insert(f.nom()?, Distant { id: f.id()?, md5: f.md5.clone(), octets });
+                fichiers.ajouter(f.nom()?, Distant { id: f.id()?, md5: f.md5.clone(), octets });
             }
             page = r.suite();
             if page.is_none() {
@@ -701,7 +745,7 @@ impl Drive for Client {
             let url = self.adresses.fichiers.joindre(&format!("?{}", encoder(&champs)));
             let r: Listage = self.appel(&url, None, None, None)?;
             for f in &r.files {
-                dossiers.push(SousDossier { nom: f.nom()?, id: f.id()?, marque: f.marque.clone().unwrap_or_default() });
+                dossiers.push(SousDossier { nom: f.nom()?, id: f.id()?, marque: f.marque.clone() });
             }
             page = r.suite();
             if page.is_none() {
@@ -728,14 +772,16 @@ impl Drive for Client {
     fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle> {
         // `trashed` : « Whether the file was trashed, either explicitly or from a trashed parent folder »
         // (`google-drive-api-corbeille-20261124.txt`, « Determine a trashed file's properties »). Un 404 : il n'existe plus.
-        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "id,trashed".into())])));
-        match self.appel::<FichierDrive>(&url, None, None, None) {
-            Ok(f) => Ok(f.trashed != Some(true)),
+        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "trashed".into())])));
+        match self.appel::<EtatALaCorbeille>(&url, None, None, None) {
+            Ok(f) => Ok(!f.trashed),
             Err(e) if e.statut == Some(ureq::http::StatusCode::NOT_FOUND) => Ok(false),
             Err(e) => Err(e),
         }
     }
+}
 
+impl CorbeilleDuDrive for Client {
     fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
         self.changer(id, &DossierAChanger { marque: None, trashed: Some(true) })
     }

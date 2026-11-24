@@ -592,6 +592,10 @@ un libellé, chacun sa forme.
 | marque du dossier d'une compagnie dans le Drive | `envois::drive::MarqueDuDossier` | `envois/src/drive.rs` |
 | sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
 | dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
+| fichiers d'un dossier du Drive, par nom, homonymes compris | `envois::drive::FichiersDuDossier` | `envois/src/drive.rs` |
+| corbeille du Drive, à part du trait `Drive` | `envois::drive::CorbeilleDuDrive` | `envois/src/drive.rs` |
+| reprise du Drive pas finie sur ce poste | `compagnie::restauration::RepriseEnCours` | `compagnie/src/restauration.rs` |
+| dossier du rang d'un écran du Drive | `DossierDuRang` | `routes/src/drive.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
 | titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
@@ -945,9 +949,20 @@ un libellé, chacun sa forme.
   compagnie qu'il tient, écrit avec des barres droites ; une seule construction (`DossierDuDrive::segments`, que le
   Drive parcourt, et `de`, qui les joint), pour la sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`, avec le dossier de la compagnie, `compagnie`).
 - **identité d'une compagnie sur le Drive** : ce qui marque le dossier d'une compagnie sous `PuppetPaie/` sans dépendre
-  de son nom : `siret:<14 chiffres>` quand sa fiche dit son SIRET à sa première sauvegarde, sinon `cie:<32 hexadécimaux>`
-  tiré au hasard ; gardée dans `config/drive.json`, qui part avec la sauvegarde, et elle ne change plus. La sauvegarde
-  et l'archivage retrouvent leur dossier par elle (`sauvegarde::dossier_de_la_compagnie`).
+  de son nom ni d'aucune donnée de la compagnie : `cie:<32 hexadécimaux>` tiré au hasard à sa première sauvegarde ;
+  gardée dans `config/drive.json`, qui part avec la sauvegarde et revient avec une reprise, et elle ne change plus. La
+  sauvegarde et l'archivage retrouvent leur dossier par elle (`sauvegarde::dossier_de_la_compagnie`).
+- **fichiers d'un dossier du Drive** : ce que `Drive::lister` rend, par nom, homonymes compris ; deux fichiers du même
+  nom ne se départagent pas (`FichiersDuDossier::le_seul` les refuse en les nommant : la sauvegarde reporte le fichier,
+  l'archivage refuse, la restauration le dit en incident).
+- **corbeille du Drive** : mettre un dossier à la corbeille de Google, à part du trait `Drive` (`CorbeilleDuDrive`) : ce
+  qui reçoit un `Drive` (la sauvegarde, l'archivage, la restauration) n'a pas de quoi effacer ; seul le geste qui
+  supprime un dossier (`routes::drive`) la reçoit.
+- **reprise en cours** : la marque qu'une reprise du Drive à l'accueil pose d'abord dans le dossier neuf qu'elle remplit
+  (`config/reprise-en-cours.json`, propre au poste) : de quel dossier du Drive il revient ; une reprise coupée se
+  continue dans ce dossier, et dans aucun autre ; allée au bout, elle s'efface.
+- **dossier du rang d'un écran du Drive** : ce qu'un écran du Drive donne au geste d'un rang, le dossier du Drive sur
+  lequel il porte (le supprimer, le reprendre), ou aucun (lier, oublier le compte Google de l'accueil).
 - **marque du dossier d'une compagnie** : ses propriétés privées à l'application (`appProperties`) : l'identité, la date
   de la dernière sauvegarde qui a envoyé quelque chose, le volume ; telle que Drive la rend, du texte, que
   `sur_le_drive` lit en ses types (ce qui ne s'en lit pas se dit, sans fermer la vue).

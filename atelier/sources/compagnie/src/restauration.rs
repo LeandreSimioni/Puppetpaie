@@ -14,8 +14,8 @@
 //! 4. elle reconstruit l'index local (`config/.sauvegarde.json`) : la sauvegarde suivante connait les dossiers Drive sans
 //!    les rechercher, et `rien_n_a_bouge` dit oui tant que rien n'a change.
 //!
-//! RIEN D'EFFACE, NI ICI NI LA-BAS. Le trait `Drive` n'a pas de suppression ; ici, un fichier qui existe n'est jamais
-//! remplace.
+//! RIEN D'EFFACE, NI ICI NI LA-BAS. Le trait `Drive` n'a pas de suppression (`CorbeilleDuDrive` est a part) ; ici, un
+//! fichier qui existe n'est jamais remplace.
 //!
 //! UN DOSSIER QUI N'EST PAS VIDE : il est accepte si tout ce que la sauvegarde y porterait (son
 //! `inventaire`) est DEJA identique a la copie du Drive (meme empreinte), et refuse sinon, avant toute ecriture, en nommant
@@ -27,8 +27,12 @@
 //! a la main pour relier la bonne application Google n'empeche rien s'il est celui de la sauvegarde.
 //!
 //! Ce qu'elle ne redescend pas : ce que la sauvegarde n'envoie pas (`sauvegarde::ecarte`), un document sans empreinte
-//! (un Google Docs : rien a comparer), un nom qui ne peut pas etre un nom de fichier ici, et les dossiers homonymes (deux
-//! dossiers de meme nom au meme endroit du Drive : elle ne choisit pas, elle le dit).
+//! (un Google Docs : rien a comparer), un nom qui ne peut pas etre un nom de fichier ici, et les homonymes (deux
+//! dossiers, ou deux fichiers, de meme nom au meme endroit du Drive : elle ne choisit pas, elle le dit).
+//!
+//! UNE REPRISE A L'ACCUEIL (`routes::accueil::drive`) se fait toujours dans un dossier neuf, qu'elle marque d'abord
+//! (`RepriseEnCours`, `config/reprise-en-cours.json`, propre au poste : il ne monte pas) ; coupee, elle se relance dans ce
+//! meme dossier, et dans aucun autre ; allee au bout, elle efface sa marque.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -40,6 +44,49 @@ use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, DossierDuD
 use crate::sur_le_drive::{DossierVu, GenreDuDossier};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::Octets;
+
+/// La marque d'une reprise du Drive pas finie, sous la compagnie qu'elle remplit (`RepriseEnCours`).
+pub const REPRISE_EN_COURS: CheminRelatif = CheminRelatif::du_moteur("config/reprise-en-cours.json");
+
+/// UNE REPRISE DU DRIVE PAS FINIE SUR CE POSTE : posee la premiere dans le dossier neuf qu'elle remplit, avant tout autre
+/// fichier ; elle dit de quel dossier du Drive il revient, pour qu'une reprise coupee se relance la, et nulle part
+/// ailleurs. La reprise allee au bout l'efface (`finir_la_reprise`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepriseEnCours {
+    /// Le dossier du Drive qui revient (son identifiant, tel que la vue du Drive le rend).
+    pub dossier: IdDrive,
+    /// Son nom dans le Drive.
+    pub nom: String,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub depuis: socle::paris::Moment,
+    pub quoi: String,
+}
+
+/// La reprise pas finie que porte la compagnie `racine`, s'il y en a une ; une marque qui ne se lit pas se refuse.
+pub fn reprise_en_cours(racine: &Path) -> socle::echec::R<Option<RepriseEnCours>> {
+    let p = REPRISE_EN_COURS.dans(racine);
+    if !socle::fichiers::present(&p)? {
+        return Ok(None);
+    }
+    socle::forme::lire_fichier(&p, "La marque d'une reprise du Drive commencée sur ce poste ne se lit pas : elle a été changée à la main.").map(Some)
+}
+
+/// Pose dans `racine` (un dossier neuf) la marque de la reprise du dossier `vu` : la premiere chose qu'elle y ecrit.
+pub fn commencer_la_reprise(racine: &Path, vu: &DossierVu) -> socle::echec::R<()> {
+    let marque = RepriseEnCours {
+        dossier: vu.id.clone(),
+        nom: vu.nom.clone(),
+        depuis: socle::temps::secondes().a_la_seconde(),
+        quoi: "Une reprise du Drive commencée sur ce poste et pas finie : la reprendre de nouveau la continue dans ce dossier. Elle s'efface quand tout est revenu.".to_string(),
+    };
+    socle::ecriture::ecrire_json(&REPRISE_EN_COURS.dans(racine), &marque, 2)
+}
+
+/// La reprise de `racine` est allee au bout : sa marque s'efface.
+pub fn finir_la_reprise(racine: &Path) -> socle::echec::R<()> {
+    socle::fichiers::effacer(&REPRISE_EN_COURS.dans(racine))
+}
 
 /// Un fichier redescendu.
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +156,15 @@ pub struct RestaurationDite {
     pub a_faire: Vec<String>,
 }
 
+/// CE QU'UN REFUS « DOSSIER NON VIDE » PORTE A PART : le dossier ou la compagnie devait revenir, et chaque fichier deja
+/// la qui n'est pas la copie du Drive (son chemin depuis ce dossier, et pourquoi).
+#[derive(Debug, Clone, serde::Serialize)]
+struct FichiersDejaLa {
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: PathBuf,
+    fichiers: Vec<String>,
+}
+
 /// LE NOM VENU DU DRIVE, s'il peut etre un nom de fichier ici sans sortir du dossier : un `NomDeFichier`, et sous
 /// Windows, ni deux-points (`C:x` changerait de lecteur) ni ce que Windows refuse ; `None` sinon, que la restauration
 /// dit en incident pour ce nom, sans le redescendre.
@@ -169,13 +225,14 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
     };
 
     // 1. L'inventaire du Drive, sans rien y creer : l'arbre du dossier choisi.
-    let chemin = format!("{}/{}/{}", racine_drive, depuis.nom, SAUVEGARDE);
+    // Le dossier, tel qu'on le voit dans le Drive.
+    let chemin = format!("{} › {} › {}", racine_drive, depuis.nom, SAUVEGARDE);
     let (sauvegarde_id, compagnie) = match &depuis.genre {
         GenreDuDossier::Compagnie(_) => {
             let arbre = le_dossier(client, &depuis.id, SAUVEGARDE, &chemin)?.ok_or_else(|| {
                 ErreurGoogle::nouvelle(
                     socle::echec::Classe::SauvegardeAbsente,
-                    format!("Le dossier « {} » du Drive n'a pas encore de sauvegarde ({} est introuvable) : rien n'a été redescendu.", depuis.nom, chemin),
+                    format!("Le dossier « {} » du Drive n'a pas encore de sauvegarde (« {} » ne s'y trouve pas) : rien n'a été redescendu.", depuis.nom, chemin),
                 )
             })?;
             (arbre, Some(depuis.id.clone()))
@@ -199,9 +256,10 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
             Some(d) => format!("{}/{}", d, nom),
             None => nom.to_string(),
         };
-        for (nom, d) in client.lister(&id)? {
-            let Some(n) = nom_sur(&nom) else {
-                resultat.incidents.push(format!("{} : ce nom ne peut pas etre un nom de fichier ici, il n'est pas redescendu.", ici(&nom)));
+        let fichiers = client.lister(&id)?;
+        for (nom, _) in fichiers.par_nom() {
+            let Some(n) = nom_sur(nom) else {
+                resultat.incidents.push(format!("{} : ce nom ne peut pas etre un nom de fichier ici, il n'est pas redescendu.", ici(nom)));
                 continue;
             };
             let relatif = dans(&dossier, n);
@@ -209,7 +267,13 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
                 resultat.ecartes += 1;
                 continue;
             }
-            distants.insert(relatif, Entree { id: d.id, md5: d.md5, dossier: dossier.clone() });
+            match fichiers.le_seul(nom) {
+                Ok(Some(d)) => {
+                    distants.insert(relatif, Entree { id: d.id.clone(), md5: d.md5.clone(), dossier: dossier.clone() });
+                }
+                Ok(None) => {}
+                Err(e) => resultat.incidents.push(format!("{} : {} Aucun n'est redescendu ; relancer ensuite.", relatif, e.echec.phrase)),
+            }
         }
         let mut par_nom: BTreeMap<String, Vec<IdDrive>> = BTreeMap::new();
         for d in client.sous_dossiers(&id)? {
@@ -248,21 +312,14 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         }
     }
     if !ecarts.is_empty() {
-        let mut liste: Vec<String> = ecarts.iter().take(10).map(|e| format!("  {}", e)).collect();
-        if ecarts.len() > 10 {
-            liste.push(format!("  ... et {} autre(s)", ecarts.len() - 10));
-        }
-        return Err(ErreurGoogle::nouvelle(
-            socle::echec::Classe::DossierNonVide,
-            format!(
-                "{} n'est pas vide : {} fichier(s) que la sauvegarde porterait y sont deja, et ne sont pas la copie du Drive :\n{}\n\
-                 Rien n'a ete redescendu, rien n'a ete efface. Restaurer dans un dossier vide (le jeton Google peut y etre), ou \
-                 mettre ces fichiers de cote, puis relancer.",
-                cible.display(),
-                ecarts.len(),
-                liste.join("\n")
-            ),
-        ));
+        // La phrase dit le cas en mots ; le dossier et les fichiers, pour qui veut les voir, vont a part.
+        let phrase = format!(
+            "Le dossier où la compagnie doit revenir n'est pas vide : {} fichier(s) y sont déjà, et ne sont pas la copie du Drive. Rien n'a été redescendu, rien n'a été effacé. Restaurer dans un dossier vide, ou mettre ces fichiers de côté, puis relancer.",
+            ecarts.len()
+        );
+        let a_part = FichiersDejaLa { dossier: cible.to_path_buf(), fichiers: ecarts };
+        let echec = socle::echec::Echec { a_part: Some(socle::echec::APart::forme(a_part)), ..socle::echec::erreur(socle::echec::Classe::DossierNonVide, phrase) };
+        return Err(ErreurGoogle::from(echec));
     }
     resultat.deja_la = deja.len();
 
@@ -371,21 +428,22 @@ fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> socle::echec::R<bool>
 /// qu'il porte, s'il s'ouvre a ce poste, par quoi). Ne lit aucun secret : les fiches
 /// du coffre sont en clair (ce qui est pose, depuis quand), et `ouvre_a_ce_poste` ne rend qu'un oui ou un non. Le coffre
 /// est celui du poste (`Coffre::du_poste`) ; la preuve en donne un dont la cle est ailleurs.
+///
+/// En mots, pour la personne : les gestes se nomment par l'endroit ou ils se font (Configuration › Mots de passe) ; leurs
+/// routes, la fiche de chaque route les dit.
 pub fn a_faire(coffre: &Coffre) -> Vec<String> {
     let mut lignes = Vec::new();
-    let a_poser = |manquants: &[&str]| -> Vec<String> {
-        SERVICES
-            .iter()
-            .filter(|s| manquants.contains(&s.nom))
-            .map(|s| if s.avec_compte { format!("route coffre-poser, service {}, compte <adresse>", s.nom) } else { format!("route coffre-poser, service {}", s.nom) })
-            .collect()
+    let a_poser = |manquants: &[&str]| -> String {
+        SERVICES.iter().filter(|s| manquants.contains(&s.nom)).map(|s| s.libelle).collect::<Vec<_>>().join(", ")
     };
     let tous: Vec<&str> = SERVICES.iter().map(|s| s.nom).collect();
+    const OU: &str = "Configuration › Mots de passe";
     if !coffre.chemin().exists() {
-        lignes.push(
-            "Le coffre n'est pas dans la sauvegarde : poser le mot de passe du logiciel (`route mot-de-passe-changer`), puis ceux des organismes :".into(),
-        );
-        lignes.extend(a_poser(&tous).into_iter().map(|c| format!("  {}", c)));
+        lignes.push(format!(
+            "Le coffre n'était pas dans la sauvegarde : poser le mot de passe du logiciel, puis ceux des organismes ({}), dans {}.",
+            a_poser(&tous),
+            OU
+        ));
     } else {
         match (coffre.ouverture_exigee(), coffre.services(), coffre.ouvre_a_ce_poste()) {
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.phrase)),
@@ -394,35 +452,30 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
                     .iter()
                     .filter(|f| f.pose)
                     .map(|f| match &f.pose_le {
-                        Some(le) => format!("{} (pose le {})", f.service, socle::paris::ecrit::saisie::texte(*le)),
+                        Some(le) => format!("{} (posé le {})", f.service, socle::paris::ecrit::saisie::texte(*le)),
                         None => f.service.to_string(),
                     })
                     .collect();
                 let manquants: Vec<&str> = etat.iter().filter(|f| !f.pose).map(|f| f.service).collect();
                 let porte = if poses.is_empty() { "aucun mot de passe d'organisme".to_string() } else { poses.join(", ") };
                 if ici {
-                    lignes.push(format!("Le coffre est revenu et la cle de ce poste l'ouvre. Il porte : {}.", porte));
+                    lignes.push(format!("Le coffre est revenu, et ce poste l'ouvre. Il porte : {}.", porte));
                 } else if avec_mot_de_passe {
-                    lignes.push(format!("Le coffre est revenu ; il porte : {}.", porte));
-                    lignes.push(
-                        "La cle de ce poste ne l'ouvre pas (elle ne voyage jamais) : le mot de passe du logiciel, oui. `route mot-de-passe-changer` \
-                         le demande (l'actuel, puis le nouveau, qui peut etre le meme) et repose une cle ici."
-                            .into(),
-                    );
+                    lignes.push(format!(
+                        "Le coffre est revenu ; il porte : {}. Ce poste ne l'ouvre pas seul (la clé de l'ancien poste ne voyage pas) : le mot de passe du logiciel de cette compagnie, oui. Dans {}, « Changer… » le mot de passe du logiciel (l'actuel, puis le nouveau, qui peut être le même) l'attache à ce poste.",
+                        porte,
+                        OU
+                    ));
                 } else {
                     lignes.push(format!(
-                        "Le coffre est revenu ({}), mais sans mot de passe du logiciel : seule la cle de l'ancien poste l'ouvrait, il ne s'ouvrira pas ici. \
-                         Le mettre de cote (config/coffre.bin), poser le mot de passe du logiciel (`route mot-de-passe-changer`), puis ceux des organismes :",
-                        porte
+                        "Le coffre est revenu ({}), mais sans mot de passe du logiciel : seul l'ancien poste l'ouvrait, il ne s'ouvrira pas ici. Poser un mot de passe du logiciel, puis ceux des organismes ({}), dans {}.",
+                        porte,
+                        a_poser(&tous),
+                        OU
                     ));
-                    lignes.extend(a_poser(&tous).into_iter().map(|c| format!("  {}", c)));
                 }
-                if ici || avec_mot_de_passe {
-                    let reste = a_poser(&manquants);
-                    if !reste.is_empty() {
-                        lignes.push("Ce qu'il ne porte pas, a poser s'il le faut :".into());
-                        lignes.extend(reste.into_iter().map(|c| format!("  {}", c)));
-                    }
+                if (ici || avec_mot_de_passe) && !manquants.is_empty() {
+                    lignes.push(format!("Ce qu'il ne porte pas, à poser s'il le faut dans {} : {}.", OU, a_poser(&manquants)));
                 }
             }
         }
