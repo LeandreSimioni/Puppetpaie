@@ -781,7 +781,7 @@ async function faireLeGeste(g, entete, apres, bouton) {
   const envoi = CATALOGUE[g.route].acte === "engage";
   const partir = async (charge, boite) => {
     const motdepasse = g.demande ? await demanderMotDePasse(g.demande, { envoi }) : null;
-    if (g.demande && !motdepasse) return;
+    if (g.demande && !motdepasse) return false;
     // Le bouton qui fait partir le geste s'éteint le temps de la réponse (lier le Drive attend qu'on accepte chez
     // Google) : on ne clique pas deux fois.
     // Un acte en cours se voit : le bouton dit son geste suivi de « … » le temps de la réponse.
@@ -791,7 +791,7 @@ async function faireLeGeste(g, entete, apres, bouton) {
       rallumer();
       // Un refus que l'écran sait reprendre (`entete.refus` rend vrai) ne se dit pas deux fois.
       if (!(entete.refus && entete.refus(e, g))) dire(e.message, "erreur");
-      return;
+      return false;
     }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
@@ -799,6 +799,8 @@ async function faireLeGeste(g, entete, apres, bouton) {
     rallumer();
     // Ce que la route dit qui suit (`suite` : le dépôt d'un signalement écrit) s'ouvre ensuite.
     if (r.suite) ouvrirGeste(r.suite);
+    // Écrit, et la boîte déjà fermée par lui : quitter ne la referme pas (elle peut être la suite).
+    return ENREGISTRE_PUIS_SUITE;
   };
   if (!g.cases.length && !g.phrases.length) { await partir(g.charge, false); return; }
   const rendre = entete.pardessus ? mettreDeCote() : null;
@@ -814,12 +816,19 @@ async function faireLeGeste(g, entete, apres, bouton) {
   brancherLesCases(bloc);
   // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface) ; une case que
   // la route exige, vide, retient le geste et le dit sur elle.
-  document.getElementById("geste-ok").onclick = () => {
+  const enregistrer = async () => {
     const charge = chargeDuGeste(bloc, g) || g.charge;
     // Seules les cases ouvertes se marquent : une case qu'un autre choix ouvrirait ne manque pas.
-    if (marquerLesManquantes(bloc, champsOuverts(g, { ...g.valeurs, ...lireLesCases(bloc) }), charge)) return;
-    partir(charge, true);
+    if (marquerLesManquantes(bloc, champsOuverts(g, { ...g.valeurs, ...lireLesCases(bloc) }), charge)) return false;
+    return partir(charge, true);
   };
+  document.getElementById("geste-ok").onclick = enregistrer;
+  // Quitter la boîte d'un clic à côté avec une saisie non enregistrée se demande (`retenirLEcran`) ; « Annuler » la
+  // ferme sans rien garder.
+  if (g.cases.length) {
+    retenirLEcran(bloc, { enregistrer });
+    CLIC_DEHORS = async () => { if (await quitterLEcran(document.getElementById("boite"))) fermerBoite(); };
+  }
 }
 
 /* ------------------------------------------------ quitter un écran posé */

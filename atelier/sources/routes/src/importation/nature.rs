@@ -614,6 +614,28 @@ fn dire_lu(ctx: &Contexte, charge: &ChargeNature, dsn: &DsnReprises) -> R<Nature
     let mut contrat = engagement::saisie::Carte::default();
     let mut debut_dit: Option<Jour> = None;
     let champs = demande(nat, en_cours);
+    // Ce que la charge dit et que cette nature ne demande pas (une case que son choix n'ouvre pas) ne s'ecrirait nulle
+    // part : la route le refuse en le nommant, plutot que de le taire.
+    let dit = |champ: Demande| match champ {
+        Demande::Debut => charge.debut.is_some(),
+        Demande::Fin => charge.fin.is_some(),
+        Demande::Numero => charge.numero.is_some(),
+        Demande::Salaire => charge.salaire.is_some(),
+        Demande::Quotite => charge.quotite.is_some(),
+    };
+    if let Some(champ) = [Demande::Debut, Demande::Fin, Demande::Numero, Demande::Salaire, Demande::Quotite].into_iter().find(|c| dit(*c) && !champs.contains(c)) {
+        return Err(refus(format!(
+            "{} ne se dit pas pour un {} : cette nature n'ouvre pas sa case. Rien n'a été écrit.",
+            match champ {
+                Demande::Debut => "La date de début",
+                Demande::Fin => "La date de fin",
+                Demande::Numero => "Le numéro du contrat",
+                Demande::Salaire => "Le salaire mensuel",
+                Demande::Quotite => "La durée du travail",
+            },
+            nat.libelle
+        )));
+    }
     // Ce que la charge tait, la DSN reprise le dit peut-etre : elle ne se lit que s'il en manque.
     let tait = |champ: &Demande| match champ {
         Demande::Debut => charge.debut.is_none(),
