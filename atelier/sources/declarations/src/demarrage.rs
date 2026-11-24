@@ -537,26 +537,59 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
 /// L'ABATTEMENT QUE LES BULLETINS DE L'ANCIEN LOGICIEL IMPRIMENT (`importe::PaieVersee::abattement`) : la deduction
 /// forfaitaire specifique est un choix de la compagnie, salarie par salarie, que la fiche porte par la profession
 /// (Léandre, 23/11/2026 : « on fait l'abattement qu'on veut » ; arrete du 4 septembre 2025, art. 9, I). L'import n'en
-/// ecrit rien : la ligne du salarie dont la fiche ne dit pas la profession, et dont un bulletin repris imprime un
-/// abattement non nul, la propose (le plus recent), a valider ou a corriger. La profession dont le taux de l'annee de ce
-/// bulletin est celui-la (`DfsDuBareme::professions_au_taux`, art. 9, II et III) se propose quand elle est seule ; un
-/// taux que plusieurs professions partagent ne choisit rien, et la phrase les nomme. La case de la profession ne
-/// s'ouvre que si la compagnie exerce l'option (`si_entreprise` de `champs-base.json`) : sans elle, aucune ligne. Rien ne
-/// se refuse sans elle.
+/// ecrit rien ; ce que les bulletins faisaient se garde, propose (Léandre, 24/11/2026 : « on garde au max les choix
+/// qu'avait faits la compagnie avant »). Tant que la compagnie n'exerce pas l'option (fiche entreprise), une ligne la
+/// demande, qui dit le fait : la profession d'un salarie ne s'ouvre pas sans elle (`si_entreprise` de
+/// `champs-base.json`). Le fondement de l'option (accord collectif, du CSE, de chaque salarie) ne s'imprime sur aucun
+/// bulletin : il ne se propose pas ; vide, aucune paie n'est abattue. L'option posee, la ligne de chaque salarie dont la
+/// fiche ne dit pas la profession, et dont un bulletin repris imprime un abattement non nul, la propose (le plus
+/// recent), a valider ou a corriger. La profession dont le taux de l'annee de ce bulletin est celui-la
+/// (`DfsDuBareme::professions_au_taux`, art. 9, II et III) se propose quand elle est seule ; un taux que plusieurs
+/// professions partagent ne choisit rien, et la phrase les nomme. L'accord du salarie ne s'imprime pas non plus. Rien ne
+/// se refuse sans elles.
 fn abattements_a_dire(ctx: &Contexte) -> R<Vec<Manque>> {
-    if ctx.entreprise.deduction_forfaitaire_option.code().is_none() {
+    let importes = engagement::importe::tous(&ctx.racine)?;
+    // Le dernier abattement non nul qu'un bulletin repris imprime, pour chaque salarie actif.
+    let imprimes: Vec<_> = ctx
+        .salaries
+        .iter()
+        .filter(|(_, s)| !s.archivee())
+        .filter_map(|(cle, s)| {
+            importes
+                .iter()
+                .filter(|i| i.objet().carte().salarie.as_ref() == Some(cle))
+                .flat_map(|i| i.paies().iter())
+                .filter_map(|(m, p)| p.abattement.filter(|t| *t > socle::grandeurs::Taux::ZERO).map(|t| (*m, t)))
+                .max_by_key(|(m, _)| *m)
+                .map(|(m, t)| (cle, s, m, t))
+        })
+        .collect();
+    if imprimes.is_empty() {
         return Ok(Vec::new());
     }
-    let importes = engagement::importe::tous(&ctx.racine)?;
+    if ctx.entreprise.deduction_forfaitaire_option.code().is_none() {
+        let cle = CaseEntreprise::DeductionForfaitaireOption;
+        let (libelle, _) = champ(cle)?;
+        let noms: Vec<String> = imprimes.iter().map(|(c, s, _, _)| match s.nomme() {
+            Some(n) => n.to_string(),
+            None => c.to_string(),
+        }).collect();
+        let l = Manque::utile(
+            CaseDeFiche::from(cle).nom().to_string(),
+            libelle,
+            "l'abattement des paies, tel que l'ancien logiciel le faisait".into(),
+            "les paies se calculent sans abattement",
+            ENTREPRISE,
+            Some(cle.into()),
+            format!(
+                "Vos bulletins importés appliquent la déduction forfaitaire spécifique ({}) : dites si la compagnie l'applique, et sur quel accord ; les bulletins ne le disent pas. Laissée vide, aucune paie n'est abattue.",
+                noms.join(", ")
+            ),
+        );
+        return Ok(vec![l]);
+    }
     let mut out = Vec::new();
-    for (cle, s) in ctx.salaries.iter().filter(|(_, s)| !s.archivee() && !s.deduction_forfaitaire.est_dite()) {
-        let imprime = importes
-            .iter()
-            .filter(|i| i.objet().carte().salarie.as_ref() == Some(cle))
-            .flat_map(|i| i.paies().iter())
-            .filter_map(|(m, p)| p.abattement.filter(|t| *t > socle::grandeurs::Taux::ZERO).map(|t| (*m, t)))
-            .max_by_key(|(m, _)| *m);
-        let Some((mois, taux)) = imprime else { continue };
+    for (cle, s, mois, taux) in imprimes.into_iter().filter(|(_, s, _, _)| !s.deduction_forfaitaire.est_dite()) {
         let nom = match s.nomme() {
             Some(n) => n,
             None => cle.to_string(),

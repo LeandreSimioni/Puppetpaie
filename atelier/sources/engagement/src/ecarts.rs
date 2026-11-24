@@ -619,15 +619,21 @@ fn refaire<'a>(
     // la compagnie, salarie par salarie, que la fiche porte par sa profession (arrete du 4 septembre 2025, art. 9, I).
     // Tant que la fiche ne la dit pas, la paie refaite sans elle ne serait pas celle du bulletin : elle se compare quand
     // la fiche la dit.
+    // Ce qui manque se nomme tel qu'il manque : l'option de l'entreprise d'abord, sans laquelle la profession ne s'ouvre
+    // pas (`si_entreprise` de `champs-base.json`), puis la profession du salarie.
     if let Some(t) = p.abattement.filter(|t| *t > Taux::ZERO) {
-        if !fiche.deduction_forfaitaire.est_dite() {
+        let manque = if !ctx.entreprise.deduction_forfaitaire_option.est_dite() {
+            Some("la fiche de l'entreprise ne dit pas si la compagnie l'applique : la paie se compare quand elle le dit")
+        } else if !fiche.deduction_forfaitaire.est_dite() {
+            Some("la fiche du salarié ne dit pas sa profession : la paie se compare quand elle la dit")
+        } else {
+            None
+        };
+        if let Some(manque) = manque {
             return Err(a_refaire(
                 c,
-                socle::refus!(
-                    "le bulletin imprime un abattement de {} % (la déduction forfaitaire spécifique) et la fiche du salarié ne dit pas sa profession : la paie se compare quand elle la dit",
-                    socle::texte::virgule(t)
-                )
-                .reclasser(socle::echec::Classe::Manque),
+                socle::refus!("le bulletin imprime un abattement de {} % (la déduction forfaitaire spécifique) et {}", socle::texte::virgule(t), manque)
+                    .reclasser(socle::echec::Classe::Manque),
             ));
         }
     }
