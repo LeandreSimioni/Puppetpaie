@@ -320,10 +320,10 @@ fn rapports(ctx: &Contexte, deja: &RegistreLu<BTreeSet<EmpreinteCourte>>) -> R<R
     // compagnie n'a pas ecrit sa valeur, et ses rapports deja notes ne se notent pas deux fois (leur registre).
     let pour_de_bon = |c: &&Comparaison| !c.a_refaire() && c.effectif_propose.is_empty();
     let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(pour_de_bon).map(|c| c.empreinte.clone()).collect();
-    // LES ECARTS CONNUS D'UNE PAIE sont ceux de sa derniere comparaison qui aboutit, la paie fut-elle comparee avec ce
-    // qui n'est que propose : leur registre est a part de celui des paies comparees, et la carte de la paie les montre.
-    // Une comparaison qui echoue n'en dit rien.
-    let connus = comparaisons.iter().filter(|c| c.ecarts.is_ok()).map(|c| (c.empreinte.clone(), c.connus.clone())).collect();
+    // LES ECARTS CONNUS D'UNE PAIE sont ceux de sa derniere comparaison, la paie fut-elle comparee avec ce qui n'est que
+    // propose : leur registre est a part de celui des paies comparees, et la carte de la paie les montre. Une comparaison
+    // qui echoue n'en constate aucun (`comparer` les vide) : elle retire ceux qu'une comparaison d'avant avait notes.
+    let connus = comparaisons.iter().map(|c| (c.empreinte.clone(), c.connus.clone())).collect();
     Ok(Revue { rapports: rapports_de(ctx, &comparaisons)?, faites, connus })
 }
 

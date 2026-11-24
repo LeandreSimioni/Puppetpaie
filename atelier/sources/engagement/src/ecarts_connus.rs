@@ -50,8 +50,8 @@ pub enum EffetSurLaPaie {
 }
 
 impl EffetSurLaPaie {
-    /// Ce que les montants `imprimes` ont fait cotiser de plus (positif) ou de moins (negatif) : leur somme, signes
-    /// compris (une regularisation imprimee en sens contraire s'en retranche), puis son effet.
+    /// Ce que les montants `imprimes` ont fait cotiser de moins (negatif, une deduction) : leur somme, signes compris
+    /// (une regularisation imprimee en sens contraire s'en retranche), puis son effet.
     pub fn ecart(self, imprimes: &mut dyn Iterator<Item = Montant>) -> Montant {
         let somme = imprimes.fold(Montant::ZERO, |a, m| a + m);
         match self {
