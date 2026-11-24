@@ -175,11 +175,11 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Renoncer aux demandes de fiche restées sans réponse d'une personne.",
         charge: &ChargeOublier::CHARGE,
         exemple: r#"{"adresse":"isadora@exemple.invalid"}"#,
-        rend: "adresse",
+        rend: "phrase, adresse",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
-        phrase: 0,
+        phrase: 360,
         ecran: ECRAN,
     },
     Fiche {
@@ -967,12 +967,24 @@ fn supprimer_salarie(ctx: &Contexte, c: ChargeSupprimerSalarie) -> R<SalarieSupp
 // ----------------------------------------------------- fiche-oublier-demande
 
 /// `fiche-oublier-demande` : `{"adresse"}`, la personne a qui la fiche a ete demandee ; ses demandes en attente sont
-/// abandonnees.
+/// abandonnees. Une demande a cette adresse qui n'attend deja plus rien (sa reponse est arrivee, ou on y a deja renonce :
+/// la liste vue avant une releve, un second clic) ne se refuse pas : rien ne change, et la phrase dit ce qui l'a close.
 fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
     let adresse = strip(&c.adresse).to_lowercase();
-    let codes: Vec<CodeDeDemande> = fiches_attendues(&ctx.racine)?.into_iter().filter(|a| *a.adresse == *adresse).map(|a| a.code).collect();
+    let lignes = envois::journal::lu(&ctx.racine)?.lignes;
+    let codes: Vec<CodeDeDemande> = attendues_des_lignes(&lignes).into_iter().filter(|a| *a.adresse == *adresse).map(|a| a.code).collect();
     if codes.is_empty() {
-        return Err(refus(format!("Aucune demande de fiche en attente pour {}.", adresse)));
+        let close = lignes.iter().filter_map(journal::Ligne::fiche).filter(|e| e.accepte && *e.detail.adresse == *adresse).filter_map(|e| e.retours.last()).max_by_key(|r| r.quand);
+        let phrase = match close {
+            None => return Err(refus(format!("Aucune demande de fiche n'a été envoyée à {}.", adresse))),
+            Some(r) if r.abandon => socle::phrase!("Plus rien n'attend de {} : la demande a déjà été abandonnée.", adresse),
+            Some(r) => socle::phrase!(
+                "Plus rien n'attend de {} : sa réponse est arrivée le {} ; sa fiche est dans Configuration › Salariés.",
+                adresse,
+                r.quand.jour_de_paris().jj_mm_aaaa()
+            ),
+        };
+        return Ok(DemandeOubliee { phrase, adresse });
     }
     abandonner_demandes(ctx, &codes)?;
     // Ni NIR ni IBAN dans la reponse : la page relit `configuration` (comme apres `fiche-demander`).

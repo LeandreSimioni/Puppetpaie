@@ -1007,8 +1007,10 @@ impl FicheAJuger<'_> {
 
 /// LE REFUS D'UN ACTE quand une fiche qu'il lit n'a pas ce qu'il exige (`exige_par`) : tout ce qui manque, d'un coup,
 /// fiche par fiche. `fiches` : (`entreprise` ou `salarie`, qui, la fiche) ; `sauf` : les cases qu'un fait de l'acte ne demande
-/// pas. `None` : rien ne manque.
-pub fn refus_des_manques(acte: ActeExigeant, fiches: &[(FicheAJuger<'_>, String)], sauf: &[CaseDeFiche]) -> R<Option<String>> {
+/// pas. `None` : rien ne manque. Le refus a sa classe (`Classe::CaseExigee`) : c'est lui, et lui seul parmi les refus
+/// d'une case de fiche, qui dit aussi tout ce qui manque encore pour demarrer (`routes`, `demarrage::a_la_suite`).
+#[track_caller]
+pub fn refus_des_manques(acte: ActeExigeant, fiches: &[(FicheAJuger<'_>, String)], sauf: &[CaseDeFiche]) -> R<Option<Echec>> {
     let mut lignes = Vec::new();
     for (fiche, qui) in fiches {
         let manque: Vec<String> = fiche.manquants()?
@@ -1023,10 +1025,9 @@ pub fn refus_des_manques(acte: ActeExigeant, fiches: &[(FicheAJuger<'_>, String)
     if lignes.is_empty() {
         return Ok(None);
     }
-    Ok(Some(format!(
-        "Pour {}, il manque, à remplir dans Configuration : {}. Rien n'est écrit.",
-        acte.en_clair(),
-        lignes.join(" ; ")
+    Ok(Some(socle::echec::erreur(
+        socle::echec::Classe::CaseExigee,
+        format!("Pour {}, il manque, à remplir dans Configuration : {}. Rien n'est écrit.", acte.en_clair(), lignes.join(" ; ")),
     )))
 }
 

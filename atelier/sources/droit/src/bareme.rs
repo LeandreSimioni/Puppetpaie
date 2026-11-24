@@ -905,13 +905,13 @@ pub fn representation_du_personnel(ent: &EntrepriseLue) -> R<String> {
         Some(e) if e < socle::grandeurs::Effectif::personnes(11) => Ok("aucune".to_string()),
         Some(_) => match ent.cse.as_ref().and_then(|cle| ent.fiche.cse.ouvrir(cle).representation_personnel.code()) {
             Some(v) => Ok(v.to_string()),
-            None if ent.cse.is_none() => Err(socle::echec::refus(
+            None if ent.cse.is_none() => Err(socle::echec::erreur(socle::echec::Classe::EffectifAbsent,
                 "L'effectif de la compagnie n'est pas connu pour chacune des cinq années d'avant : la CCNEAC fait dépendre la \
 contribution au FNAS de l'effectif et du comité social et économique (article III.3.1). Dire l'effectif de ces années dans « Pour \
 démarrer »."
                     .to_string(),
             )),
-            None => Err(socle::echec::refus(
+            None => Err(socle::echec::erreur(socle::echec::Classe::CaseExigee,
             "Comité social et économique (CSE) : la compagnie compte au moins onze salariés, et la CCNEAC fait dépendre de son CSE \
 la contribution au FNAS (article III.3.1). Le dire dans Configuration › Entreprise : pas de CSE (carence constatée), un CSE \
 conventionnel (11 à 49 salariés), ou un CSE de 50 salariés et plus, adhérent au FNAS ou non. Il ne se devine pas : le CSE \
@@ -920,7 +920,7 @@ conventionnel est la règle « sauf carence »."
             )),
         },
         // Sans effectif connu, le CSE ne se demande pas : c'est l'effectif qui manque (`contexte::EffectifsParAnnee::a_dire`).
-        None => Err(socle::echec::refus("L'effectif de la compagnie n'est pas connu : sous onze salariés, la CCNEAC fixe la contribution au FNAS \
+        None => Err(socle::echec::erreur(socle::echec::Classe::EffectifAbsent, "L'effectif de la compagnie n'est pas connu : sous onze salariés, la CCNEAC fixe la contribution au FNAS \
 sans CSE (article III.3.1). Le dire dans « Pour démarrer »."
             .to_string())),
     }

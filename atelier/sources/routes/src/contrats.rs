@@ -13,7 +13,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, DejaParti, Impression, Repris, UnAvenant};
-use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, CASE_EXIGEE, ILLISIBLE, MANQUE, OPERATION};
 use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::documents::{client_courriel, refus, Ouvrir};
 use crate::etapes::Moteur;
@@ -66,7 +66,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &ChargeApercuSignature::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "titre, titre_en_attente ; les départs ouverts, gestes, chacun un geste (route, charge, libellé, rang, les cases contrats et avenants : la part de chaque contrat coché, et valeurs, ce qui part si l'on n'en décoche aucun : tous ceux à envoyer, ou ceux des salariés de la charge ; demande du mot de passe), le principal par son rang (envoyer à la signature quand la boîte et la signature de l'employeur sont posées, imprimer sinon), aucun sans contrat à envoyer ; a_envoyer (ceux qui se cochent) et en_attente (ceux qui attendent leur signature), chacun une fois : son état, part (ce qu'il ajoute à la charge d'un départ, coché), coche (coché à l'ouverture), voir_avenant (l'aperçu de son avenant), courriel (à envoyer, la boîte posée et le courriel du salarié manquant : le geste poser-courriel, sa charge et sa case email), et ses gestes recu et relancer, route, libellé, charge et demande du mot de passe ; boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic, ou, sans signature de l'employeur posée, pourquoi rien ne part et où la poser ; relancer est alors absent), signature_en_attente (l'encart de la boîte des contrats en attente, seulement quand relancer y manque faute de signature de l'employeur), rien_a_envoyer, rien_en_attente",
-        refus: &[MANQUE, ILLISIBLE],
+        refus: &[MANQUE, ILLISIBLE, CASE_EXIGEE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
@@ -84,6 +84,7 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::Refuse, corriger: "poser la signature de l'employeur (Configuration, Signature & tampon), ou imprimer ; rien n'est parti" },
             CONTRAT_ECRIT,
             MANQUE,
+            CASE_EXIGEE,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
@@ -108,7 +109,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &ChargeAvenant::CHARGE,
         exemple: r#"{"salarie":"FULLER","debut":"2026-11-27","numero":"FU1.26.01"}"#,
         rend: "le contrat (contrat, date_contrat, signe ; ailleurs : signé hors du logiciel, et contrat_signe : chemin du dossier de son PDF, deposes, phrase), numero de l'avenant, effet, modifications (numero et article, avant, apres ; phrase en clair sans numero), avenants (et la phrase de chacun), destinataire, titre (le contrat comme l'avenant le nomme), situation, encarts ; les envois ouverts, gestes, chacun un geste (route demander-signature, charge, libellé, rang, cases, demande du mot de passe) : annule et remplace (le contrat pas commencé), et le principal par son rang (envoyer l'avenant, sa case avenants : l'avenant et sa date d'effet, proposée d'abord), aucun quand rien ne change, sans boîte courriel ou sans signature de l'employeur posée (un encart le dit) ; cases (celle de l'envoi de l'avenant, des rangées : chacune sa date d'effet)",
-        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, le début et le numéro d'un contrat parti à la signature ou signé hors du logiciel" }, MANQUE, ILLISIBLE],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, le début et le numéro d'un contrat parti à la signature ou signé hors du logiciel" }, MANQUE, ILLISIBLE, CASE_EXIGEE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
@@ -120,7 +121,7 @@ pub const ROUTES: &[Fiche] = &[
         charge: &ChargeImprimer::CHARGE,
         exemple: r#"{"mois":"2026-11","contrats":[{"salarie":"SVOBODA","debut":"2026-11-02"}]}"#,
         rend: "impression (le PDF) et son chemin, fichiers (chaque pièce partie), contrats et avenants partis",
-        refus: &[CONTRAT_ECRIT, MANQUE],
+        refus: &[CONTRAT_ECRIT, MANQUE, CASE_EXIGEE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
