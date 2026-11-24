@@ -301,9 +301,17 @@ fn identite(ctx: &Contexte) -> R<Identite> {
     crate::ouverture::identite(ctx, &ctx.gabarits())
 }
 
-/// La pastille d'une image : la sienne, posee, ou celle que le logiciel dessine, faites ; rien de pose, a faire.
-fn pastille_de(e: &ImageIdentite) -> socle::ecran::Pastille {
-    socle::ecran::Pastille::de(if e.pose || e.automatique { socle::ecran::EtatDEcran::Fait } else { socle::ecran::EtatDEcran::AFaire }, mots_de(e))
+/// La pastille d'une image : la sienne, posee, ou celle que le logiciel dessine, faites ; rien de pose, a faire, sauf le
+/// logo, facultatif : sans lui, rien n'est imprime a sa place.
+fn pastille_de(quoi: SorteDImage, e: &ImageIdentite) -> socle::ecran::Pastille {
+    let etat = if e.pose || e.automatique {
+        socle::ecran::EtatDEcran::Fait
+    } else if quoi == SorteDImage::Logo {
+        socle::ecran::EtatDEcran::Information
+    } else {
+        socle::ecran::EtatDEcran::AFaire
+    };
+    socle::ecran::Pastille::de(etat, mots_de(e))
 }
 
 /// Ce que la pastille d'une image dit : la sienne, posee, celle que le logiciel dessine, ou rien de pose.
@@ -345,7 +353,7 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
         (Some(n), None) => format!("La signature de {}", n),
         (None, _) => "La signature".to_string(),
     };
-    let mut dit = format!("{}. Elle engage la personne qui signe au nom de la compagnie.", ou(sig));
+    let mut dit = format!("{}. Elle engage la personne qui signe au nom de la compagnie ; sans elle, aucun contrat ne part se faire signer.", ou(sig));
     if nom.is_none() {
         dit.push_str(" La fiche Entreprise ne dit pas qui signe.");
     }
@@ -385,7 +393,7 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> EcranDeLIdentite {
             GesteDeRoute::avec_cases(Route::PoserIdentite, designe(), if e.pose { MODIFIER } else { IMPORTER }, vec![cle!(ChargePoser, contenu), cle!(ChargePoser, poids)], ValeursDeLaPose { poids: Some(POIDS_VISE) }, super::SansCharge {})
                 .disant(vec![INTRO.to_string()]),
         );
-        RangDeLEcran { titre, dit: vec![dit], pastille: pastille_de(e), etat, montre, gestes }
+        RangDeLEcran { titre, dit: vec![dit], pastille: pastille_de(quoi, e), etat, montre, gestes }
     });
     let intro = Encart::de(socle::ecran::EtatDEcran::Information, "", INTRO);
     EcranRendu { encarts: vec![intro], rangs: rangs.collect(), cases: Vec::new(), historique: Vec::new(), enregistrer: None }
