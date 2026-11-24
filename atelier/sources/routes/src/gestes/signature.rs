@@ -800,7 +800,12 @@ fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&
 /// compagnie y depose, si elle le veut, le PDF de ce contrat ; il est garde avec elle (la sauvegarde l'emporte) et part
 /// joint a chaque avenant envoye a la signature, pour que le salarie l'ait sous les yeux. Le logiciel ne le lit pas.
 pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &IdSalarie, debut: Jour) -> PathBuf {
-    racine.join("salaries").join(cle.as_str()).join(format!("contrat-du-{}", debut.iso()))
+    dossier_du_salarie(racine, cle).join(format!("contrat-du-{}", debut.iso()))
+}
+
+/// Le dossier du salarie `cle`, sous la compagnie : ce qu'elle y depose pour lui (ses contrats signes hors du logiciel).
+pub(crate) fn dossier_du_salarie(racine: &std::path::Path, cle: &IdSalarie) -> PathBuf {
+    racine.join("salaries").join(cle.as_str())
 }
 
 /// Les PDF deposes dans ce dossier, par ordre de nom.

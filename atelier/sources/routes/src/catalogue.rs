@@ -144,6 +144,7 @@ routes! {
         TaxeSurLesSalairesRegime = "taxe-sur-les-salaires-regime",
         EnregistrerFiche = "enregistrer-fiche",
         ActiverFiche = "activer-fiche",
+        SupprimerSalarie = "supprimer-salarie",
         FicheDemander = "fiche-demander",
         FichesRelever = "fiches-relever",
         FicheOublierDemande = "fiche-oublier-demande",

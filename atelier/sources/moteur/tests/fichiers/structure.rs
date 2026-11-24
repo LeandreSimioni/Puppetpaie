@@ -269,6 +269,9 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         ("enregistrer-fiche", entreprise),
         ("organismes-enregistrer", json!({"contrats": {"prevoyance_permanents": {"libelle": "PREVOYANCE", "organisme": "P0983"}, "sante_permanents": {"libelle": "SANTE", "organisme": "P0983"}}})),
         ("enregistrer-fiche", svoboda),
+        // Une salariée que rien ne lie encore (aucun engagement, aucune pièce) : l'exemple de `supprimer-salarie` la
+        // supprime.
+        ("enregistrer-fiche", json!({"nom": "salarie", "cle": null, "changements": [{"case": "prenom_affichage", "valeur": "Isadora"}, {"case": "nom_affichage", "valeur": "Duncan"}]})),
         // La signature de l'employeur, sans laquelle aucun contrat ne part se faire signer (l'exemple de
         // `demander-signature`).
         ("poser-identite", json!({"quoi": "signature", "contenu": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTIgMTUgQzEwIDIgMjAgMjAgNzggNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIi8+PC9zdmc+", "allegement": "garder"})),
