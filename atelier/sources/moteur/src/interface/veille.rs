@@ -117,9 +117,19 @@ impl Veille {
 
     /// L'ETAT DE LA VEILLE POUR LA PAGE QUI LA SUIT. Sans fil, le tour qui reste du (`demarrer`) se fait ici, sur place :
     /// la page recoit l'etat d'apres ce tour.
+    /// Le tour du attend la mise a jour (`tour`) : en cours ailleurs, il reste du, et la page qui suit la veille le
+    /// redemande.
     pub fn suivie(&self) -> EtatDeLaVeille {
-        if self.du.swap(false, Ordering::SeqCst) {
-            return self.tour(false, true);
+        if self.du.load(Ordering::SeqCst) {
+            if let Some(f) = &self.etats {
+                if let Err(e) = f.attendre_la_version() {
+                    *tenu(&self.erreur) = Some(e.phrase);
+                    return self.etat();
+                }
+            }
+            if self.du.swap(false, Ordering::SeqCst) {
+                return self.tour(false, true);
+            }
         }
         self.etat()
     }
@@ -141,12 +151,27 @@ impl Veille {
 
     /// Un passage : la releve d'abord (qui ecrit la trace, et envoie les incidents a l'editeur), puis la sauvegarde seule.
     /// Un passage deja en cours : l'etat, tel quel.
+    ///
+    /// APRES LA MISE A JOUR : la file des etats la prend en compte d'abord (`FileDesEtats::attendre_la_version`), et le
+    /// passage ne part qu'ensuite ; rien de la veille ne croise la reecriture des paies. L'attente se fait hors du tour
+    /// (`tour_unique`) : la compagnie qui s'en va n'attend pas la mise a jour pour arreter sa veille, et le tour qui
+    /// suit l'attente ne part pas pour une veille arretee. Sans fil, une mise a jour en cours ailleurs est l'erreur du
+    /// tour, que le tour suivant reprend.
     pub fn tour(&self, veille: bool, sauvegarder: bool) -> EtatDeLaVeille {
+        if let Some(f) = &self.etats {
+            if let Err(e) = f.attendre_la_version() {
+                *tenu(&self.erreur) = Some(e.phrase);
+                return self.etat();
+            }
+        }
         let _un_seul = match self.tour_unique.try_lock() {
             Ok(g) => g,
             Err(std::sync::TryLockError::WouldBlock) => return self.etat(),
             Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
         };
+        if self.arretee.load(Ordering::SeqCst) {
+            return self.etat();
+        }
         self.en_cours.store(true, Ordering::SeqCst);
         *tenu(&self.erreur) = None;
         let releve = ChargeOuverture { jours: Some(self.jours), veille: Some(veille), incidents_editeur: Some(true), sauvegarder: Some(false), ..Default::default() };
@@ -173,7 +198,9 @@ impl Veille {
         self.etat()
     }
 
-    /// Le premier tour, complet, puis un tour toutes les `periode` tant que la veille n'est pas arretee.
+    /// Le premier tour, complet, puis un tour toutes les `periode` tant que la veille n'est pas arretee. Le premier tour
+    /// attend que la file ait pris en compte la mise a jour (`tour`), sur le fil de la veille : la requete qui ouvre la
+    /// compagnie n'attend pas, la page voit « Prise en compte de la mise à jour… » (`demarrage`).
     /// SANS FIL (le navigateur), aucune boucle : le premier tour est du, et la page qui suit la veille le fait
     /// (`suivie`) ; ensuite, un tour se demande (« relever maintenant »).
     pub fn demarrer(self: &Arc<Self>) {

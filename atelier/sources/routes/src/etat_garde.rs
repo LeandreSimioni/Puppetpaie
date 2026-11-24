@@ -195,8 +195,8 @@ impl From<CleEcrite> for Cle {
 
 impl Cle {
     /// LA ROUTE QUE CET ETAT SERT DANS LA FENETRE, sans passer par la porte : l'ecran d'un mois (`mois`), l'ouverture
-    /// (`demarrage`), le tableau de l'administrateur. La prise en compte d'une mise a jour sert l'ouverture : tant
-    /// qu'une valeur attend d'etre saisie de nouveau, elle ne se fait pas, comme a la route `ouverture`. Le barrage
+    /// (`demarrage`), le tableau de l'administrateur. La prise en compte d'une mise a jour sert l'ouverture (elle passe
+    /// le barrage ; c'est `version_prise` qui la retient tant qu'une valeur attend d'etre saisie de nouveau). Le barrage
     /// d'une valeur a saisir de nouveau la lit (`service::contexte_de_la_route`).
     fn route(self) -> Route {
         match self {
@@ -705,9 +705,21 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
 /// ses etats : ce qu'elle reecrit les changerait. Une version deja passee ne fait rien. Son etape se dit par la phrase de
 /// la file (`FileDesEtats::phrase`), et non dans celle de la veille : chacun la sienne. Un refus se note (`faire`), la
 /// compagnie s'ouvre comme sans lui, et la route `ouverture` reprend la prise en compte au clic. Faite ailleurs en ce
-/// moment, la file attend qu'elle finisse (`FileDesEtats::rendre`).
+/// moment (un autre processus), la file attend qu'elle finisse (`FileDesEtats::rendre`).
+///
+/// UNE VALEUR A SAISIR DE NOUVEAU (`redire`) : rien ne se reecrit tant que la compagnie n'a pas repondu, comme a la route
+/// `ouverture` ; le refus qui renvoie a la demande reste le rendu de la cle, et la file la reprend en tete a la
+/// verification suivante (`tout_verifier`, apres la reponse).
 fn version_prise(ctx: &Contexte) -> R<Garde> {
+    if let Some(e) = crate::redire::refus_de_la_demande(ctx)? {
+        return Err(e);
+    }
     Ok(Garde::VersionDuCalcul(crate::gestes::ouverture::passer_la_version(ctx, || Ok(()))?))
+}
+
+/// La prise en compte de la mise a jour a-t-elle ete retenue par une valeur a saisir de nouveau (`version_prise`) ?
+fn retenue_par_la_demande(fait: Option<&(u64, Fait)>) -> bool {
+    matches!(fait, Some((_, Err(e))) if e.classe == Some(Classe::ValeurARedire))
 }
 
 /// Refait l'etat de `cle` (un mois, ou l'ouverture, qui s'ecrit ; le tableau, s'il n'est plus juste). Ce qui se lit
@@ -910,9 +922,11 @@ impl Fil {
     }
 
     /// SANS FIL, LE TRAVAIL SUIVANT, FAIT ICI par qui attend `cle` : le meme choix que le fil (`choisir`), le meme
-    /// passage (`faire`, `rendre`), avec les refus du fil (`fil_de_fond` : ni sortie, ni coffre). Rien a faire alors que
-    /// `cle` est attendue est un defaut du logiciel : l'attente ne finirait pas.
-    fn pomper(&self, cle: Cle) -> R<()> {
+    /// passage (`faire`, `rendre`), avec les refus du fil (`fil_de_fond` : ni sortie, ni coffre). `true` : un travail
+    /// s'est fait. `false` : rien ne se fait maintenant parce qu'une mise a jour se prend en compte ailleurs
+    /// (`version_ailleurs`) ; sa cle revient en tete, et la demande suivante la regarde de nouveau. Rien a faire sinon,
+    /// alors que `cle` est attendue, est un defaut du logiciel : l'attente ne finirait pas.
+    fn pomper(&self, cle: Cle) -> R<bool> {
         let pris = Self::choisir(&mut self.verrou());
         match pris {
             Some((file, prise, numero)) => {
@@ -921,9 +935,19 @@ impl Fil {
                     file.faire(prise)
                 };
                 file.rendre(prise, numero, rendu);
-                Ok(())
+                Ok(true)
             }
-            None => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} est attendu, et la file n'a plus rien à calculer.", cle))),
+            None => {
+                let g = self.verrou();
+                let mut ailleurs = false;
+                for f in &g.files {
+                    ailleurs |= f.retenter_la_version();
+                }
+                if ailleurs {
+                    return Ok(false);
+                }
+                Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} est attendu, et la file n'a plus rien à calculer.", cle)))
+            }
         }
     }
 
@@ -1014,27 +1038,30 @@ impl Fil {
     }
 
     fn tourner(&self) {
+        let mut regarde = Instant::now();
         loop {
             let mut g = self.verrou();
             let (file, cle, numero) = loop {
                 if g.arrete {
                     return;
                 }
-                if let Some(x) = Self::choisir(&mut g) {
-                    break x;
-                }
-                // UNE MISE A JOUR PRISE EN COMPTE AILLEURS : le fil regarde, a chaque `REGARD_DE_LA_VERSION`, si elle a
-                // fini (sa marque ecrite, son verrou rendu) ; c'est cet etat qu'il attend, quel que soit le passage qui la
-                // fait (la veille, ou un autre processus).
-                let attend_la_version = g.files.iter().any(|f| f.verrou().version_ailleurs);
-                let regard = if attend_la_version { REGARD_DE_LA_VERSION } else { Duration::from_secs(60) };
-                let (h, attente) = repris(self.reveil.wait_timeout(g, regard));
-                g = h;
-                if attend_la_version {
+                // UNE MISE A JOUR PRISE EN COMPTE AILLEURS (un autre processus) : le fil regarde si elle a fini (sa marque
+                // ecrite, son verrou rendu) a chaque tour, avant de choisir le travail suivant -- qu'il ait d'autres
+                // compagnies a servir ou non --, au plus une fois par `REGARD_DE_LA_VERSION` : c'est cet etat qu'il
+                // attend.
+                if regarde.elapsed() >= REGARD_DE_LA_VERSION {
+                    regarde = Instant::now();
                     for f in &g.files {
                         f.retenter_la_version();
                     }
                 }
+                if let Some(x) = Self::choisir(&mut g) {
+                    break x;
+                }
+                let attend_la_version = g.files.iter().any(|f| f.verrou().version_ailleurs);
+                let regard = if attend_la_version { REGARD_DE_LA_VERSION } else { Duration::from_secs(60) };
+                let (h, attente) = repris(self.reveil.wait_timeout(g, regard));
+                g = h;
                 // LE JOUR A CHANGE : tout se reverifie (hors du verrou du fil : `tout_verifier` le reprend pour reveiller).
                 if attente.timed_out() && !g.files.is_empty() {
                     let jour = Fil::jour_suivi();
@@ -1178,9 +1205,12 @@ impl FileDesEtats {
             Err(p) => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} ne s'est pas refait (le calcul s'est arrêté : {}).", cle, pourquoi(p.as_ref())))),
         };
         // LA PRISE EN COMPTE DE LA MISE A JOUR, aucun ecran ne lit son refus (celui d'un etat se lit quand il s'affiche) :
-        // il se note, quel qu'il soit (le contexte refuse, `passer_la_version` refuse, le calcul tombe).
+        // il se note (le contexte refuse, `passer_la_version` refuse, le calcul tombe). Retenue par une valeur a saisir de
+        // nouveau, elle n'a pas echoue : elle attend la reponse, et se reprend apres (`tout_verifier`).
         if let (Cle::VersionDuCalcul, Err(e)) = (cle, &fait) {
-            noter("la prise en compte de la mise à jour ne s'est pas faite", e);
+            if e.classe != Some(Classe::ValeurARedire) {
+                noter("la prise en compte de la mise à jour ne s'est pas faite", e);
+            }
         }
         fait
     }
@@ -1214,13 +1244,49 @@ impl FileDesEtats {
         n
     }
 
-    /// LA MISE A JOUR PRISE EN COMPTE AILLEURS, REGARDEE DE NOUVEAU (`Fil::tourner`, sous le verrou du fil, qui ne se
-    /// reprend pas ici) : sa cle revient en tete, et le fil refait `passer_la_version` -- passee, les etats suivent ;
-    /// encore tenue ailleurs, la file attend de nouveau.
-    fn retenter_la_version(&self) {
+    /// LA MISE A JOUR PRISE EN COMPTE AILLEURS, REGARDEE DE NOUVEAU (`Fil::tourner`, `Fil::pomper`, sous le verrou du fil,
+    /// qui ne se reprend pas ici) : sa cle revient en tete, et le fil refait `passer_la_version` -- passee, les etats
+    /// suivent ; encore tenue ailleurs, la file attend de nouveau. Rend si elle l'attendait.
+    fn retenter_la_version(&self) -> bool {
         let mut e = self.verrou();
-        if std::mem::take(&mut e.version_ailleurs) {
+        let attendait = std::mem::take(&mut e.version_ailleurs);
+        if attendait {
             Self::inscrire(&mut e, Cle::VersionDuCalcul, true);
+        }
+        attendait
+    }
+
+    /// LA FILE A-T-ELLE FINI LA MISE A JOUR (`Cle::VersionDuCalcul`) : ni en attente, ni en cours, ni prise en compte
+    /// ailleurs. Faite, deja a jour, ou refusee (la route `ouverture` la reprend alors) : la veille peut partir.
+    fn a_fini_la_version(e: &EtatDeLaFile) -> bool {
+        !e.version_ailleurs && e.en_cours != Some(Cle::VersionDuCalcul) && !e.attente.contains(&Cle::VersionDuCalcul)
+    }
+
+    /// LA VEILLE ATTEND LA MISE A JOUR (`moteur::interface::veille`, avant chaque tour) : dans la fenetre, l'ordre fait la
+    /// surete -- la file prend en compte la mise a jour d'abord, et rien de la veille (relever, envoyer, sauvegarder) ne
+    /// croise la reecriture des paies. Avec un fil, on attend que la file l'ait finie ; sans fil, on fait le travail de la
+    /// file jusqu'a elle (`Fil::pomper`), et une prise en compte en cours ailleurs refuse (`EN_COURS_AILLEURS`) : la
+    /// demande suivante regarde de nouveau. La compagnie fermee en attendant refuse aussi.
+    pub fn attendre_la_version(&self) -> R<()> {
+        loop {
+            {
+                let mut e = self.verrou();
+                loop {
+                    if e.arretee {
+                        return Err(erreur(Classe::Refuse, "La compagnie a été fermée."));
+                    }
+                    if Self::a_fini_la_version(&e) {
+                        return Ok(());
+                    }
+                    if self.fil.sans_fil() {
+                        break;
+                    }
+                    e = repris(self.signal.wait(e));
+                }
+            }
+            if !self.fil.pomper(Cle::VersionDuCalcul)? {
+                return Err(socle::echec::refus(crate::gestes::ouverture::EN_COURS_AILLEURS));
+            }
         }
     }
 
@@ -1263,6 +1329,11 @@ impl FileDesEtats {
             for m in premiers.iter().rev() {
                 Self::inscrire(&mut e, Cle::Mois(*m), true);
             }
+            // LA MISE A JOUR RETENUE PAR UNE VALEUR A SAISIR DE NOUVEAU (`version_prise`) se reprend, en tete : la
+            // compagnie a peut-etre repondu.
+            if retenue_par_la_demande(e.fait.get(&Cle::VersionDuCalcul)) {
+                Self::inscrire(&mut e, Cle::VersionDuCalcul, true);
+            }
         }
         self.fil.reveiller();
     }
@@ -1289,7 +1360,10 @@ impl FileDesEtats {
                     e = repris(self.signal.wait(e));
                 }
             }
-            self.fil.pomper(cle)?;
+            // Sans fil, la mise a jour prise en compte ailleurs : la phrase d'attente, et la demande suivante regarde.
+            if !self.fil.pomper(cle)? {
+                return Err(socle::echec::refus(crate::gestes::ouverture::EN_COURS_AILLEURS));
+            }
         }
     }
 
@@ -1360,7 +1434,10 @@ impl FileDesEtats {
                     e = repris(self.signal.wait_timeout(e, reste)).0;
                 }
             }
-            self.fil.pomper(cle)?;
+            // Sans fil, la mise a jour prise en compte ailleurs : rien encore, la page redemande (sa phrase le dit).
+            if !self.fil.pomper(cle)? {
+                return Ok(None);
+            }
         }
     }
 
@@ -1368,7 +1445,8 @@ impl FileDesEtats {
     /// moment.
     pub fn phrase(&self) -> Phrase {
         let e = self.verrou();
-        if e.version_ailleurs {
+        // La mise a jour attendue ailleurs, ou la prochaine a se faire (sans fil, regardee de nouveau a la demande suivante).
+        if e.version_ailleurs || (e.en_cours.is_none() && e.attente.front() == Some(&Cle::VersionDuCalcul)) {
             return Phrase::fixe(crate::gestes::ouverture::PRISE_EN_COMPTE);
         }
         match e.en_cours {

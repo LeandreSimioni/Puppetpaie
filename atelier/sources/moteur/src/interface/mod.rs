@@ -699,7 +699,9 @@ impl Fenetre {
         // au lancement suivant, avant toute fenetre (`maj::au_lancement`), sans qu'aucune compagnie soit ouverte.
         // Les etats des mois se refont en fond, dans ce processus, s'ils ne sont plus justes (`etat_garde::FileDesEtats`) :
         // a l'ouverture, apres chaque ecriture et chaque tour de veille. Un mois s'affiche ensuite sans calcul. La file est
-        // celle que le fil de la fenetre tient deja pour cette compagnie (`prechauffer`) : elle passe devant.
+        // celle que le fil de la fenetre tient deja pour cette compagnie (`prechauffer`) : elle passe devant. La veille ne
+        // fait son premier tour qu'apres la prise en compte de la mise a jour par cette file (`Veille::tour`), sur son
+        // propre fil : cette requete n'attend pas, et la veille ne croise jamais la reecriture des paies.
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();

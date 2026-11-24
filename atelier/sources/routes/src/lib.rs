@@ -188,6 +188,10 @@ pub(crate) fn commande_et_route(o: &Options, entree: &str) -> (Option<Route>, Re
     match Demande::lire(entree) {
         Ok(mut d) => {
             d.charge.sans_les_secrets(d.route);
+            // UNE MISE A JOUR SE PREND EN COMPTE dans un autre processus : une route qui ecrit attend qu'elle ait fini.
+            if let Err(e) = gestes::ouverture::porte_pendant_la_version(o, d.route) {
+                return (Some(d.route), Reponse::de(d.route, Err(e)));
+            }
             (Some(d.route), servir_la_route(o, d.route, &d.charge))
         }
         Err(e) => (None, Reponse::refusee(Refus::de(None, e))),

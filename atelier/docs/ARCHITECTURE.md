@@ -561,6 +561,7 @@ un libellé, chacun sa forme.
 | qui ouvre le coffre d'une compagnie, donc le seul mot de passe du logiciel qu'elle accepte (elle, ou l'administrateur auquel elle est rattachée ; `routes::coffre::qui_ouvre` le dit) | `compagnie::demande::QuiOuvre` | `compagnie/src/demande.rs` |
 | demande du mot de passe du logiciel (lequel, de qui, pour quel geste ; la même dans la page, la fenêtre du système et le terminal, et dans le refus d'un mot de passe faux ; composée par `routes::coffre::demande`) | `compagnie::demande::DemandeDuMotDePasse` | `compagnie/src/demande.rs` |
 | échec d'une mise à jour | `EchecDeMiseAJour` | `compagnie/src/maj.rs` |
+| prise en compte d'une mise à jour sur les mois finis d'une compagnie (faite ici, déjà à jour, ou en cours dans un autre passage, qui tient son verrou : `socle::verrou::Verrouille`, à la prise comme au rafraîchissement) | `routes::gestes::ouverture::PriseEnCompte` | `routes/src/gestes/ouverture.rs` |
 | numéro du ticket qui suit un retour chez l'éditeur (que le serveur du filet rend ; pas le numéro du retour, `NumeroDeRetour`) | `NumeroDeTicket` | `compagnie/src/editeur.rs` |
 | système | `Systeme` | `compagnie/src/maj.rs` |
 | clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
@@ -4076,11 +4077,17 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   toute file naît avec elle en tête (`Fil::file`, `Cle::VersionDuCalcul`, la même `passer_la_version` que la route
   `ouverture`, qui ne fait plus rien ensuite), et rien de la compagnie ne se calcule avant : le jour d'une mise à jour,
   les paies des mois finis se réécrivent avant que les états se fassent. **Rien d'autre ne touche une compagnie pendant
-  que sa mise à jour se prend en compte** : un seul passage à la fois (`config/.version-du-calcul.verrou`, rafraîchi
-  avant chaque mois, marqué du numéro de son passage) ; l'autre l'apprend (`PriseEnCompte::EnCoursAilleurs`) — la route
-  `ouverture` s'arrête là pour ce tour (ni relève, ni envoi, ni sauvegarde), la file n'en calcule rien et regarde
-  chaque seconde si elle a fini (sa phrase : « Prise en compte de la mise à jour… »). Un refus se note, la route
-  `ouverture` la reprenant au clic. L'état d'ouverture, le tableau (compagnie de
+  que sa mise à jour se prend en compte.** Dans la fenêtre, l'ordre fait la sûreté : la veille de la compagnie (relève,
+  envois, sauvegarde) ne fait son premier tour qu'après que sa file a fini la mise à jour
+  (`FileDesEtats::attendre_la_version`, sur le fil de la veille : la page voit « Prise en compte de la mise à jour… ») ;
+  les deux ne se croisent pas, et aucun verrou ne s'y dispute. Le verrou de la version
+  (`config/.version-du-calcul.verrou`, rafraîchi avant chaque mois, levé par un seul preneur quand il est abandonné) ne
+  garde que d'un autre processus : en ligne de commande, une route qui écrit refuse pendant un passage (« Prise en
+  compte de la mise à jour en cours : réessayer dans un instant. »), la route `ouverture` aussi ; un passage qui le
+  trouve tenu, ou qui le perd en route, l'apprend (`PriseEnCompte::EnCoursAilleurs`), et la file n'en calcule rien,
+  regardant à chaque tour (au plus chaque seconde) si l'autre a fini. Une valeur à saisir de nouveau retient la mise à
+  jour, comme à la route `ouverture` : elle se reprend après la réponse. Un refus se note, la route `ouverture` la
+  reprenant au tour de la veille. L'état d'ouverture, le tableau (compagnie de
   l'administrateur, sous l'empreinte de l'ouverture) et les mois se refont en fond ; ouvrir sert un état frais sans
   attendre ; minuit passé, tout se revérifie. **Avant le mot de passe, du calcul local seulement** : le fil est marqué
   (`fil_de_fond`), et `garde_reseau` y refuse toute sortie, le coffre y refuse la clé du poste et toute dérivation de mot
