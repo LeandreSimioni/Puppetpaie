@@ -943,7 +943,7 @@ impl Fenetre {
                 // Le catalogue (`routes`) ne porte sur aucune compagnie : l'accueil le lit pour son « Avancé » (`js/avance.js`).
                 let au_developpeur = routes::catalogue::dans(routes::filet::ROUTES, nom).is_some() && !matches!(self.phase(), Phase::Ouverte { .. });
                 let catalogue = routes::catalogue::dans(routes::catalogue::ROUTES, nom).is_some();
-                if routes::catalogue::dans(routes::accueil::ROUTES, nom).is_some() || au_developpeur || catalogue {
+                if routes::accueil::est_de_l_installation(nom) || au_developpeur || catalogue {
                     let debut = Instant::now();
                     let rendu = self.route_de_l_installation(nom, &charge);
                     self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));

@@ -95,7 +95,9 @@ const SIGNES_HORS_LIGNE: [&str; 10] = [
     "temporary failure in name resolution",
 ];
 
-/// `hors_ligne` : ce message dit-il que le reseau manque, plutot qu'un vrai refus ?
+/// `hors_ligne` : ce message dit-il que le reseau manque, plutot qu'un vrai refus ? Il ne sert qu'aux incidents du releve
+/// des retours, qui ne sont plus que des phrases (`gestes::ouverture`) ; une panne du Drive se reconnait a sa panne
+/// (`envois::drive::ErreurGoogle::injoignable`), jamais a sa phrase.
 pub fn hors_ligne(erreur: &str) -> bool {
     let texte = erreur.to_lowercase();
     SIGNES_HORS_LIGNE.iter().any(|s| texte.contains(s))

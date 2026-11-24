@@ -337,6 +337,10 @@ pub struct ErreurGoogle {
     pub statut: Option<ureq::http::StatusCode>,
     /// Ce que Google a dit qui demande un geste de la compagnie, quand il l'a dit (`google::panne_de_google`).
     pub raison: Option<RaisonDeGoogle>,
+    /// LA CONNEXION N'A PAS ABOUTI (`transport::Panne::Reseau` : aucun reseau, le nom de Google qui ne se resout pas, la
+    /// connexion refusee ou coupee avant la reponse) : la sauvegarde et la restauration s'arretent la et reprennent au
+    /// passage suivant. Un delai de lecture depasse ou une reponse coupee n'en sont pas : le reseau est la.
+    pub injoignable: bool,
 }
 
 /// CE QUE GOOGLE DIT QUI DEMANDE UN GESTE DE LA COMPAGNIE, reconnu dans sa reponse d'erreur (`google::traduire`) : la
@@ -385,7 +389,7 @@ impl ErreurGoogle {
 
 impl From<Echec> for ErreurGoogle {
     fn from(echec: Echec) -> Self {
-        ErreurGoogle { echec, statut: None, raison: None }
+        ErreurGoogle { echec, statut: None, raison: None, injoignable: false }
     }
 }
 
@@ -410,7 +414,7 @@ pub struct Depose {
 }
 
 /// Ce que la sauvegarde, l'archivage, la restauration et la vue du Drive demandent a Drive. Il n'efface rien : la seule
-/// suppression est a part (`CorbeilleDuDrive`), et ce qui recoit un `Drive` ne l'a pas.
+/// suppression est a part (`Corbeille`), et ce qui recoit un `Drive` ne l'a pas.
 pub trait Drive {
     /// `Client.compte` : l'adresse du compte autorise, lue sans reseau.
     fn compte(&self) -> Option<String>;
@@ -441,12 +445,29 @@ pub trait Drive {
     fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle>;
 }
 
-/// LA CORBEILLE DU DRIVE, A PART DU TRAIT `Drive` : la sauvegarde, l'archivage et la restauration recoivent un `Drive`
-/// et n'ont pas de quoi effacer ; seul le geste qui supprime un dossier (`routes::drive`, avec le mot de passe du
-/// logiciel) recoit une corbeille.
-pub trait CorbeilleDuDrive: Drive {
+/// LA CORBEILLE DU DRIVE, A PART DU CLIENT : un `Client` (la sauvegarde, l'archivage, la restauration, la vue) n'a pas de
+/// quoi effacer, et aucun `use` ne le lui donne. Une corbeille se fait d'une `Autorisation` (le jeton scelle, que seul
+/// `routes::coffre` lit), et `routes::coffre` ne la fait qu'apres le mot de passe du logiciel, pour le seul geste qui
+/// supprime un dossier (`routes::drive`).
+pub struct Corbeille {
+    client: Client,
+}
+
+impl Corbeille {
+    /// La corbeille du compte que `autorisation` dit. Aucun appel reseau.
+    pub fn nouvelle(autorisation: Autorisation, adresses: Adresses) -> Corbeille {
+        Corbeille { client: Client::nouveau(autorisation, adresses) }
+    }
+
+    /// Le Drive du meme compte, pour relire ce qu'il porte avant de rien y mettre.
+    pub fn drive(&mut self) -> &mut Client {
+        &mut self.client
+    }
+
     /// Met `id` (un dossier : tout ce qu'il porte) a la corbeille de Google, d'ou on le sort pendant 30 jours.
-    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle>;
+    pub fn mettre(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
+        self.client.changer(id, &DossierAChanger { marque: None, trashed: Some(true) })
+    }
 }
 
 /// Les trois adresses que le client appelle. Les vraies par defaut ; la preuve pointe sur un
@@ -778,12 +799,6 @@ impl Drive for Client {
             Err(e) if e.statut == Some(ureq::http::StatusCode::NOT_FOUND) => Ok(false),
             Err(e) => Err(e),
         }
-    }
-}
-
-impl CorbeilleDuDrive for Client {
-    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
-        self.changer(id, &DossierAChanger { marque: None, trashed: Some(true) })
     }
 }
 

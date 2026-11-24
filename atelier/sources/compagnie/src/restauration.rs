@@ -14,7 +14,7 @@
 //! 4. elle reconstruit l'index local (`config/.sauvegarde.json`) : la sauvegarde suivante connait les dossiers Drive sans
 //!    les rechercher, et `rien_n_a_bouge` dit oui tant que rien n'a change.
 //!
-//! RIEN D'EFFACE, NI ICI NI LA-BAS. Le trait `Drive` n'a pas de suppression (`CorbeilleDuDrive` est a part) ; ici, un
+//! RIEN D'EFFACE, NI ICI NI LA-BAS. Le trait `Drive` n'a pas de suppression (`envois::drive::Corbeille` est a part) ; ici, un
 //! fichier qui existe n'est jamais remplace.
 //!
 //! UN DOSSIER QUI N'EST PAS VIDE : il est accepte si tout ce que la sauvegarde y porterait (son
@@ -31,8 +31,10 @@
 //! dossiers, ou deux fichiers, de meme nom au meme endroit du Drive : elle ne choisit pas, elle le dit).
 //!
 //! UNE REPRISE A L'ACCUEIL (`routes::accueil::drive`) se fait toujours dans un dossier neuf, qu'elle marque d'abord
-//! (`RepriseEnCours`, `config/reprise-en-cours.json`, propre au poste : il ne monte pas) ; coupee, elle se relance dans ce
-//! meme dossier, et dans aucun autre ; allee au bout, elle efface sa marque.
+//! (`RepriseEnCours`, `config/reprise-en-cours.json`, propre au poste : il ne monte pas) ; tant qu'elle est la, le dossier
+//! n'est pas une compagnie du poste (`installation::liste_de`) ; coupee, elle se relance dans ce meme dossier, et dans
+//! aucun autre ; allee au bout, elle efface sa marque. Le coffre revenu que rien n'ouvrira ici se met de cote
+//! (`ranger_le_coffre`), et ce qu'il reste a faire se dit (`a_faire`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -40,7 +42,7 @@ use std::path::{Path, PathBuf};
 
 use crate::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
-use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, DossierDuDrive, Index, SAUVEGARDE};
+use crate::sauvegarde::{ecarte, ecrire_index, inventaire, DossierDuDrive, Index, SAUVEGARDE};
 use crate::sur_le_drive::{DossierVu, GenreDuDossier};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::Octets;
@@ -272,7 +274,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
                     distants.insert(relatif, Entree { id: d.id.clone(), md5: d.md5.clone(), dossier: dossier.clone() });
                 }
                 Ok(None) => {}
-                Err(e) => resultat.incidents.push(format!("{} : {} Aucun n'est redescendu ; relancer ensuite.", relatif, e.echec.phrase)),
+                Err(e) => resultat.incidents.push(format!("{} : {} Aucun n'est redescendu : ils restent dans le Drive.", relatif, e.echec.phrase)),
             }
         }
         let mut par_nom: BTreeMap<String, Vec<IdDrive>> = BTreeMap::new();
@@ -285,7 +287,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
                 match ids.as_slice() {
                     [seul] => a_voir.push((Some(relatif), seul.clone())),
                     _ => resultat.incidents.push(format!(
-                        "{}/ : {} dossiers de ce nom dans le Drive, rien n'en est redescendu (la restauration ne choisit pas : les reunir a la main dans le Drive, puis relancer).",
+                        "{}/ : {} dossiers de ce nom dans le Drive ; la restauration ne choisit pas, rien n'en est redescendu : ils restent dans le Drive.",
                         relatif,
                         ids.len()
                     )),
@@ -340,7 +342,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         }
         let contenu = match client.telecharger(&d.id) {
             Ok(c) => c,
-            Err(e) if hors_ligne(&e.echec.phrase) => {
+            Err(e) if e.injoignable => {
                 resultat.hors_ligne = true;
                 resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                 break;
@@ -353,7 +355,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         let recue = EmpreinteMd5::des_octets(&contenu);
         if recue != *attendue {
             resultat.incidents.push(format!(
-                "{} : l'empreinte ne colle pas (le Drive annonce {}, le contenu recu donne {}) : rien n'est ecrit. Relancer la restauration.",
+                "{} : l'empreinte ne colle pas (le Drive annonce {}, le contenu recu donne {}) : rien n'est ecrit ici, il reste dans le Drive.",
                 relatif, attendue, recue
             ));
             continue;
@@ -424,13 +426,41 @@ fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> socle::echec::R<bool>
 
 // ------------------------------------------------------------ ce qu'il reste a faire a la main
 
+/// Le nom sous lequel un coffre revenu que ce poste n'ouvre pas est mis de cote, dans `config/` (`ranger_le_coffre`).
+pub const COFFRE_DE_L_ANCIEN_POSTE: &str = "coffre-de-l-ancien-poste";
+
+/// LE COFFRE REVENU QUE CE POSTE N'OUVRE PAS, ET QUE RIEN N'OUVRIRA ICI : scelle par la seule cle de l'ancien poste, sans
+/// mot de passe du logiciel (`ouverture_exigee` faux, `ouvre_a_ce_poste` faux). Poser un mot de passe du logiciel se
+/// refuserait sur lui (`Coffre::poser_ouverture` l'ouvre d'abord : « Ce coffre ne s'ouvre pas ici ») ; il est donc mis
+/// de cote dans `config/` (`coffre-de-l-ancien-poste.bin`, `-2`… s'il y en a deja un), sans rien effacer, et la
+/// compagnie part sans coffre : son premier mot de passe du logiciel en fait un neuf. Rend vrai s'il a ete mis de cote.
+pub fn ranger_le_coffre(coffre: &Coffre) -> socle::echec::R<bool> {
+    let chemin = coffre.chemin();
+    if !socle::fichiers::present(&chemin)? || coffre.ouverture_exigee()? || coffre.ouvre_a_ce_poste()? {
+        return Ok(false);
+    }
+    let mut n = 1;
+    let de_cote = loop {
+        let nom = if n == 1 { format!("{}.bin", COFFRE_DE_L_ANCIEN_POSTE) } else { format!("{}-{}.bin", COFFRE_DE_L_ANCIEN_POSTE, n) };
+        let p = chemin.with_file_name(nom);
+        if !socle::fichiers::present(&p)? {
+            break p;
+        }
+        n += 1;
+    };
+    std::fs::rename(&chemin, &de_cote).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
+    Ok(true)
+}
+
 /// Ce qu'il reste a faire a la main apres une restauration, d'apres ce qui est revenu dans `coffre.racine` : le coffre (ce
 /// qu'il porte, s'il s'ouvre a ce poste, par quoi). Ne lit aucun secret : les fiches
 /// du coffre sont en clair (ce qui est pose, depuis quand), et `ouvre_a_ce_poste` ne rend qu'un oui ou un non. Le coffre
 /// est celui du poste (`Coffre::du_poste`) ; la preuve en donne un dont la cle est ailleurs.
 ///
 /// En mots, pour la personne : les gestes se nomment par l'endroit ou ils se font (Configuration › Mots de passe) ; leurs
-/// routes, la fiche de chaque route les dit.
+/// routes, la fiche de chaque route les dit. Un coffre revenu que rien n'ouvrira ici est d'abord mis de cote
+/// (`ranger_le_coffre`) : chaque ligne dit un geste qui se fait vraiment. Un coffre qui ne se lit pas se dit, en mots ; il
+/// n'est pas touche.
 pub fn a_faire(coffre: &Coffre) -> Vec<String> {
     let mut lignes = Vec::new();
     let a_poser = |manquants: &[&str]| -> String {
@@ -438,7 +468,21 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
     };
     let tous: Vec<&str> = SERVICES.iter().map(|s| s.nom).collect();
     const OU: &str = "Configuration › Mots de passe";
-    if !coffre.chemin().exists() {
+    const ILLISIBLE: &str = "Le coffre est revenu, mais il ne se lit pas sur ce poste : il est peut-être abîmé. Rien n'y est changé.";
+    let range = match ranger_le_coffre(coffre) {
+        Ok(r) => r,
+        Err(e) if e.classe == Some(socle::echec::Classe::Disque) => {
+            return vec!["Le coffre revenu ne s'ouvre pas ici, et le disque refuse de le mettre de côté : rien n'y est changé.".to_string()];
+        }
+        Err(_) => return vec![ILLISIBLE.to_string()],
+    };
+    if range {
+        lignes.push(format!(
+            "Le coffre revenu ne s'ouvre pas ici : seul l'ancien poste l'ouvrait. Il est mis de côté, rien n'est effacé. Poser un mot de passe du logiciel, puis ceux des organismes ({}), dans {}.",
+            a_poser(&tous),
+            OU
+        ));
+    } else if !coffre.chemin().exists() {
         lignes.push(format!(
             "Le coffre n'était pas dans la sauvegarde : poser le mot de passe du logiciel, puis ceux des organismes ({}), dans {}.",
             a_poser(&tous),
@@ -446,7 +490,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
         ));
     } else {
         match (coffre.ouverture_exigee(), coffre.services(), coffre.ouvre_a_ce_poste()) {
-            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.phrase)),
+            (Err(_), _, _) | (_, Err(_), _) | (_, _, Err(_)) => lignes.push(ILLISIBLE.to_string()),
             (Ok(avec_mot_de_passe), Ok(etat), Ok(ici)) => {
                 let poses: Vec<String> = etat
                     .iter()
@@ -466,15 +510,8 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
                         porte,
                         OU
                     ));
-                } else {
-                    lignes.push(format!(
-                        "Le coffre est revenu ({}), mais sans mot de passe du logiciel : seul l'ancien poste l'ouvrait, il ne s'ouvrira pas ici. Poser un mot de passe du logiciel, puis ceux des organismes ({}), dans {}.",
-                        porte,
-                        a_poser(&tous),
-                        OU
-                    ));
                 }
-                if (ici || avec_mot_de_passe) && !manquants.is_empty() {
+                if !manquants.is_empty() {
                     lignes.push(format!("Ce qu'il ne porte pas, à poser s'il le faut dans {} : {}.", OU, a_poser(&manquants)));
                 }
             }

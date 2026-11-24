@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use compagnie::sur_le_drive::{DossierVu, GenreDuDossier};
-use envois::drive::{CorbeilleDuDrive, IdDrive};
+use envois::drive::IdDrive;
 use socle::echec::{Classe, R};
 use socle::ecran::{EtatDEcran, Pastille};
 
@@ -28,7 +28,7 @@ const SUPPRIMER: Affiche = Affiche::new("Supprimer…");
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DriveEtat,
-        geste: "Dire ce que le Drive lié porte : chaque dossier, sa dernière sauvegarde, son volume.",
+        geste: "Dire chaque dossier du Drive lié, sa dernière sauvegarde, son volume.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase, encarts, rangs : chaque dossier sous PuppetPaie (le dossier de cette compagnie, celui d'une autre, l'ancienne sauvegarde commune, un dossier d'une ancienne version), sa dernière sauvegarde, son volume, et le geste qui le supprime quand le mot de passe du logiciel est posé (sinon un encart dit pourquoi) ; ce qui ne se lit pas se dit en encart",
@@ -58,22 +58,15 @@ pub const ROUTES: &[Fiche] = &[
 
 charge! {
     motdepasse = dit("Mot de passe du logiciel", "le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain");
-    /// La charge de `drive-supprimer` : le dossier, tel que `drive-etat` le designe.
+    /// La charge de `drive-supprimer` : le dossier, tel que `drive-etat` le designe. Le geste « Supprimer… » de chaque
+    /// rang la porte telle quelle.
     #[derive(Debug, Clone, Serialize)]
     pub(crate) struct ChargeSupprimer {
         dossier: IdDrive = dit("Dossier du Drive", "l'identifiant du dossier, tel que drive-etat le rend dans la charge de son geste"),
     }
 }
 
-/// CE QU'UN ECRAN DU DRIVE DONNE AU GESTE D'UN RANG : le dossier du Drive sur lequel il porte (le supprimer, ici ; le
-/// reprendre, a l'accueil), ou aucun (lier ou oublier le compte Google de l'accueil).
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct DossierDuRang {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) dossier: Option<IdDrive>,
-}
-
-type EcranDuDrive = EcranRendu<DossierDuRang>;
+type EcranDuDrive = EcranRendu<ChargeSupprimer>;
 
 /// Ce que rend `drive-etat`.
 #[derive(Debug, Serialize)]
@@ -172,9 +165,17 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
         encarts.push(Encart::de(EtatDEcran::Information, "Compagnie fictive : rien ne part au Drive", "Sa sauvegarde et ses archives sont jouées."));
         return Ok(fini(encarts, Phrase::fixe("Compagnie fictive : rien ne part au Drive.")));
     }
-    let Some(compte) = crate::coffre::compte_autorise(&ctx.racine) else {
-        encarts.push(Encart::de(EtatDEcran::AFaire, "Aucun compte Google lié", "Lier le Drive : Configuration › Mots de passe."));
-        return Ok(fini(encarts, Phrase::fixe("Aucun compte Google lié.")));
+    let compte = match crate::coffre::compte_autorise(&ctx.racine) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            encarts.push(Encart::de(EtatDEcran::AFaire, "Aucun compte Google lié", "Lier le Drive : Configuration › Mots de passe."));
+            return Ok(fini(encarts, Phrase::fixe("Aucun compte Google lié.")));
+        }
+        // Un jeton illisible n'est pas « aucun compte » : il se dit, et se relie.
+        Err(_) => {
+            encarts.push(Encart::de(EtatDEcran::Refuse, "Le jeton du compte Google ne se lit pas", "Relier le Drive de nouveau : Configuration › Mots de passe."));
+            return Ok(fini(encarts, Phrase::fixe("Le jeton du compte Google ne se lit pas.")));
+        }
     };
     let vus = crate::coffre::client_drive(&ctx.racine).and_then(|mut c| compagnie::sur_le_drive::voir(&mut c, compagnie::sauvegarde::RACINE_DRIVE));
     let vus = match vus {
@@ -228,7 +229,7 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
             Pastille::de(EtatDEcran::Information, "ancien ou d'une autre compagnie")
         };
         let gestes = match &demande {
-            Some(d) => vec![GesteDeRoute::avec_cases(Route::DriveSupprimer, DossierDuRang { dossier: Some(vu.id.clone()) }, SUPPRIMER, Vec::new(), SansCharge {}, SansCharge {})
+            Some(d) => vec![GesteDeRoute::avec_cases(Route::DriveSupprimer, ChargeSupprimer { dossier: vu.id.clone() }, SUPPRIMER, Vec::new(), SansCharge {}, SansCharge {})
                 .disant(avant_de_supprimer(vu, le_sien, maintenant))
                 .exigeant(Some(d.clone()))],
             None => Vec::new(),
@@ -241,20 +242,17 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
 
 // ------------------------------------------------------------------ drive-supprimer
 
-/// SUPPRIMER UN DOSSIER DU DRIVE : le mot de passe du logiciel, comme un acte reel (`preuve::verifier_preuve`), puis le
-/// dossier, s'il est sous la racine du Drive lie (relue), va a la corbeille de Google. Une compagnie fictive n'a rien sur
-/// le Drive : rien ne se supprime, et la phrase le dit.
+/// SUPPRIMER UN DOSSIER DU DRIVE : la corbeille ne s'obtient qu'avec le mot de passe du logiciel, comme un acte reel
+/// (`coffre::corbeille_du_drive`), puis le dossier, s'il est sous la racine du Drive lie (relue), va a la corbeille de
+/// Google. Une compagnie fictive n'a rien sur le Drive : rien ne se supprime, et la phrase le dit.
 fn supprimer(ctx: &droit::contexte::Contexte, dossier: &IdDrive, mdp: Option<&socle::secret::Secret>) -> R<DossierSupprime> {
     if compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok(DossierSupprime { phrase: Phrase::fixe("Compagnie fictive : rien n'est sur le Drive, rien n'est supprimé."), dossier: dossier.to_string() });
     }
-    let demande = crate::coffre::demande(&ctx.racine, GESTE_SUPPRIMER)?;
-    let preuve = compagnie::preuve::Preuve::du_mot_de_passe(mdp.cloned());
-    compagnie::preuve::verifier_preuve(ctx, Some(&preuve), &demande).map_err(|e| e.reformuler(|m| m.replace("Rien n'est parti", "Rien n'est supprimé")))?;
-    let mut client = crate::coffre::client_drive(&ctx.racine).map_err(|e| e.echec)?;
+    let mut corbeille = crate::coffre::corbeille_du_drive(ctx, mdp, GESTE_SUPPRIMER)?;
     let racine_drive = compagnie::sauvegarde::RACINE_DRIVE;
-    let vus = compagnie::sur_le_drive::voir(&mut client, racine_drive).map_err(|e| e.echec)?;
+    let vus = compagnie::sur_le_drive::voir(corbeille.drive(), racine_drive).map_err(|e| e.echec)?;
     let vu = compagnie::sur_le_drive::le_dossier(vus, dossier, racine_drive).map_err(|e| e.echec)?;
-    client.mettre_a_la_corbeille(&vu.id).map_err(|e| e.echec)?;
+    corbeille.mettre(&vu.id).map_err(|e| e.echec)?;
     Ok(DossierSupprime { phrase: socle::phrase!("« {} » est dans la corbeille de Google : on l'en sort pendant 30 jours.", vu.nom), dossier: vu.nom })
 }

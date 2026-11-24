@@ -593,9 +593,9 @@ un libellé, chacun sa forme.
 | sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
 | dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
 | fichiers d'un dossier du Drive, par nom, homonymes compris | `envois::drive::FichiersDuDossier` | `envois/src/drive.rs` |
-| corbeille du Drive, à part du trait `Drive` | `envois::drive::CorbeilleDuDrive` | `envois/src/drive.rs` |
+| corbeille du Drive, à part du client | `envois::drive::Corbeille` | `envois/src/drive.rs` |
 | reprise du Drive pas finie sur ce poste | `compagnie::restauration::RepriseEnCours` | `compagnie/src/restauration.rs` |
-| dossier du rang d'un écran du Drive | `DossierDuRang` | `routes/src/drive.rs` |
+| geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
 | titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
@@ -955,14 +955,18 @@ un libellé, chacun sa forme.
 - **fichiers d'un dossier du Drive** : ce que `Drive::lister` rend, par nom, homonymes compris ; deux fichiers du même
   nom ne se départagent pas (`FichiersDuDossier::le_seul` les refuse en les nommant : la sauvegarde reporte le fichier,
   l'archivage refuse, la restauration le dit en incident).
-- **corbeille du Drive** : mettre un dossier à la corbeille de Google, à part du trait `Drive` (`CorbeilleDuDrive`) : ce
-  qui reçoit un `Drive` (la sauvegarde, l'archivage, la restauration) n'a pas de quoi effacer ; seul le geste qui
-  supprime un dossier (`routes::drive`) la reçoit.
+- **corbeille du Drive** : mettre un dossier à la corbeille de Google, à part du client (`Corbeille`) : un `Client` (la
+  sauvegarde, l'archivage, la restauration, la vue) n'a pas de quoi effacer ; une corbeille se fait d'une autorisation
+  que seul `routes::coffre` lit, et il ne la fait qu'après le mot de passe du logiciel, pour le geste qui supprime un
+  dossier (`routes::drive`).
 - **reprise en cours** : la marque qu'une reprise du Drive à l'accueil pose d'abord dans le dossier neuf qu'elle remplit
-  (`config/reprise-en-cours.json`, propre au poste) : de quel dossier du Drive il revient ; une reprise coupée se
-  continue dans ce dossier, et dans aucun autre ; allée au bout, elle s'efface.
-- **dossier du rang d'un écran du Drive** : ce qu'un écran du Drive donne au geste d'un rang, le dossier du Drive sur
-  lequel il porte (le supprimer, le reprendre), ou aucun (lier, oublier le compte Google de l'accueil).
+  (`config/reprise-en-cours.json`, propre au poste) : de quel dossier du Drive il revient. Tant qu'elle est là, ce
+  dossier n'est pas une compagnie du poste (ni tuile, ni ouvert) ; les reprises commencées se cherchent par elle
+  (`installation::reprises_commencees`). Une reprise coupée, ou sans sa fiche Entreprise revenue, se continue dans ce
+  dossier, et dans aucun autre ; allée au bout, elle s'efface.
+- **geste d'un écran de la reprise du Drive** : ce que porte le geste d'un rang de l'accueil « De mon Drive », la charge
+  de sa route et rien de plus : rien (lier, oublier le compte Google de l'accueil), un dossier du Drive (le reprendre),
+  une compagnie de ce poste (l'ouvrir). Le geste « Supprimer… » d'une compagnie porte la charge de `drive-supprimer`.
 - **marque du dossier d'une compagnie** : ses propriétés privées à l'application (`appProperties`) : l'identité, la date
   de la dernière sauvegarde qui a envoyé quelque chose, le volume ; telle que Drive la rend, du texte, que
   `sur_le_drive` lit en ses types (ce qui ne s'en lit pas se dit, sans fermer la vue).

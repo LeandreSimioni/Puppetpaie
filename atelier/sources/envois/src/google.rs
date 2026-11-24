@@ -156,7 +156,7 @@ pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoo
                     socle::echec::noter_echec(Some(Classe::Google), &detail);
                     let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
                     let echec = Echec { classe: Some(Classe::Google), phrase: raison.phrase().to_string(), a_part: Some(a_part.into()) };
-                    return ErreurGoogle { echec, statut: Some(code), raison: Some(raison) };
+                    return ErreurGoogle { echec, statut: Some(code), raison: Some(raison), injoignable: false };
                 }
                 Ok(None) => Panne::Statut { code, corps: Ok(corps) },
                 // Pas une erreur de Google : une panne brute, dans la classe de son refus, le statut garde.
@@ -171,8 +171,10 @@ pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoo
         }
         autre => autre,
     };
+    // La connexion qui n'a pas abouti se reconnait a sa panne, jamais a sa phrase (`ErreurGoogle::injoignable`).
+    let injoignable = matches!(p, Panne::Reseau(_));
     let e = crate::transport::panne_dite(faisait, Classe::Google, url, p);
-    ErreurGoogle { echec: e.echec, statut: e.code, raison: None }
+    ErreurGoogle { echec: e.echec, statut: e.code, raison: None, injoignable }
 }
 
 /// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus

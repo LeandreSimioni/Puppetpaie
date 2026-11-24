@@ -606,8 +606,8 @@ pub fn est_cache(p: &Path) -> bool {
     p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'))
 }
 
-/// Les compagnies sous `dossier` (celles qui ont leur fiche entreprise), par ordre de dossier ; aucune s'il n'existe pas.
-fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
+/// Les dossiers sous `dossier` (sauf les caches) que `garder` retient, par ordre de dossier ; aucun s'il n'existe pas.
+fn dossiers_retenus(dossier: &Path, garder: impl Fn(&Path) -> bool) -> R<Vec<PathBuf>> {
     let entrees = match std::fs::read_dir(dossier) {
         Ok(it) => it,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -616,11 +616,36 @@ fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
     let mut v = Vec::new();
     for e in entrees {
         let d = e.map_err(|e| socle::echec::du_disque(dossier, &e))?.path();
-        if !est_cache(&d) && droit::contexte::ENTREPRISE.dans(&d).is_file() {
+        if !est_cache(&d) && garder(&d) {
             v.push(d);
         }
     }
     v.sort();
+    Ok(v)
+}
+
+/// Le dossier `d` porte-t-il la marque d'une reprise du Drive pas finie (`restauration::RepriseEnCours`) ?
+fn en_reprise(d: &Path) -> bool {
+    crate::restauration::REPRISE_EN_COURS.dans(d).is_file()
+}
+
+/// Les compagnies sous `dossier` (celles qui ont leur fiche entreprise), par ordre de dossier ; aucune s'il n'existe pas.
+/// UNE COMPAGNIE QUE SA REPRISE DU DRIVE N'A PAS FINIE N'EN EST PAS ENCORE UNE (`en_reprise`) : ni une tuile, ni ouverte,
+/// ni tenue a jour, sinon on y ecrirait en passant et la suite de sa reprise se refuserait (« dossier non vide »).
+fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
+    dossiers_retenus(dossier, |d| droit::contexte::ENTREPRISE.dans(d).is_file() && !en_reprise(d))
+}
+
+/// LES DOSSIERS DE L'INSTALLATION `inst` QUE REMPLIT UNE REPRISE DU DRIVE PAS FINIE (`restauration::RepriseEnCours`),
+/// cherches par leur marque dans chaque groupe (`GROUPES`), qu'ils aient ou non deja leur fiche Entreprise : chacun son
+/// identifiant et sa racine, par groupe puis par ordre de dossier.
+pub fn reprises_commencees(inst: &Path) -> R<Vec<(IdDeCompagnie, PathBuf)>> {
+    let mut v = Vec::new();
+    for (groupe, du_groupe) in GROUPES {
+        for d in dossiers_retenus(&groupe.dans(inst), en_reprise)? {
+            v.push((du_groupe(nom_dossier(&d)?), d));
+        }
+    }
     Ok(v)
 }
 

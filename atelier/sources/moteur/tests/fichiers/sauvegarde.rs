@@ -11,7 +11,7 @@ use crate::faux_drive;
 use std::path::{Path, PathBuf};
 
 use faux_drive::{ecrire, racine as racine_de, FauxDrive};
-use envois::drive::{CorbeilleDuDrive, Drive};
+use envois::drive::Drive;
 use compagnie::sauvegarde::{EtatFichier, Sauvegarde};
 use routes::gestes::sauvegarde::sauvegarder;
 
@@ -169,7 +169,7 @@ fn deux_compagnies_d_un_compte_ont_chacune_leur_dossier() {
     assert_eq!(arbre.keys().filter(|k| k.starts_with(&format!("{}/", dossier_de("une")))).count(), 9);
     assert_eq!(arbre.keys().filter(|k| k.starts_with(&format!("{}/", dossier_de("deux")))).count(), 9);
     let id = d.id_du_dossier(&dossier_de("une"));
-    d.mettre_a_la_corbeille(&id).unwrap();
+    d.mettre_a_la_corbeille(&id);
     let s = passer(&a, &mut d);
     assert_eq!(s.deposes.len(), 9, "tout repart : {:?}", s);
     assert_eq!(d.appels("creer_dossier"), 3, "un dossier neuf pour la premiere, rien pour la seconde");

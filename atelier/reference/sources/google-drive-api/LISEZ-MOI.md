@@ -50,7 +50,7 @@ vont au dépôt privé (`reference-privee/sources/google-drive-api/`) ; leurs co
 - **La corbeille** (« Move a file to the trash » : « use the update method on the files resource [...] and set the
   boolean trashed field to true » ; « Files in the trash are automatically deleted after 30 days. You can restore files
   from your trash before the 30-day period » ; « trashed: Whether the file was trashed, either explicitly or from a
-  trashed parent folder ») : `envois/src/drive.rs`, `Drive::mettre_a_la_corbeille` (le geste « Supprimer » d'un dossier,
+  trashed parent folder ») : `envois/src/drive.rs`, `Corbeille::mettre` (le geste « Supprimer » d'un dossier,
   `routes/src/drive.rs`, dont la phrase dit les 30 jours) et `Drive::en_place` (un dossier mis à la corbeille n'est plus
   celui de la compagnie : la sauvegarde suivante renvoie tout dans un dossier neuf).
 - **Les propriétés privées** (« To add properties restricted to your app, use the appProperties field of the files

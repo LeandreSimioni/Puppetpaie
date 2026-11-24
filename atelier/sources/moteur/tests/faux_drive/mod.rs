@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use envois::drive::{CorbeilleDuDrive, Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle, FichiersDuDossier, IdDrive, MarqueDuDossier, SousDossier};
+use envois::drive::{Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle, FichiersDuDossier, IdDrive, MarqueDuDossier, SousDossier};
 
 pub struct FichierDrive {
     pub id: IdDrive,
@@ -286,11 +286,11 @@ impl Drive for FauxDrive {
     }
 }
 
-impl CorbeilleDuDrive for FauxDrive {
-    fn mettre_a_la_corbeille(&mut self, id: &IdDrive) -> Result<(), ErreurGoogle> {
+impl FauxDrive {
+    /// Ce que fait la corbeille du Drive (`envois::drive::Corbeille::mettre`) : le dossier `id` y va, avec ce qu'il porte.
+    pub fn mettre_a_la_corbeille(&mut self, id: &IdDrive) {
         self.journal.push(format!("corbeille {}", self.chemin_de(id)));
         self.corbeille.push(id.clone());
-        Ok(())
     }
 }
 

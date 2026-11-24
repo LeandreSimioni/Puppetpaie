@@ -212,7 +212,7 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     // Ce que la route rend, reussite ou refus, est ce que l'ecran lit : ses phrases passent ici (`phrase_a_sa_place`).
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
     if let (Ok(v), Some(r)) = (&rendu, &racine) {
-        if catalogue::dans(accueil::ROUTES, route).is_none() && catalogue::dans(catalogue::ROUTES, route).is_none() {
+        if !accueil::est_de_l_installation(route) && catalogue::dans(catalogue::ROUTES, route).is_none() {
             phrase_a_sa_place(r, route, v);
         }
     }
@@ -269,7 +269,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         panic!("la route d'essai tombe expres");
     }
     // UNE ROUTE DE L'INSTALLATION (l'accueil des compagnies) ne porte sur aucune compagnie : elle se sert sans contexte.
-    if catalogue::dans(accueil::ROUTES, route).is_some() {
+    if accueil::est_de_l_installation(route) {
         return accueil::route(o, route, charge);
     }
     // ECRIRE AU DEVELOPPEUR, ET CE QUI S'Y RATTACHE, SE SERT AUSSI SANS COMPAGNIE : depuis l'accueil, ou en ligne de

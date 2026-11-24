@@ -66,58 +66,6 @@ pub const ROUTES: &[Fiche] = &[
         ecran: ECRAN,
     },
     Fiche {
-        route: Route::DriveCompagnies,
-        geste: "Dire les compagnies que le Drive lié à l'accueil porte, et le geste qui reprend chacune.",
-        charge: &crate::SansCharge::CHARGE,
-        exemple: r#"{}"#,
-        rend: "phrase, encarts, rangs : le compte Google de l'accueil (le lier, l'oublier), puis chaque compagnie du Drive (sa dernière sauvegarde, son volume, une reprise pas finie sur ce poste, ou la compagnie de ce poste qui l'est déjà) et le geste qui la reprend ; ce qui ne se lit pas se dit en encart",
-        refus: &[OPERATION],
-        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
-        acte: Acte::Lit,
-        phrase: 120,
-        ecran: Ecran::Rendu(Place::AccueilDrive),
-    },
-    Fiche {
-        route: Route::DriveLier,
-        geste: "Lier un compte Google à l'accueil, pour reprendre une compagnie de son Drive.",
-        charge: &crate::SansCharge::CHARGE,
-        exemple: r#"{}"#,
-        rend: "compte : l'adresse du compte Google lié, phrase ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
-        refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
-        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
-        acte: Acte::Ecrit,
-        phrase: 120,
-        ecran: Ecran::Geste(Place::AccueilDrive),
-    },
-    Fiche {
-        route: Route::DriveReprendre,
-        geste: "Ramener sur ce poste une compagnie du Drive lié à l'accueil, dans un dossier neuf (une reprise pas finie se continue dans le sien).",
-        charge: &drive::ChargeReprendre::CHARGE,
-        exemple: r#"{"dossier":"cie-essai"}"#,
-        rend: "nom, chemin (le --racine de ses routes), redescendus, incidents (le détail de ce qui n'est pas revenu, un fichier par ligne), a_faire (ce qui reste à faire pour son coffre), phrase ; ouvrir (la compagnie, que la fenêtre ouvre) quand tous les fichiers ont été tentés sans que la connexion tombe",
-        refus: &[
-            Refus { classe: Classe::Refuse, corriger: "lier d'abord le Drive, ou un dossier que drive-compagnies montre et qui n'est pas déjà sur ce poste (le refus nomme la compagnie) ; rien n'est repris" },
-            Refus { classe: Classe::DossierNonVide, corriger: "la compagnie d'une reprise pas finie a changé depuis : mettre ses fichiers de côté ; rien n'est écrit" },
-            OPERATION,
-        ],
-        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
-        acte: Acte::Ecrit,
-        phrase: 200,
-        ecran: Ecran::Geste(Place::AccueilDrive),
-    },
-    Fiche {
-        route: Route::DriveOublier,
-        geste: "Oublier le compte Google de l'accueil : son jeton s'efface de ce poste.",
-        charge: &crate::SansCharge::CHARGE,
-        exemple: r#"{}"#,
-        rend: "efface (un jeton s'est effacé), phrase",
-        refus: &[OPERATION],
-        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
-        acte: Acte::Ecrit,
-        phrase: 120,
-        ecran: Ecran::Geste(Place::AccueilDrive),
-    },
-    Fiche {
         route: Route::CompagnieCouleur,
         geste: "Choisir la couleur d'une compagnie.",
         charge: &ChargeCouleur::CHARGE,
@@ -215,6 +163,15 @@ pub const ROUTES: &[Fiche] = &[
         ecran: ECRAN,
     },
 ];
+
+/// LES ROUTES DE L'INSTALLATION, chaque module de l'accueil sa liste (sa place) : celles-ci, et reprendre une compagnie de
+/// son Drive (`drive::ROUTES`). Elles se servent sans compagnie (`route`).
+pub const DE_L_INSTALLATION: [&[Fiche]; 2] = [ROUTES, drive::ROUTES];
+
+/// `route` est-elle une route de l'installation (`DE_L_INSTALLATION`) ?
+pub fn est_de_l_installation(route: Route) -> bool {
+    DE_L_INSTALLATION.iter().any(|l| crate::catalogue::dans(l, route).is_some())
+}
 
 /// L'installation de la route : celle de la compagnie nommee (`--racine`), sinon celle du programme.
 pub fn installation(o: &Options) -> PathBuf {
@@ -458,22 +415,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             };
             en_json(tableau)
         }
-        Route::DriveCompagnies => {
-            let super::SansCharge {} = charge.lire()?;
-            en_json(drive::compagnies(&inst)?)
-        }
-        Route::DriveLier => {
-            let super::SansCharge {} = charge.lire()?;
-            en_json(drive::lier(&inst)?)
-        }
-        Route::DriveOublier => {
-            let super::SansCharge {} = charge.lire()?;
-            en_json(drive::oublier(&inst)?)
-        }
-        Route::DriveReprendre => {
-            let c: drive::ChargeReprendre = charge.lire()?;
-            en_json(drive::reprendre(&inst, &c.dossier)?)
-        }
+        _ if crate::catalogue::dans(drive::ROUTES, nom).is_some() => drive::route(&inst, nom, charge),
         Route::Basculer => {
             compagnie::bridage::basculer_de(&inst)?;
             let bride = compagnie::bridage::est_bride_de(&inst);

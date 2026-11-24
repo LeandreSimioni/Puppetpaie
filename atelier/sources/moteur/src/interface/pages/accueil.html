@@ -461,8 +461,9 @@
 <script>
   /* REPRENDRE UNE COMPAGNIE DE SON DRIVE (« + », « De mon Drive ») : l'écran que rend la route de sa place (sa fiche,
      `routeQuiRend`), posé par le dessinateur du logiciel (`poserLEcranRendu`), ses gestes et leurs boîtes compris. Après
-     un geste, l'écran se relit ; quand la route nomme une compagnie à ouvrir (`ouvrir`), la fenêtre l'ouvre, comme une
-     tuile. `dire` : la ligne où la page montre la phrase d'une route. */
+     un geste, l'écran qu'il rend se pose (la fin d'une reprise), sinon l'écran se relit ; quand la route nomme une
+     compagnie à ouvrir (`ouvrir`, le geste « Ouvrir la compagnie »), la fenêtre l'ouvre, comme une tuile. `dire` : la
+     ligne où la page montre la phrase d'une route. */
   function dire(texte, type) {
     const el = document.getElementById("venue-drive-dit");
     el.textContent = texte || "";
@@ -487,6 +488,9 @@
         if (!o.ok) dire(o.refus.phrase, "erreur");
         return;
       }
+      // Un geste qui rend un écran (la fin d'une reprise : `drive-reprendre`) le pose à la place, par le même dessinateur ;
+      // ses gestes (ouvrir la compagnie, continuer la reprise) repassent ici.
+      if (r && (r.rangs || r.encarts)) { poserLEcranRendu(ecran, r, apres); return; }
       dessiner();
     }
     async function dessiner() {

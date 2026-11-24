@@ -9,7 +9,7 @@ use std::path::Path;
 use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
-    cause_de, ecrire_index, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
+    cause_de, ecrire_index, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
     GOOGLE_INDISPONIBLE,
 };
 
@@ -71,7 +71,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let compagnie_id = match compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref()) {
         Ok(id) => Some(id),
         Err(e) => {
-            if hors_ligne(&e.echec.phrase) {
+            if e.injoignable {
                 resultat.hors_ligne = true;
             } else {
                 resultat.incidents.push(format!(". : {}", e.echec.phrase));
@@ -118,7 +118,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         let (parent, deja) = match essai {
             Ok(x) => x,
             Err(e) => {
-                if hors_ligne(&e.echec.phrase) {
+                if e.injoignable {
                     // Pas de reseau : les dossiers suivants tomberaient pareil. On s'arrete,
                     // rien de ce qui reste n'entre a l'index, et le prochain passage reprendra tout.
                     resultat.hors_ligne = true;

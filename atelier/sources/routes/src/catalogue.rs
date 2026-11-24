@@ -122,6 +122,7 @@ routes! {
         DriveLier = "drive-lier",
         DriveReprendre = "drive-reprendre",
         DriveOublier = "drive-oublier",
+        CompagnieOuvrir = "compagnie-ouvrir",
         AdministrateurEtat = "administrateur-etat",
         AdministrateurRattacher = "administrateur-rattacher",
         AdministrateurDetacher = "administrateur-detacher",
@@ -921,7 +922,7 @@ fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
-pub const FICHES: [&[Fiche]; 32] = [
+pub const FICHES: [&[Fiche]; 33] = [
     crate::engagement::ROUTES,
     crate::etat_garde::ROUTES,
     crate::mois::ROUTES,
@@ -952,6 +953,9 @@ pub const FICHES: [&[Fiche]; 32] = [
     crate::gestes::conseils::ROUTES,
     crate::gestes::ouverture::ROUTES,
     crate::obligations::ROUTES,
+    // Reprendre une compagnie de son Drive, a l'accueil : avant les autres routes de l'accueil, dont la derniere
+    // (`basculer`) debride l'installation des exemples, ou la compagnie reprise est une fictive.
+    crate::accueil::drive::ROUTES,
     crate::accueil::ROUTES,
     ROUTES,
 ];
