@@ -693,7 +693,7 @@ fn passer_la_version(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
             return Ok(());
         }
     }
-    dire_l_etape(ctx, r, "Mise à jour installée : le logiciel relit vos paies passées avec la nouvelle version, une seule fois…")?;
+    dire_l_etape(ctx, r, "Prise en compte de la mise à jour…")?;
     let departs = envois::journal::lu(&ctx.racine)?.departs;
     engagement::etats::corriger_les_mois_finis(ctx, &departs)?;
     socle::ecriture::ecrire_json(&p, &marque, 1).map_err(|m| m.reclasser(socle::echec::Classe::Disque))?;
@@ -1173,7 +1173,7 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
             }
         }
     }
-    dire_l_etape(ctx, r, "Google Drive : envoi de ce qui a changé (après une mise à jour, toutes les paies relues)…")?;
+    dire_l_etape(ctx, r, "Google Drive : sauvegarde…")?;
     let drive: Option<&mut dyn Drive> = match clients.drive.as_mut() {
         Some(d) => Some(&mut **d),
         None => None,
