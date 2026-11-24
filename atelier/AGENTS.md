@@ -227,7 +227,10 @@ par son nom dans le JS : on lit sa fiche.
   lui, mais ne s'y attarde pas.
 - **Un manque va dans un ticket du privé**, jamais dans un plan ni une consigne.
 - **Un retour se trie avant de se corriger** (`journal/methodes/TRIER-LES-RETOURS.md` du privé) : ne se corrige que
-  ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre.
+  ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre. **Un retour
+  étiqueté `editeur` vient du poste de Léandre** (le filet le marque) : c'est sa demande, elle ne se discute pas, elle
+  se fait (Léandre, 24/11/2026 : « tu pourrais savoir que c'est mes retours et pas les discuter ») ; seul ce qu'un
+  texte interdit, ou ce qui casse une règle de fond, lui revient en une ligne.
 - **Une consigne ne donne pas de règle sans texte** : elle pose la question, l'exécutant cherche le texte.
 - **À Léandre**, une décision se présente entière, avec ses contre-arguments, et s'explique par un exemple ; réponses
   courtes ; un point de passation ne se répète qu'une fois vu.
