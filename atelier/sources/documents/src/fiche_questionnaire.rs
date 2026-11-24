@@ -155,10 +155,17 @@ pub enum FormeDeReponse {
     Bic,
     /// Un choix parmi (valeur ecrite dans la reponse, ce que la page en dit).
     Choix(Vec<(&'static str, &'static str)>),
+    /// Un pays de la table « Pays » de la DSN, ou se lit le pays de naissance (`socle::pays::servir_naissance`) : la
+    /// reponse porte son code.
+    PaysDeNaissance,
+    /// Un pays de la liste livree (`droit::nationalite::servir`), ou un pays de nationalite que la liste n'a pas
+    /// (`NATIONALITES_HORS_LISTE`) : la reponse porte son code, ou le nom du pays hors de la liste.
+    PaysDeNationalite,
 }
 
 impl FormeDeReponse {
-    /// Son nom dans le formulaire publie, que la page lit pour savoir quoi verifier.
+    /// Son nom dans le formulaire publie, que la page lit pour savoir quoi verifier et comment dessiner : un choix parmi
+    /// quelques-uns se dessine en boutons, un choix dans une longue liste (les pays) en liste deroulante.
     fn nom(&self) -> &'static str {
         match self {
             FormeDeReponse::Texte => "texte",
@@ -169,9 +176,39 @@ impl FormeDeReponse {
             FormeDeReponse::Iban => "iban",
             FormeDeReponse::Bic => "bic",
             FormeDeReponse::Choix(_) => "choix",
+            FormeDeReponse::PaysDeNaissance | FormeDeReponse::PaysDeNationalite => "liste",
         }
     }
+
+    /// Ses choix, tels que le formulaire publie les dit (valeur ecrite dans la reponse, ce que la page en dit) ; `None`
+    /// pour une reponse qui s'ecrit. Les pays : la France en tete, puis les autres par leur nom, derriere la ligne vide
+    /// (rien n'est choisi).
+    fn choix(&self) -> R<Option<Vec<ChoixPublie>>> {
+        let pays = |mut l: Vec<(String, String)>| {
+            l.sort_by_cached_key(|(_, nom)| socle::pays::cle_de_nom(nom));
+            let (france, autres): (Vec<_>, Vec<_>) = l.into_iter().partition(|(code, _)| *code == *socle::pays::CodePays::france());
+            let choix = std::iter::once((String::new(), A_CHOISIR.to_string())).chain(france).chain(autres);
+            Some(choix.map(|(valeur, libelle)| ChoixPublie { valeur, libelle }).collect())
+        };
+        Ok(match self {
+            FormeDeReponse::Choix(c) => Some(c.iter().map(|&(valeur, libelle)| ChoixPublie { valeur: valeur.to_string(), libelle: libelle.to_string() }).collect()),
+            FormeDeReponse::PaysDeNaissance => pays(socle::pays::servir_naissance()?.into_iter().map(|p| (p.code.to_string(), p.nom)).collect()),
+            FormeDeReponse::PaysDeNationalite => {
+                let mut l: Vec<(String, String)> = droit::nationalite::servir()?.into_iter().map(|p| (p.code.to_string(), p.nom)).collect();
+                for (_, nom) in NATIONALITES_HORS_LISTE {
+                    if !l.iter().any(|(v, _)| v == nom) {
+                        l.push((nom.to_string(), nom.to_string()));
+                    }
+                }
+                pays(l)
+            }
+            FormeDeReponse::Texte | FormeDeReponse::Date | FormeDeReponse::Nir | FormeDeReponse::CodePostal | FormeDeReponse::Departement | FormeDeReponse::Iban | FormeDeReponse::Bic => None,
+        })
+    }
 }
+
+/// La ligne vide d'une liste de pays : rien n'est choisi.
+const A_CHOISIR: &str = "— à choisir —";
 
 /// CE QU'UNE QUESTION EST : tout ce que la page dessine et que la releve lit.
 #[derive(Debug, Clone)]
@@ -184,6 +221,12 @@ pub struct QuestionDeclaree {
     pub forme: FormeDeReponse,
     /// La reponse « je n'en ai pas » et ce que la page en dit : elle s'ecrit `aucun`. `None` : la question n'en a pas.
     pub aucun: Option<&'static str>,
+    /// « Je n'en ai pas » est coche a l'ouverture de la page : c'est l'usage (pas de nom d'usage, pas de nom de scene,
+    /// le bulletin que l'employeur donne d'ordinaire) ; la personne le decoche pour repondre. Sans `aucun`, rien.
+    pub aucun_coche: bool,
+    /// Le jeton du remplissage automatique du navigateur (l'attribut `autocomplete` du WHATWG, « Autofill ») qui dit ce
+    /// que la case demande ; `None` : aucun jeton ne le dit, et le navigateur ne propose rien.
+    pub autocomplete: Option<&'static str>,
     /// Elle ne s'ouvre que si cette autre question a pour reponse « aucun » (le sexe sans numero de securite sociale).
     pub si_aucun: Option<Question>,
     /// Elle peut rester sans reponse, et la page le dit.
@@ -245,24 +288,43 @@ impl Question {
     /// CE QU'ELLE EST : la declaration, la seule.
     pub fn declaree(self) -> QuestionDeclaree {
         use FormeDeReponse as F;
-        let q = |cle, libelle, aide, forme, case| QuestionDeclaree { cle, libelle, aide, forme, aucun: None, si_aucun: None, facultative: false, explication: "", avec_l_exemple_dfs: false, case, pourvu: None };
+        let q = |cle, libelle, aide, forme, case| QuestionDeclaree {
+            cle,
+            libelle,
+            aide,
+            forme,
+            aucun: None,
+            aucun_coche: false,
+            autocomplete: None,
+            si_aucun: None,
+            facultative: false,
+            explication: "",
+            avec_l_exemple_dfs: false,
+            case,
+            pourvu: None,
+        };
+        // Les jetons du remplissage automatique : la liste du WHATWG (HTML, « Autofill »), un par ce que la case demande.
+        // Le nom d'usage, le nom de scene, le lieu et le pays de naissance, la nationalite, le NIR, l'IBAN, le BIC, le
+        // numero Conges Spectacles n'en ont aucun : le navigateur n'y propose rien.
         match self {
-            Question::Prenom => q("prenom", "Prénom", "Le premier prénom de ton état civil, avec ses accents.", F::Texte, CaseSalarie::PrenomAffichage),
-            Question::Nom => q("nom", "Nom de famille", "Ton nom de naissance, comme sur ta pièce d'identité.", F::Texte, CaseSalarie::NomAffichage),
+            Question::Prenom => QuestionDeclaree { autocomplete: Some("given-name"), ..q("prenom", "Prénom", "Le premier prénom de ton état civil, avec ses accents.", F::Texte, CaseSalarie::PrenomAffichage) },
+            Question::Nom => QuestionDeclaree { autocomplete: Some("family-name"), ..q("nom", "Nom de famille", "Ton nom de naissance, comme sur ta pièce d'identité.", F::Texte, CaseSalarie::NomAffichage) },
             Question::NomUsage => QuestionDeclaree {
                 aucun: Some("Je n'en ai pas"),
+                aucun_coche: true,
                 ..q("nom_usage", "Nom d'usage", "Seulement si tu portes un autre nom que ton nom de naissance (celui d'un conjoint, par exemple).", F::Texte, CaseSalarie::NomUsage)
             },
             Question::Pseudonyme => QuestionDeclaree {
                 aucun: Some("Je n'en ai pas"),
+                aucun_coche: true,
                 ..q("pseudonyme", "Nom de scène", "Le nom sous lequel tu joues, s'il n'est pas le tien.", F::Texte, CaseSalarie::Pseudonyme)
             },
-            Question::Naissance => q("naissance", "Date de naissance", "", F::Date, CaseSalarie::DateNaissance),
+            Question::Naissance => QuestionDeclaree { autocomplete: Some("bday"), ..q("naissance", "Date de naissance", "", F::Date, CaseSalarie::DateNaissance) },
             Question::LieuNaissance => {
                 q("lieu_naissance", "Commune de naissance", "Ou la ville, si tu es né ou née hors de France, comme sur ta pièce d'identité.", F::Texte, CaseSalarie::LieuNaissanceAffichage)
             }
-            Question::PaysNaissance => q("pays_naissance", "Pays de naissance", "", F::Texte, CaseSalarie::PaysNaissance),
-            Question::Nationalite => q("nationalite", "Nationalité", "Française, italienne, marocaine…", F::Texte, CaseSalarie::CodeNationaliteDsn),
+            Question::PaysNaissance => q("pays_naissance", "Pays de naissance", "", F::PaysDeNaissance, CaseSalarie::PaysNaissance),
+            Question::Nationalite => q("nationalite", "Nationalité", "Le pays dont tu as la nationalité.", F::PaysDeNationalite, CaseSalarie::CodeNationaliteDsn),
             Question::Nir => QuestionDeclaree {
                 aucun: Some("Je n'ai pas de numéro de sécurité sociale"),
                 ..q("nir", "Numéro de sécurité sociale", "Les 15 chiffres de ta carte Vitale ou de ton attestation de droits.", F::Nir, CaseSalarie::Nir)
@@ -279,9 +341,9 @@ impl Question {
                 si_aucun: Some(Question::Nir),
                 ..q("departement_naissance", "Département de naissance", "Deux caractères, comme 75 ou 2A.", F::Departement, CaseSalarie::DepartementNaissance)
             },
-            Question::Adresse => q("adresse", "Adresse", "Numéro et rue, comme sur une enveloppe.", F::Texte, CaseSalarie::AdresseAffichage),
-            Question::CodePostal => q("code_postal", "Code postal", "", F::CodePostal, CaseSalarie::CodePostal),
-            Question::Commune => q("commune", "Commune", "", F::Texte, CaseSalarie::CommuneAffichage),
+            Question::Adresse => QuestionDeclaree { autocomplete: Some("street-address"), ..q("adresse", "Adresse", "Numéro et rue, comme sur une enveloppe.", F::Texte, CaseSalarie::AdresseAffichage) },
+            Question::CodePostal => QuestionDeclaree { autocomplete: Some("postal-code"), ..q("code_postal", "Code postal", "", F::CodePostal, CaseSalarie::CodePostal) },
+            Question::Commune => QuestionDeclaree { autocomplete: Some("address-level2"), ..q("commune", "Commune", "", F::Texte, CaseSalarie::CommuneAffichage) },
             Question::Iban => q("iban", "IBAN", "Le compte où ton employeur verse ton salaire : sur ton relevé d'identité bancaire (RIB).", F::Iban, CaseSalarie::Banque),
             Question::Bic => q("bic", "BIC", "Sur le même RIB, 8 ou 11 caractères.", F::Bic, CaseSalarie::Banque),
             Question::CongesSpectacles => QuestionDeclaree {
@@ -348,6 +410,7 @@ impl Question {
             },
             Question::ModeleBulletin => QuestionDeclaree {
                 aucun: Some("Celui que ton employeur donne d'ordinaire"),
+                aucun_coche: true,
                 ..q(
                     "modele_bulletin",
                     "Ton bulletin de paie",
@@ -470,8 +533,8 @@ fn exemple_de(d: &QuestionDeclaree, exemple: Option<&ExempleDfs>) -> Vec<String>
 /// Un choix, tel que le formulaire publie le dit.
 #[derive(Debug, Serialize)]
 struct ChoixPublie {
-    valeur: &'static str,
-    libelle: &'static str,
+    valeur: String,
+    libelle: String,
 }
 
 /// Une question, telle que le formulaire publie la dit a la page.
@@ -486,6 +549,12 @@ struct QuestionPubliee {
     choix: Option<Vec<ChoixPublie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     aucun: Option<&'static str>,
+    /// « Je n'en ai pas » coche a l'ouverture (`QuestionDeclaree::aucun_coche`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    aucun_coche: bool,
+    /// Le jeton du remplissage automatique (`QuestionDeclaree::autocomplete`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    autocomplete: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     si_aucun: Option<&'static str>,
     facultative: bool,
@@ -530,31 +599,30 @@ impl FormulairePublie {
 /// Le formulaire de cette version du moteur, tel qu'il se publie, avec l'exemple de la deduction forfaitaire que le
 /// moteur a calcule (`routes::fiches::exemple_dfs`) : quand le bareme change,
 /// l'exemple change, et l'empreinte avec lui.
-pub fn formulaire_publie(exemple: Option<&ExempleDfs>) -> FormulairePublie {
+pub fn formulaire_publie(exemple: Option<&ExempleDfs>) -> R<FormulairePublie> {
     let questions = Question::TOUTES
         .iter()
         .map(|q| {
             let d = q.declaree();
-            QuestionPubliee {
+            Ok(QuestionPubliee {
                 cle: d.cle,
                 libelle: d.libelle,
                 aide: d.aide,
                 forme: d.forme.nom(),
-                choix: match &d.forme {
-                    FormeDeReponse::Choix(c) => Some(c.iter().map(|&(valeur, libelle)| ChoixPublie { valeur, libelle }).collect()),
-                    _ => None,
-                },
+                choix: d.forme.choix()?,
                 aucun: d.aucun,
+                aucun_coche: d.aucun.is_some() && d.aucun_coche,
+                autocomplete: d.autocomplete,
                 si_aucun: d.si_aucun.map(|p| p.declaree().cle),
                 facultative: d.facultative,
                 explication: d.explication,
                 exemple: exemple_de(&d, exemple),
-            }
+            })
         })
-        .collect();
+        .collect::<R<Vec<_>>>()?;
     let f = Formulaire { questions, reponse: GrammaireDeLaReponse { separateur: SEPARATEUR, aucun: AUCUN, code: CLE_DU_CODE } };
     let json = socle::json_ascii::dumps(&f, None, true, false);
-    FormulairePublie { empreinte: Empreinte::des_octets(json.as_bytes()).courte(), contenu: format!("{}({});\n", RAPPEL_DE_LA_PAGE, json) }
+    Ok(FormulairePublie { empreinte: Empreinte::des_octets(json.as_bytes()).courte(), contenu: format!("{}({});\n", RAPPEL_DE_LA_PAGE, json) })
 }
 
 // ---------------------------------------------------------------- le lien du courriel
