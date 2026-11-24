@@ -271,7 +271,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     a = await api("depot-apercu", charge);
   } catch (e) { dire(e.message, "erreur"); return; }
   const dit = [a.phrase, ...a.avertissements, ...a.informations].filter(Boolean);
-  if (dit.length) dire(dit.join("  ·  "));
+  if (dit.length) direLesAvis(dit);
   rafraichirActions();
 
   ouvrirBoite(`

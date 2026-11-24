@@ -1438,7 +1438,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
                     SANTE_SUSPENSION.nom(),
                     SANTE_SUSPENSION_SUSPENDUE,
                     SANTE_SUSPENSION_MAINTENUE
-                )));
+                )).reclasser(socle::echec::Classe::CaseExigee));
             }
         }
     };
@@ -2197,9 +2197,9 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         .collect::<R<_>>()?;
     p.reduction_generale = rg;
     p.deduction_forfaitaire = dfs;
-    p.avertissements.extend(avis_dfs.into_iter().map(|texte| Avis { info: true, texte }));
+    p.avertissements.extend(avis_dfs.into_iter().map(|texte| Avis::de(texte, true)));
     if let Some(h) = heures_en_plus {
-        p.avertissements.extend(h.avis.into_iter().map(|texte| Avis { info: false, texte }));
+        p.avertissements.extend(h.avis.into_iter().map(|texte| Avis::de(texte, false)));
     }
     p.salaire_de_base = base_51;
     p.salaire_retabli = retabli;
@@ -2291,7 +2291,7 @@ fn avis_de_la_bascule(eng: &Engagement, bascule: droit::plafond::BasculeDeLaCet,
             parts(cet.montant_sal.abs(), cet.montant_pat.abs())
         ),
     };
-    Avis { info: true, texte }
+    Avis::de(texte, true)
 }
 
 /// Le plafond de securite sociale d'un engagement (`plafond::plafond_permanent`, `plafond::pour_paie`) : celui que le bas du bulletin imprime, et
@@ -2485,6 +2485,7 @@ pub(crate) fn net_negatif(ctx: &Contexte, p: &Paie) -> R<Option<Avis>> {
     }
     Ok(Some(Avis {
         info: false,
+        convention: None,
         texte: format!(
             "{} : le net à payer est négatif ({}). Du brut ({}) se retirent {}.",
             crate::qui_de(&p.salarie)?,

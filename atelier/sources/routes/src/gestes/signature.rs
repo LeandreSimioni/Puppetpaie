@@ -311,7 +311,7 @@ fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a 
         fiches.push((FicheAJuger::Salarie(s), format!("la fiche de {}", crate::nom_a_l_ecran(s, cle))));
     }
     match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Contrat, &fiches, &[])? {
-        Some(m) => Err(refus(m)),
+        Some(m) => Err(m),
         None => Ok(()),
     }
 }

@@ -93,11 +93,11 @@ pub(crate) fn taux_au_montant(montant: Montant, jours: Jours) -> R<MontantUnitai
 }
 
 pub(crate) fn info(texte: String) -> Avis {
-    Avis { info: true, texte }
+    Avis::de(texte, true)
 }
 
 pub(crate) fn avertir(texte: String) -> Avis {
-    Avis { info: false, texte }
+    Avis::de(texte, false)
 }
 
 

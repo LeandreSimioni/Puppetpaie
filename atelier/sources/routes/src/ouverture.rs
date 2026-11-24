@@ -875,19 +875,16 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
 
 /// LA DEDUCTION FORFAITAIRE SPECIFIQUE VUE DE LA FICHE D'UN SALARIE : l'option est celle de l'employeur, dans la fiche de
 /// l'entreprise (son libelle, `libelles` de la table) ; la fiche du salarie dit si elle s'applique
-/// (`calcul::deduction_forfaitaire` decide). La route `fiche` le dit sous la profession du salarie.
-pub(crate) fn deduction_forfaitaire_dite(ctx: &Contexte) -> R<String> {
-    Ok(match ctx.entreprise.deduction_forfaitaire_option.code() {
-        None => "La compagnie ne l'applique pas : c'est une option de l'employeur, qui se règle dans la fiche de l'entreprise. Une fois l'option posée, la profession et l'accord du salarié se disent ici.".to_string(),
-        Some(option) => {
-            let nom = champs::champ(NomDeFiche::Entreprise, CaseEntreprise::DeductionForfaitaireOption)?.and_then(|c| c.libelles).and_then(|l| l.de(option).map(str::to_string)).filter(|n| !n.is_empty());
-            let nom = match nom {
-                Some(n) => n,
-                None => option.to_string(),
-            };
-            format!("La compagnie l'applique (fiche de l'entreprise) : « {} ».", nom)
-        }
-    })
+/// (`calcul::deduction_forfaitaire` decide). La route `fiche` le dit sous la profession du salarie. `None` : la compagnie
+/// ne l'exerce pas, et la fiche du salarie n'en a aucune case (`si_entreprise` de `champs-base.json`).
+pub(crate) fn deduction_forfaitaire_dite(ctx: &Contexte) -> R<Option<String>> {
+    let Some(option) = ctx.entreprise.deduction_forfaitaire_option.code() else { return Ok(None) };
+    let nom = champs::champ(NomDeFiche::Entreprise, CaseEntreprise::DeductionForfaitaireOption)?.and_then(|c| c.libelles).and_then(|l| l.de(option).map(str::to_string)).filter(|n| !n.is_empty());
+    let nom = match nom {
+        Some(n) => n,
+        None => option.to_string(),
+    };
+    Ok(Some(format!("La compagnie l'applique (fiche de l'entreprise) : « {} ».", nom)))
 }
 
 // ------------------------------------------------------------- l'historique

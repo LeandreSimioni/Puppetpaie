@@ -3,11 +3,11 @@
 use socle::echec::{Classe, Echec};
 
 /// Les classes d'un refus metier : le geste refuse, et ses cas nommes.
-const OPERATION: [Classe; 17] = [
+const OPERATION: [Classe; 18] = [
     Classe::Refuse, Classe::SaisieIncomplete, Classe::PreuveInsuffisante, Classe::FicheRefusee, Classe::CompteursVerrouilles,
     Classe::VersionExigee, Classe::DsnDejaDeposee, Classe::RepetitionManquante, Classe::OrdreTropPetit, Classe::AnnuleRemplaceHorsDelai,
     Classe::MoisNonRegularisable, Classe::ExerciceClos, Classe::SortieAbsente, Classe::BoiteAbsente, Classe::AucunDocument, Classe::ActeReelRefuse,
-    Classe::ModificationNonDeclarable,
+    Classe::ModificationNonDeclarable, Classe::CaseExigee,
 ];
 
 /// Cette classe est-elle celle d'un refus metier ?
