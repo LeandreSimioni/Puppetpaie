@@ -80,7 +80,7 @@ fn date_et_libelle(mois: Mois) -> (socle::date::Jour, String) {
 /// Le brut par spectacle, la charge patronale et le tiers par ligne de bulletin, le prelevement a la source retenu
 /// (une dette envers l'Etat, au compte `pas` du plan), le net par salarie -- le net PAYE, apres l'impot, celui du
 /// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte. Rend aussi ce qu'elle ne
-/// porte pas : une phrase par paie reprise dont la nature du contrat reste a dire (`engagement::importe::NatureADire`),
+/// porte pas : une phrase par paie mise de cote (`engagement::etats::PaieDeCote`),
 /// que l'export dit sans refuser le reste.
 pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Vec<String>)> {
     let (paies, a_dire) = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
@@ -304,7 +304,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             lib_mois, texte::dit(d), texte::dit(c)
         )));
     }
-    Ok((out, a_dire.iter().map(engagement::importe::NatureADire::phrase).collect()))
+    Ok((out, a_dire.iter().map(engagement::etats::PaieDeCote::phrase).collect()))
 }
 
 /// Un champ qui porte le delimiteur, un guillemet ou un

@@ -235,6 +235,14 @@ impl Echec {
         matches!(self.classe, None | Some(Classe::Refuse | Classe::Manque | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete | Classe::CaseExigee))
     }
 
+    /// CE REFUS DIT-IL UNE CASE QUE LA COMPAGNIE N'A PAS ENCORE DITE (une case d'une fiche, l'effectif, le taux AT/MP,
+    /// une saisie pas finie) ? Plus etroit que `dit_un_manque` : un refus ordinaire (sans classe, `Refuse`) peut dire une
+    /// donnee livree qui manque ou un bareme incomplet, une panne qu'aucune case ne repare. Ce qui met une chose de cote
+    /// pour lire le reste (`engagement::etats::PaieDeCote`) ne met de cote que ceci ; le reste remonte.
+    pub fn manque_une_case(&self) -> bool {
+        matches!(self.classe, Some(Classe::Manque | Classe::CaseExigee | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete))
+    }
+
     /// Le meme refus, sa phrase recomposee par `f` (« <ce qu'on faisait> : <la phrase> ») : sa classe et ce qu'il porte a
     /// part restent, l'endroit ou il est ne aussi.
     pub fn reformuler(self, f: impl FnOnce(&str) -> String) -> Echec {

@@ -283,16 +283,16 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 // ===================================== 7. les versements aux organismes (bloc 20)
 
 /// Les paies de chaque mois de la periode (`engagement::etats::paies_du_mois` : ecrites ou importees), tous
-/// etablissements, et celles qui ne se rangent pas (`engagement::importe::NatureADire`, dites dans `avert`). Un mois sans
+/// etablissements, et celles qui ne se rangent pas (`engagement::etats::PaieDeCote`, dites dans `avert`). Un mois sans
 /// paie est dit ; un mois dont les paies ne se rangent pas encore n'en est pas un. L'etat repond tant qu'une paie existe,
 /// rangee ou non.
 fn paies_des_mois(
     ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs,
-) -> R<(Vec<(Mois, Vec<engagement::etats::PaieDuMois>)>, Vec<engagement::importe::NatureADire>)> {
+) -> R<(Vec<(Mois, Vec<engagement::etats::PaieDuMois>)>, Vec<engagement::etats::PaieDeCote>)> {
     let (mut out, mut sans, mut non_rangees) = (Vec::new(), Vec::new(), Vec::new());
     for &m in &p.mois {
         let (paies, a_dire) = engagement::etats::paies_du_mois(ctx, m, departs).map_err(|e| e.reclasser(Classe::Refuse))?;
-        avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
+        avert.extend(a_dire.iter().map(engagement::etats::PaieDeCote::phrase));
         match (paies.is_empty(), a_dire.is_empty()) {
             (true, true) => sans.push(m.to_string()),
             (true, false) => {}
@@ -516,14 +516,11 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut par_an: Vec<(Annee, usize, Montant)> = Vec::new();
     let orgs = ctx.organismes().map_err(|e| e.reclasser(Classe::Refuse))?;
     let (des_mois, non_rangees) = paies_des_mois(ctx, &p, &mut avert, &d.departs)?;
-    // UNE ANNEE DONT UNE PAIE REPRISE NE SE RANGE PAS (sa nature reste a dire) : sa tranche A ne se somme pas sans elle ;
-    // sa contribution ne se calcule pas, et se dit. Les autres annees se calculent.
+    // UNE ANNEE DONT UNE PAIE EST MISE DE COTE (`engagement::etats::PaieDeCote`, dite dans `avert`) : sa tranche A ne se
+    // somme pas sans elle ; sa contribution ne se calcule pas, et se dit. Les autres annees se calculent.
     let incompletes: BTreeSet<Annee> = non_rangees.iter().map(|a| a.mois.annee()).collect();
     for an in &incompletes {
-        avert.push(format!(
-            "{} : une paie reprise de cette année n'est pas comptée (la nature de son contrat reste à dire) : sa tranche A ne se somme pas sans elle, sa contribution ne se calcule pas.",
-            an
-        ));
+        avert.push(format!("{} : une paie de cette année n'est pas comptée (dite plus haut) : sa tranche A ne se somme pas sans elle, sa contribution ne se calcule pas.", an));
     }
     for (m, paies) in des_mois.into_iter().filter(|(m, _)| !incompletes.contains(&m.annee())) {
         // La tranche A : la base 02 (« assiette brute plafonnee ») de chaque paie (`dsn::base_declaree`).

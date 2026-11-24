@@ -1,7 +1,7 @@
 # Le plafond d'un intermittent : vieillesse plafonnée, FNAL, chômage (point 22, vague 1i, 10/10/2026)
 
 Ce dossier rassemble les textes sur lesquels le moteur assied, pour un intermittent, la vieillesse plafonnée, le FNAL
-et la contribution chômage sur **son** plafond, celui que le bas du bulletin imprime (`paie/src/plafond.rs`,
+et la contribution chômage sur **son** plafond, celui que le bas du bulletin imprime (`droit/src/plafond.rs`,
 `calcul::plafond_de_l_engagement`). Les articles de code et l'arrêté de 1975 ne sont pas copiés ici : ils sont relevés
 dans la base LEGI de la DILA par `atelier/outils/relever_les_codes.py` (rubrique `plafond` du code de la sécurité
 sociale, texte `artistes-1975`), et déposés à côté.
@@ -84,12 +84,15 @@ sociale, texte `artistes-1975`), et déposés à côté.
   R. 242-2. **Inférence** : la « période d'engagement continu » est le contrat (ses bornes `debut` et `fin`). Voir
   aussi le BOSS, assiette générale, § 680, 690, 1090 et 1100 (`../boss/`) et le modèle de l'Urssaf
   (`../urssaf-mon-entreprise/`).
-- **Vague 1o (10/10/2026, tranché par Léandre : le BOSS est opposable)** : hors de l'arrêté de 1975 (artiste engagé
-  cinq jours ou plus, technicien), le plafond n'est plus le prorata calendaire de tout le contrat mais, **pour chaque
-  paie**, le PSS mensuel proratisé sur les **jours ayant donné lieu à rémunération** dans la paie (les dates
-  distinctes des lignes) : la tolérance du BOSS, assiette générale, § 1090 (`../boss/boss-assiette-generale-20260801.txt`,
-  l. 1472-1483), avec la formule du § 700. Un jour rémunéré qui ne se lit pas refuse. Le permanent garde R. 242-2 sur
-  sa période de paie. `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1o.md`.
+- **Hors de l'arrêté de 1975** (artiste engagé cinq jours ou plus, technicien), le plafond est, **pour chaque paie**,
+  le PSS mensuel au prorata des **jours calendaires du contrat dans la période de la paie**, mois par mois, les deux
+  bornes incluses, quels que soient les jours travaillés : R. 242-2, I, al. 3, et le BOSS, assiette générale,
+  § 690-750 (`../boss/boss-assiette-generale-20260801.txt`, l. 987-1025 : la formule du § 700, et le § 740, « ajusté
+  en fonction de la période d'emploi à laquelle se rattache la paie »). Le même calcul que celui d'un permanent
+  (`plafond_de_la_periode`), sans jour retiré : l'artiste « n'est pas éligible à la réduction du plafond » (§ 1090,
+  première phrase), et le moteur ne connaît aucun jour d'absence sans rémunération d'un technicien intermittent. La
+  tolérance du § 1090 (« le plafond soit proratisé pour ne tenir compte que des jours ayant donné lieu à
+  rémunération ») n'est pas appliquée (Léandre, 24/11/2026 : « pas de tolérance, c'est la loi »).
 - **Reste à déposer** : la page Urssaf « artistes du spectacle, assiette plafonnée » (le conteneur reçoit une
   réponse vide) ; le BOSS (refuse le conteneur) ; le règlement général annexé à la convention du 15/11/2024, art. 49
   (permanents), déposé depuis : `../chomage-permanents/` (lot V2e). Le texte de la majoration de 11,5 % est déposé depuis : `../majoration-caisses-conges/`.
