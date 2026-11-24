@@ -89,7 +89,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes et leurs fautes.",
         charge: &CHARGE_FICHE,
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}],"changees":["titre"]}"#,
-        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander, ou sans_boite, la boîte à lier ; en_cours, les demandes en cours d'envoi, chacune à sa personne) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander, sa case adresse montrant d'abord le courriel de la fiche, absent tant qu'une demande partie de cette fiche est en cours d'envoi ; sans_boite, la boîte à lier ; en_cours, les demandes parties de cette fiche en cours d'envoi, chacune à sa personne) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -1289,6 +1289,12 @@ struct DemandeDeFiche {
 /// Le geste de `fiche-demander`, tel que la demande du mot de passe le dit (la configuration la rend a la page).
 pub(crate) const GESTE_DEMANDER_FICHE: &str = "envoyer par courriel à la personne la demande de remplir sa fiche";
 
+/// L'ADRESSE A LAQUELLE UNE DEMANDE DE FICHE PART : celle qu'on donne, en minuscules, comme toute adresse que le moteur
+/// ecrit.
+fn adresse_de_la_demande(adresse: &droit::fiche::Courriel) -> R<droit::fiche::Courriel> {
+    droit::fiche::Courriel::lire(&adresse.to_lowercase())
+}
+
 /// `fiche-demander` : le courriel « Remplir ma fiche » part (`demander_fiche`), sous la preuve que la charge porte.
 fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&socle::secret::Secret>) -> R<DemandeDeFiche> {
     let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
@@ -1297,8 +1303,7 @@ fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&so
 }
 /// compagnie fictive, sinon refus « boite absente ») quand l'appelant n'en donne pas.
 pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, prenom: Option<&str>, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
-    // L'adresse lue a la porte s'ecrit en minuscules, comme toute adresse que le moteur ecrit ; elle a la forme x@y.z.
-    let adresse = droit::fiche::Courriel::lire(&adresse.to_lowercase())?;
+    let adresse = adresse_de_la_demande(adresse)?;
     if !adresse_valide(&adresse) {
         return Err(refus(format!("« {} » n'est pas une adresse de courriel.", adresse)));
     }
@@ -1318,10 +1323,11 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
     let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
     // LES QUESTIONS A POSER : ce qui manque a la fiche de cette personne, si elle en a une (par son adresse, comme la
     // releve la retrouve), selon son cas ; toutes celles qui se demandent au salarie, sinon.
-    let connue = ctx.salaries.values().find(|s| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *adresse)).map(|s| s.champs.clone());
-    let fiche = match connue {
-        Some(f) => f,
-        None => droit::fiche::ChampsSalarie::default(),
+    let connue = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *adresse)).map(|(cle, s)| (cle.clone(), s.champs.clone()));
+    // LA FICHE D'OU LA DEMANDE PART : celle de ce salarie, s'il en a une ; celle d'un salarie neuf, sinon (`envois_en_fond`).
+    let (de_la_fiche, fiche) = match connue {
+        Some((cle, f)) => (Some(cle), f),
+        None => (None, droit::fiche::ChampsSalarie::default()),
     };
     let questions = questions_pour(ctx, &fiche)?;
     if questions.is_empty() {
@@ -1366,7 +1372,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
     let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
     let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur, questions: Some(envoyees.clone()) };
     // Sa demande se refait depuis la fiche, d'ou elle est partie.
-    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: format!("Demande de fiche à {}", adresse), place: crate::envois_en_fond::PlaceDeLEnvoi::Fiche { adresse: adresse.to_string() }, refaire: None, avertissements: Vec::new() }))?;
+    crate::envois_en_fond::partir(ctx, || Ok(crate::envois_en_fond::EnvoiQuiPart { quoi: format!("Demande de fiche à {}", adresse), place: crate::envois_en_fond::PlaceDeLEnvoi::Fiche { salarie: de_la_fiche.clone(), adresse: adresse.clone() }, refaire: None, avertissements: Vec::new() }))?;
     if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e.phrase, demande(None, None), None)))?;
         return Err(e);

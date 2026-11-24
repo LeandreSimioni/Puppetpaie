@@ -113,17 +113,25 @@ pub(crate) struct SalarieDeLEntete {
 const SUPPRIMER_LE_SALARIE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Supprimer ce salarié");
 
 /// LA FICHE D'UN SALARIE NEUF A FAIRE REMPLIR PAR LA PERSONNE (son en-tete) : le titre de l'encart, ce que la demande
-/// fait, le geste qui l'envoie (`fiche-demander`, ses cases : le courriel et le prenom) quand la boite courriel est liee,
-/// sinon ce qui lui manque, les demandes en cours d'envoi (`en_cours`, chacune nomme sa personne : une demande a une
-/// autre reste a faire), et la demande du mot de passe du logiciel avant l'envoi.
+/// fait, le geste qui l'envoie (`fiche-demander`, ses cases : le courriel, montrant d'abord celui de la fiche, et le
+/// prenom) quand la boite courriel est liee, sinon ce qui lui manque (`sans_boite`), les demandes en cours d'envoi parties
+/// de cette fiche (`en_cours`, chacune nomme sa personne), et la demande du mot de passe du logiciel avant l'envoi. Tant
+/// qu'une demande partie d'ici est en cours, elle prend la place du geste.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct InvitationDeLaFiche {
     titre: &'static str,
     aide: &'static str,
-    geste: Option<GesteDeRoute<crate::SansCharge>>,
+    geste: Option<GesteDeRoute<crate::SansCharge, ValeursDeLaDemande>>,
     sans_boite: Option<&'static str>,
     en_cours: Vec<String>,
     demande: compagnie::demande::DemandeDuMotDePasse,
+}
+
+/// CE QUE LES CASES DE LA DEMANDE DE FICHE MONTRENT D'ABORD : le courriel que la fiche dit deja, quand elle le dit.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ValeursDeLaDemande {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    adresse: Option<droit::fiche::Courriel>,
 }
 
 /// OU UNE CASE RENVOIE, que la route rend sous elle (`renvoi`) : le sous-onglet des metiers, ou la case d'une autre fiche
@@ -158,22 +166,28 @@ impl EnteteDeLaFiche {
 /// boite liee, sinon ce qui manque).
 pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &droit::fiche::ChampsSalarie) -> R<EnteteDeLaFiche> {
     let Some(cle) = cle else {
+        // La case adresse du geste montre d'abord le courriel que la fiche dit deja.
+        let valeurs = ValeursDeLaDemande { adresse: p.email.dite().cloned() };
         let geste = crate::ouverture::boite_liee(ctx)?.then(|| {
             GesteDeRoute::avec_cases(
                 crate::catalogue::Route::FicheDemander,
                 crate::SansCharge {},
                 crate::catalogue::Affiche::new("Envoyer la demande"),
                 vec![crate::declaration::cle!(super::ChargeFicheDemander, adresse), crate::declaration::cle!(super::ChargeFicheDemander, prenom)],
-                crate::imprevus::ValeursDeDepart::default(),
+                valeurs,
                 crate::imprevus::ChoixDesCases::default(),
             )
         });
+        let sans_boite = geste.is_none().then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe).");
+        // UNE DEMANDE EN COURS PARTIE DE LA FICHE D'UN SALARIE NEUF prend la place de son geste, quelle que soit l'adresse
+        // tapee dans ses cases : un second clic ne la refait pas partir.
+        let en_cours = crate::envois_en_fond::fiches_en_cours(&ctx.racine, None);
         let invitation = InvitationDeLaFiche {
             titre: "À faire remplir",
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; le métier se choisit ensuite à chaque engagement.",
-            sans_boite: geste.is_none().then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe)."),
-            en_cours: crate::envois_en_fond::fiches_en_cours(&ctx.racine),
-            geste,
+            sans_boite,
+            geste: geste.filter(|_| en_cours.is_empty()),
+            en_cours,
             demande: crate::coffre::demande(&ctx.racine, super::GESTE_DEMANDER_FICHE)?,
         };
         let note = Some("Ou remplissez la fiche vous-même ci-dessous. Le matricule se donne à l'enregistrement.");

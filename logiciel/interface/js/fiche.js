@@ -87,7 +87,7 @@ async function ouvrirLaFicheRendue(fiche) {
         ${inv.en_cours.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
         ${inv.geste ? `<div data-invitation>${casesDuGeste(inv.geste)}</div>
           <div class="actions"><button type="button" class="primaire" data-inviter>${echapper(inv.geste.libelle)}</button></div>`
-          : `<p class="note">${echapper(inv.sans_boite)}</p>`}
+          : inv.sans_boite ? `<p class="note">${echapper(inv.sans_boite)}</p>` : ""}
       </div>` : ""}
       ${r.note ? `<p class="note">${echapper(r.note)}</p>` : ""}
       <div data-fiche-erreurs>${encart(r)}</div>
