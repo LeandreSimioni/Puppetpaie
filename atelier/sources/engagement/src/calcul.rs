@@ -1636,7 +1636,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         None => None,
     };
     // Sans deduction, aucun frais ne se reintegre.
-    let reintegres = dfs_du_salarie.as_ref().map_or(Montant::ZERO, |(_, r)| *r);
+    let reintegres = match &dfs_du_salarie {
+        Some((_, r)) => *r,
+        None => Montant::ZERO,
+    };
     let plafonnement = plafonnement(ctx, eng, &sal, precedentes)?;
     let limite_csg = bar.limite_abattement_csg.plafonds;
     // Le brut, base de calcul de toute assiette ici ; sous deduction forfaitaire specifique, la tranche 1 de la securite

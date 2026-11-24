@@ -893,7 +893,11 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     // La deduction forfaitaire specifique de la paie, que le seuil d'un taux reduit retranche de la remuneration avant
     // l'abattement, frais reintegres compris (`au_dela_du_seuil`, `DeductionForfaitaire::avant_abattement`).
     let deduction = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
-    let avant_abattement = p.deduction_forfaitaire.as_ref().map_or(p.brut, |d| d.avant_abattement(p.brut));
+    // Sans deduction, rien ne s'abat : la remuneration est le brut.
+    let avant_abattement = match &p.deduction_forfaitaire {
+        Some(d) => d.avant_abattement(p.brut),
+        None => p.brut,
+    };
     for c in &bar.cotisations_dsn {
         if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), avant_abattement, deduction, p.heures_travaillees, n)).transpose()? == Some(false) {
             continue;

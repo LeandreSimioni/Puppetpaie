@@ -815,10 +815,10 @@ fn se_regularise_au_rang(ctx: &Contexte, mois: Mois) -> R<impl Fn(RangDansLeMois
     let vue = stock::vue_et_empreinte(&ctx.racine, mois)?;
     let ctx_du_mois = ctx.du_mois(mois)?;
     Ok(move |i: RangDansLeMois, _: &Objet| -> R<bool> {
-        let Some(carte) = vue.as_ref().and_then(|v| i.dans(&v.0.engagements)) else {
+        let Some((la_vue, carte)) = vue.as_ref().and_then(|v| i.dans(&v.0.engagements).map(|c| (&v.0, c))) else {
             return Err(socle::echec::cle(format!("L'engagement {} de {} n'est pas dans la saisie du mois : le signaler au développeur.", i, mois), "engagements"));
         };
-        let la_sienne = crate::saisie::VueDuMois { engagements: vec![carte.clone()], ..vue.as_ref().map(|v| v.0.clone()).unwrap_or_else(|| crate::saisie::VueDuMois::vide(mois)) };
+        let la_sienne = crate::saisie::VueDuMois { engagements: vec![carte.clone()], ..la_vue.clone() };
         for eng in crate::engagements_de_la_saisie(&ctx_du_mois, &la_sienne)? {
             let ctx = &ctx_du_mois.au(&eng.periode_payee()?.fin())?;
             let sal = crate::calcul::fiche_de_l_engagement(ctx, &eng)?;
