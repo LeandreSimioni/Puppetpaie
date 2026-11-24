@@ -102,7 +102,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "420",
      "montant_sal": "0",
-     "montant_pat": "38.22",
+     "montant_pat": "20.58",
      "masquer_base_et_taux": false
     },
     {
@@ -154,7 +154,7 @@
      "libelle": "Allocations familiales",
      "base": "420",
      "montant_sal": "0",
-     "montant_pat": "15.46",
+     "montant_pat": "10.16",
      "masquer_base_et_taux": false
     },
     {
@@ -429,7 +429,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "420",
      "montant_sal": "0",
-     "montant_pat": "38.22",
+     "montant_pat": "20.58",
      "masquer_base_et_taux": false
     },
     {
@@ -481,7 +481,7 @@
      "libelle": "Allocations familiales",
      "base": "420",
      "montant_sal": "0",
-     "montant_pat": "15.46",
+     "montant_pat": "10.16",
      "masquer_base_et_taux": false
     },
     {
@@ -599,7 +599,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "840",
      "montant_sal": "0",
-     "montant_pat": "76.44",
+     "montant_pat": "41.16",
      "masquer_base_et_taux": false
     },
     {
@@ -651,7 +651,7 @@
      "libelle": "Allocations familiales",
      "base": "840",
      "montant_sal": "0",
-     "montant_pat": "30.91",
+     "montant_pat": "20.33",
      "masquer_base_et_taux": false
     },
     {
@@ -937,7 +937,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "420",
      "montant_sal": "0",
-     "montant_pat": "38.22",
+     "montant_pat": "20.58",
      "masquer_base_et_taux": false
     },
     {
@@ -989,7 +989,7 @@
      "libelle": "Allocations familiales",
      "base": "420",
      "montant_sal": "0",
-     "montant_pat": "15.46",
+     "montant_pat": "10.16",
      "masquer_base_et_taux": false
     },
     {
@@ -1266,7 +1266,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "840",
      "montant_sal": "0",
-     "montant_pat": "76.44",
+     "montant_pat": "41.16",
      "masquer_base_et_taux": false
     },
     {
@@ -1318,7 +1318,7 @@
      "libelle": "Allocations familiales",
      "base": "840",
      "montant_sal": "0",
-     "montant_pat": "30.91",
+     "montant_pat": "20.33",
      "masquer_base_et_taux": false
     },
     {
@@ -1604,7 +1604,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "390",
      "montant_sal": "0",
-     "montant_pat": "35.49",
+     "montant_pat": "19.11",
      "masquer_base_et_taux": false
     },
     {
@@ -1656,7 +1656,7 @@
      "libelle": "Allocations familiales",
      "base": "390",
      "montant_sal": "0",
-     "montant_pat": "14.35",
+     "montant_pat": "9.44",
      "masquer_base_et_taux": false
     },
     {
@@ -1933,7 +1933,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "700",
      "montant_sal": "0",
-     "montant_pat": "63.7",
+     "montant_pat": "34.3",
      "masquer_base_et_taux": false
     },
     {
@@ -1985,7 +1985,7 @@
      "libelle": "Allocations familiales",
      "base": "700",
      "montant_sal": "0",
-     "montant_pat": "25.76",
+     "montant_pat": "16.94",
      "masquer_base_et_taux": false
     },
     {
@@ -2271,7 +2271,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "280",
      "montant_sal": "0",
-     "montant_pat": "25.48",
+     "montant_pat": "13.72",
      "masquer_base_et_taux": false
     },
     {
@@ -2323,7 +2323,7 @@
      "libelle": "Allocations familiales",
      "base": "280",
      "montant_sal": "0",
-     "montant_pat": "10.3",
+     "montant_pat": "6.78",
      "masquer_base_et_taux": false
     },
     {
@@ -2430,7 +2430,7 @@
      "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
      "base": "260",
      "montant_sal": "0",
-     "montant_pat": "23.66",
+     "montant_pat": "12.74",
      "masquer_base_et_taux": false
     },
     {
@@ -2482,7 +2482,7 @@
      "libelle": "Allocations familiales",
      "base": "260",
      "montant_sal": "0",
-     "montant_pat": "9.57",
+     "montant_pat": "6.29",
      "masquer_base_et_taux": false
     },
     {

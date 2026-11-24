@@ -1,0 +1,105 @@
+{
+  "quoi": "LES ÉCARTS CONNUS DES ANCIENS LOGICIELS : ce qu'un ancien logiciel a appliqué autrement que le texte, déjà relevé par l'éditeur. Une paie importée qui retombe exactement sur une ligne (le taux appliqué au lieu de celui du texte et le montant qui s'en suit, à l'arrondi près ; ou une cotisation que le bulletin imprime à tort) n'est pas un écart : elle ne fait pas d'incident, et la carte de la paie importée dit ce que la compagnie a cotisé de moins (ou de plus) que le texte, et pour quoi. Lue par sa forme (`engagement::ecarts_connus::EcartConnu`) ; `constate` dit ce que la ligne constate (le taux d'une part, ou une cotisation absente du calcul) ; `statut`, s'il est dit, la paie qu'elle vise ; la source de chaque ligne fonde le texte.",
+  "ecarts": [
+    {
+      "logiciel": "coolpaie",
+      "cotisation": "prevoyance",
+      "constate": { "grandeur": "taux_employeur", "applique": 1.04, "texte": 1.11 },
+      "de": "2026-01",
+      "a": "2026-02",
+      "pour": "la prévoyance de ses salariés (Audiens, non cadres)",
+      "explication": "en janvier et février 2026, Coolpaie appliquait encore le taux de 2025.",
+      "note": "Le taux de 2025 (1,04 %) est celui du barème 2025 livré (`baremes/2025.json`, `prevoyance`). Tri de l'import Coolpaie du 23/11/2026, 8c : les écarts relatifs de montant observés (-6,25 % à -7,46 %) sont 1,04 / 1,11 - 1 à l'arrondi des petits montants près.",
+      "source": {
+        "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
+        "emetteur": "audiens",
+        "article": "Paramètres 2026, p. 4, l. 205",
+        "citation": "Non cadres           0,12%               0,34%                       0,77%                      0,12%                1,11%"
+      }
+    },
+    {
+      "logiciel": "coolpaie",
+      "cotisation": "convention",
+      "constate": { "grandeur": "taux_employeur", "applique": 0.4, "texte": 0.5 },
+      "de": "2026-01",
+      "a": "2026-02",
+      "pour": "les activités sociales et culturelles du spectacle vivant privé (CASC-SVP, IDCC 3090)",
+      "explication": "en janvier et février 2026, Coolpaie appliquait encore le taux de 2025.",
+      "note": "Le taux de 2025 (0,40 %) est celui du barème 2025 livré (`baremes/2025.json`, `ccn`). Tri de l'import Coolpaie du 23/11/2026, 8c : l'écart relatif de montant observé est -20 %, 0,40 / 0,50 - 1.",
+      "source": {
+        "sources": [
+          {
+            "fichier": "atelier/reference/sources/kali-3090-titres-iv-v-sante-20260923.md",
+            "emetteur": "convention",
+            "article": "CCN 3090, art. 4.22 A",
+            "citation": "à 0,50 % de la masse salariale dans la limite de la tranche A de la sécurité sociale pour les salaires à compter du 1er janvier 2026"
+          },
+          {
+            "fichier": "atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt",
+            "emetteur": "casc_svp",
+            "article": "fiche CASC-SVP",
+            "citation": "Taux de 0,50 % à compter du 1er janvier 2026"
+          }
+        ],
+        "raisonnement": "La CCN 3090 et la fiche du CASC-SVP : 0,50 % depuis le 01/01/2026."
+      }
+    },
+    {
+      "logiciel": "coolpaie",
+      "cotisation": "maladie",
+      "constate": { "grandeur": "taux_employeur", "applique": 4.9, "texte": 9.1 },
+      "de": "2026-01",
+      "a": "2026-02",
+      "statut": "artiste",
+      "pour": "l'assurance maladie de ses artistes",
+      "explication": "en janvier et février 2026, Coolpaie appliquait encore le taux réduit que la loi a supprimé au 1er janvier 2026 (article L. 241-2-1 du code de la sécurité sociale, abrogé).",
+      "note": "L. 241-2-1 CSS est abrogé au 01/01/2026 (`atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale`, sa dernière version, du 01/01/2025, « en_vigueur: false ») ; le barème 2026 livré prend le taux plein des artistes (`baremes/2026.json`, `maladie`). Tri de l'import Coolpaie du 23/11/2026, 8b : notre taux 9,10, le leur 4,90, l'écart de montant -0,4615 = 4,90 / 9,10 - 1.",
+      "source": {
+        "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+        "emetteur": "urssaf",
+        "article": "Urssaf, artistes du spectacle, assurance maladie",
+        "citation": "Assurance maladie, maternité, invalidité, décès Taux plein : 9,10 %"
+      }
+    },
+    {
+      "logiciel": "coolpaie",
+      "cotisation": "reduction_generale",
+      "constate": { "grandeur": "absente_du_calcul", "effet": "deduction" },
+      "de": "2026-01",
+      "a": "2026-02",
+      "statut": "artiste",
+      "pour": "la sécurité sociale, la retraite complémentaire et l'assurance chômage de ses salariés",
+      "explication": "Coolpaie a appliqué la réduction générale, que la loi n'accorde pas sur la paie d'un artiste du spectacle, dont les taux sont déjà spécifiques.",
+      "note": "Tri de l'import Coolpaie du 23/11/2026, 8b et #620 : « EXONERATIONS ET ALLEGEMENTS DE COTISATIONS » sur 7 paies d'artistes de janvier et février 2026. Le barème 2026 livré ne la fait qu'au technicien (`baremes/2026.json`, `par_statut.technicien.reduction_generale`). Son effet est une déduction (arrêté du 25/02/2016, art. 4, la dernière source) : la carte dit que la compagnie a cotisé de moins la somme des lignes que le bulletin imprime, signes compris, en valeur absolue, quel que soit le signe qu'il lui donne ; le signe que Coolpaie imprime n'est pas encore vu sur une de ses paies (question posée à Léandre le 24/11/2026).",
+      "source": {
+        "sources": [
+          {
+            "fichier": "atelier/reference/sources/arrete-1975-artistes-du-spectacle/articles-20261110.md",
+            "emetteur": "loi",
+            "article": "arrêté du 24/01/1975, art. 1",
+            "citation": "sont fixés à raison de 70 % des taux du régime général des salariés"
+          },
+          {
+            "fichier": "atelier/reference/sources/boss/boss-allegements-generaux-20261123.txt",
+            "emetteur": "boss",
+            "article": "BOSS, Allègements généraux, § 220",
+            "citation": "totale de cotisations patronales, ainsi qu’avec l’application de taux spécifiques, d’assiettes ou de montants forfaitaires de cotisations."
+          },
+          {
+            "fichier": "atelier/reference/sources/urssaf-reduction-generale/urssaf-reduction-generale-degressive-unique-20261123.txt",
+            "emetteur": "urssaf",
+            "article": "Urssaf, réduction générale, « Les règles de cumul »",
+            "citation": "avec l’application de taux spécifiques, d’assiettes ou de montants forfaitaires de cotisations (exemple : taux spécifiques aux artistes"
+          },
+          {
+            "fichier": "atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin.md",
+            "emetteur": "loi",
+            "article": "arrêté du 25/02/2016, art. 4",
+            "citation": "est égale à la somme des montants de l'ensemble des réductions ou exonérations de cotisations ou de contributions sociales"
+          }
+        ],
+        "raisonnement": "L'arrêté de 1975 fixe aux artistes du spectacle des taux spécifiques (70 % du régime général) ; le BOSS (§ 220) interdit de cumuler la réduction générale avec l'application de taux spécifiques, et l'Urssaf le dit des artistes du spectacle, en exemple. La réduction générale ne s'applique donc pas à la paie d'un artiste. Ce que le bulletin imprime sous la mention « Exonérations et allègements de cotisations » est, selon l'arrêté du 25/02/2016 (art. 4), la somme des réductions : une déduction de ce que la compagnie a cotisé."
+      }
+    }
+  ]
+}

@@ -143,6 +143,7 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
     remplit(&mut ligne.verse_le, &b.verse_le);
     remplit(&mut ligne.heures, &b.heures);
     gagne(&mut ligne.duree_du_travail, &b.duree_du_travail);
+    gagne(&mut ligne.abattement, &b.abattement);
     remplit(&mut ligne.cachets, &b.cachets);
     remplit(&mut ligne.jours, &b.jours);
     for (l, x) in [(&mut ligne.spectacle, &b.spectacle), (&mut ligne.analytique, &b.analytique)] {
@@ -975,7 +976,7 @@ pub(crate) fn importer(ctx: &Contexte) -> R<Importation> {
         (0, s) => format!(" Titre à dire pour {} spectacle(s) : les pièces ne portent que le numéro d'objet (Pour démarrer).", s),
         (p, s) => format!(" Titre à dire pour {} spectacle(s), dont {} proposé(s) d'après les bulletins (Pour démarrer).", p + s, p),
     };
-    // LES SALARIES CREES ARCHIVES (`import::derniere_piece`) : aucune piece ne les porte dans les douze derniers mois.
+    // LES SALARIES CREES ARCHIVES (`import::derniere_piece`) : aucune piece ne les porte dans les vingt-quatre derniers mois.
     let archives = reponse.salaries.iter().filter(|f| f.etat == EtatFiche::Creee && f.donnees.salarie().is_some_and(|s| s.actif == Some(false))).count();
     let archives = match archives {
         0 => String::new(),

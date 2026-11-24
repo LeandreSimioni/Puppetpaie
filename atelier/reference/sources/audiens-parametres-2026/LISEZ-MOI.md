@@ -57,6 +57,10 @@ Pages du PDF (le pied de page numérote 2 à 4 ; la page 1 n'a pas de numéro) :
 
 ## Où le moteur s'en sert
 
+- `logiciel/donnees/ecarts-connus-base.json`, la ligne `prevoyance` de Coolpaie (p. 4, l. 205 : « Non cadres … 1,11% ») :
+  le taux du texte d'un écart connu (`engagement::ecarts_connus`), auquel la comparaison des paies importées
+  (`engagement::ecarts::confronter`) reconnaît le taux de 2025 que l'ancien logiciel a gardé en janvier et février 2026.
+
 - `logiciel/donnees/sources.json`, source `audiens-parametres-et-taux-2026` : « Source des taux `retraite_t1` du
   socle » (p. 3), `nourrit` : `baremes/2026.json`. La vérification des sources n'est pas portée en Rust
   (`atelier/AGENTS.md`) : le chemin y est tenu à jour pour le jour où elle le sera.

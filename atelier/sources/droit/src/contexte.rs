@@ -437,20 +437,28 @@ pub fn socle_livre_lu(an: Annee) -> R<Option<Pile>> {
     Ok(Some(crate::forme_bareme::lire_le_socle(&fichier, &jour, None)?.0))
 }
 
-/// LA COUCHE DE LA CONVENTION COLLECTIVE `idcc` (`par_convention` du socle), ce qu'elle fond dans le socle ; `None` : un
-/// socle qui ne couvre aucune convention, ou une convention qui n'a rien a fondre.
-fn convention<'a>(pile: &'a Pile, idcc: &Idcc) -> R<Option<&'a CoucheConvention>> {
-    if pile.par_convention.is_empty() {
-        return Ok(None);
-    }
-    let annee = pile.annee;
-    let connues: Vec<&str> = pile.par_convention.keys().map(|k| k.as_ref()).collect();
-    let Some(couche) = pile.par_convention.get(idcc) else {
-        return Err(socle::echec::refus_avec(
-            "La convention collective de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
-            Lieu {
-                detail: Some(format!(
-                    "Bareme {} : la convention collective {} n'a pas de couche dans le \
+/// CE QUE LE LOGICIEL NE LIVRE PAS POUR CALCULER UNE PAIE DE L'ANNEE `an` : le bareme de l'annee (`BaremeAbsent`), ou
+/// la couche de la convention collective de la compagnie dans le socle de l'annee, absente (`SansCouche` ; `couvertes` :
+/// celles que le socle couvre) ou relevee sans etre confirmee (`NonConfirmee`). Rien que la compagnie saisisse : ce qui
+/// manque est une donnee livree, qu'une version suivante peut apporter. Rendu a part par `Contexte::de_quoi_calculer` ;
+/// un refus partout ailleurs (`From`).
+#[derive(Debug)]
+pub enum RienDeLivre {
+    Bareme(BaremeAbsent),
+    SansCouche { an: Annee, idcc: Idcc, couvertes: Vec<Idcc> },
+    NonConfirmee { an: Annee, idcc: Idcc, libelle: String, a_confirmer: Option<String> },
+}
+
+impl From<RienDeLivre> for Echec {
+    #[track_caller]
+    fn from(rien: RienDeLivre) -> Echec {
+        match rien {
+            RienDeLivre::Bareme(absent) => absent.into(),
+            RienDeLivre::SansCouche { an, idcc, couvertes } => socle::echec::refus_avec(
+                "La convention collective de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
+                Lieu {
+                    detail: Some(format!(
+                        "Bareme {} : la convention collective {} n'a pas de couche dans le \
 socle, et le moteur refuse de payer avec celle d'une autre \
 branche.\n\
 \x20 Couvertes a ce jour : {}.\n\
@@ -458,27 +466,42 @@ branche.\n\
 cette convention (celle qui remplace la CASC-SVP, la prevoyance \
 de ses intermittents cadres), a relever puis a ajouter dans \
 `par_convention` de donnees/baremes/{}.json, avec leur source.",
-                    annee,
-                    idcc,
-                    connues.join(", "),
-                    annee
-                )),
-                ..Lieu::default()
-            },
-        ));
+                        an,
+                        idcc,
+                        couvertes.iter().map(|k| k.as_ref()).collect::<Vec<&str>>().join(", "),
+                        an
+                    )),
+                    ..Lieu::default()
+                },
+            ),
+            RienDeLivre::NonConfirmee { an, idcc, libelle, a_confirmer } => socle::refus!(
+                "Bareme {}, convention {} ({}) : la couche est RELEVEE mais pas \
+confirmee, le moteur ne paie donc pas.\n  {}",
+                an,
+                idcc,
+                libelle,
+                match &a_confirmer {
+                    Some(a) => a.as_str(),
+                    None => "Ce qui reste à vérifier n'est pas dit.",
+                }
+            ),
+        }
+    }
+}
+
+/// LA COUCHE DE LA CONVENTION COLLECTIVE `idcc` (`par_convention` du socle), ce qu'elle fond dans le socle ; `None` : un
+/// socle qui ne couvre aucune convention, ou une convention qui n'a rien a fondre. Une convention sans couche, ou une
+/// couche relevee sans etre confirmee : `RienDeLivre`.
+fn convention<'a>(pile: &'a Pile, idcc: &Idcc) -> Result<Option<&'a CoucheConvention>, RienDeLivre> {
+    if pile.par_convention.is_empty() {
+        return Ok(None);
+    }
+    let an = pile.annee;
+    let Some(couche) = pile.par_convention.get(idcc) else {
+        return Err(RienDeLivre::SansCouche { an, idcc: idcc.clone(), couvertes: pile.par_convention.keys().cloned().collect() });
     };
     if !couche.applicable {
-        return Err(socle::refus!(
-            "Bareme {}, convention {} ({}) : la couche est RELEVEE mais pas \
-confirmee, le moteur ne paie donc pas.\n  {}",
-            annee,
-            idcc,
-            couche.libelle,
-            match &couche.a_confirmer {
-                Some(a) => a.as_str(),
-                None => "Ce qui reste à vérifier n'est pas dit.",
-            }
-        ));
+        return Err(RienDeLivre::NonConfirmee { an, idcc: idcc.clone(), libelle: couche.libelle.clone(), a_confirmer: couche.a_confirmer.clone() });
     }
     Ok(couche.bareme.as_ref())
 }
@@ -1183,6 +1206,25 @@ pub struct Contexte {
     /// Le taux AT/MP d'une annee qu'une piece atteste, pour une compagnie qui n'en a pas encore pose
     /// (`avec_le_taux_atmp_lu`) ; en memoire seulement.
     atmp_lu: Option<(Annee, socle::grandeurs::Taux)>,
+    /// Les effectifs d'annees d'avant que la compagnie n'a pas dits, tels que ses paies reprises les proposent, pour la
+    /// seule comparaison des paies importees (`avec_les_effectifs_proposes`) ; en memoire seulement.
+    effectifs_proposes: BTreeMap<Annee, socle::grandeurs::Effectif>,
+    /// Les taux qu'un ancien logiciel a appliques autrement que le texte, pour la seule comparaison d'une paie importee
+    /// qui retombe sur ses ecarts connus (`avec_les_taux_appliques`) ; en memoire seulement.
+    taux_appliques: Vec<TauxApplique>,
+}
+
+/// UN TAUX QU'UN ANCIEN LOGICIEL A APPLIQUE AUTREMENT QUE LE TEXTE, sur une paie importee qui retombe exactement sur
+/// l'un de ses ecarts connus (`engagement::ecarts_connus`) : la rubrique de la cotisation `cotisation` dont la part `part`
+/// porte le taux du texte `texte` le porte a `applique` (`bareme::bareme_applique`, son dernier etage). La comparaison refait
+/// ainsi la paie telle que l'ancien logiciel l'a calculee, et ce qui en retombe (l'assiette de la CSG, les nets) ne se
+/// compte pas pour un ecart. Rien ne s'ecrit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TauxApplique {
+    pub cotisation: IdDeCotisation,
+    pub part: crate::forme_bareme::Part,
+    pub texte: socle::grandeurs::Taux,
+    pub applique: socle::grandeurs::Taux,
 }
 
 /// LA PILE D'UN JOUR, et le `depuis` de chaque valeur datee qui s'y applique (`Contexte::regles_datees`).
@@ -1291,6 +1333,8 @@ impl Contexte {
             spectacles: spectacles_au(&fiches.spectacles, &date),
             fiches,
             atmp_lu: None,
+            effectifs_proposes: BTreeMap::new(),
+            taux_appliques: Vec::new(),
         })
     }
 
@@ -1311,7 +1355,39 @@ impl Contexte {
             spectacles: spectacles_au(&self.fiches.spectacles, jour),
             fiches: self.fiches.clone(),
             atmp_lu: self.atmp_lu.clone(),
+            effectifs_proposes: self.effectifs_proposes.clone(),
+            taux_appliques: self.taux_appliques.clone(),
         })
+    }
+
+    /// LES TAUX QU'UN ANCIEN LOGICIEL A APPLIQUES AUTREMENT QUE LE TEXTE (`TauxApplique`) : le meme contexte, dont la
+    /// compagnie que la pile lit les porte (`entreprise_lue`), et la pile d'une paie avec eux
+    /// (`bareme::bareme_applique`). Pour la seule comparaison d'une paie importee qui retombe exactement sur des ecarts
+    /// connus : rien ne s'ecrit.
+    pub fn avec_les_taux_appliques(mut self, taux: Vec<TauxApplique>) -> Contexte {
+        self.taux_appliques = taux;
+        self
+    }
+
+    /// LES EFFECTIFS QUE LES PAIES REPRISES PROPOSENT (`engagement::effectif_repris::EffectifRepris`) : le meme contexte,
+    /// qui lit pour chaque annee de `proposes` l'effectif propose tant que la compagnie n'a rien ecrit pour elle (ce
+    /// qu'elle a ecrit l'emporte toujours, `effectif_lu`). Pour la seule comparaison d'une paie importee (Léandre,
+    /// 23/11/2026) : rien ne s'ecrit.
+    pub fn avec_les_effectifs_proposes(mut self, proposes: BTreeMap<Annee, socle::grandeurs::Effectif>) -> Contexte {
+        self.effectifs_proposes = proposes;
+        self
+    }
+
+    /// L'effectif de la compagnie tel que la fiche `fiche` et `config/effectifs.json` le disent (`effectif_de`), et, pour
+    /// une annee qu'ils ne disent pas, celui que ses paies reprises proposent (`avec_les_effectifs_proposes`).
+    fn effectif_lu(&self, fiche: &ChampsEntreprise) -> R<EffectifsParAnnee> {
+        let mut lu = effectif_de(&self.racine, fiche)?;
+        for (an, v) in &self.effectifs_proposes {
+            if !lu.annees.contains_key(an) {
+                lu.annees.insert(*an, *v);
+            }
+        }
+        Ok(lu)
     }
 
     /// LE TAUX AT/MP QU'UNE PIECE ATTESTE : le meme contexte, qui lit pour l'annee `an` le taux AT/MP `valeur` (en
@@ -1386,7 +1462,7 @@ impl Contexte {
 
     /// L'effectif de la compagnie (`config/effectifs.json`).
     pub fn effectif(&self) -> R<EffectifsParAnnee> {
-        effectif_de(&self.racine, &self.entreprise)
+        self.effectif_lu(&self.entreprise)
     }
 
     /// Le 5 a partir de cinquante salaries, le 15 sinon. Un effectif qu'il faudrait et que le moteur ne connait pas se
@@ -1440,7 +1516,7 @@ impl Contexte {
         ]
         .into_iter()
         .collect();
-        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu))
+        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu, self.effectifs_proposes, self.taux_appliques))
     }
 
     /// LA PILE DE `jour` : le socle livre + la couche de la convention que la fiche `ent` nomme + la surcouche de la
@@ -1455,7 +1531,7 @@ impl Contexte {
         socle::fichiers::garde_notee(cache, cle, || {
             let (pile, regles) = self.empiler(jour, ent)?;
             // Le controle est ici, le seul endroit qui compose un bareme.
-            controler(&pile, ent, &effectif_de(&self.racine, ent)?, surcouche(jour.annee())?.texte())?;
+            controler(&pile, ent, &self.effectif_lu(ent)?, surcouche(jour.annee())?.texte())?;
             Ok(Arc::new(PileLue { pile: Arc::new(pile), regles }))
         })
     }
@@ -1526,6 +1602,21 @@ impl Contexte {
         Ok(self.socle_repris(an)?.map(|s| s.organisation(o).map(|(k, _)| k.clone())))
     }
 
+    /// LE LOGICIEL LIVRE-T-IL DE QUOI CALCULER UNE PAIE A `jour` POUR CETTE COMPAGNIE : le bareme de l'annee
+    /// (`socle_de_l_annee`) et, quand la fiche entreprise nomme sa convention, la couche de celle-ci dans ce socle
+    /// (`convention`), les memes lectures que le bareme compose. `Ok(Err)` : ce que le logiciel ne livre pas
+    /// (`RienDeLivre`) ; `Err` : tout le reste (le disque, une surcouche ou un socle illisibles).
+    pub fn de_quoi_calculer(&self, jour: &Jour) -> R<Result<(), RienDeLivre>> {
+        let fichier = match self.socle_de_l_annee(jour.annee())? {
+            Ok((_, fichier)) => fichier,
+            Err(sans_bareme) => return Ok(Err(RienDeLivre::Bareme(sans_bareme))),
+        };
+        let ent = self.entreprise_au(jour);
+        let Some(idcc) = ent.idcc.dite() else { return Ok(Ok(())) };
+        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
+        Ok(convention(&socle_an, idcc).map(|_| ()))
+    }
+
     /// LES TARIFS DE LA CONVENTION QUE LA FICHE ENTREPRISE NOMME A `jour` (`tarifs_conventionnels`), lus dans le socle que
     /// le bareme de l'annee reprend (`socle_de_l_annee`) et la couche de cette convention, comme le bareme les fond
     /// (`fondre_la_convention`). Rien d'autre ne les change (ni la surcouche de la compagnie, ni son taux AT/MP, ni le
@@ -1553,7 +1644,7 @@ impl Contexte {
             let de_la_convention = match ent.idcc.dite() {
                 Some(idcc) => match convention(&socle_an, idcc) {
                     Ok(couche) => couche.and_then(|c| c.tarifs_conventionnels.clone()).map(|t| (t, format!("par_convention.{}.bareme.tarifs_conventionnels", idcc))),
-                    Err(non_couverte) => return Ok(Err(non_couverte)),
+                    Err(non_couverte) => return Ok(Err(non_couverte.into())),
                 },
                 None => None,
             };
@@ -1701,8 +1792,15 @@ impl Contexte {
     /// effectif de l'annee.
     pub fn entreprise_lue(&self, jour: &Jour) -> R<crate::bareme::EntrepriseLue> {
         let fiche = self.entreprise_au(jour);
-        let lu = effectif_de(&self.racine, &fiche)?;
-        Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.annee()), cse: lu.cse(jour.annee()), cinquante: lu.cinquante(jour.annee()), taux_lus: false })
+        let lu = self.effectif_lu(&fiche)?;
+        Ok(crate::bareme::EntrepriseLue {
+            fiche,
+            effectif: lu.valeur(jour.annee()),
+            cse: lu.cse(jour.annee()),
+            cinquante: lu.cinquante(jour.annee()),
+            taux_lus: false,
+            taux_appliques: self.taux_appliques.clone(),
+        })
     }
 
     /// Le plafond de la Securite sociale de l'annee, ses deux valeurs en euros entiers, d'apres la fiche entreprise de ce

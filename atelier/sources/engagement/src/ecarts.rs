@@ -24,10 +24,11 @@
 //! pas a part, les notres y entrent aussi (`REPLIS`). Un montant compare a l'arrondi de chaque ligne pres (1 centime par
 //! ligne additionnee), un taux a la milliemes de point pres (le bulletin en imprime trois decimales).
 //!
-//! CE QUI NE SE COMPARE PAS LE DIT (regle 1) : une periode sans bareme, une paie sans bulletin (la DSN seule ne porte
-//! pas les lignes du bulletin), une ligne de remuneration soumise sans rubrique, une saisie que le calcul refuse (une
-//! convention sans couche, une fiche incomplete) ; et, dans une paie comparee, les lignes de cotisation que la table ne
-//! rattache a aucune cotisation.
+//! CE QUI NE SE COMPARE PAS LE DIT (regle 1) : une periode dont le logiciel ne livre pas le bareme, ou la couche de la
+//! convention (`droit::contexte::RienDeLivre` ; avant `COMPAREE_TOUJOURS_DES`, elle n'est pas une comparaison et ne dit
+//! rien), une paie sans bulletin (la DSN seule ne porte pas les lignes du bulletin), une ligne de remuneration soumise
+//! sans rubrique, une saisie que le calcul refuse (une fiche incomplete) ; et, dans une paie comparee, les lignes de
+//! cotisation que la table ne rattache a aucune cotisation.
 //!
 //! CE QUI SE REND NE DESIGNE PERSONNE : la cotisation, les libelles, la grandeur, les deux taux et l'ecart RELATIF d'une
 //! base ou d'un montant (jamais le montant), la periode, la nature et le statut.
@@ -43,6 +44,7 @@ use crate::calcul::LigneCotisation;
 use droit::forme_bareme::{
     IdDeCotisation, APEC_T1, APEC_T2, ATMP, AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, CCN, CET, CONGES_SPEC, FCAP, PARITARISME, PREVOYANCE, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
+use crate::ecarts_connus::Constat;
 use crate::importe::{CotisationImprimee, Importe, LogicielDUnBulletin, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
@@ -77,6 +79,16 @@ impl CeQuiDiffere {
         }
     }
 
+    pub const TOUS: [CeQuiDiffere; 7] = [
+        CeQuiDiffere::Base,
+        CeQuiDiffere::TauxSalarie,
+        CeQuiDiffere::TauxEmployeur,
+        CeQuiDiffere::MontantSalarie,
+        CeQuiDiffere::MontantEmployeur,
+        CeQuiDiffere::AbsenteDuBulletin,
+        CeQuiDiffere::AbsenteDuCalcul,
+    ];
+
     /// En francais, pour un resume.
     pub fn dite(self) -> &'static str {
         match self {
@@ -88,6 +100,20 @@ impl CeQuiDiffere {
             CeQuiDiffere::AbsenteDuBulletin => "calculée ici, absente du bulletin importé",
             CeQuiDiffere::AbsenteDuCalcul => "sur le bulletin importé, que ce moteur ne calcule pas",
         }
+    }
+}
+
+/// Ce qui differe s'ecrit par son code (`code`), et se lit de meme (une ligne des ecarts connus, sa note).
+impl serde::Serialize for CeQuiDiffere {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.code())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for CeQuiDiffere {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as serde::Deserialize>::deserialize(d)?;
+        CeQuiDiffere::TOUS.into_iter().find(|c| c.code() == texte).ok_or_else(|| serde::de::Error::custom(format!("« {} » n'est pas une grandeur d'un écart", texte)))
     }
 }
 
@@ -124,6 +150,16 @@ impl TotalDuBulletin {
             TotalDuBulletin::CotisationsPatronales => "cotisations_patronales",
             TotalDuBulletin::NetSocial => "net_social",
             TotalDuBulletin::NetImposable => "net_imposable",
+        }
+    }
+
+    /// Son nom en mots, tel que l'arrete du 25/02/2016 (le modele du bulletin) le nomme.
+    pub fn dit(self) -> &'static str {
+        match self {
+            TotalDuBulletin::CotisationsSalariales => "le total des cotisations salariales",
+            TotalDuBulletin::CotisationsPatronales => "le total des cotisations patronales",
+            TotalDuBulletin::NetSocial => "le montant net social",
+            TotalDuBulletin::NetImposable => "le net imposable",
         }
     }
 }
@@ -260,13 +296,133 @@ pub struct Comparaison {
     /// D'ou vient le taux AT/MP du calcul.
     pub taux_atmp: Option<OrigineDuTauxAtmp>,
     /// Les ecarts ; `Err` : la paie ne se compare pas, et pourquoi.
-    pub ecarts: R<Vec<Ecart>>,
-    /// La paie ne s'est pas comparee parce que le calcul a refuse la saisie (une configuration a completer, l'effectif
-    /// de l'entreprise...) : elle se compare de nouveau quand la compagnie s'ouvre. Les autres raisons tiennent aux
-    /// pieces importees et ne changent pas.
-    pub a_refaire: bool,
+    pub ecarts: Result<Vec<Ecart>, NonComparee>,
     /// Les libelles de cotisation du bulletin que la table ne rattache a aucune cotisation : non compares.
     pub non_rattachees: Vec<String>,
+    /// Les ecarts connus de l'ancien logiciel sur lesquels la paie retombe exactement (`ecarts_connus`) : ce ne sont
+    /// pas des ecarts, la carte de la paie importee les explique a la compagnie ; rien n'en part chez l'editeur. Vide
+    /// quand la paie ne se compare pas (`ecarts`, `Err`) : ils remplacent ceux de sa paie quand elle se compare.
+    pub connus: Vec<crate::ecarts_connus::EcartConnuConstate>,
+    /// Les annees dont la comparaison a pris l'effectif que les paies reprises proposent, la compagnie ne l'ayant pas dit
+    /// (`Contexte::avec_les_effectifs_proposes`) ; vide : celui de la compagnie, ou aucun.
+    pub effectif_propose: Vec<socle::mois::Annee>,
+}
+
+impl Comparaison {
+    /// LA PAIE NE S'EST PAS COMPAREE ET SE COMPARE DE NOUVEAU quand la compagnie s'ouvre : ce que sa sorte dit
+    /// (`SorteDeNonComparaison::se_recompare`), et rien d'autre.
+    pub fn a_refaire(&self) -> bool {
+        self.ecarts.as_ref().err().is_some_and(|n| n.sorte.se_recompare())
+    }
+}
+
+/// UNE PAIE IMPORTEE QUI NE SE COMPARE PAS : la sorte de sa raison (`SorteDeNonComparaison`, ce qui la regroupe d'une
+/// compagnie a l'autre), et le refus qui la dit, avec les valeurs de son cas.
+#[derive(Clone, Debug)]
+pub struct NonComparee {
+    pub sorte: SorteDeNonComparaison,
+    pub raison: Echec,
+}
+
+/// LA SORTE DE RAISON D'UNE PAIE IMPORTEE QUI NE SE COMPARE PAS, tiree de l'endroit et de la classe du refus, jamais de
+/// sa phrase : le genre de son incident (`import::ecarts`), qui ne porte aucune valeur du cas. Une liste du logiciel,
+/// ecrite par son code (`code`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SorteDeNonComparaison {
+    /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre` : le bareme de son annee, la couche
+    /// de sa convention).
+    RienDeLivre,
+    /// Le spectacle de la paie ne se reconnait pas : aucune fiche de spectacle ne le porte, ou son titre en designe
+    /// plusieurs (`Contexte::spectacle`) ; la paie se compare quand une seule fiche le porte.
+    SpectacleNonReconnu,
+    /// L'effectif d'une annee manque a la compagnie (`Classe::EffectifAbsent`).
+    EffectifAbsent,
+    /// Le taux AT/MP de l'annee manque a la compagnie (`Classe::TauxAtmpAbsent`).
+    TauxAtmpAbsent,
+    /// Une autre case de la compagnie manque au calcul : son refus est d'une classe qui nomme une case d'une de ses
+    /// fiches (`Classe::Manque`, `FicheRefusee`, `ValeurARedire` : sa convention, la fiche du salarie).
+    CaseDeLaCompagnie,
+    /// Le calcul refuse la saisie que les pieces ont donnee (un refus d'une autre classe : ce n'est pas une case de la
+    /// compagnie qui manque).
+    SaisieRefusee,
+    /// Ce que les pieces impriment ne refait pas la saisie (une ligne sans rubrique, des jours travailles non dits, un
+    /// mois paye en partie).
+    PiecesInsuffisantes,
+    /// Une panne (un fichier qui ne se lit pas) : ce n'est pas un manque (`Echec::dit_un_manque`).
+    Panne,
+}
+
+impl SorteDeNonComparaison {
+    /// UNE SORTE, UN COMPORTEMENT : la paie se compare de nouveau a chaque ouverture, d'ou que vienne son refus, sauf
+    /// quand ce sont les pieces qui ne refont pas la saisie (elles ne changent pas : une piece neuve est une autre
+    /// paie). Ses rapports deja notes ne se renotent pas (`import::ecarts`, le registre des rapports notes).
+    pub fn se_recompare(self) -> bool {
+        match self {
+            SorteDeNonComparaison::PiecesInsuffisantes => false,
+            SorteDeNonComparaison::RienDeLivre
+            | SorteDeNonComparaison::SpectacleNonReconnu
+            | SorteDeNonComparaison::EffectifAbsent
+            | SorteDeNonComparaison::TauxAtmpAbsent
+            | SorteDeNonComparaison::CaseDeLaCompagnie
+            | SorteDeNonComparaison::SaisieRefusee
+            | SorteDeNonComparaison::Panne => true,
+        }
+    }
+
+    /// Son code, tel que le genre de l'incident l'ecrit.
+    pub fn code(self) -> &'static str {
+        match self {
+            SorteDeNonComparaison::RienDeLivre => "rien_de_livre",
+            SorteDeNonComparaison::SpectacleNonReconnu => "spectacle_non_reconnu",
+            SorteDeNonComparaison::EffectifAbsent => "effectif_absent",
+            SorteDeNonComparaison::TauxAtmpAbsent => "taux_atmp_absent",
+            SorteDeNonComparaison::CaseDeLaCompagnie => "case_de_la_compagnie",
+            SorteDeNonComparaison::SaisieRefusee => "saisie_refusee",
+            SorteDeNonComparaison::PiecesInsuffisantes => "pieces_insuffisantes",
+            SorteDeNonComparaison::Panne => "panne",
+        }
+    }
+
+    /// LA SORTE D'UN REFUS DU CALCUL de la saisie refaite, par sa classe (`a_refaire`) : une case d'une fiche de la
+    /// compagnie, ou la saisie que les pieces ont donnee. L'effectif et le taux AT/MP, que leur classe nomme aussi, se
+    /// rangent a part (`du_refus`).
+    fn du_calcul(raison: &Echec) -> SorteDeNonComparaison {
+        use socle::echec::Classe;
+        match raison.classe {
+            Some(Classe::Manque | Classe::FicheRefusee | Classe::ValeurARedire) => SorteDeNonComparaison::CaseDeLaCompagnie,
+            _ => SorteDeNonComparaison::SaisieRefusee,
+        }
+    }
+
+    /// LA SORTE DU REFUS `raison` d'une saisie refaite, venu de l'endroit `vient` (`Suivi::sorte`, `None` : un refus des
+    /// pieces). Le logiciel qui ne livre rien d'abord, puis une panne ; un manque, sa sorte : celle de sa classe quand elle
+    /// nomme l'effectif ou le taux AT/MP, sinon celle de l'endroit qui l'a note.
+    fn du_refus(raison: &Echec, rien_de_livre: bool, vient: Option<SorteDeNonComparaison>) -> SorteDeNonComparaison {
+        if rien_de_livre {
+            return SorteDeNonComparaison::RienDeLivre;
+        }
+        if !raison.dit_un_manque() {
+            return SorteDeNonComparaison::Panne;
+        }
+        match (raison.classe, vient) {
+            (Some(socle::echec::Classe::EffectifAbsent), _) => SorteDeNonComparaison::EffectifAbsent,
+            (Some(socle::echec::Classe::TauxAtmpAbsent), _) => SorteDeNonComparaison::TauxAtmpAbsent,
+            (_, Some(s)) => s,
+            (_, None) => SorteDeNonComparaison::PiecesInsuffisantes,
+        }
+    }
+}
+
+impl std::fmt::Display for SorteDeNonComparaison {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.code())
+    }
+}
+
+impl serde::Serialize for SorteDeNonComparaison {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.code())
+    }
 }
 
 /// Quand le bulletin importe n'imprime pas la premiere a part, elle se compare dans la seconde (le modele de l'arrete
@@ -305,10 +461,20 @@ const ECART_DE_TAUX_TOLERE: Taux = Taux::CINQ_DIX_MILLIEMES;
 /// que le bareme applique au contrat, d'ou se lit le taux notifie que le bulletin a applique.
 const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
 
+/// LA PREMIERE ANNEE DONT CHAQUE PAIE IMPORTEE SE COMPARE TOUJOURS : une decision de l'editeur, pas un texte (Leandre,
+/// 23/11/2026 : « Si ça arrive avant 2026, on compare pas d'après moi. » « On aura toujours les barèmes pour comparer. »
+/// « On n'a pas les barèmes de toutes les conventions »). Avant, une paie dont le logiciel ne livre pas de quoi la
+/// calculer (`RienDeLivre`) entre dans l'historique sans comparaison ni incident ; a partir d'elle, ce manque fait un
+/// incident.
+pub const COMPAREE_TOUJOURS_DES: socle::mois::Annee = socle::annee!("2026");
+
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
 /// deja comparee, elle ne se compare pas deux fois. UNE PAIE QUE LA SEULE DSN DECLARE n'a pas de lignes de cotisation a
 /// comparer (`PaieVersee::cotisations`, vide sans bulletin) : elle n'est pas une comparaison, ni faite ni manquee, et ne
-/// fait aucun incident ; le bulletin du meme mois, repris ensuite, la rend comparable.
+/// fait aucun incident ; le bulletin du meme mois, repris ensuite, la rend comparable. UNE PAIE D'AVANT
+/// `COMPAREE_TOUJOURS_DES` DONT LE LOGICIEL NE LIVRE PAS DE QUOI LA CALCULER (le bareme de son annee, la couche de sa
+/// convention : `droit::contexte::RienDeLivre`) non plus : elle n'entre pas au registre, et la version qui livrera ce qui
+/// manque la comparera a l'ouverture.
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
     saisies_refaites(imp)
         .into_iter()
@@ -320,9 +486,34 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             }
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
-            let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).map(|r| confronter(&r, p, &mut suivi));
-            let Suivi { statut, cadre, taux_atmp, a_refaire, non_rattachees } = suivi;
-            Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees })
+            let mut ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &[], &mut suivi).and_then(|r| confronter(&r, p, mois, &mut suivi));
+            // UNE PAIE QUI RETOMBE EXACTEMENT SUR DES ECARTS CONNUS se refait, en memoire, aux taux que l'ancien logiciel a
+            // appliques a ces lignes-la (`Contexte::avec_les_taux_appliques`), et se compare tout de nouveau : ce qui en
+            // retombe (la prevoyance patronale dans l'assiette de la CSG, les nets) ne sonne pas, ce qui s'ecarte encore
+            // sonne. Les ecarts connus de taux sont ceux de la premiere comparaison, au taux du texte.
+            if ecarts.is_ok() && !suivi.appliques.is_empty() {
+                let appliques = std::mem::take(&mut suivi.appliques);
+                let mut refait = Suivi::default();
+                ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &appliques, &mut refait).and_then(|r| confronter(&r, p, mois, &mut refait));
+                let mut connus = std::mem::take(&mut suivi.connus);
+                for k in refait.connus.drain(..) {
+                    if !connus.contains(&k) {
+                        connus.push(k);
+                    }
+                }
+                suivi = Suivi { connus, ..refait };
+            }
+            let Suivi { statut, cadre, taux_atmp, rien_de_livre, sorte, non_rattachees, connus, effectif_propose, appliques: _ } = suivi;
+            if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
+                return None;
+            }
+            // UNE COMPARAISON QUI ECHOUE NE CONSTATE AUCUN ECART CONNU, meme si elle en a note avant son refus.
+            let connus = match ecarts.is_ok() {
+                true => connus,
+                false => Vec::new(),
+            };
+            let ecarts = ecarts.map_err(|raison| NonComparee { sorte: SorteDeNonComparaison::du_refus(&raison, rien_de_livre, sorte), raison });
+            Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, non_rattachees, connus, effectif_propose })
         })
         .collect()
 }
@@ -336,7 +527,7 @@ pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Pa
             false => socle::refus!("l'engagement importé n'a pas de paie en {}", mois),
         });
     };
-    refaire(racine, imp, mois, p, nature, jours_comptes, &mut Suivi::default()).map(|r| r.paie)
+    refaire(racine, imp, mois, p, nature, jours_comptes, &[], &mut Suivi::default()).map(|r| r.paie)
 }
 
 /// Les paies de l'engagement importe `imp` que ce moteur refait : chacune avec son mois, la nature du contrat et le
@@ -354,8 +545,17 @@ struct Suivi {
     statut: Option<droit::fiche::Statut>,
     cadre: Option<bool>,
     taux_atmp: Option<OrigineDuTauxAtmp>,
-    a_refaire: bool,
+    /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre`).
+    rien_de_livre: bool,
+    /// La sorte de raison que l'endroit d'un refus dit (`a_refaire`, `refusee`, `non_reconnu`) ; aucune : un refus que
+    /// les pieces font (`SorteDeNonComparaison::du_refus`).
+    sorte: Option<SorteDeNonComparaison>,
     non_rattachees: Vec<String>,
+    connus: Vec<crate::ecarts_connus::EcartConnuConstate>,
+    effectif_propose: Vec<socle::mois::Annee>,
+    /// Les taux que l'ancien logiciel a appliques aux lignes des ecarts connus constates (`confronter`), auxquels la
+    /// paie se refait (`comparer`).
+    appliques: Vec<droit::contexte::TauxApplique>,
 }
 
 /// La paie refaite (`refaire`), et ce que la comparaison en lit.
@@ -377,27 +577,60 @@ fn refaire<'a>(
     p: &'a PaieVersee,
     nature: NatureDeContrat,
     jours_comptes: Option<socle::grandeurs::Jours>,
+    appliques: &[droit::contexte::TauxApplique],
     c: &mut Suivi,
 ) -> R<Refaite<'a>> {
+    let fin = mois.dernier_jour();
+    let annee = mois.annee();
+    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?.avec_les_taux_appliques(appliques.to_vec());
+    // CE QUE LE LOGICIEL NE LIVRE PAS (le bareme de l'annee, la couche de la convention), avant toute autre raison : une
+    // version suivante peut l'apporter, la paie se compare de nouveau a l'ouverture suivante (sa sorte, `RienDeLivre`),
+    // et `comparer` dit si elle compte.
+    if let Err(rien) = ctx.de_quoi_calculer(&fin).map_err(|m| a_refaire(c, m))? {
+        c.rien_de_livre = true;
+        return Err(rien.into());
+    }
     let jours_comptes = match jours_comptes.map(socle::grandeurs::entiere) {
         None => None,
         Some(Some(n)) => Some(n),
         Some(None) => return Err(refus("le bulletin compte des jours travaillés qui ne sont pas un nombre entier")),
     };
-    let fin = mois.dernier_jour();
-    let annee = mois.annee();
-    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
-    if !ctx.code.join("baremes").join(format!("{}.json", annee)).exists() {
-        return Err(socle::refus!("aucun barème livré pour {} : la période ne se calcule pas ici", annee));
-    }
     // La convention fait la couche du bareme (regle 8) : sans elle, le calcul n'est pas celui de la compagnie.
     if !ctx.entreprise.idcc.est_dite() {
-        c.a_refaire = true;
-        return Err(refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche"));
+        return Err(a_refaire(c, refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche").reclasser(socle::echec::Classe::Manque)));
+    }
+    // L'EFFECTIF D'UNE ANNEE D'AVANT QUE LA COMPAGNIE N'A PAS DIT (Léandre, 23/11/2026, « B ») : la comparaison prend celui
+    // que « Pour démarrer » propose d'apres les paies reprises (`effectif_repris::effectifs_repris`, le meme calcul), sans
+    // rien ecrire ; ce que la compagnie a ecrit l'emporte (`Contexte::avec_les_effectifs_proposes`). Une annee qui ne se
+    // propose pas reste a dire : le calcul refuse, et la paie se compare quand la compagnie l'a dite.
+    let manquent = ctx.effectif().map_err(|m| a_refaire(c, m))?.a_dire(annee);
+    if !manquent.is_empty() {
+        let (repris, _) = crate::effectif_repris::effectifs_repris(&ctx, &manquent).map_err(|m| a_refaire(c, m))?;
+        let proposes: BTreeMap<socle::mois::Annee, socle::grandeurs::Effectif> = repris.iter().filter_map(|e| e.valeur.map(|v| (e.annee, v))).collect();
+        if !proposes.is_empty() {
+            c.effectif_propose = proposes.keys().copied().collect();
+            ctx = ctx.avec_les_effectifs_proposes(proposes);
+        }
     }
     let brut = imp.objet().carte();
     let salarie = brut.salarie.as_ref().ok_or_else(|| refus("l'engagement importé ne nomme pas son salarié"))?;
     let fiche = ctx.fiche_de(salarie).map_err(|m| a_refaire(c, m))?;
+    // L'ABATTEMENT QUE LE BULLETIN IMPRIME (`PaieVersee::abattement`) : la deduction forfaitaire specifique est un choix de
+    // la compagnie, salarie par salarie, que la fiche porte par sa profession (arrete du 4 septembre 2025, art. 9, I).
+    // Tant que la fiche ne la dit pas, la paie refaite sans elle ne serait pas celle du bulletin : elle se compare quand
+    // la fiche la dit.
+    if let Some(t) = p.abattement.filter(|t| *t > Taux::ZERO) {
+        if !fiche.deduction_forfaitaire.est_dite() {
+            return Err(a_refaire(
+                c,
+                socle::refus!(
+                    "le bulletin imprime un abattement de {} % (la déduction forfaitaire spécifique) et la fiche du salarié ne dit pas sa profession : la paie se compare quand elle la dit",
+                    socle::texte::virgule(t)
+                )
+                .reclasser(socle::echec::Classe::Manque),
+            ));
+        }
+    }
     // LE STATUT ET L'EMPLOI DE CETTE PAIE sont ceux que son bulletin imprime (`emploi_imprime`) ; ce qu'il ne dit pas
     // se lit dans la fiche. Un salarie artiste sur un contrat, non cadre au regime general sur un autre, se calcule
     // chaque fois sous le sien.
@@ -436,7 +669,7 @@ fn refaire<'a>(
     //   et l'engagement court se juge sur le debut et la fin du contrat ; le minimum conventionnel et le bareme se
     //   lisent au premier jour, qui est le debut de la periode. Le debut et les jours qui le suivent en tiennent lieu.
     // Sans ce nombre, une periode de plus d'un jour ne dit pas combien : la paie ne se compare pas.
-    let mensuelle = nature.proprietes()?.mensuelle();
+    let mensuelle = nature.proprietes().map_err(|m| refusee(c, m))?.mensuelle();
     if jours.is_empty() && !mensuelle {
         if let Some(contrat) = p.periode.and_then(|o| o.fermee()) {
             // Les jours de la periode, du premier au dernier.
@@ -473,7 +706,7 @@ fn refaire<'a>(
             return Err(socle::refus!("la ligne de rémunération « {} » ne se rattache à aucune rubrique du catalogue", libelle));
         };
         use crate::ligne::{self, Cle, FormeSaisie, LigneDonnee, LignePaie, PaiementDeLigne, TauxDeLigne};
-        let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
+        let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin).map_err(|m| refusee(c, m))?;
         // UN CONTRAT PAYE AU MOIS ne porte en ligne que ses repas et ses nuitees (`crate::a_une_limite`) : son salaire se
         // dit dans les cases de sa carte (`conges::lignes_du_mois` le compose), lues sur sa ligne de salaire.
         if mensuelle && !crate::a_une_limite(&lue.code) {
@@ -491,8 +724,8 @@ fn refaire<'a>(
         }
         let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
-        let Some(forme) = FormeSaisie::de(&lue)? else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures, precision: None, dates: jours.clone() }));
+        let Some(forme) = FormeSaisie::de(&lue).map_err(|m| refusee(c, m))? else {
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures_par_unite(), precision: None, dates: jours.clone() }));
             continue;
         };
         // LA LIGNE DANS LA FORME QUE LE CATALOGUE DEMANDE DE SA RUBRIQUE, rangee par la porte d'une ligne saisie
@@ -514,20 +747,21 @@ fn refaire<'a>(
             rubrique: Some(lue.code.clone()),
             quantite: voulue(Cle::Quantite).then_some(paiement.quantite()),
             taux: if voulue(Cle::Taux) { Some(Some(par_unite()?)) } else { None },
-            heures: voulue(Cle::Heures).then_some(l.heures),
+            // La saisie ne porte que des heures par unite : le total que la ligne imprime s'y partage, ici seulement.
+            heures: voulue(Cle::Heures).then(|| l.heures_par_unite()),
             base,
             taux_majoration: part,
             montant: voulue(Cle::Montant).then_some(Some(paiement.montant())),
             dates: voulue(Cle::Dates).then(|| jours.clone()),
             ..LigneDonnee::default()
         };
-        saisies.push(donnee.ranger(&lue)?);
+        saisies.push(donnee.ranger(&lue).map_err(|m| refusee(c, m))?);
     }
-    // Le spectacle que le bulletin nomme ; sans titre, celui dont la fiche porte son numero d'objet.
-    let spectacle = match (mensuelle, dit(&p.spectacle)) {
-        (true, _) => None,
-        (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
-        (false, None) => p.numero_objet.as_ref().and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite() == Some(n)).map(|(k, _)| k.clone())),
+    // LE SPECTACLE DE LA PAIE, par la seule regle (`importe::spectacle_de_la_paie`) ; quand aucune fiche ne le porte
+    // encore, la paie se compare de nouveau quand elle existe (`introuvable`).
+    let spectacle = match mensuelle {
+        true => None,
+        false => imp.spectacle_de(&ctx, p).map_err(|m| non_reconnu(c, m))?,
     };
     // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
     // (`Importe::contrat_de_la_paie` : sa fin, dite ou declaree, n'est jamais celle du mois que paie un bulletin), son
@@ -590,8 +824,8 @@ fn refaire<'a>(
             saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
         }
     }
-    let paie = saisie.paies.into_iter().next().ok_or_else(|| refus("le calcul ne rend aucune paie"))?;
-    let garanties = crate::calcul::garanties_de_prevoyance(&ctx, &paie)?;
+    let paie = saisie.paies.into_iter().next().ok_or_else(|| refusee(c, refus("le calcul ne rend aucune paie")))?;
+    let garanties = crate::calcul::garanties_de_prevoyance(&ctx, &paie).map_err(|m| refusee(c, m))?;
     Ok(Refaite { paie, garanties, atmp_lu, cotisations })
 }
 
@@ -683,10 +917,15 @@ fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, ligne: Option<&cra
     Ok((contrat, socle::grandeurs::courte(salaire), socle::grandeurs::courte(heures)))
 }
 
-/// Les ecarts de la paie refaite `r` a ce que le bulletin de la paie importee `p` imprime ; `c` note les lignes de
-/// cotisation que la table ne rattache a aucune cotisation.
-fn confronter(r: &Refaite, p: &PaieVersee, c: &mut Suivi) -> Vec<Ecart> {
+/// Les ecarts de la paie refaite `r` du mois `mois` a ce que le bulletin de la paie importee `p` imprime ; `c` note les
+/// lignes de cotisation que la table ne rattache a aucune cotisation, et les ecarts connus de l'ancien logiciel
+/// (`ecarts_connus`) qui n'en sont pas. Refus : la table des ecarts connus ne se lit pas.
+fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, c: &mut Suivi) -> R<Vec<Ecart>> {
     let (paie, garanties, atmp_lu, cotisations) = (&r.paie, &r.garanties, r.atmp_lu, r.cotisations);
+    let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.as_ref());
+    // Ce que les cotisations imprimees a tort, deja relevees, font cotiser dans les totaux du bulletin, salarial et
+    // employeur.
+    let (mut explique_sal, mut explique_pat) = (Montant::ZERO, Montant::ZERO);
     // Les deux cotes, par cotisation.
     let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<&CotisationImprimee>> = BTreeMap::new();
     // Les cotisations que le bulletin imprime apres son total (les facultatives, les exonerations) : hors de ce total.
@@ -755,7 +994,25 @@ fn confronter(r: &Refaite, p: &PaieVersee, c: &mut Suivi) -> Vec<Ecart> {
             continue;
         }
         if chez_eux && !chez_nous {
-            ecarts.push(ecart(MesureDeLEcart::AbsenteDuCalcul));
+            // UNE COTISATION QUE LE BULLETIN IMPRIME A TORT, DEJA RELEVEE (`Constat::AbsenteDuCalcul`) : ce n'est pas un
+            // ecart. Ce qu'elle a fait cotiser de plus ou de moins (son effet, que la ligne connue dit : une deduction
+            // compte de moins) est dans le total des cotisations de sa part, s'il l'y compte (`hors_total`).
+            let effet = |k: &crate::ecarts_connus::EcartConnu| match k.constate {
+                Constat::AbsenteDuCalcul { effet } => Some(effet),
+                Constat::Taux { .. } => None,
+            };
+            match crate::ecarts_connus::de(logiciel, mois, c.statut, code)?.into_iter().find_map(|k| effet(&k).map(|e| (k, e))) {
+                Some((k, effet)) => {
+                    let employeur = effet.ecart(&mut eux.iter().filter_map(|l| l.montant_employeur));
+                    let salarie = effet.ecart(&mut eux.iter().filter_map(|l| l.montant_salarie));
+                    if !hors_total.contains(code) {
+                        explique_pat = explique_pat + employeur;
+                        explique_sal = explique_sal + salarie;
+                    }
+                    c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(&k, employeur, salarie));
+                }
+                None => ecarts.push(ecart(MesureDeLEcart::AbsenteDuCalcul)),
+            }
             continue;
         }
         if !chez_eux {
@@ -763,36 +1020,78 @@ fn confronter(r: &Refaite, p: &PaieVersee, c: &mut Suivi) -> Vec<Ecart> {
         }
         // Un centime par ligne, du cote qui en a le plus.
         let tolerance = UN_CENTIME.fois(eux.len().max(nous.len()));
+        // Les ecarts de cette cotisation, avant les ecarts connus.
+        let mut ici: Vec<Ecart> = Vec::new();
         let montants: [(fn(Option<Coefficient>) -> MesureDeLEcart, Montant, Montant); 2] =
             [(MesureDeLEcart::MontantSalarie, leur_sal, notre_sal), (MesureDeLEcart::MontantEmployeur, leur_pat, notre_pat)];
         for (mesure, leur, notre) in montants {
             if (leur - notre).abs() > tolerance {
-                ecarts.push(ecart(mesure(relatif(leur, notre))));
+                ici.push(ecart(mesure(relatif(leur, notre))));
             }
         }
-        let ([l], [n]) = (eux, nous) else { continue };
-        // Une base en heures (la deduction des heures supplementaires) est masquee au bulletin : elle ne se compare pas.
-        if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.and_then(crate::calcul::BaseDeCotisation::montant).filter(|_| !n.masquer_base_et_taux), n.base) {
-            if (b - notre).abs() > UN_CENTIME {
-                ecarts.push(ecart(MesureDeLEcart::Base(relatif(b, notre))));
+        if let ([l], [n]) = (eux, nous) {
+            // Une base en heures (la deduction des heures supplementaires) est masquee au bulletin : elle ne se compare pas.
+            if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.and_then(crate::calcul::BaseDeCotisation::montant).filter(|_| !n.masquer_base_et_taux), n.base) {
+                if (b - notre).abs() > UN_CENTIME {
+                    ici.push(ecart(MesureDeLEcart::Base(relatif(b, notre))));
+                }
+            }
+            let taux: [(fn(Taux, Taux) -> MesureDeLEcart, Option<Taux>, Option<Taux>); 2] = [
+                (|notre, leur| MesureDeLEcart::TauxSalarie { notre, leur }, l.taux_salarie, n.taux_sal),
+                (|notre, leur| MesureDeLEcart::TauxEmployeur { notre, leur }, l.taux_employeur, n.taux_pat),
+            ];
+            for (mesure, leur, notre) in taux {
+                // Un taux se compare quand chaque cote en a un : une ligne calculee sans taux (la reduction generale, un
+                // montant fixe) n'en a pas, et ce que le bulletin imprime a sa place n'en est pas un ; le montant compare.
+                let (Some(leur), Some(notre)) = (leur, notre) else { continue };
+                if (leur - notre).abs() > ECART_DE_TAUX_TOLERE {
+                    ici.push(ecart(mesure(notre, leur)));
+                }
             }
         }
-        let taux: [(fn(Taux, Taux) -> MesureDeLEcart, Option<Taux>, Option<Taux>); 2] = [
-            (|notre, leur| MesureDeLEcart::TauxSalarie { notre, leur }, l.taux_salarie, n.taux_sal),
-            (|notre, leur| MesureDeLEcart::TauxEmployeur { notre, leur }, l.taux_employeur, n.taux_pat),
-        ];
-        for (mesure, leur, notre) in taux {
-            // Un taux se compare quand chaque cote en a un : une ligne calculee sans taux (la reduction generale, un
-            // montant fixe) n'en a pas, et ce que le bulletin imprime a sa place n'en est pas un ; le montant compare.
-            let (Some(leur), Some(notre)) = (leur, notre) else { continue };
-            if (leur - notre).abs() > ECART_DE_TAUX_TOLERE {
-                ecarts.push(ecart(mesure(notre, leur)));
+        // LES ECARTS CONNUS DE L'ANCIEN LOGICIEL (`ecarts_connus`) : une part qui retombe exactement sur une ligne n'est
+        // pas un ecart. Son montant est le notre, chaque ligne au taux du texte refaite au taux applique, a la tolerance
+        // de la comparaison ; son taux, quand il se compare, est le leur au lieu du notre, exactement.
+        for connu in crate::ecarts_connus::de(logiciel, mois, c.statut, code)? {
+            let Constat::Taux { grandeur, applique, texte } = connu.constate else { continue };
+            let Some(k) = applique.rapport(texte) else { continue };
+            let salarie = grandeur == CeQuiDiffere::TauxSalarie;
+            let (leur, notre, montant, taux) = match salarie {
+                false => (leur_pat, notre_pat, CeQuiDiffere::MontantEmployeur, CeQuiDiffere::TauxEmployeur),
+                true => (leur_sal, notre_sal, CeQuiDiffere::MontantSalarie, CeQuiDiffere::TauxSalarie),
+            };
+            let part = |n: &LigneCotisation| match salarie {
+                false => (n.taux_pat, n.montant_pat),
+                true => (n.taux_sal, n.montant_sal),
+            };
+            let au_texte = nous.iter().filter(|n| part(n).0 == Some(texte)).count();
+            let attendu = nous.iter().map(|n| part(n)).fold(Montant::ZERO, |a, (t, m)| a + if t == Some(texte) { m.abs() * k } else { m.abs() });
+            let taux_au_texte = ici.iter().all(|e| match e.mesure {
+                MesureDeLEcart::TauxEmployeur { notre, leur } | MesureDeLEcart::TauxSalarie { notre, leur } if e.mesure.ce_qui_differe() == taux => notre == texte && leur == applique,
+                _ => true,
+            });
+            let montant_ecarte = ici.iter().any(|e| e.mesure.ce_qui_differe() == montant);
+            if au_texte == 0 || !taux_au_texte || !montant_ecarte || (leur - attendu).abs() > tolerance {
+                continue;
             }
+            ici.retain(|e| e.mesure.ce_qui_differe() != montant && e.mesure.ce_qui_differe() != taux);
+            // Les lignes au taux du texte, que la paie refaite portera au taux applique (`comparer`).
+            let part_du_bareme = if salarie { droit::forme_bareme::Part::TauxSal } else { droit::forme_bareme::Part::TauxPat };
+            for n in nous.iter().filter(|n| part(n).0 == Some(texte)) {
+                let t = droit::contexte::TauxApplique { cotisation: n.id.clone(), part: part_du_bareme, texte, applique };
+                if !c.appliques.contains(&t) {
+                    c.appliques.push(t);
+                }
+            }
+            let (employeur, salarie) = if salarie { (Montant::ZERO, leur - notre) } else { (leur - notre, Montant::ZERO) };
+            c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(&connu, employeur, salarie));
         }
+        ecarts.extend(ici);
     }
-    // Les totaux du bulletin, sans ce qu'il imprime apres eux : l'ecart relatif seulement.
+    // LES TOTAUX DU BULLETIN, SANS CE QU'IL IMPRIME APRES EUX (`hors_total`) : nos lignes de ces cotisations, rangees
+    // comme la comparaison les range (`REPLIS` compris), n'y entrent pas non plus. L'ecart relatif seulement.
     let hors = |f: &dyn Fn(&LigneCotisation) -> Montant| -> Montant {
-        paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).fold(Montant::ZERO, |a, l| a + f(l))
+        nos.iter().filter(|(k, _)| hors_total.contains(k)).flat_map(|(_, v)| v.iter()).fold(Montant::ZERO, |a, l| a + f(l))
     };
     for (cle, notre, leur) in [
         (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
@@ -801,13 +1100,20 @@ fn confronter(r: &Refaite, p: &PaieVersee, c: &mut Suivi) -> Vec<Ecart> {
         (TotalDuBulletin::NetImposable, paie.net_imposable, p.nets.net_imposable),
     ] {
         let Some(leur) = leur else { continue };
-        if (leur - notre).abs() > UN_CENTIME {
+        // Un total de cotisations est leur somme : ce qu'une cotisation imprimee a tort, deja relevee, y fait cotiser n'en
+        // est pas un ecart.
+        let explique = match cle {
+            TotalDuBulletin::CotisationsSalariales => explique_sal,
+            TotalDuBulletin::CotisationsPatronales => explique_pat,
+            TotalDuBulletin::NetSocial | TotalDuBulletin::NetImposable => Montant::ZERO,
+        };
+        if (leur - (notre + explique)).abs() > UN_CENTIME {
             let r = relatif(leur, notre);
             let mesure = if cle == TotalDuBulletin::CotisationsPatronales { MesureDeLEcart::MontantEmployeur(r) } else { MesureDeLEcart::MontantSalarie(r) };
             ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure });
         }
     }
-    ecarts
+    Ok(ecarts)
 }
 
 /// (leur - notre) / notre, a 4 decimales ; `None` quand le notre est nul.
@@ -815,17 +1121,34 @@ fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
     (leur - notre).rapport(notre).map(|e| e.a_decimales(4))
 }
 
-/// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau.
+/// Une raison de non-comparaison venue du calcul : sa sorte, par la classe du refus
+/// (`SorteDeNonComparaison::du_calcul`, et `du_refus` pour l'effectif et le taux AT/MP).
 fn a_refaire(c: &mut Suivi, raison: Echec) -> Echec {
-    c.a_refaire = true;
+    c.sorte = Some(SorteDeNonComparaison::du_calcul(&raison));
+    raison
+}
+
+/// Ce que le calcul refuse de la saisie que les pieces ont donnee (une ligne que sa porte refuse : sa rubrique, sa
+/// forme, ses garanties ; une nature sans proprietes ; aucune paie rendue) : `SaisieRefusee`.
+fn refusee(c: &mut Suivi, raison: Echec) -> Echec {
+    c.sorte = Some(SorteDeNonComparaison::SaisieRefusee);
+    raison
+}
+
+/// Le spectacle de la paie qui ne se reconnait pas (aucune fiche ne le porte, ou son titre en designe plusieurs) : la
+/// paie se comparera de nouveau quand une seule le portera.
+fn non_reconnu(c: &mut Suivi, raison: Echec) -> Echec {
+    c.sorte = Some(SorteDeNonComparaison::SpectacleNonReconnu);
     raison
 }
 
 /// L'empreinte de la paie `mois` de l'engagement importe `imp` : ce qui la reconnait d'une comparaison a l'autre (son
-/// salarie, ses bornes, son numero et ce que les pieces en disent, sans la date de l'import).
+/// salarie, ses bornes, son numero et ce que les pieces en disent, sans la date de l'import). UN CHAMP QUE L'IMPORT
+/// AJOUTE A UNE PAIE DEJA RANGEE N'Y ENTRE PAS (`PaieVersee::abattement`, qu'un bulletin repris de nouveau pose sur la
+/// paie : `routes::importation::ecrite::completer_par`) : la paie reste celle que le registre des paies comparees
+/// reconnait, et ses rapports ne repartent pas.
 pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> EmpreinteCourte {
     let brut = imp.objet().carte();
-    let paie = PaieVersee { importe_le: None, ..p.clone() };
-    let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, paie));
+    let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, p.graine()));
     Empreinte::des_octets(graine.as_bytes()).courte()
 }

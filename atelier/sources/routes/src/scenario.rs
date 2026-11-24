@@ -829,6 +829,17 @@ fn hors_livraison(rel: &CheminRelatif) -> bool {
     rel.texte() == compagnie::installation::MARQUEUR.texte() || *rel == compagnie::incidents::INCIDENTS || hors_comparaison(rel)
 }
 
+/// LES COURRIELS JOUES QU'UNE FICTIVE LIVREE GARDE : ceux d'une demande encore attendue (une signature, une fiche), ou
+/// la boite qui repond retrouve le bouton ou le lien que la personne fictive suit (`gestes::releve_signatures::
+/// boite_des_signatures`, `fiches::boite_des_fiches`). Par leur nom sous `courriels-simules/`.
+fn courriels_gardes(racine: &Path) -> R<std::collections::HashSet<String>> {
+    let lignes = envois::journal::lu(racine)?.lignes;
+    let signatures = envois::etats::signatures_attendues(|_| None, &lignes, None).into_iter().flat_map(|a| a.envoyes);
+    let fiches = crate::fiches::fiches_attendues(racine)?.into_iter().flat_map(|a| a.envoyes);
+    let attendus: std::collections::HashSet<String> = signatures.chain(fiches).map(|i| i.texte().to_string()).collect();
+    Ok(envois::simulation_courriels::noms_des_courriels(racine, |id| attendus.contains(id))?.into_iter().collect())
+}
+
 /// LIVRER UNE FICTIVE DE REFERENCE : rejoue `scenario` (jusqu'au jour `jusqu_au`, ou entier) dans une installation de
 /// travail, et pose la compagnie qui en sort dans `dest` (`poser_livree`). Les mois d'avant le jour sont faits ; ceux
 /// d'apres portent deja leurs cartes, non validees : sur le poste, seul le temps passe, et l'horloge de la fictive
@@ -858,7 +869,13 @@ pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> R<Rejeu> 
 fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
     let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| au_chemin("Un dossier est attendu.", dest))?;
     socle::fichiers::effacer(dest)?;
-    for (rel, source) in fichiers_de(racine)?.into_iter().filter(|(rel, _)| !hors_livraison(rel)) {
+    let gardes = courriels_gardes(racine)?;
+    // `courriels-simules/` montre au visiteur ce que SES gestes envoient : ceux du scenario ne se livrent pas, sauf ceux
+    // qu'une demande encore attendue relit.
+    let courriel_laisse = |rel: &CheminRelatif| {
+        rel.texte().strip_prefix(envois::courriel::DOSSIER_COURRIELS).and_then(|r| r.strip_prefix('/')).is_some_and(|nom| !gardes.contains(nom))
+    };
+    for (rel, source) in fichiers_de(racine)?.into_iter().filter(|(rel, _)| !hors_livraison(rel) && !courriel_laisse(rel)) {
         let cible = rel.dans(dest);
         if let Some(d) = cible.parent() {
             std::fs::create_dir_all(d).map_err(|e| du_disque(d, &e))?;

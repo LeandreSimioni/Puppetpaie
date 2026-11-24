@@ -39,6 +39,10 @@ D13 reste à chercher sous ce titre, s'il existe encore (la page des taux a pu l
 
 ## Où le moteur s'en sert
 
+`logiciel/donnees/ecarts-connus-base.json`, la ligne `maladie` de Coolpaie (`…-20260715.txt`, « Taux plein : 9,10 % ») :
+le taux du texte d'un écart connu (`engagement::ecarts_connus`), auquel la comparaison des paies importées
+(`engagement::ecarts::confronter`) reconnaît le taux réduit de 4,90 % que l'ancien logiciel a gardé en 2026.
+
 `logiciel/donnees/baremes/2026.json`, section artiste : les notes `_source` recomposent 5,99 / 4,83 / 1,48 / 0,28 /
 3,68 / 0,07 depuis la table BOSS × 0,70 et l'arrêté de 1975 ; cette page les **donne directement**, à citer en plus le
 jour où le barème se relit. L'AT « abattu et arrondi à la décimale la plus proche » : le barème fait 1,50 × 0,70 = 1,05
@@ -66,9 +70,28 @@ régime local de l'artiste, `regime_local_alsace_moselle` du corps des barèmes 
 avec l'arrêté du 24/01/1975, art. 1, et les CTP 313 et 312 de la table de l'Urssaf ; le technicien garde 1,30
 (`par_statut.technicien`).
 
+## La même page, imprimée de nouveau le 23/11/2026
+
+`urssaf-taux-reduits-cas-particuliers-20261123.pdf` (et sa transcription `pdftotext`) : la même page, toujours « Mis à
+jour le 15 juillet 2026 », imprimée par Léandre le 23/11/2026. Le texte est celui de la version du 11/10/2026 ; seule la
+mise en page change (les titres « Taux de cotisations « employeur » » et « « salarié » » sont lisibles, les lignes du
+tableau sont décalées : « Taux réduit : 4,90 % » l. 70, « Taux réduit : 2,42 % » l. 82). Ce qu'on y relit :
+- « Rémunérations concernées » (l. 27-35) : « Les taux réduits s'appliquent sur l'ensemble des rémunérations. » ; « Si
+  vous avez mis en place la déduction forfaitaire spécifique (DFS) pour frais professionnels propres aux artistes, vous
+  appliquez les taux réduits sur les rémunérations calculées après la DFS. » Ces taux réduits sont ceux de l'abattement
+  de 30 % (« La réduction de taux est de 30 % ») : la phrase dit sur quelle assiette ils s'appliquent, elle ne parle pas
+  du seuil de 2,25 ou 3,3 SMIC de 2025.
+- Elle ne dit nulle part que l'employeur peut renoncer à ces taux.
+
+Où le moteur s'en sert : les sources du barème citent la version du 11/10/2026 (`…-20260715.txt`) ; celle-ci est
+déposée pour la passation du lot barème du 23/11/2026 (la réduction générale des artistes, la règle du seuil).
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `urssaf-taux-reduits-cas-particuliers-20261123.pdf` : `015de41f4a93406e3cce6e89ae1f17ac4ac84d405d962f101d16c1fb17aed082`
+- `urssaf-taux-reduits-cas-particuliers-20261123.txt` : `6a0dfab3a0349df0a0a203b75a6bfd8855bc6b6990bf6357b3876abe84994c4e`
 
 - `urssaf-taux-reduits-cas-particuliers-20260715.pdf` : `15cdbb769591210624cf50c72423022a60cbab15cf84ea1a8d30135194ae4bd9`
 - `urssaf-taux-reduits-cas-particuliers-20260715.txt` : `104c6ea66cc17f64f6f4e6837575bdcb0e53aeef976b48b04a7791ae75e4deac`

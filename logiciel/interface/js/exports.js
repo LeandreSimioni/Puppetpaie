@@ -365,7 +365,7 @@ function dessinerCasc(r) {
         <div class="casc-option principale">
           <h5>${echapper(e.depuis_la_boite)}</h5>
           ${e.envoi ? `
-          <div id="casc-envoi">${boutonsDesGestes([e.envoi], () => true, "primaire")}</div>
+          <div id="casc-envoi">${boutonsDesGestes([e.envoi])}</div>
           <p class="discret">${echapper(e.automatique)}</p>` : `
           <p>${echapper(e.automatique)}</p>`}
         </div>

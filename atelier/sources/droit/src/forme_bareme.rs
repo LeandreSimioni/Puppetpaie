@@ -1181,6 +1181,20 @@ forme! {
     }
 }
 
+impl DfsDuBareme {
+    /// LE TAUX DE L'ANNEE D'UNE PROFESSION `p` : le sien quand l'arrete lui donne un calendrier a part (art. 9, III, pour
+    /// les professions hors spectacle vivant), sinon celui de sa categorie (art. 9, II) ; `None` : le bareme n'a pas de
+    /// taux pour sa categorie.
+    pub fn taux_de(&self, p: &Profession) -> Option<Taux> {
+        p.taux.or_else(|| self.taux.get(&p.categorie).copied())
+    }
+
+    /// LES PROFESSIONS DONT LE TAUX DE L'ANNEE EST `taux` (`taux_de`), dans l'ordre du bareme.
+    pub fn professions_au_taux(&self, taux: Taux) -> Vec<(crate::fiche::ProfessionDfs, &Profession)> {
+        self.professions.iter().filter(|(_, p)| self.taux_de(p) == Some(taux)).map(|(k, p)| (*k, p)).collect()
+    }
+}
+
 forme! {
     pub struct Profession {
         pub libelle: String,

@@ -237,6 +237,16 @@ pub struct PaieVersee {
         deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
     )]
     pub duree_du_travail: Option<Heures>,
+    /// L'ABATTEMENT QUE LE BULLETIN IMPRIME en en-tete (« Abattement : 21 »), en pourcent : la deduction forfaitaire
+    /// specifique que l'ancien logiciel a appliquee (arrete du 4 septembre 2025, art. 9). Vide : il n'en imprime pas, ou
+    /// une paie rangee avant qu'elle le porte.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "socle::grandeurs::ecrit::texte::option::serialize",
+        deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
+    )]
+    pub abattement: Option<socle::grandeurs::Taux>,
     /// Les cachets du mois, ecrits comme les heures : la DSN les declare en decimal (« 3.00 »).
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub cachets: Option<Cachets>,
@@ -288,11 +298,23 @@ pub struct LigneImprimee {
     pub soumis: bool,
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub paiement: Option<crate::ligne::PaiementDeLigne>,
+    /// Les heures d'une unite que son libelle dit (« Journée(s) de 7 Heures »), d'apres la table de lecture.
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub heures: Option<socle::grandeurs::HeuresParUnite>,
+    /// LES HEURES DE TRAVAIL QU'ELLE IMPRIME, toutes ensemble, telles qu'imprimees (« 2 services de répétition (8 h) » :
+    /// 8 h ; C. trav. R. 3243-1, 5°). Vide : elle n'en imprime pas, ou une paie rangee avant qu'elle les porte.
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub heures_imprimees: Option<socle::grandeurs::Heures>,
 }
 
 impl LigneImprimee {
+    /// SES HEURES PAR UNITE, pour la saisie qui la refait (qui ne porte que des heures par unite :
+    /// `droit::catalogue::Rubrique::heures_par_unite`) : celles que son libelle dit ; sinon le total qu'elle imprime,
+    /// partage sur sa quantite (`QuantiteDeLigne::partage`).
+    pub(crate) fn heures_par_unite(&self) -> Option<socle::grandeurs::HeuresParUnite> {
+        self.heures.or_else(|| self.heures_imprimees.zip(self.paiement.and_then(|p| p.quantite())).and_then(|(total, q)| q.partage(total)))
+    }
+
     /// LE RATTACHEMENT D'UNE LIGNE IMPRIMEE, le seul : sa ligne de remuneration, quand l'import l'a rattachee a une
     /// rubrique et qu'elle dit son montant, meme sans quantite ni taux (un forfait n'a pas de quantite) : ce montant, tel
     /// quel, et ce qu'elle paie et ses heures quand elle les dit, sous le code et le libelle de sa rubrique
@@ -300,7 +322,7 @@ impl LigneImprimee {
     /// (`PaieImportee::remuneration`) : elle n'est pas une ligne de paie.
     pub(crate) fn rattachee(&self, ctx: &Contexte) -> R<Option<crate::calcul::LigneRattachee>> {
         let (Some(rubrique), Some(montant)) = (&self.rubrique, self.montant) else { return Ok(None) };
-        crate::calcul::ligne_rattachee(rubrique, self.paiement, self.heures, montant, ctx).map(Some)
+        crate::calcul::ligne_rattachee(rubrique, self.paiement, self.heures, self.heures_imprimees, montant, ctx).map(Some)
     }
 }
 
@@ -359,6 +381,199 @@ pub struct BulletinSource {
     pub logiciel: Option<LogicielDUnBulletin>,
     pub numero: Option<String>,
     pub contrat: Option<NumeroContrat>,
+}
+
+/// CE QUI RECONNAIT UNE PAIE VERSEE d'une comparaison a l'autre, la seule chose que son empreinte signe
+/// (`ecarts::empreinte`) : la liste fixe de ce que les pieces en disaient quand l'empreinte est nee, ecrite comme elle
+/// l'etait, sans la date de l'import (ecrite `null`). Un champ que l'import ajoute ensuite a la paie, ou a ses lignes,
+/// n'y entre jamais : une paie rangee avant garde son empreinte quand une reimportation la complete. La paie s'y
+/// decompose champ par champ : un champ neuf de la paie doit y etre ecarte par son nom.
+#[derive(Serialize)]
+pub struct GraineDUnePaie {
+    contrat: CleDePaieVersee,
+    nir: Option<droit::fiche::Nir>,
+    numero_objet: Option<NumeroObjetSpectacle>,
+    periode: Option<socle::date::PeriodeOuverte>,
+    quotite: Option<droit::natures::QuotiteDuContrat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    motif_recours: Option<droit::natures::MotifDeRecours>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nature: Option<NatureDeContrat>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    brut: Option<Montant>,
+    nets: GraineDesNets,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_a_payer: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_avant_impot: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_social: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cotisations_salariales: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cotisations_patronales: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cout_employeur: Option<Montant>,
+    verse_le: Option<Jour>,
+    depose_le: Option<Jour>,
+    fichier: Option<NomDeFichier>,
+    #[serde(serialize_with = "bases_en_texte::serialize")]
+    bases: BTreeMap<BaseAssujettie, Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    heures: Option<Heures>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    duree_du_travail: Option<Heures>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cachets: Option<Cachets>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    jours: Option<Jours>,
+    spectacle: Option<String>,
+    analytique: Option<String>,
+    lignes: Vec<GraineDUneLigne>,
+    dates: Vec<socle::date::Periode>,
+    cotisations: Option<Vec<GraineDUneCotisation>>,
+    emploi_imprime: Option<droit::emplois::EmploiEngagement>,
+    bulletin: Option<GraineDuBulletin>,
+    /// La date de l'import ne reconnait pas la paie : la graine l'ecrit `null`, toujours.
+    importe_le: (),
+}
+
+/// Les nets d'une paie, dans sa graine (`GraineDUnePaie`).
+#[derive(Serialize)]
+struct GraineDesNets {
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_imposable: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_verse: Option<Montant>,
+    taux_pas: Option<droit::pas::TauxDePas>,
+    type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
+    identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pas: Option<Montant>,
+}
+
+/// Une ligne de remuneration, dans la graine de sa paie (`GraineDUnePaie`) : sans les heures qu'elle imprime, que
+/// l'import lui a ajoutees ensuite.
+#[derive(Serialize)]
+struct GraineDUneLigne {
+    libelle: String,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant: Option<Montant>,
+    soumis: bool,
+    rubrique: Option<droit::catalogue::CodeDeRubrique>,
+    paiement: Option<crate::ligne::PaiementDeLigne>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    heures: Option<socle::grandeurs::HeuresParUnite>,
+}
+
+/// Une ligne de cotisation, dans la graine de sa paie (`GraineDUnePaie`).
+#[derive(Serialize)]
+struct GraineDUneCotisation {
+    famille: Option<droit::forme_bareme::FamilleDeCotisation>,
+    libelle: String,
+    cotisation: Option<crate::ecarts::RegroupementDeComparaison>,
+    base: Option<crate::calcul::BaseDeCotisation>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    taux_employeur: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant_employeur: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    taux_salarie: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant_salarie: Option<Montant>,
+    hors_total: bool,
+}
+
+/// Le bulletin d'une paie, dans sa graine (`GraineDUnePaie`).
+#[derive(Serialize)]
+struct GraineDuBulletin {
+    fichier: NomDeFichier,
+    page: u64,
+    logiciel: Option<LogicielDUnBulletin>,
+    numero: Option<String>,
+    contrat: Option<NumeroContrat>,
+}
+
+impl PaieVersee {
+    /// SA GRAINE (`GraineDUnePaie`) : ce qui la reconnait, champ par champ ; ce que l'import lui ajoute ensuite
+    /// (`abattement`, les heures que ses lignes impriment) et la date de l'import en sont ecartes.
+    pub fn graine(&self) -> GraineDUnePaie {
+        let PaieVersee {
+            contrat,
+            nir,
+            numero_objet,
+            periode,
+            quotite,
+            motif_recours,
+            nature,
+            brut,
+            nets: Nets { net_imposable, net_verse, taux_pas, type_pas, identifiant_pas, pas },
+            net_a_payer,
+            net_avant_impot,
+            net_social,
+            cotisations_salariales,
+            cotisations_patronales,
+            cout_employeur,
+            verse_le,
+            depose_le,
+            fichier,
+            bases,
+            heures,
+            duree_du_travail,
+            abattement: _,
+            cachets,
+            jours,
+            spectacle,
+            analytique,
+            lignes,
+            dates,
+            cotisations,
+            emploi_imprime,
+            bulletin,
+            importe_le: _,
+        } = self.clone();
+        let ligne = |l: LigneImprimee| {
+            let LigneImprimee { libelle, montant, soumis, rubrique, paiement, heures, heures_imprimees: _ } = l;
+            GraineDUneLigne { libelle, montant, soumis, rubrique, paiement, heures }
+        };
+        let cotisation = |c: CotisationImprimee| {
+            let CotisationImprimee { famille, libelle, cotisation, base, taux_employeur, montant_employeur, taux_salarie, montant_salarie, hors_total } = c;
+            GraineDUneCotisation { famille, libelle, cotisation, base, taux_employeur, montant_employeur, taux_salarie, montant_salarie, hors_total }
+        };
+        GraineDUnePaie {
+            contrat,
+            nir,
+            numero_objet,
+            periode,
+            quotite,
+            motif_recours,
+            nature,
+            brut,
+            nets: GraineDesNets { net_imposable, net_verse, taux_pas, type_pas, identifiant_pas, pas },
+            net_a_payer,
+            net_avant_impot,
+            net_social,
+            cotisations_salariales,
+            cotisations_patronales,
+            cout_employeur,
+            verse_le,
+            depose_le,
+            fichier,
+            bases,
+            heures,
+            duree_du_travail,
+            cachets,
+            jours,
+            spectacle,
+            analytique,
+            lignes: lignes.into_iter().map(ligne).collect(),
+            dates,
+            cotisations: cotisations.map(|cs| cs.into_iter().map(cotisation).collect()),
+            emploi_imprime,
+            bulletin: bulletin.map(|BulletinSource { fichier, page, logiciel, numero, contrat }| GraineDuBulletin { fichier, page, logiciel, numero, contrat }),
+            importe_le: (),
+        }
+    }
 }
 
 droit::cle_opaque! {
@@ -484,6 +699,7 @@ impl PaieVersee {
             bases: BTreeMap::new(),
             heures: None,
             duree_du_travail: None,
+            abattement: None,
             cachets: None,
             jours: None,
             spectacle: None,
@@ -649,6 +865,11 @@ impl Importe {
     /// Ce qui a ete verse, mois par mois.
     pub fn paies(&self) -> &BTreeMap<Mois, PaieVersee> {
         &self.pieces().paies
+    }
+
+    /// Le spectacle de la paie `p` (`spectacle_de_la_paie`, avec le contrat que l'engagement atteste).
+    pub fn spectacle_de(&self, ctx: &Contexte, p: &PaieVersee) -> R<Option<droit::contexte::IdSpectacle>> {
+        spectacle_de_la_paie(ctx, Some(p), self.contrat())
     }
 
     /// LE CONTRAT D'UN PERMANENT S'ATTESTE MOIS PAR MOIS (`permanent`), comme ses bulletins l'ont atteste, et celui que
@@ -861,15 +1082,20 @@ impl Importe {
     /// Ce que les pieces ne disent pas est vide.
     pub fn paie(&self, ctx: &Contexte, mois: Mois) -> R<PaieImportee> {
         let p = self.paies().get(&mois).ok_or_else(|| socle::refus!("{} (rang {}) : aucune paie importee en {}", self.objet.fichier, self.objet.rang, mois))?;
-        let contrat = self.contrat();
-
         let nature = self.nature_rangee()?;
         let nat = nature.proprietes()?;
         let ctx = ctx.du_mois(mois)?;
         let cle = self.carte().salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
         let sal = crate::calcul::convention_de_l_employeur(&ctx, crate::fiche_du_salarie(&ctx, cle)?);
-        let objet = p.numero_objet.as_ref().or_else(|| contrat.and_then(|c| c.numero_objet.as_ref()));
-        let spectacle = objet.and_then(|o| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|n| n.meme(o))).map(|(k, _)| k.clone()));
+        // REGARDER N'EST JAMAIS REFUSE : un spectacle qu'aucune fiche ne porte encore manque a la paie (son spectacle reste
+        // vide), il ne ferme pas la lecture du mois, et la carte du mois importe dit ce qui manque
+        // (`import::mois::spectacle_de_la_carte`). Chaque refus de la regle dit un manque ; une panne qui en viendrait
+        // remonte.
+        let spectacle = match self.spectacle_de(&ctx, p) {
+            Ok(s) => s,
+            Err(e) if e.dit_un_manque() => None,
+            Err(e) => return Err(e),
+        };
         let spec = match &spectacle {
             Some(k) => Some(crate::fiche_du_spectacle(&ctx, k)?),
             None => None,
@@ -887,7 +1113,7 @@ impl Importe {
         // LES LIGNES DE REMUNERATION QUE LES PIECES DISENT : celles du bulletin ; a defaut, le brut que la DSN declare.
         let mut lignes_lues = p.lignes.clone();
         if lignes_lues.is_empty() {
-            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, rubrique: None, paiement: None, heures: None });
+            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, rubrique: None, paiement: None, heures: None, heures_imprimees: None });
         }
         // La quotite que la DSN declare (40.013) est, pour un salarie au mois, ses heures par mois (`quotite_contrat`) ; pour
         // un contrat d'usage, ses jours, que les jours du contrat disent (`Engagement::quotite`).
@@ -1159,6 +1385,34 @@ pub fn tous(racine: &Path) -> R<Vec<Importe>> {
 /// Les engagements importes qui touchent `mois`.
 pub fn du_mois(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
     Ok(tous(racine)?.into_iter().filter(|i| i.mois().contains(&mois)).collect())
+}
+
+/// LE NUMERO D'OBJET D'UNE PAIE IMPORTEE `p` : celui que sa piece imprime, ou celui que son contrat atteste (`contrat`) ;
+/// d'un contrat atteste seul, le sien. C'est lui qui designe le spectacle (regle 6) ; le titre n'en est que le nom.
+pub fn numero_objet_de<'a>(p: Option<&'a PaieVersee>, contrat: Option<&'a ContratAtteste>) -> Option<&'a NumeroObjetSpectacle> {
+    p.and_then(|p| p.numero_objet.as_ref()).or_else(|| contrat.and_then(|c| c.numero_objet.as_ref()))
+}
+
+/// LE SPECTACLE D'UNE PAIE IMPORTEE `p` (ou d'un contrat atteste seul, `contrat`), la seule regle : la fiche qui porte son
+/// numero d'objet (`numero_objet_de`, compare par `NumeroObjetSpectacle::meme`), que l'import a creee depuis lui avec un
+/// titre seulement propose ; a defaut, celle que le titre imprime designe (une fiche creee a la main, sans numero).
+/// `Ok(None)` : ni numero ni titre, rien ne designe de spectacle (un permanent n'en a pas). Un numero ou un titre qui ne
+/// retrouvent aucune fiche se refusent en disant ce qui manque ; le refus du titre garde sa raison (un titre ambigu, une
+/// fiche illisible).
+pub fn spectacle_de_la_paie(ctx: &Contexte, p: Option<&PaieVersee>, contrat: Option<&ContratAtteste>) -> R<Option<droit::contexte::IdSpectacle>> {
+    let numero = numero_objet_de(p, contrat);
+    if let Some(cle) = numero.and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|x| x.meme(n))).map(|(k, _)| k.clone())) {
+        return Ok(Some(cle));
+    }
+    match (numero, p.and_then(|p| p.spectacle.as_deref()).filter(|t| !t.is_empty())) {
+        (None, Some(titre)) => Ok(Some(ctx.spectacle(titre)?.cle)),
+        (Some(numero), Some(titre)) => match ctx.spectacle(titre) {
+            Ok(s) => Ok(Some(s.cle)),
+            Err(e) => Err(e.reformuler(|raison| format!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, et son titre ne se retrouve pas : {}", numero, raison))),
+        },
+        (Some(numero), None) => Err(socle::refus!("aucune fiche de spectacle ne porte le numéro d'objet {} de cette paie, qui n'imprime pas de titre", numero)),
+        (None, None) => Ok(None),
+    }
 }
 
 /// Les contrats attestes de tous les engagements importes (`Importe::contrat_lu`).

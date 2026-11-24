@@ -15,8 +15,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use droit::contexte::{Contexte, IdSpectacle};
-use droit::fiche::NumeroObjetSpectacle;
+use crate::ecarts::RegistreLu;
+use droit::contexte::Contexte;
 use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
 use socle::date::{Jour, Periode};
@@ -148,13 +148,26 @@ fn nom_du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> Option<St
     ctx.salaries.get(cle).and_then(|s| s.nomme())
 }
 
-/// La fiche du spectacle de ce numero d'objet : `(cle, titre)` ; le titre est vide quand la fiche ne le dit pas, ou
-/// qu'il est « A COMPLETER ».
-fn spectacle_de(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<(IdSpectacle, Option<String>)> {
-    ctx.spectacles.iter().find(|(_, s)| s.numero_objet.dite().is_some_and(|n| n.meme(numero))).map(|(k, s)| {
-        let t = s.titre.portee().map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string);
-        (k.clone(), t)
-    })
+/// LE SPECTACLE D'UNE CARTE, par la seule regle (`engagement::importe::spectacle_de_la_paie`) : le titre de sa fiche,
+/// vide quand la fiche ne le dit pas ou qu'il est « A COMPLETER » ; ou ce qui manque pour la retrouver (un numero ou un
+/// titre qu'aucune fiche ne porte encore, un titre ambigu), que la carte dit sous sa case, sans fermer la lecture du
+/// mois.
+struct SpectacleDeLaCarte {
+    titre: Option<String>,
+    manque: Option<String>,
+}
+
+/// Le spectacle d'une paie importee `p` ou d'un contrat atteste `c` (`SpectacleDeLaCarte`). Chaque refus de la regle
+/// dit un manque (`Echec::dit_un_manque`) ; une panne qui en viendrait remonte.
+fn spectacle_de_la_carte(ctx: &Contexte, p: Option<&PaieVersee>, c: Option<&engagement::importe::ContratAtteste>) -> R<SpectacleDeLaCarte> {
+    let cle = match engagement::importe::spectacle_de_la_paie(ctx, p, c) {
+        Ok(Some(cle)) => cle,
+        Ok(None) => return Ok(SpectacleDeLaCarte { titre: None, manque: None }),
+        Err(e) if e.dit_un_manque() => return Ok(SpectacleDeLaCarte { titre: None, manque: Some(e.phrase) }),
+        Err(e) => return Err(e),
+    };
+    let titre = ctx.spectacles.get(&cle).and_then(|s| s.titre.portee()).map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string);
+    Ok(SpectacleDeLaCarte { titre, manque: None })
 }
 
 /// LA PERIODE D'UN CONTRAT IMPORTE DANS `mois`, en clair, quand le bulletin ne dit pas ses jours : « 20–27 » pour un
@@ -353,8 +366,12 @@ fn piece_dite(s: Source) -> String {
     }
 }
 
-/// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul.
-fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&ContratRelu>, dpae: EtatDeCarte) -> R<CarteImportee> {
+/// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul ; `connus`, les ecarts
+/// connus que leur registre garde pour sa paie, ou leur registre illisible.
+fn carte(
+    ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&ContratRelu>, dpae: EtatDeCarte,
+    connus: RegistreLu<Vec<&engagement::ecarts_connus::EcartConnuConstate>>,
+) -> R<CarteImportee> {
     let p = paie.map(|x| &x.paie);
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
@@ -362,13 +379,10 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let atteste = contrat.and_then(|x| x.periode);
     let debut = p.and_then(|p| p.periode).map(|o| o.debut()).or_else(|| atteste.map(|o| o.debut()));
     let fin = p.and_then(|p| p.periode).and_then(|o| o.fin()).or_else(|| atteste.and_then(|o| o.fin()));
-    let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone()));
-    let spectacle = numero.as_ref().and_then(|n| spectacle_de(ctx, n));
+    let numero = engagement::importe::numero_objet_de(p, c).cloned();
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
-    let titre = match &spectacle {
-        Some((_, Some(t))) => Some(t.clone()),
-        _ => titre_bulletin,
-    };
+    let spectacle = spectacle_de_la_carte(ctx, p, c)?;
+    let titre = spectacle.titre.or(titre_bulletin);
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
     let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).into_iter().flatten().collect();
     // L'activite du mois que les pieces disent (`engagement::importe::activite_du_mois`) ; quand elles n'en disent rien
@@ -418,13 +432,14 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         (Some(s), None) => manques.push(manque("salarie", "salarié", format!("la fiche « {} » n'existe pas (ou plus) : à créer dans Configuration › Salariés", s))),
         (Some(_), Some(_)) => {}
     }
-    match (&numero, &titre) {
-        (None, None) => manques.push(manque(
+    match (&numero, &titre, &spectacle.manque) {
+        (_, None, Some(m)) => manques.push(manque("spectacle", "spectacle", m.clone())),
+        (None, None, None) => manques.push(manque(
             "spectacle",
             "spectacle",
             "ni la DSN, ni l'AEM, ni le bulletin ne portent de numéro d'objet pour cette paie (un permanent n'en a pas)".into(),
         )),
-        (Some(n), None) => manques.push(manque(
+        (Some(n), None, None) => manques.push(manque(
             "spectacle",
             "titre du spectacle",
             format!("la DSN ne porte que le numéro d'objet {} : son titre se complète dans Configuration › Spectacles", n),
@@ -474,7 +489,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let documents = match &bulletin {
         Some(b) => {
             let n: String = b.numero.iter().filter(|n| !n.is_empty()).map(|n| format!(" n° {}", n)).collect();
-            EtatDeCarte { etat: EtatDEcran::Fait, courte: "bulletin importé", phrase: format!("bulletin de l'ancien logiciel{}, copié dans historique/bulletins/", n) }
+            EtatDeCarte { etat: EtatDEcran::Fait, courte: "bulletin importé", phrase: format!("bulletin de l'ancien logiciel{}, gardé : il se rouvre depuis l'Historique, à son mois", n) }
         }
         None => EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "documents remis avant PuppetPaie : aucun bulletin importé pour cette paie".to_string() },
     };
@@ -579,7 +594,11 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let atteste = c.map(|c| attestation_dite(c.atteste_par).to_string());
     let mut cases = vec![
         case("Salarié", nom.clone(), Some("fiche".to_string()), "salarie"),
-        case("Spectacle", spectacle_dit, None, "spectacle"),
+        // Ce qui manque pour retrouver sa fiche se dit sous lui, meme quand la piece en imprime le titre ou le numero.
+        match (case("Spectacle", spectacle_dit, None, "spectacle"), &spectacle.manque) {
+            (c, Some(m)) => CaseLue { pourquoi: Some(m.clone()), ..c },
+            (c, None) => c,
+        },
         case("Contrat", p.map(|p| p.contrat.dite()), None, "contrat"),
         case("Début", debut.map(|j| j.jj_mm_aaaa()), None, "debut"),
         case("Fin", fin.map(|j| j.jj_mm_aaaa()), None, "fin"),
@@ -589,6 +608,24 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     ];
     for &(k, libelle, porte) in &montants {
         cases.push(case(libelle, porte.map(|(v, _)| socle::texte::euros(v)), porte.map(|(_, s)| piece_dite(s)), k));
+    }
+    // CE QUE L'ANCIEN LOGICIEL A APPLIQUE AUTREMENT QUE LE TEXTE, deja releve (`engagement::ecarts_connus`) : la carte
+    // dit l'explication et l'ecart chiffre.
+    match connus {
+        RegistreLu::Lu(siens) => {
+            for k in siens {
+                cases.push(CaseLue { libelle: "Écart connu", valeur: Some(k.phrase()), source: Some(format!("bulletin {}", k.logiciel.as_str())), vide_dit: None, non_lu: false, pourquoi: None });
+            }
+        }
+        RegistreLu::Illisible(_) if p.is_some() => cases.push(CaseLue {
+            libelle: "Écart connu",
+            valeur: None,
+            source: None,
+            vide_dit: Some("ne se lit pas"),
+            non_lu: true,
+            pourquoi: Some("L'explication des écarts connus de cette paie ne se lit pas : elle ne se montre pas. L'éditeur en est averti.".to_string()),
+        }),
+        RegistreLu::Illisible(_) => {}
     }
 
     // LES LIGNES DU BULLETIN : ce que chacune paie, telle qu'une phrase le dit, et son montant.
@@ -693,13 +730,22 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let embauches = etats::embauches_par_depot(&lignes);
     let (certifiees, _) = envois::reprise_journal::embauches_attestees(ctx)?;
+    // UN REGISTRE DES ECARTS CONNUS ILLISIBLE ne ferme pas le mois : chaque carte qui a une paie dit que son explication
+    // ne se lit pas (l'editeur le sait par l'incident de l'ouverture, `ecarts::noter`).
+    let connus = crate::ecarts::ecarts_connus_lus(&ctx.racine);
     let mut cartes = Vec::new();
     for i in importes {
         let contrat = i.contrat_lu()?;
         let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let dpae = dpae_de(&embauches, &certifiees, brut.salarie.as_ref(), brut.numero.as_ref(), brut.debut);
-        cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae)?);
+        // Les ecarts connus que la comparaison de cette paie a constates (`engagement::ecarts_connus::EcartConnuConstate`).
+        let empreinte = i.paies().get(&mois).map(|p| engagement::ecarts::empreinte(&i, mois, p));
+        let siens = match &connus {
+            RegistreLu::Lu(par_paie) => RegistreLu::Lu(empreinte.as_ref().and_then(|e| par_paie.get(e)).into_iter().flatten().collect()),
+            RegistreLu::Illisible(e) => RegistreLu::Illisible(e.clone()),
+        };
+        cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae, siens)?);
     }
     cartes.sort_by(|a, b| (&a.debut, &a.nom).cmp(&(&b.debut, &b.nom)));
     Ok(cartes)

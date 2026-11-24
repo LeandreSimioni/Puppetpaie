@@ -197,7 +197,7 @@ fn la_nature_d_un_contrat_de_permanent_se_demande_apres_l_import() {
     let a_dire = etat["a_dire"].as_array().unwrap();
     assert_eq!(a_dire.len(), 1, "{}", etat["a_dire"]);
     assert_eq!(a_dire[0]["salarie"], json!(permanent));
-    let natures: BTreeSet<String> = a_dire[0]["natures"].as_array().unwrap().iter().map(|n| n["cle"].as_str().unwrap().to_string()).collect();
+    let natures: BTreeSet<String> = a_dire[0]["enregistrer"]["choix"]["nature"].as_array().unwrap().iter().map(|n| n["code"].as_str().unwrap().to_string()).collect();
     assert!(natures.contains("cdi") && natures.contains("cdd") && !natures.contains("cddu_spectacle"), "{:?}", natures);
 
     // Une nature qui n'est pas d'un permanent, un salarie sans contrat a dire : refus, rien n'est ecrit.
@@ -314,7 +314,7 @@ fn le_contrat_d_un_permanent_qui_continue_dit_son_debut_et_son_numero() {
     let x = &etat["a_dire"][0];
     let cle = x["salarie"].as_str().unwrap().to_string();
     assert_eq!((x["en_cours"].clone(), x["suite"].clone()), (json!(true), json!("2025-06")), "{}", x);
-    let demande = |n: &str| x["natures"].as_array().unwrap().iter().find(|v| v["cle"] == json!(n)).unwrap()["demande"].clone();
+    let demande = |n: &str| x["enregistrer"]["choix"]["nature"].as_array().unwrap().iter().find(|v| v["code"] == json!(n)).unwrap()["ouvre"].clone();
     assert_eq!(demande("cdi"), json!(["debut", "numero", "salaire", "quotite"]));
     assert_eq!(demande("cdd"), json!(["debut", "fin", "numero", "salaire", "quotite"]));
 

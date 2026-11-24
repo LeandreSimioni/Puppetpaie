@@ -654,6 +654,12 @@ impl QuantiteDeLigne {
         }
     }
 
+    /// LES HEURES PAR UNITE QU'UN TOTAL `total` FAIT sur cette quantite (`Heures::par_unite` : 8 h sur 2 services, 4 h) ;
+    /// `None` : une quantite nulle.
+    pub fn partage(self, total: Heures) -> Option<HeuresParUnite> {
+        chaque_quantite!(self, q => total.par_unite(q))
+    }
+
     /// QUANTITE x HEURES PAR UNITE, exactes (14 services de 4 h : 56 h).
     pub fn fois(self, par_unite: HeuresParUnite) -> Heures {
         chaque_quantite!(self, q => q * par_unite)

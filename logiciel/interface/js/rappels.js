@@ -379,7 +379,6 @@ function poserLesRappels(liste, ech, fermerDit) {
         ? ` <span class="discret">— ${echapper(r.quand)}</span>` : ""}</h3>
       ${r.question ? `<p class="rappel-question">${echapper(r.question)}</p>` : ""}
       ${r.detail ? `<p class="note">${echapper(r.detail)}</p>` : ""}
-      ${r.spectacles.length ? `<ul class="rappel-liste">${r.spectacles.map((s) => `<li>${echapper(s.dit)}</li>`).join("")}</ul>` : ""}
       <div class="actions">${boutonRappel(r, i)}</div>
     </div>`).join("");
   document.getElementById("rappels-fermer").textContent = fermerDit;
@@ -428,7 +427,7 @@ function boiteRappels(liste, ech, manques, fermerDit) {
    (`ouvrirGeste`), comme une case du mois. Ses `gestes` (« C'est fait »…) sont ceux d'un écran rendu. */
 function boutonRappel(r, i) {
   const libelle = r.action && r.action.libelle;
-  return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + boutonsDesGestes(r.gestes, undefined, "secondaire");
+  return (libelle ? `<button class="${classeDuGeste(r.action)}" id="rappel-${i}">${echapper(libelle)}</button>` : "") + boutonsDesGestes(r.gestes);
 }
 
 /* Le geste d'un rappel mène ailleurs : tout écran qui porte une saisie non enregistrée se quitte d'abord (la boîte, et
@@ -463,7 +462,7 @@ async function dessinerExercices() {
       <span class="rang-infos">
         ${echapper(x.infos_dit)}
       </span>
-      ${x.actions.map((a, k) => `<button class="secondaire" data-action="${k}">${echapper(a.libelle)}</button>`).join("")}
+      ${x.actions.map((a, k) => `<button class="${classeDuGeste(a)}" data-action="${k}">${echapper(a.libelle)}</button>`).join("")}
       ${boutonsRanges(x.gestes)}
     </div>`).join("") + `<p class="note"><button class="lien" id="ouvrir-exercices">${echapper(r.dossier_dit)}</button></p>`;
   cible.querySelectorAll("[data-exercice]").forEach((rang) => {

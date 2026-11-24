@@ -37,8 +37,10 @@ Unicode True
 SetCompressor /SOLID lzma
 RequestExecutionLevel user
 ManifestDPIAware true
-; Le detail de l installation se voit : ce que le moteur recoit pour Linux et macOS, ou son refus, s y lit.
-ShowInstDetails show
+; Le detail de l installation se replie : seule la barre avance, sans le defile des fichiers poses (Leandre, 23/11/2026).
+; Un bouton le deplie ; un refus du moteur pour Linux et macOS le deplie de lui-meme (`SetDetailsView show`), la raison
+; s y lit.
+ShowInstDetails hide
 
 !define NOM "PuppetPaie"
 !define CLE_DESINSTALLATION "Software\Microsoft\Windows\CurrentVersion\Uninstall\PuppetPaie"
@@ -189,6 +191,7 @@ Function AjouterLesAutresSystemes
   nsExec::ExecToLog '"$SYSDIR\cmd.exe" /d /c start "" /b /wait "$INSTDIR\logiciel\puppetpaie.exe" route --texte < "$PLUGINSDIR\portable-completer.json"'
   Pop $0
   ${If} $0 != 0
+    SetDetailsView show
     MessageBox MB_OK|MB_ICONEXCLAMATION "Linux et macOS n'ont pas été ajoutés ; la raison est dans le détail de l'installation.$\r$\n$\r$\n${NOM} est installé pour Windows. L'accueil, sous « Avancé », les ajoute quand vous voulez."
   ${EndIf}
 FunctionEnd

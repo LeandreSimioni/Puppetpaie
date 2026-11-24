@@ -29,6 +29,7 @@ use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::echeances::Echeance;
 use droit::natures::NumeroDOrdre;
+use crate::imprevus::RangDuGeste;
 use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
@@ -144,14 +145,16 @@ impl EtatCase {
 
 /// LE GESTE D'UN CLIC, en routes du catalogue, celles que l'ecran et le LLM appellent : la route qu'il ouvre (`route`,
 /// un apercu le plus souvent), sa charge (`charge`, en sa forme), la route de l'acte qui suit, s'il y en a un (`puis`), et
-/// ce que dit le bouton (`libelle`). La page ouvre sa boite d'apres la route. `tester` : le depot d'une DSN, dont le test
-/// part des qu'elle est ecrite.
+/// ce que dit le bouton (`libelle`), et son rang dans son ecran (`rang`, `RangDuGeste` : la page en tire la forme du
+/// bouton). La page ouvre sa boite d'apres la route. `tester` : le depot d'une DSN, dont le test part des qu'elle est
+/// ecrite.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Action {
     route: Route,
     charge: ChargeDeLAction,
     puis: Option<Route>,
     libelle: String,
+    rang: RangDuGeste,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     tester: bool,
     /// La vue qu'il ouvre, quand sa route en a deux (`VueDuGeste`) ; aucune pour une route qui n'en a qu'une.
@@ -224,7 +227,6 @@ pub(crate) enum ChargeDuGeste {
     Connaissance(crate::obligations::ChargeConnaissance),
     Papiers(crate::imprevus::ChargeFinContratDocuments),
     Annee(ChargeAnnee),
-    Revue(crate::rappels::ChargeRevue),
     Faite(crate::rappels::ChargeFaite),
     Piece(crate::documents::ChargePiecePartie),
 }
@@ -263,7 +265,6 @@ charge_du_geste! {
     crate::obligations::ChargeConnaissance => Connaissance,
     crate::imprevus::ChargeFinContratDocuments => Papiers,
     ChargeAnnee => Annee,
-    crate::rappels::ChargeRevue => Revue,
     crate::rappels::ChargeFaite => Faite,
     crate::documents::ChargePiecePartie => Piece,
 }
@@ -271,12 +272,19 @@ charge_du_geste! {
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
 /// (`ChargeDUneVue`) : son action se fait par `vers`.
 pub(crate) fn action(route: Route, charge: impl Into<ChargeDuGeste>, puis: Option<Route>, libelle: String) -> Action {
-    Action { route, charge: ChargeDeLAction::Route(charge.into()), puis, libelle, tester: false, vue: None }
+    Action { route, charge: ChargeDeLAction::Route(charge.into()), puis, libelle, rang: RangDuGeste::Second, tester: false, vue: None }
+}
+
+impl Action {
+    /// La meme, le geste principal de son ecran (celui d'un rappel).
+    pub(crate) fn principale(self) -> Action {
+        Action { rang: RangDuGeste::Principal, ..self }
+    }
 }
 
 /// L'`Action` qui ouvre la vue `vue` de sa route, sur `charge`.
 pub(crate) fn vers(vue: VueDuGeste, charge: impl Into<ChargeDUneVue>, puis: Option<Route>, libelle: String) -> Action {
-    Action { route: vue.route(), charge: ChargeDeLAction::Vue(charge.into()), puis, libelle, tester: false, vue: Some(vue) }
+    Action { route: vue.route(), charge: ChargeDeLAction::Vue(charge.into()), puis, libelle, rang: RangDuGeste::Second, tester: false, vue: Some(vue) }
 }
 
 /// Le compte d'une case : un nombre, ou ce qui est revenu sur ce qui est parti.
@@ -1434,7 +1442,7 @@ struct GesteDePiece {
     #[serde(skip_serializing_if = "Option::is_none")]
     titre: Option<&'static str>,
     action: Option<Geste>,
-    principal: bool,
+    rang: RangDuGeste,
 }
 
 /// CE QUE LA BOITE DES DPAE DIT D'UN ENGAGEMENT (`choix_dpae`) ; `part` : l'embauche qu'il ajoute, coche, a la case
@@ -2787,23 +2795,23 @@ fn pieces_du_contrat(p: &Vue, mois: Mois, s: &Signature, dossier: Option<&Contra
     let route = |a: Action| Some(Geste::Route(a));
     let mut gestes = Vec::new();
     if ailleurs {
-        gestes.push(GesteDePiece { libelle: "Ranger le contrat signé…", titre: None, action: geste_du_dossier(dossier), principal: !caduc });
+        gestes.push(GesteDePiece { libelle: "Ranger le contrat signé…", titre: None, action: geste_du_dossier(dossier), rang: RangDuGeste::principal_si(!caduc) });
         if caduc || fait {
-            gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat signé hors de PuppetPaie : ce qui change, en clair"), action: avenant(p, mois).and_then(&route), principal: caduc });
+            gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat signé hors de PuppetPaie : ce qui change, en clair"), action: avenant(p, mois).and_then(&route), rang: RangDuGeste::principal_si(caduc) });
         }
         return Pieces { vide, encart, gestes };
     }
     if fait || recu {
         let libelle = if recu { "Retirer la mention « signé »" } else { "Noter le contrat signé reçu" };
-        gestes.push(GesteDePiece { libelle, titre: None, action: noter_recu(p, mois, libelle, None, !recu).and_then(&route), principal: false });
+        gestes.push(GesteDePiece { libelle, titre: None, action: noter_recu(p, mois, libelle, None, !recu).and_then(&route), rang: RangDuGeste::Second });
     }
     if fait {
-        gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat parti : l'ancien texte et le nouveau, article par article"), action: avenant(p, mois).and_then(&route), principal: caduc });
+        gestes.push(GesteDePiece { libelle: "Avenant…", titre: Some("Modifier le contrat parti : l'ancien texte et le nouveau, article par article"), action: avenant(p, mois).and_then(&route), rang: RangDuGeste::principal_si(caduc) });
     }
     if !fait {
         // Depuis le detail de l'engagement, seul son contrat se coche d'abord.
         let siens = p.salarie.clone().map(|s| vec![s]);
-        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois, siens)), principal: true });
+        gestes.push(GesteDePiece { libelle: "Envoyer à la signature…", titre: None, action: route(faire_signer(mois, siens)), rang: RangDuGeste::Principal });
     }
     Pieces { vide, encart, gestes }
 }

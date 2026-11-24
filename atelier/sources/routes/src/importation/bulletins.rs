@@ -2171,6 +2171,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, lignes: Vec<engagement::imp
     ligne.lignes = lignes;
     ligne.dates = b.dates_travaillees.clone();
     ligne.duree_du_travail = b.duree_du_travail;
+    ligne.abattement = b.abattement;
     ligne.cotisations = Some(
         b.cotisations
             .iter()
@@ -2218,9 +2219,14 @@ fn lignes_imprimees(b: &BulletinLu, racine: &Path) -> R<Result<Vec<engagement::i
                 Ok(p) => Some(p),
                 Err(e) => return Ok(Err(format!("la ligne « {} » ne se lit pas : {}", l.libelle, e))),
             },
+            // Une ligne a l'heure qui n'imprime que ses heures (« (3 h) ») : ses heures sont sa quantite.
+            (Some(code), None, Some(t)) => match (droit::catalogue::rubrique(racine, code, &b.periode.fin())?.unite, l.heures_imprimees) {
+                (droit::catalogue::Unite::Heure, Some(h)) => Some(PaiementDeLigne::Heures(h, t.grandeur())),
+                _ => None,
+            },
             _ => None,
         };
-        out.push(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures });
+        out.push(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures, heures_imprimees: l.heures_imprimees });
     }
     Ok(Ok(out))
 }

@@ -148,13 +148,33 @@ pub fn reduction_generale_sous_dfs(
     Ok(Some(repartir_la_reduction(rg, apres.coefficient, limite, apres.smic_reference, apres.heures)?))
 }
 
-/// La remuneration du contrat depasse-t-elle `seuil_smic` fois le SMIC de reference (SMIC horaire de la reduction x
-/// heures remunerees) ? Une ligne sans seuil (le fichier n'en pose pas) n'appelle pas cette question : elle vaut
+/// Les revenus d'activite du contrat depassent-ils `seuil_smic` fois le SMIC de reference (SMIC horaire de la reduction
+/// x heures remunerees) ? Une ligne sans seuil (le fichier n'en pose pas) n'appelle pas cette question : elle vaut
 /// toujours. Un seuil sans SMIC de reference ou sans heures ne se compare pas : il se refuse.
-pub fn au_dela_du_seuil(rg: Option<&ParametresDeLaReduction>, brut: Montant, heures: Heures, seuil: Coefficient) -> R<bool> {
+///
+/// Ce qui se compare au seuil, ce sont « les revenus d'activité tels qu'ils sont pris en compte pour la détermination de
+/// l'assiette des cotisations définie à l'article L. 242-1 » (CSS L. 241-2-1 et L. 241-6-1, versions du 01/01/2025 au
+/// 01/01/2026, `atelier/reference/sources/legi-entrepot/`) : le brut, moins la deduction forfaitaire specifique du
+/// contrat quand il en a une (`deduction_forfaitaire`, son montant), puisque sous elle « l'assiette des cotisations »
+/// est le montant global des remunerations abattu de la deduction (arrete du 4 septembre 2025, art. 9, I,
+/// `atelier/reference/sources/dfs/arrete-2025-frais-professionnels/`). Ces deux articles ne reprennent pas la limite
+/// propre a la reduction generale (L. 241-13, III, al. 4 : la remuneration du coefficient « ne tient compte des
+/// déductions au titre de frais professionnels calculées forfaitairement [...] que dans des limites et conditions
+/// fixées par arrêté ») : ils n'empruntent a L. 241-13 que le calcul du SMIC (« deuxième alinéa du III »). Le BOSS lit
+/// de meme « la rémunération [...] définie à l'article L. 242-1 » sous deduction forfaitaire specifique : « La rémunération
+/// à prendre en compte pour la réduction est égale à 1 900 × (1 – 10%) soit 1 710 € » (Allegements generaux, § 190,
+/// `atelier/reference/sources/boss/boss-allegements-generaux-20261123.txt`, l. 241-252 ; la version 2026, celle de la
+/// reduction generale, la seule que le BOSS serve encore).
+pub fn au_dela_du_seuil(
+    rg: Option<&ParametresDeLaReduction>, brut: Montant, deduction_forfaitaire: Option<Montant>, heures: Heures, seuil: Coefficient,
+) -> R<bool> {
     let smic = requis(rg.and_then(|r| r.smic_horaire_reference), "reduction_generale.smic_horaire_reference")?;
     if heures <= Heures::ZERO {
         return Err(socle::echec::refus("Un seuil de SMIC se compare à des heures rémunérées : la paie n'en porte aucune."));
     }
-    Ok(brut > (heures * smic).au_centime() * seuil)
+    let revenus = match deduction_forfaitaire {
+        Some(d) => brut - d,
+        None => brut,
+    };
+    Ok(revenus > (heures * smic).au_centime() * seuil)
 }

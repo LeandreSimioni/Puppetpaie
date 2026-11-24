@@ -1190,6 +1190,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | carte fermée d'une paie importée (quand, et au survol ses dates ; si ses jours sont épars ; le mois abrégé ; qui, le mot « importé », ce qu'il est ; ses pastilles ; le montant qu'elle dit et ce qu'il est) | `ResumeDeLaCarte` | `import/src/mois.rs` |
 | pastille d'un acte d'une carte importée (son titre : DPAE, Contrat, Documents ; son état, `EtatDeCarte` : sa couleur, son mot court, sa phrase au survol ; pas une `socle::ecran::Pastille`, qui n'a que sa couleur et ses mots) | `PastilleDeLaCarte` | `import/src/mois.rs` |
 | case d'une carte importée, en lecture (son libellé, sa valeur dite et la pièce d'où elle vient ; vide, ce qu'elle montre à sa place, si l'import ne l'a pas lue, et pourquoi) | `CaseLue` | `import/src/mois.rs` |
+| spectacle d'une carte importée, par la seule règle du spectacle d'une paie importée : le titre de sa fiche, ou ce qui manque pour la retrouver, que la carte dit sous sa case | `SpectacleDeLaCarte` | `import/src/mois.rs` |
 | boîte qui saisit un imprévu, telle qu'une lecture la rend pour les faits déjà dits (`arret-obligations` pour un arrêt, `suspension-saisie` pour une absence : son titre, ses cases ouvertes, chacune sous la clé d'un champ du geste qui l'enregistre, ce qu'elle dit sous ses cases, et ce geste, sa charge déjà remplie ; la page la redemande à chaque case changée et la redessine) | `SaisieDUnImprevu` | `routes/src/imprevus.rs` |
 | contrat qu'un imprévu en saisie suspend, tel que sa boîte le traite (rien à demander : un seul contrat couvre le jour, ou le jour n'est pas dit ; le sien, celui de la carte d'où l'on vient ; à choisir parmi plusieurs ; aucun, et la phrase qui le dit) | `ContratDeLaSaisie` | `routes/src/imprevus.rs` |
 | où une case de fiche renvoie, rendu sous elle (le sous-onglet des métiers, ou la case d'une autre fiche : l'option de la déduction forfaitaire de l'entreprise) | `routes::fiches::RenvoiDeLaFiche` | `routes/src/fiches/rendue.rs` |
@@ -1201,6 +1202,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | complémentaire santé d'un salarié au mois telle que sa fiche la fait dire (hors fiche, ce qui manque pour la payer, ou les niveaux où l'on choisit) | `routes::fiches::SanteDuSalarie` | `routes/src/fiches/rendue.rs` |
 | texte tapé d'une case que son type refuse (les quinze chiffres d'un NIR collé) | `routes::fiches::CaseTapee` | `routes/src/fiches/rendue.rs` |
 | niveau de garantie de la complémentaire santé que le barème du jour offre (son code et son libellé) | `routes::ouverture::NiveauDeSante` | `routes/src/ouverture.rs` |
+| choix d'une liste qu'une route rend (son code et son libellé ; s'il est le défaut, ce qu'il dit de lui-même une fois choisi, son groupe, le document qui le montre ; ce qu'il ouvre, `ouvre` : les parties d'une valeur faite de parties, le type d'un préavis ouvrant ses dates, ou les cases de son geste qui ne valent que pour lui, la nature d'un contrat repris ouvrant ce qu'elle demande ; une partie ou une case qu'aucun choix n'ouvre est toujours là, une autre seulement quand l'un de ceux qui l'ouvrent est choisi) | `routes::ouverture::Choix` | `routes/src/ouverture.rs` |
 | document qu'une route nomme pour qu'on le regarde (un aperçu, un exemple, une image posée : nommé par la route qui le rend et sa charge, par l'adresse où la fenêtre le sert à la page, et par son libellé ; le bulletin d'exemple de chaque modèle du bulletin, à côté de son choix ; la signature, le tampon et le logo de l'écran Signature & tampon) | `routes::ouverture::DocumentMontre` | `routes/src/ouverture.rs` |
 | rang d'un écran qu'une route rend (son titre, ce qu'il dit, sa pastille et son état, le document qui s'y regarde, ses gestes) | `routes::ecran::RangDeLEcran` | `routes/src/ecran.rs` |
 | obligation due d'un arrêt, dans ce qui est dû du mois (`imprevus`, `dus` : pour qui, son rang parmi ce qui est dû, qui se range en texte avec celui des fins de contrat dues de `fins-de-contrat`, `Obligation::rang`, l'obligation, ses gestes) | `ObligationDue` | `routes/src/imprevus.rs` |
@@ -1219,6 +1221,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
 | clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le cadre qu'une carte disait de son métier, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
 | avenant d'un engagement (les termes qui changent à partir d'un jour, et ceux qui se retirent ; sa forme écrite, `AvenantEcrit`, dont chaque retiré, `Retire`, est un champ de la carte ou la clé gardée `cadre`) | `engagement::stock::Avenant` | `engagement/src/stock.rs` |
+| dernier jour engagé d'un spectacle (la fin la plus tardive des engagements actifs qui le nomment, importés compris, ou un contrat payé au mois sans fin qui le tient en cours ; seul le rangement des spectacles endormis le lit, `derniers_jours_engages`) | `engagement::stock::DernierJourEngage` | `engagement/src/stock.rs` |
 | ouverture d'une case (toujours, ou si un fait) | `engagement::carte::Ouverture` | `engagement/src/carte.rs` |
 | place d'une case ouverte (de base, « Avancé », « Imprévu… », rendue) | `PlaceDeLaCase` | `engagement/src/carte.rs` |
 | case ouverte pour un engagement (sa clé, un `saisie::Champ` ; sa place) | `CaseOuverte` | `engagement/src/carte.rs` |
@@ -1259,6 +1262,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | activité d'un mois repris (ses cachets, heures et jours de travail rémunéré, chacun vide quand les pièces le taisent ; une seule règle, `importe::activite_du_mois`, que lisent la carte du mois importé, la comparaison, la CASC-SVP et les états par `PaieDuMois::activite`) | `engagement::importe::ActiviteDuMois` | `engagement/src/importe.rs` |
 | paie reprise qui ne se range pas (celle d'un mois d'un contrat dont la nature reste à dire : ce qui lit les paies du mois la rend à part, ne la compte pas et la dit sur ce contrat, sans refuser le reste, `importe::paies_du_mois`, `etats::paies_du_mois`) | `engagement::importe::NatureADire` | `engagement/src/importe.rs` |
 | paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
+| graine d'une paie versée (ce qui la reconnaît d'une comparaison à l'autre, la seule chose que son empreinte signe : la liste fixe des champs que ses pièces disaient quand l'empreinte est née, écrits comme ils l'étaient ; ce que l'import lui ajoute ensuite, l'abattement, les heures qu'une ligne imprime, n'y entre jamais, `PaieVersee::graine`, `ecarts::empreinte`) | `engagement::importe::GraineDUnePaie` | `engagement/src/importe.rs` |
 | paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
 | cumuls de l'année à la reprise (ce qu'un ancien logiciel avait cumulé pour un salarié dans l'année civile, avant le jour où PuppetPaie paie, et que ses pièces ne disent pas : la déduction forfaitaire spécifique pratiquée, les heures supplémentaires payées, le net des heures en plus exonéré d'impôt ; la case `cumuls_reprise` de sa fiche, dans la pièce que seule une paie reprise ouvre, `RepriseDesCumuls`) | `droit::fiche::CumulsReprise` | `droit/src/fiche.rs` |
 | contrat qu'un certificat Congés Spectacles couvre (l'engagement de son dernier mois, la fiche du salarié, et chacun de ses mois payés, lus dans leurs paies validées, sans recalcul ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
@@ -1289,7 +1293,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
 | ce que l'import a repris (rien, des pièces sans DSN avec les années de leurs paies et les natures à dire, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
 | ce qu'une DSN pourrait donner à la configuration, après un import sans DSN (la phrase, et les lignes) | `declarations::demarrage::ParUneDsn` | `declarations/src/demarrage.rs` |
-| valeur proposée (ce que le moteur propose dans la case d'une ligne de « Pour démarrer », à valider ou à corriger : un texte, un jour ; écrite comme la case la tient, dite dans la phrase) | `declarations::demarrage::ValeurProposee` | `declarations/src/demarrage.rs` |
+| valeur proposée (ce que le moteur propose dans la case d'une ligne de « Pour démarrer », à valider ou à corriger : un texte, un jour ; écrite comme la case la tient, dite dans la phrase, une fois : celle que `trouver` dit déjà, avec ce qui la fonde, ne s'y redit pas) | `declarations::demarrage::ValeurProposee` | `declarations/src/demarrage.rs` |
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
@@ -1301,8 +1305,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
 | contrat repris qu'une AEM, un bulletin ou un certificat et la DSN datent autrement : la DSN vaut, la pièce part chez l'éditeur | `ContratDitAutrement` | `routes/src/importation/incident.rs` |
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
-| questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
-| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases, ce qu'elles montrent d'abord et ce qu'elles offrent, ce que sa boîte dit, et la demande du mot de passe du logiciel quand il l'exige : la page le fait taper avant de partir ; un geste sans case qui dit des phrases ouvre sa boîte pour les dire, une confirmation ; un geste dont la route est avancée se range sous « Avancé » de son rang) : celui d'un imprévu, d'une question d'identité, de l'onglet Métiers (créer un métier, sa charge `AucunMetier` ; modifier un métier créé, `MetierDesigne` ; leurs cases montrent `ValeursDuMetier` et offrent `ChoixDuMetier`), de l'écran Signature & tampon (poser une image, ses cases montrent `ValeursDeLaPose` ; la retirer), de l'écran Mots de passe (sa charge `ServiceDuRang`, le service du rang ; poser un mot de passe d'organisme, ses cases montrent `CompteMontre`), de l'écran Modèles de contrat (`GesteDuModele` : sa charge `SurLeModele`, la nature, le modèle, sa partie, un paragraphe et son sens ; renommer un modèle, ses cases montrent `ValeursDuModele`), de l'Historique d'un mois (`GesteDuMois` : sa charge `ChargeMois` ; déposer ses documents dans le Drive), de la tête de l'Historique (reprendre le journal, sa charge `ChargeReprise` ; clore une année ouverte, sa boîte fait cocher « Clore malgré tout », et rouvrir une année close, leur charge `ChargeCloture`), du dossier d'un salarié dans les Exports (`GesteDuDossier` : sa charge `DemandeDeDossier` ; l'aperçu, l'écrire, l'envoyer ; ses cases, saisies ensemble, montrent `ValeursDuDossier` et offrent `ChoixDuDossier`), de la régularisation CASC-SVP dans les Exports (noter une année régularisée, un geste par année : sa charge `ChargeAnnee`, ses cases montrent `ValeursDeLaCasc`), d'une échéance de l'échéancier et des rappels (`GesteDEcheance` : sa charge `ChargeDuGeste` ; « C'est fait » et « Pas encore fait », `ChargeFaite` ; choisir les spectacles qui continuent, `ChargeRevue`, ses cases montrent `ValeursDeLEcheance` et offrent `ChoixDeLEcheance`), d'une obligation due d'un arrêt ou d'une fin de contrat, dans ce qui est dû des imprévus et dans les rappels (les mêmes `GesteDEcheance` : signaler l'arrêt, sa reprise, la fin, dont la réponse rend le dépôt en `suite`, un `etapes::Action` ; noter faite une obligation hors DSN, sa charge `ChargeObligationDArret`, ses cases montrent ce qui en est dit et offrent ses lieux ; dire le jour où on l'a su, `ChargeConnaissance` ; les papiers de fin, `ChargeFinContratDocuments`), d'un dépôt (`GesteDuDepot` : sa charge `ChargeDeposer` ; le test, le réel une fois le test conforme, le réel sans test et son motif), des documents du mois (`GesteDesDocuments` : imprimer, envoyer par courriel ; leur case des salariés montre `ValeursDesDocuments`, tous, et offre `ChoixDesDocuments`, chaque message) et des contrats (`GesteDesContrats` : imprimer, envoyer à la signature ; leurs cases montrent `ValeursDesContrats`, ce qui part si l'on ne décoche rien ; poser le courriel qui manque au salarié d'un contrat à envoyer, `GesteDuCourriel`, sa charge `SalarieSansCourriel`), et de l'aperçu d'un avenant (`GesteDeLAvenant` : envoyer l'avenant, que complète la case que la route rend avec lui, des rangées qui ne s'ajoutent ni ne se retirent, l'avenant et sa date d'effet ; annule et remplace) | `GesteDeRoute` | `routes/src/imprevus.rs` |
+| questions d'identité qui attendent la compagnie, leur titre, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
+| ce que `importation-apercu` et `importer` rendent : ce que l'import lit ou a écrit (`import::reponse::Importation`), le geste « Reprendre » tant que rien n'est écrit, et les titres du compte rendu | `CompteRenduDeLImport` | `routes/src/import.rs` |
+| titres du compte rendu de l'import (ses parties, les colonnes de ses tableaux) | `MotsDuCompteRenduDeLImport` | `routes/src/import.rs` |
+| ce qui clôt le compte rendu de l'import, que la route tranche : ce qui est repris (titre, fichiers écrits, notes), qu'il n'y a rien à reprendre, ou, avant d'écrire, ce que le geste reprendrait et les personnes mises de côté | `ClotureDuCompteRendu` | `routes/src/import.rs` |
+| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases, ce qu'elles montrent d'abord et ce qu'elles offrent, ce que sa boîte dit, et la demande du mot de passe du logiciel quand il l'exige : la page le fait taper avant de partir ; un geste sans case qui dit des phrases ouvre sa boîte pour les dire, une confirmation ; un geste dont la route est avancée se range sous « Avancé » de son rang) : celui d'un imprévu, d'une question d'identité, de l'onglet Métiers (créer un métier, sa charge `AucunMetier` ; modifier un métier créé, `MetierDesigne` ; leurs cases montrent `ValeursDuMetier` et offrent `ChoixDuMetier`), de l'écran Signature & tampon (poser une image, ses cases montrent `ValeursDeLaPose` ; la retirer), de l'écran Mots de passe (sa charge `ServiceDuRang`, le service du rang ; poser un mot de passe d'organisme, ses cases montrent `CompteMontre`), de l'écran Modèles de contrat (`GesteDuModele` : sa charge `SurLeModele`, la nature, le modèle, sa partie, un paragraphe et son sens ; renommer un modèle, ses cases montrent `ValeursDuModele`), de l'Historique d'un mois (`GesteDuMois` : sa charge `ChargeMois` ; déposer ses documents dans le Drive), de l'import (`GesteDeLImport` : sa charge `SansCharge` ; importer, l'aperçu, reprendre ce que l'aperçu a lu ; enregistrer la nature à dire d'un salarié, `GesteDeLaNature`, sa charge `NatureDuSalarie`, ce qui désigne le salarié, ses cases montrent `ValeursDeLaNature` et offrent `ChoixDeLaNature`, les natures proposées, chacune ouvrant les cases de ce qu'elle demande ; ouvrir pour la compléter une fiche que l'import a créée, `GesteDeLaFiche`, sa charge celle de la route `fiche` (`FicheARendre`, la fiche telle qu'elle est enregistrée), porté par chaque fiche du compte rendu, `FicheDuCompteRendu`), de la tête de l'Historique (reprendre le journal, sa charge `ChargeReprise` ; clore une année ouverte, sa boîte fait cocher « Clore malgré tout », et rouvrir une année close, leur charge `ChargeCloture`), du dossier d'un salarié dans les Exports (`GesteDuDossier` : sa charge `DemandeDeDossier` ; l'aperçu, l'écrire, l'envoyer ; ses cases, saisies ensemble, montrent `ValeursDuDossier` et offrent `ChoixDuDossier`), de la régularisation CASC-SVP dans les Exports (noter une année régularisée, un geste par année : sa charge `ChargeAnnee`, ses cases montrent `ValeursDeLaCasc`), d'une échéance de l'échéancier et des rappels (`GesteDEcheance` : sa charge `ChargeDuGeste` ; « C'est fait » et « Pas encore fait », `ChargeFaite` ; choisir les spectacles qui continuent, `ChargeRevue`, ses cases montrent `ValeursDeLEcheance` et offrent `ChoixDeLEcheance`), d'une obligation due d'un arrêt ou d'une fin de contrat, dans ce qui est dû des imprévus et dans les rappels (les mêmes `GesteDEcheance` : signaler l'arrêt, sa reprise, la fin, dont la réponse rend le dépôt en `suite`, un `etapes::Action` ; noter faite une obligation hors DSN, sa charge `ChargeObligationDArret`, ses cases montrent ce qui en est dit et offrent ses lieux ; dire le jour où on l'a su, `ChargeConnaissance` ; les papiers de fin, `ChargeFinContratDocuments`), d'un dépôt (`GesteDuDepot` : sa charge `ChargeDeposer` ; le test, le réel une fois le test conforme, le réel sans test et son motif), des documents du mois (`GesteDesDocuments` : imprimer, envoyer par courriel ; leur case des salariés montre `ValeursDesDocuments`, tous, et offre `ChoixDesDocuments`, chaque message) et des contrats (`GesteDesContrats` : imprimer, envoyer à la signature ; leurs cases montrent `ValeursDesContrats`, ce qui part si l'on ne décoche rien ; poser le courriel qui manque au salarié d'un contrat à envoyer, `GesteDuCourriel`, sa charge `SalarieSansCourriel`), et de l'aperçu d'un avenant (`GesteDeLAvenant` : envoyer l'avenant, que complète la case que la route rend avec lui, des rangées qui ne s'ajoutent ni ne se retirent, l'avenant et sa date d'effet ; annule et remplace) | `GesteDeRoute` | `routes/src/imprevus.rs` |
+| rang d'un geste rendu dans son écran : le geste principal (« Importer », « Reprendre », « Envoyer le réel »), que le dessinateur seul dessine en bouton principal (`classeDuGeste`), ou un geste second, en lien ; aucune réponse ne porte un `principal` à côté ; le portent aussi le geste d'un clic (`etapes::Action`, principal dans un rappel), les gestes des pièces d'un engagement et le mot qui mène à la case qui manque à une fin (`VersLaCase`) | `RangDuGeste` | `routes/src/imprevus.rs` |
+| mot qui mène, dans la carte de son contrat, à la case qui manque à une fin de contrat pour la signaler (son libellé, son rang) | `VersLaCase` | `routes/src/imprevus.rs` |
 | ce que la DSN reprise déclare autrement que le logiciel : une valeur d'un contrat repris, ou un matricule | `ValeurDeclaree` | `import/src/reponse.rs` |
 | valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDuContrat` | `import/src/reponse.rs` |
 | matricule qu'une DSN qui arrive déclare autrement que la fiche (ce que la fiche porte, ce que la DSN déclare), ou matricule donné d'office qu'une fiche cède au salarié pour qui la DSN le déclare (et le suivant qu'elle prend) | `ValeurDuMatricule` | `import/src/reponse.rs` |
@@ -1357,6 +1366,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | ce qui diffère dans un écart de la comparaison (la base, un taux, un montant, une cotisation d'un seul côté) | `CeQuiDiffere` | `engagement/src/ecarts.rs` |
+| écart connu d'un ancien logiciel (un taux qu'il a appliqué autrement que le texte, sur une cotisation et une part, une période, avec la source du taux du texte et l'explication pour la compagnie : une ligne de `ecarts-connus-base.json`), ce qu'il constate (le taux d'une part, un `CeQuiDiffere`, appliqué et du texte ; ou une cotisation que le bulletin imprime à tort et que le moteur ne calcule pas, avec son effet sur ce que la paie a cotisé : une déduction), et l'écart connu constaté sur une paie importée (ce que la compagnie et le salarié ont cotisé de plus ou de moins que le texte ; il est aussi sa note dans `journal/ecarts-connus.json`, sous l'empreinte de sa paie) | `EcartConnu`, `Constat`, `EffetSurLaPaie`, `EcartConnuConstate` | `engagement/src/ecarts_connus.rs` |
+| taux appliqué par un ancien logiciel (la cotisation, la part du barème, le taux du texte et celui appliqué, que la pile d'une paie porte en mémoire pour refaire une paie importée qui retombe sur ses écarts connus) | `TauxApplique` | `droit/src/contexte.rs` |
+| revue des paies importées pas encore comparées (les rapports à noter au journal des incidents, les paies qui ne sont plus à comparer, les écarts connus constatés : ce que `import::ecarts::noter` écrit) | `Revue` | `import/src/ecarts.rs` |
+| registre des écarts d'import tel qu'il se lit (les paies comparées, les rapports notés, les écarts connus constatés : ce qu'il garde, ou illisible, un registre dont on ne sait rien, qui n'est pas un registre vide ; la carte d'une paie importée lit ainsi ses écarts connus) | `RegistreLu` | `import/src/ecarts.rs` |
+| paie importée qui ne se compare pas (la sorte de sa raison, tirée de l'endroit et de la classe du refus, jamais de sa phrase, et le refus qui la dit ; la sorte fait le genre de son incident, sans aucune valeur du cas) | `NonComparee`, `SorteDeNonComparaison` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
@@ -1364,6 +1378,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
 | barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
+| ce que le logiciel ne livre pas pour calculer une paie (le barème de l'année, ou la couche de la convention de la compagnie, absente ou relevée sans être confirmée ; `Contexte::de_quoi_calculer` le rend à part, un refus partout ailleurs) | `droit::contexte::RienDeLivre` | `droit/src/contexte.rs` |
 | tarifs de la convention lus, avec le fichier du socle et la clé qui les portent | `droit::contexte::TarifsLus` | `droit/src/contexte.rs` |
 | emploi (un métier par son code ; sa fiche vient du catalogue ou de la nomenclature, `FicheDuMetier`, dont `FicheDuCatalogue` et `EmploiFt` sont les formes des fichiers ; les sept champs qu'il fait déclarer, `ChampsDuMetier` ; un métier d'un déroulant, `MetierDuDeroulant`, une réponse) | `Metier` | `droit/src/emplois.rs` |
 | emploi d'un engagement (ce qu'un engagement dit de l'emploi qu'il fait déclarer, chaque champ seulement quand il est dit : le métier de sa carte résolu sous ce que la carte écrit à la main, ou ce qu'un bulletin importé imprime, `PaieVersee.emploi_imprime` ; et le libellé lisible de son métier, que l'engagement résout ; le reste vient de la fiche, `emploi_de` ; écrit à plat, ses sept champs) | `EmploiEngagement` | `droit/src/emplois.rs` |
@@ -1562,7 +1577,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **ligne de paie** : une ligne datée : cachet, heures, prime, frais ; une date de ligne, `DateDeLigne`.
 - **salarié** : une personne que la compagnie emploie ; `SalarieDuContrat`, la fiche figée d'un contrat.
 - **compagnie** : l'employeur et son installation.
-- **spectacle** : une production.
+- **spectacle** : une production. Il s'archive à la main (`activer-fiche`), ou se range de lui-même au geste
+  `ouverture` après 24 mois sans engagement ni réactivation (ticket #621, `fiches::ranger_les_spectacles_endormis`),
+  écrit comme à la main ; archivé ou non, c'est sa case `actif` (`ChampsSpectacle::archivee`).
 - **fiche** : entreprise, salarié ou spectacle, datée ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre
   notion, à renommer.
 - **fiche nommée** : une fiche et ce qui la désigne : l'entreprise (le fichier entier, sans clé), un salarié ou un
@@ -1649,8 +1666,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (`config/echeancier.json`), une déclaration du tableau de l'administrateur.
 - **échéance de l'année** : une échéance de calendrier : la `cle` d'une échéance d'`echeancier-base.json`, ou l'export
   comptable (une clé du logiciel). Une clé non vide, sans deux-points, écrite comme son texte ; celles que le moteur
-  lit, `CLOTURE`, `REVUE_SPECTACLES`, `AT_MP` (des clés de l'échéancier livré) et `EXPORT_COMPTA` (qui n'en est pas
-  une), tenues par un test de structure.
+  lit, `CLOTURE` (une clé de l'échéancier livré) et `EXPORT_COMPTA` (qui n'en est pas une), tenues par un test de
+  structure.
 - **genre d'une échéance** : ce qu'est une échéance des rappels : la DSN d'un mois, les DPAE d'un jour, une obligation
   due, une échéance de l'année. `Dsn`, `Dpae`, `Obligation`, `DeLAnnee(CleDAnnuelle)` ; écrit `dsn`, `dpae`,
   `obligation` ou la clé ; que porte une échéance, que les rappels rendent (`quoi`) et que lit le tableau de
@@ -2108,7 +2125,10 @@ cadre se lit alors de lui seul. Un montant (le taux d'une ligne, sa base, son mo
 le salaire du mois) a sa forme (`Forme::Montant`) : la page l'écrit comme ses montants (« 140,00 »), et il se tape
 avec une virgule ou un point. Une valeur
 faite de parties (le préavis : son type, puis ses dates quand le type en a) a sa forme (`Forme::Parties`, ses parties
-sous `parties` de la route etat) : le dessinateur la fait saisir partie par partie. Les jours d'une ligne partent tous
+sous `parties` de la route etat) : le dessinateur la fait saisir partie par partie. Un choix d'une case de la boîte
+d'un geste ouvre de même les cases du geste qui ne valent que pour lui (`ouvre` d'un `routes::ouverture::Choix` : la
+nature d'un contrat repris, `importation-nature`) : la boîte ne montre que les cases du choix fait, se redessine quand il
+change, et ce qu'elle cache ne part pas. Les jours d'une ligne partent tous
 dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et fait suivre la quantité d'une ligne
 qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
 cachets en entier) ; la page montre ce qu'elle reçoit. **Une fiche se rend comme une carte** : la route `fiche`
@@ -2796,7 +2816,18 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   pourquoi. Deux contrôles sans correction (le brut vaut la somme des lignes soumises ; le net se retrouve) : un écart
   avertit, le bulletin est repris avec ce qu'il imprime. Chaque bulletin est rapproché de la paie que sa DSN déclare
   (NIR, début, fin) et la complète (`importation/bulletins.rs`) ; sans DSN, il fait foi seul. Un bulletin d'un salarié
-  qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée.
+  qu'un engagement saisi paie le même mois n'est pas repris, sauf pour compléter une paie déclarée. **L'abattement** que
+  l'en-tête imprime (« Abattement : 21 », la déduction forfaitaire spécifique appliquée, un choix de la compagnie
+  salarié par salarié ; Léandre, 23/11/2026 : « on fait l'abattement qu'on veut ») se garde dans la paie importée
+  (`PaieVersee::abattement`, hors de l'empreinte de la paie, qui ne signe que sa graine : `GraineDUnePaie`). L'import n'écrit rien de la
+  déduction forfaitaire : une profession posée sans l'option de la compagnie ferait refuser chaque paie d'ici du salarié.
+  « Pour démarrer » la propose, sur la ligne du salarié dont la fiche ne la dit pas (`demarrage::abattements_a_dire`,
+  le bulletin repris le plus récent) : la profession dont le taux de l'année de ce bulletin est celui-là
+  (`DfsDuBareme::professions_au_taux`), quand elle est seule, que la compagnie valide ou corrige ; un taux que plusieurs
+  professions partagent (la catégorie 25 % : dramatique, lyrique, chorégraphique) ne choisit rien, et la phrase les
+  nomme. Une paie dont le bulletin imprime un abattement ne se compare qu'une fois la profession dite sur la fiche
+  (`SorteDeNonComparaison::CaseDeLaCompagnie`) : le calcul de la déduction lit plus que son taux (la profession, pour
+  les frais que l'annexe 2 de l'arrêté laisse hors de l'assiette, l'option de la compagnie et l'accord du salarié).
 - **L'aperçu n'écrit rien** ; `importer` écrit ce qu'il annonce (`importation/ecrite.rs`) : les fiches à créer, par le même
   chemin que l'écran (`routes::fiches::ecrire_fiche`) ; dans une fiche qui existe, seulement ce qui y est vide ou
   « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
@@ -2806,8 +2837,9 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier d'import, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
 - **Active ou archivée** (`import::derniere_piece` ; Léandre, 21/11/2026 : « tous les salariés qui viennent des années
-  précédentes […] ils doivent être mis comme archivés ») : une fiche de salarié ou de spectacle que l'import crée est
-  active si une pièce reprise la porte dans les douze derniers mois (`recente`, le seul seuil), archivée sinon. Pour un
+  précédentes […] ils doivent être mis comme archivés » ; 23/11/2026 : « 24 mois ») : une fiche de salarié ou de
+  spectacle que l'import crée est active si une pièce reprise la porte dans les vingt-quatre derniers mois (`recente`,
+  `RECENTE`, le seul seuil), archivée sinon. Pour un
   salarié, toutes ses pièces comptent, une fois lues (`DernierePiece`, `importation::bulletins::ranger_les_salaries`) :
   un bulletin, la période de sa paie ; une DSN, son mois, et la fin de chaque contrat quand elle la dit
   (S21.G00.62.001, à défaut .40.010 ; une fin à venir date encore) ; une AEM, son mois, et la fin du contrat quand elle
@@ -2929,12 +2961,55 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   l'ouverture de la compagnie pour les paies importées pas encore comparées (`journal/ecarts-import.json`), chaque paie
   importée se compare à ce que le moteur aurait calculé de la même saisie, avec les barèmes et la configuration à la
   date de la période. Rien ne change dans l'engagement importé. Les écarts partent chez l'éditeur comme un incident de
-  fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart), sans rien afficher ni demander :
+  fonctionnement (nature `logiciel`, `ecarts_import`, un incident par sorte d'écart ; son genre ne nomme que la cause,
+  des codes du logiciel : la cotisation, la grandeur et le logiciel d'un écart, la sorte de raison d'une paie non
+  comparée, `SorteDeNonComparaison`, pour que le serveur range une cause sous un seul ticket ; une sorte a un seul
+  comportement : la paie se compare de nouveau à chaque ouverture, sauf quand ce sont les pièces qui ne refont pas la
+  saisie, `SorteDeNonComparaison::se_recompare`, `Comparaison::a_refaire` ; ce qui distingue deux
+  rapports d'une cause est dans leur détail, signé, et le registre `journal/ecarts-import-notes.json` garde les
+  signatures notées ; une compagnie déjà posée, dont ce registre n'existe pas encore, renote une fois ses rapports sous
+  leur genre par cause, et c'est voulu : le filet les regroupe désormais par cause), sans rien afficher ni demander :
   ils ne désignent personne (ni nom, NIR, naissance, adresse, ni salaire ou montant d'une paie ; seulement la
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
-  caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
-  sans couche, une ligne sans rubrique). La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
+  caviardage. Une paie se compare une fois. Un des trois registres (les paies comparées, les rapports notés, les
+  écarts connus) qui ne se lit pas est un registre dont on ne sait rien, pas un registre vide (`import::ecarts::
+  RegistreLu`) : il ne ferme rien, ne se réécrit pas, un incident le dit une fois par ouverture ; illisible, le
+  premier ne dit d'aucune paie qu'elle est comparée, le second d'aucun rapport qu'il est noté, et la carte d'une paie
+  importée dit en mots que l'explication de ses écarts connus ne se lit pas. Les écarts connus se gardent dès qu'ils
+  sont constatés, la paie fût-elle comparée avec l'effectif seulement proposé ; ils se rangent par paie (son
+  empreinte), et chaque comparaison qui aboutit remplace ceux de sa paie (aucun, si elle n'en constate plus) : la carte
+  montre ceux de la dernière comparaison, et une comparaison qui échoue n'en écrit rien. **Les écarts connus des anciens logiciels** (`ecarts-connus-base.json`,
+  `engagement::ecarts_connus` ; Léandre, 23/11/2026 : « on ne relève plus les défauts déjà relevés ») : un taux qu'un
+  ancien logiciel a appliqué autrement que le texte, déjà relevé, avec la source du taux du texte. Une part qui retombe
+  exactement sur une ligne (le taux du bulletin est celui appliqué quand le nôtre est celui du texte ; son montant est le
+  nôtre, chaque ligne au taux du texte refaite au taux appliqué, à la tolérance de la comparaison) n'est pas un écart :
+  la paie se refait alors en mémoire, ces lignes-là au taux que l'ancien logiciel a appliqué, par le même chemin du
+  barème (`droit::contexte::TauxApplique`, `Contexte::avec_les_taux_appliques` : la compagnie que la pile lit les
+  porte, `entreprise_lue`, comme l'effectif proposé, et le dernier étage de `bareme_applique` les pose), et se compare tout de nouveau ; ce qui
+  en retombe (la prévoyance patronale dans l'assiette de la CSG, les nets, les totaux) ne sonne pas, ce qui s'écarte
+  encore sonne, et rien ne s'écrit. Une ligne peut aussi constater une cotisation que le bulletin imprime à tort et que
+  le moteur ne calcule pas (`ecarts_connus::Constat::AbsenteDuCalcul` : la réduction générale appliquée à un artiste en
+  2026, arrêté du 24/01/1975, art. 1, BOSS « Allègements généraux » § 220, Urssaf « Les règles de cumul » ; elle ne vaut
+  que pour la paie du statut qu'elle nomme), avec son effet, que la ligne dit et fonde (`EffetSurLaPaie` : une
+  déduction, la mention « Exonérations et allègements de cotisations » de l'arrêté du 25/02/2016, art. 4, compte de
+  moins la somme des lignes imprimées, signes compris (une régularisation de sens contraire s'en retranche), puis en
+  valeur absolue, quel que soit le signe de la somme) : ce n'est pas un écart, et le total des cotisations de sa part la compte,
+  sauf quand le bulletin l'imprime hors de son total. Elle ne fait pas d'incident, se note dans
+  `journal/ecarts-connus.json`, et la carte de la paie importée dit, en une phrase chiffrée, ce que la compagnie (ou le
+  salarié) a cotisé de moins ou de plus que le texte, pour quoi, et pourquoi (« Écart connu »,
+  `EcartConnuConstate::phrase`, `import::mois`). Ce qui n'y retombe pas exactement sonne comme avant. Ce qui ne se compare pas le dit (une période sans barème, une convention
+  sans couche, une ligne sans rubrique). Ce que le logiciel ne livre pas pour calculer une paie (le barème de son année,
+  la couche de sa convention : `droit::contexte::RienDeLivre`, que `Contexte::de_quoi_calculer` rend à part) ne l'inscrit pas au registre : la
+  version qui le livrera la comparera à l'ouverture. Avant 2026 (`engagement::ecarts::COMPAREE_TOUJOURS_DES`, une
+  décision de l'éditeur), ce manque ne fait aucun incident : la paie entre dans l'historique sans comparaison ; à partir
+  de 2026, il en fait un. Une case qui manque à la compagnie reste ce qu'elle est, quelle que soit l'année, sauf
+  l'effectif d'une année d'avant (Léandre, 23/11/2026, « B ») : tant que la compagnie ne l'a pas dit, la comparaison
+  prend celui que « Pour démarrer » propose d'après les paies reprises (`EffectifRepris`), en mémoire et sans rien
+  écrire (`Contexte::avec_les_effectifs_proposes` ; ce que la compagnie a écrit l'emporte), et le dit
+  (`Comparaison::effectif_propose`) ; une paie ainsi comparée n'entre pas au registre pour de bon : elle se compare de
+  nouveau tant que la compagnie n'a pas écrit l'effectif, et ses rapports déjà notés ne se notent pas deux fois (le
+  registre des rapports notés) ; une année qui ne se propose pas reste non comparée. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
   (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), son motif de recours (celui que sa DSN
   déclare, S21.G00.40.021 : `Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa
   carte, d'un mois que le contrat et la paie couvrent entier (`ecarts::contrat_au_mois`, `salaire_et_heures`). Le
@@ -3998,7 +4073,9 @@ Une compagnie fictive (livrée, ou ajoutée par le « + » puis rendue simulée 
 ouverture, et à chaque passage de la veille, son horloge (`routes/src/horloge.rs`, `rattraper`) joue ce qu'une compagnie
 bien tenue aurait fait **avant aujourd'hui**, à sa date, et seulement ce qui n'est pas fait. Hors d'une compagnie fictive
 elle ne touche à rien (`HorlogeFictive::verifier`, revérifiée avant chaque geste) ; ses dépôts passent par
-`depot_acte` contre le simulateur, ses courriels par une boîte muette.
+`depot_acte` contre le simulateur, ses courriels par une boîte muette. `courriels-simules/` montre au visiteur ce que
+SES gestes envoient : une fictive livrée (`scenario::livrer`) n'a pas ceux de son scénario, sauf ceux d'une demande
+encore attendue (signature, fiche), où la boîte qui répond retrouve le bouton ou le lien (`scenario::courriels_gardes`).
 
 **Ce qu'elle joue, et à quel instant** (heure de Paris) :
 
@@ -4023,7 +4100,7 @@ contrat sans terme se jouent comme les autres : `engagement::stock::mois_saisis`
 (`Moteur::etapes_restantes`, ce que l'écran montre) et dont aucun signalement n'est dû. La mémoire de l'horloge
 (`config/horloge.json`) le garde avec l'empreinte de sa saisie et de ses imprévus : il ne se relit plus tant qu'elles ne
 changent pas et que sa DSN n'est pas refusée. Une année est faite quand l'année d'avant est close et exportée. Une
-échéance annuelle n'est faite que par son fait (le taux AT/MP posé, la revue des spectacles) : l'horloge n'en coche aucune.
+échéance annuelle n'est faite que par son fait (l'exercice clos, ou la compagnie qui la coche) : l'horloge n'en coche aucune.
 
 **Ce qu'elle ne fait jamais** : saisir, ni corriger une saisie (un signalement que la saisie ne permet pas d'écrire, un
 engagement que le moteur refuse de valider, restent à faire, et le pas le dit) ; redéposer les octets qu'un organisme a
@@ -4138,10 +4215,11 @@ l'échéance de dépôt (`declarations/src/echeance_dsn.rs` : le 5 ou le 15 du m
 reporté au jour ouvré, à midi ; le rappel la rend dans `echeance_depot`). Puis, quand l'année d'avant n'est pas close et a des mois :
 la clôture (seulement si la DSN de décembre est au journal — sinon c'est son
 rappel qui parle), l'export compta (absent, ou plus vieux que la dernière
-saisie de l'année), et au premier trimestre la revue des spectacles : lesquels
-continuent ; les autres s'archivent (`revue_spectacles`, journal §167 : un
-numéro d'objet ne se périme pas). Ce qui fait taire un rappel, c'est le
-fait ; jamais un clic — ici, la revue enregistrée.
+saisie de l'année). Ce qui fait taire un rappel, c'est le fait ; jamais un
+clic. « À faire » ne se dit que de ce qui est dû : la DSN d'un mois qui n'est
+pas fini, une échéance de l'année avant son premier mois, une DPAE plus de huit
+jours avant l'embauche (R1221-4), une clôture avant la DSN de décembre sont
+« à venir » (`EtatEcheance::AVenir`, pastille grise).
 
 **La clôture** (`cloturer`) refuse une année déjà close, l'année en cours,
 et une année dont un mois avec des paies n'a pas de DSN réelle acceptée

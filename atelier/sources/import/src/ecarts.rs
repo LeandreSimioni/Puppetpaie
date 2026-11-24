@@ -5,9 +5,13 @@
 //! incidents et le registre des paies comparees (`journal/ecarts-import.json`, leurs empreintes).
 //!
 //! UN INCIDENT DE FONCTIONNEMENT COMME LES AUTRES : rien ne s'affiche ni ne se demande. Nature `logiciel`, `ou` =
-//! `ecarts_import`, un incident par sorte d'ecart (la cotisation, la grandeur, le logiciel d'origine) pour que le
-//! serveur les regroupe d'une compagnie a l'autre ; une paie qui ne se compare pas en fait un par raison, et les
-//! libelles de cotisation que la table de lecture ne rattache a rien, un par logiciel. Puis l'envoi ordinaire
+//! `ecarts_import`, un incident par sorte d'ecart (la cotisation, la grandeur, le logiciel d'origine) ; une paie qui ne
+//! se compare pas en fait un par raison, et les libelles de cotisation que la table de lecture ne rattache a rien, un
+//! par logiciel. LE GENRE NOMME LA CAUSE, JAMAIS LE CAS : des codes du logiciel (la cotisation, la grandeur et le
+//! logiciel d'un ecart ; la sorte de raison d'une paie non comparee, `engagement::ecarts::SorteDeNonComparaison` ; le
+//! logiciel des lignes non rattachees), sans aucune valeur de la compagnie, pour que le serveur range sous un meme ticket
+//! une cause, d'une compagnie a l'autre ; ce qui distingue deux rapports d'une cause est dans leur detail, signe
+//! (`noter`). Puis l'envoi ordinaire
 //! (`incidents::envoyer`), qui ne part que si l'envoi a l'editeur est actif sur ce poste.
 //!
 //! CE QUI PART NE DESIGNE PERSONNE : ni nom, prenom, NIR, naissance ou adresse, ni salaire, brut, net ou montant d'une
@@ -19,9 +23,11 @@
 //! Le texte passe quand meme par le caviardage (`caviardage`, les fiches de la compagnie connues), et un montant ecrit
 //! dans une raison (un refus du calcul) devient `<MONTANT>`.
 //!
-//! UNE PAIE SE COMPARE UNE FOIS, sauf quand le calcul l'a refusee (une configuration a completer) : elle se compare de
-//! nouveau a l'ouverture suivante. UN RAPPORT DEJA NOTE NE SE NOTE PAS DEUX FOIS (meme empreinte, meme resume, meme
-//! detail) : un import rejoue ne renvoie rien.
+//! UNE PAIE SE COMPARE UNE FOIS, sauf quand le calcul l'a refusee (une configuration a completer) ou que le logiciel ne
+//! livre pas de quoi la calculer : elle se compare de nouveau a l'ouverture suivante. Une paie d'avant
+//! `engagement::ecarts::COMPAREE_TOUJOURS_DES` que le logiciel ne sait pas calculer n'est pas une comparaison : ni
+//! incident, ni registre. UN RAPPORT DEJA NOTE NE SE NOTE PAS DEUX FOIS (meme resume, meme detail : sa
+//! signature, que garde `journal/ecarts-import-notes.json`) : un import rejoue ne renvoie rien.
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,7 +41,8 @@ use crate::caviardage::{self, Connus};
 use compagnie::incidents;
 use droit::contexte::Contexte;
 use droit::fiche::AnnexeConvention;
-use engagement::ecarts::{CeQuiDiffere, Comparaison, MesureDeLEcart, OrigineDuTauxAtmp, RegroupementDeComparaison};
+use engagement::ecarts::{CeQuiDiffere, Comparaison, MesureDeLEcart, OrigineDuTauxAtmp, RegroupementDeComparaison, SorteDeNonComparaison};
+use engagement::ecarts_connus::EcartConnuConstate;
 use engagement::importe::LogicielDUnBulletin;
 use socle::echec::R;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
@@ -68,6 +75,7 @@ pub enum Detail {
         cas: Vec<Cas>,
     },
     NonComparee {
+        sorte: SorteDeNonComparaison,
         raison: String,
         idcc: Option<droit::fiche::Idcc>,
         annexe: Option<AnnexeConvention>,
@@ -137,6 +145,9 @@ pub struct Cas {
     leur_taux: Option<socle::grandeurs::Taux>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
     ecart_relatif: Option<socle::grandeurs::Coefficient>,
+    /// Les annees dont le calcul a pris l'effectif que les paies reprises proposent (`Comparaison::effectif_propose`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    effectif_propose: Vec<socle::mois::Annee>,
 }
 
 fn montant() -> &'static Regex {
@@ -187,15 +198,133 @@ fn comparees(racine: &Path) -> R<BTreeSet<EmpreinteCourte>> {
     Ok(lues.into_iter().collect())
 }
 
-/// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, et les empreintes des
+/// Le registre des rapports deja notes au journal des incidents (leurs signatures : `noter`).
+fn registre_des_notes(racine: &Path) -> PathBuf {
+    racine.join(envois::journal::JOURNAL).join("ecarts-import-notes.json")
+}
+
+/// Les signatures des rapports deja notes ; aucune tant que leur registre n'existe pas.
+fn signatures_notees(racine: &Path) -> R<BTreeSet<EmpreinteCourte>> {
+    let p = registre_des_notes(racine);
+    if !socle::fichiers::existe(&p) {
+        return Ok(BTreeSet::new());
+    }
+    let lues: Vec<EmpreinteCourte> = socle::forme::lire_fichier(&p, "Le registre des écarts d'import notés ne se lit pas : le signaler au développeur.")?;
+    Ok(lues.into_iter().collect())
+}
+
+/// Le detail d'un rapport tel qu'il se note : sa signature (ce qui le distingue d'un autre rapport de la meme cause), et
+/// ce qu'il dit.
+#[derive(Serialize)]
+struct DetailSigne<'a> {
+    signature: EmpreinteCourte,
+    #[serde(flatten)]
+    detail: &'a Detail,
+}
+
+/// Le registre des ecarts connus constates sur les paies importees (`EcartConnuConstate`), ranges sous l'empreinte de
+/// leur paie (`engagement::ecarts::empreinte`) : ceux de la derniere comparaison de chaque paie, que la carte de la paie
+/// importee explique a la compagnie (`mois`).
+fn registre_des_connus(racine: &Path) -> PathBuf {
+    racine.join(envois::journal::JOURNAL).join("ecarts-connus.json")
+}
+
+/// LES ECARTS CONNUS CONSTATES SUR LES PAIES IMPORTEES (`EcartConnuConstate`), par paie, la seule lecture de leur
+/// registre ; aucun tant qu'il n'existe pas.
+pub fn ecarts_connus_notes(racine: &Path) -> R<BTreeMap<EmpreinteCourte, Vec<EcartConnuConstate>>> {
+    let p = registre_des_connus(racine);
+    if !socle::fichiers::existe(&p) {
+        return Ok(BTreeMap::new());
+    }
+    socle::forme::lire_fichier(&p, "Le registre des écarts connus des paies importées ne se lit pas : le signaler au développeur.")
+}
+
+/// UN REGISTRE DES ECARTS D'IMPORT TEL QU'IL SE LIT (`journal/ecarts-import.json`, `ecarts-import-notes.json`,
+/// `ecarts-connus.json`) : ce qu'il garde (`Lu` ; absent, il ne garde rien), ou un registre qui ne se lit pas et dont on
+/// ne sait rien (`Illisible`), qui n'est pas un registre vide : ce qui le lit le dit, ne le reecrit pas (ce qu'il garde
+/// se perdrait), et ne ferme rien d'autre (« Le logiciel est doux »).
+pub enum RegistreLu<T> {
+    Lu(T),
+    Illisible(socle::echec::Echec),
+}
+
+impl<T> RegistreLu<T> {
+    fn de(lu: R<T>) -> RegistreLu<T> {
+        match lu {
+            Ok(v) => RegistreLu::Lu(v),
+            Err(e) => RegistreLu::Illisible(e),
+        }
+    }
+
+    /// Le meme registre, illisible : un incident le dit a l'editeur (`noter_registre_illisible`, nomme par `registre`).
+    fn dit_a_l_editeur(self, racine: &Path, registre: &str) -> RegistreLu<T> {
+        if let RegistreLu::Illisible(e) = &self {
+            noter_registre_illisible(racine, registre, e);
+        }
+        self
+    }
+}
+
+/// LES ECARTS CONNUS CONSTATES SUR LES PAIES IMPORTEES, tels que leur registre se lit (`ecarts_connus_notes`), pour la
+/// carte d'une paie importee (`mois`) : l'incident d'un registre illisible se note une fois, a l'ouverture (`noter`).
+pub fn ecarts_connus_lus(racine: &Path) -> RegistreLu<BTreeMap<EmpreinteCourte, Vec<EcartConnuConstate>>> {
+    RegistreLu::de(ecarts_connus_notes(racine))
+}
+
+/// UN REGISTRE DES ECARTS D'IMPORT QUI NE SE LIT PAS (`RegistreLu::Illisible`) : l'editeur le sait par un incident de
+/// fonctionnement, dont le genre nomme le registre et rien de la compagnie. Un incident qui ne se note pas se dit sur la
+/// sortie d'erreur.
+fn noter_registre_illisible(racine: &Path, registre: &str, e: &socle::echec::Echec) {
+    #[derive(Serialize)]
+    struct Illisible<'a> {
+        registre: &'a str,
+        raison: &'a str,
+    }
+    let quoi = format!("registre illisible · {}", registre);
+    let resume = format!("Le registre {} ne se lit pas : {}", registre, e.phrase);
+    let note = incidents::Note { nature: incidents::LOGICIEL, resume: &resume, ou: OU, quoi: &quoi, detail: Illisible { registre, raison: &e.phrase }, trace: None, sans_contexte: true };
+    if let Err(x) = incidents::noter(racine, &note) {
+        eprintln!("Un registre des écarts d'import illisible ne se note pas au journal des incidents : {}", x.phrase);
+    }
+}
+
+/// Le nom du registre des ecarts connus, tel que l'incident qui le dit illisible le nomme.
+const REGISTRE_DES_CONNUS: &str = "journal/ecarts-connus.json";
+/// Le nom du registre des rapports notes, de meme.
+const REGISTRE_DES_NOTES: &str = "journal/ecarts-import-notes.json";
+/// Le nom du registre des paies comparees, de meme.
+const REGISTRE_DES_COMPAREES: &str = "journal/ecarts-import.json";
+
+/// LA REVUE DES PAIES IMPORTEES PAS ENCORE COMPAREES (`rapports`), ce que `noter` ecrit : les rapports a noter au journal
+/// des incidents, les empreintes des paies qui ne sont plus a comparer (le registre des paies comparees), et les ecarts
+/// connus de chaque paie qui s'est comparee (leur registre), aucun si elle n'en constate pas : ils remplacent les siens.
+pub struct Revue {
+    pub rapports: Vec<Rapport>,
+    pub faites: Vec<EmpreinteCourte>,
+    pub connus: BTreeMap<EmpreinteCourte, Vec<EcartConnuConstate>>,
+}
+
+/// Les rapports des paies importees de la compagnie que le registre `deja` ne dit pas deja comparees, les empreintes des
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
-/// refusee se compare de nouveau la fois suivante).
-pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<EmpreinteCourte>)> {
+/// refusee se compare de nouveau la fois suivante), et les ecarts connus constates. UN REGISTRE ILLISIBLE ne dit
+/// d'aucune paie qu'elle est deja comparee : toutes se comparent.
+fn rapports(ctx: &Contexte, deja: &RegistreLu<BTreeSet<EmpreinteCourte>>) -> R<Revue> {
     let importes = engagement::importe::tous(&ctx.racine)?;
-    let deja = comparees(&ctx.racine)?;
-    let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
-    let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
-    Ok((rapports_de(ctx, &comparaisons)?, faites))
+    let comparee = |e: &EmpreinteCourte| match deja {
+        RegistreLu::Lu(s) => s.contains(e),
+        RegistreLu::Illisible(_) => false,
+    };
+    let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &comparee)).collect();
+    // UNE PAIE COMPAREE AVEC CE QUI N'EST QUE PROPOSE (l'effectif d'une annee que la compagnie n'a pas dit :
+    // `Comparaison::effectif_propose`) n'entre pas au registre pour de bon : elle se compare de nouveau tant que la
+    // compagnie n'a pas ecrit sa valeur, et ses rapports deja notes ne se notent pas deux fois (leur registre).
+    let pour_de_bon = |c: &&Comparaison| !c.a_refaire() && c.effectif_propose.is_empty();
+    let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(pour_de_bon).map(|c| c.empreinte.clone()).collect();
+    // LES ECARTS CONNUS D'UNE PAIE sont ceux de sa derniere comparaison, la paie fut-elle comparee avec ce qui n'est que
+    // propose : leur registre est a part de celui des paies comparees, et la carte de la paie les montre. Une comparaison
+    // qui echoue n'en constate aucun (`comparer` les vide) : elle retire ceux qu'une comparaison d'avant avait notes.
+    let connus = comparaisons.iter().map(|c| (c.empreinte.clone(), c.connus.clone())).collect();
+    Ok(Revue { rapports: rapports_de(ctx, &comparaisons)?, faites, connus })
 }
 
 fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> {
@@ -217,17 +346,18 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         notre_taux: None,
         leur_taux: None,
         ecart_relatif: None,
+        effectif_propose: c.effectif_propose.clone(),
     };
 
     let mut ecarts: BTreeMap<(RegroupementDeComparaison, CeQuiDiffere, LogicielDuRapport), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
-    let mut refus: BTreeMap<String, Vec<Cas>> = BTreeMap::new();
+    let mut refus: BTreeMap<(SorteDeNonComparaison, String), Vec<Cas>> = BTreeMap::new();
     let mut seules: BTreeMap<LogicielDuRapport, Vec<String>> = BTreeMap::new();
     for c in comparaisons {
         match &c.ecarts {
-            Err(raison) => {
-                let raison = montant().replace_all(&propre.texte(&raison.phrase), "<MONTANT>").into_owned();
+            Err(non) => {
+                let raison = montant().replace_all(&propre.texte(&non.raison.phrase), "<MONTANT>").into_owned();
                 let x = Cas { logiciel: c.logiciel.clone(), taux_atmp: None, ..cas(c) };
-                refus.entry(raison).or_default().push(x);
+                refus.entry((non.sorte, raison)).or_default().push(x);
             }
             Ok(liste) => {
                 for e in liste {
@@ -257,15 +387,24 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     }
     let mut sortie = Vec::new();
     for ((cotisation, grandeur, logiciel), (libelles, cas)) in ecarts {
+        // CE QUE LE RESUME DIT SE LIT EN MOTS (il se montre a l'ecran, `incidents-lire`) : les libelles que le bulletin
+        // imprime, ou le nom du total ; la cle de la cotisation reste dans le genre et le detail.
+        let nommee = match (&cotisation, libelles.is_empty()) {
+            (RegroupementDeComparaison::Total(t), _) => t.dit().to_string(),
+            (_, false) => libelles.join(" ; "),
+            (RegroupementDeComparaison::Autres, true) => "les autres contributions dues par l'employeur".to_string(),
+            (RegroupementDeComparaison::Convention, true) => "les cotisations de la convention collective".to_string(),
+            (RegroupementDeComparaison::Apec, true) => "l'Apec".to_string(),
+            (RegroupementDeComparaison::Cotisation(_), true) => "une cotisation que le bulletin ne nomme pas".to_string(),
+        };
         let resume = format!(
-            "Écart de calcul à l'import : {} ({}), {}, bulletin {} ; {} paie(s).",
-            cotisation,
-            if libelles.is_empty() { "total du bulletin".to_string() } else { libelles.join(" ; ") },
+            "Écart de calcul à l'import : {}, {}, bulletin {} ; {} paie(s).",
+            nommee,
             grandeur.dite(),
             logiciel,
             cas.len()
         );
-        let genre = format!("{} · {} · {}", cotisation, grandeur.code(), logiciel);
+        let genre = genre_d_un_ecart(&cotisation, grandeur, &logiciel);
         let detail = Detail::Ecart {
             cotisation,
             libelles: propre.textes(&libelles),
@@ -276,21 +415,27 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
             organisation_patronale: propre.organisation(organisation.as_ref()),
             cas,
         };
-        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
+        sortie.push(Rapport { genre, resume: propre.texte(&resume), detail });
     }
-    for (raison, cas) in refus {
+    for ((sorte, raison), cas) in refus {
         let resume = format!("Paie importée non comparée : {} ; {} paie(s).", raison, cas.len());
-        let genre: String = format!("non comparée : {}", raison).chars().take(120).collect();
-        let detail = Detail::NonComparee { raison: propre.texte(&raison), idcc: idcc.clone(), annexe, cas };
-        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
+        let genre = format!("non comparée · {}", sorte.code());
+        let detail = Detail::NonComparee { sorte, raison: propre.texte(&raison), idcc: idcc.clone(), annexe, cas };
+        sortie.push(Rapport { genre, resume: propre.texte(&resume), detail });
     }
     for (logiciel, libelles) in seules {
         let resume = format!("Lignes de cotisation non comparées (bulletin {}) : la table de lecture ne les rattache à aucune cotisation : {}.", logiciel, libelles.join(" ; "));
         let genre = format!("cotisation non rattachée · {}", logiciel);
         let detail = Detail::NonRattachees { logiciel, libelles: propre.textes(&libelles), idcc: idcc.clone() };
-        sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
+        sortie.push(Rapport { genre, resume: propre.texte(&resume), detail });
     }
     Ok(sortie)
+}
+
+/// LE GENRE D'UN ECART, sa cause et rien de son cas : la cotisation (du bareme, ou le regroupement que le modele du
+/// bulletin imprime), ce qui differe, le logiciel reconnu (une cle de la table de lecture, ou « autre »).
+fn genre_d_un_ecart(cotisation: &RegroupementDeComparaison, grandeur: CeQuiDiffere, logiciel: &LogicielDuRapport) -> String {
+    format!("{} · {} · {}", cotisation, grandeur.code(), logiciel)
 }
 
 /// A la fin d'un import : les rapports notes, puis l'envoi ordinaire. Ne dit rien a l'ecran : rend le nombre de rapports
@@ -313,27 +458,62 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
     if engagement::importe::tous(racine)?.is_empty() {
         return Ok(0);
     }
-    let (rapports, faites) = rapports(ctx)?;
-    let deja = incidents::lire(racine, Some(incidents::LOGICIEL), false)?;
+    // LES TROIS REGISTRES, lus une fois : un registre illisible (`RegistreLu::Illisible`) ne ferme rien, ne se reecrit
+    // pas, et un incident le dit, une fois par ouverture.
+    let comparees = RegistreLu::de(comparees(racine)).dit_a_l_editeur(racine, REGISTRE_DES_COMPAREES);
+    let signees = RegistreLu::de(signatures_notees(racine)).dit_a_l_editeur(racine, REGISTRE_DES_NOTES);
+    let connus_notes = ecarts_connus_lus(racine).dit_a_l_editeur(racine, REGISTRE_DES_CONNUS);
+    let Revue { rapports, mut faites, connus } = rapports(ctx, &comparees)?;
+    // Les signatures des rapports notes ici. UN REGISTRE DES RAPPORTS NOTES ILLISIBLE ne dit d'aucun rapport qu'il est
+    // deja note : tous se notent (le journal des incidents compte ses doublons).
+    let mut neuves: BTreeSet<EmpreinteCourte> = BTreeSet::new();
     let mut notes = 0;
     for r in rapports {
-        // Ce qui reconnait un rapport deja note : le journal tronque les longs textes et ne relit pas un detail, le
-        // rapport se reconnait a la signature de ce qu'il dit en entier, que son genre porte (et donc son empreinte).
+        // CE QUI RECONNAIT UN RAPPORT DEJA NOTE : la signature de ce qu'il dit en entier (son resume et son detail), que
+        // le registre des rapports notes garde ; le genre ne dit que la cause, pour que le serveur regroupe sous un meme
+        // ticket tous les rapports d'une cause, d'une compagnie a l'autre.
         let signature = Empreinte::des_octets(format!("{}|{}", r.resume, socle::ecriture::json_en_ligne(&r.detail)).as_bytes()).courte();
-        let genre = format!("{} · {}", r.genre, signature);
-        let empreinte = incidents::empreinte(incidents::LOGICIEL, OU, &genre);
-        if deja.iter().any(|l| l.empreinte == empreinte) {
+        let deja_notee = match &signees {
+            RegistreLu::Lu(s) => s.contains(&signature),
+            RegistreLu::Illisible(_) => false,
+        };
+        if deja_notee || neuves.contains(&signature) {
             continue;
         }
-        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &genre, detail: &r.detail, trace: None, sans_contexte: true };
+        let detail = DetailSigne { signature: signature.clone(), detail: &r.detail };
+        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &r.resume, ou: OU, quoi: &r.genre, detail: &detail, trace: None, sans_contexte: true };
         match incidents::noter(racine, &note) {
-            Ok(Some(_)) => notes += 1,
+            Ok(Some(_)) => {
+                notes += 1;
+                neuves.insert(signature);
+            }
             Ok(None) => {}
             Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", e.phrase),
         }
     }
-    if !faites.is_empty() {
-        let mut toutes = comparees(racine)?;
+    if let (RegistreLu::Lu(mut s), false) = (signees, neuves.is_empty()) {
+        s.extend(neuves);
+        socle::ecriture::ecrire_json(&registre_des_notes(racine), &s, 0)?;
+    }
+    // Les ecarts connus de chaque paie comparee remplacent les siens, avant le registre qui dit leurs paies comparees :
+    // une paie comparee pour de bon ne se compare plus, ils se gardent. Leur registre illisible : les paies qui en ont
+    // constate restent a comparer.
+    match connus_notes {
+        RegistreLu::Lu(notes_connus) => {
+            let mut neuf = notes_connus.clone();
+            for (paie, siens) in connus {
+                match siens.is_empty() {
+                    true => neuf.remove(&paie),
+                    false => neuf.insert(paie, siens),
+                };
+            }
+            if neuf != notes_connus {
+                socle::ecriture::ecrire_json(&registre_des_connus(racine), &neuf, 2)?;
+            }
+        }
+        RegistreLu::Illisible(_) => faites.retain(|f| connus.get(f).is_none_or(|siens| siens.is_empty())),
+    }
+    if let (RegistreLu::Lu(mut toutes), false) = (comparees, faites.is_empty()) {
         toutes.extend(faites);
         socle::ecriture::ecrire_json(&registre(racine), &toutes, 0)?;
     }

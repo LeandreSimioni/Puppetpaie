@@ -499,7 +499,7 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
         .filter(|c| !matches!(&c.ecarts, Ok(e) if e.is_empty()) || !c.non_rattachees.is_empty() || c.taux_atmp != de_la_compagnie)
         .map(|c| match &c.ecarts {
             Ok(e) => format!("{} : {:?} ; non rattachees : {:?} ; taux AT/MP : {:?}", c.mois, e, c.non_rattachees, c.taux_atmp),
-            Err(m) => format!("{} : non comparee : {}", c.mois, m.phrase),
+            Err(m) => format!("{} : non comparee ({}) : {}", c.mois, m.sorte, m.raison.phrase),
         })
         .collect();
     assert!(ecartees.is_empty(), "{} paie(s) importee(s) s'ecartent du calcul :\n{}", ecartees.len(), ecartees.join("\n"));

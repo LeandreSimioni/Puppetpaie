@@ -7,8 +7,9 @@
 //!
 //! - `a_dire` : les salaries dont un contrat repris attend sa nature, avec les natures que ses pieces permettent
 //!   (`natures_permises` : celles d'un permanent pour un bulletin sans marque du spectacle, celles qui ecrivent ce que
-//!   la DSN declare) et, pour chacune, ce qu'il faut dire avec elle (`demande`) -- `importation-etat` les rend, la page
-//!   les demande apres l'import (Configuration, « Reprendre l'historique ») ;
+//!   la DSN declare) et, pour chacune, ce qu'il faut dire avec elle (`demande`, les cases que son choix ouvre dans le
+//!   geste qui la dit) -- `importation-etat` les rend, la page les demande apres l'import (Configuration, « Reprendre
+//!   l'historique ») ;
 //! - la route `importation-nature` `{"salarie", "nature", "debut"?, "fin"?, "numero"?}` : la nature dite s'ecrit sur
 //!   l'engagement de chacun de ses contrats a dire, et, payee au mois, la fiche Entreprise dit que la compagnie emploie
 //!   des permanents. Ce que la charge tait se prend sur la derniere DSN reprise du salarie (`DeclareParLaDsn`). Une
@@ -79,9 +80,8 @@ fn natures_permises(ctx: &Contexte, importes: &[Importe], salarie: &IdSalarie, d
     Ok(permises)
 }
 
-/// Ce qu'une nature demande d'un contrat qui court encore : une case de la charge d'`importation-nature`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+/// Ce qu'une nature demande d'un contrat qui court encore : une case de la charge d'`importation-nature` (`case_de`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Demande {
     Debut,
     Fin,
@@ -373,7 +373,8 @@ pub(crate) fn salaries_a_dire(importes: &[Importe]) -> R<Vec<IdSalarie>> {
 }
 
 /// Les salaries dont des contrats repris attendent leur nature : `[{salarie, nom, contrats, du, au, en_cours, suite,
-/// natures: [{cle, libelle, demande}]}]`, dans l'ordre des cles. `en_cours` : il est paye le dernier mois repris, son
+/// enregistrer}]`, dans l'ordre des cles ; les natures proposees sont les choix de la case `nature` d'`enregistrer`, et
+/// ce que chacune demande, les cases que son choix ouvre. `en_cours` : il est paye le dernier mois repris, son
 /// contrat court peut-etre encore (`suite` : le mois qui suit). CE QUE LA DERNIERE DSN REPRISE DECLARE DU CONTRAT NE SE
 /// DEMANDE PAS (`DeclareParLaDsn`) : la nature qu'elle declare est la seule proposee, et chaque nature ne demande que ce
 /// qu'elle ne declare pas ; `importation-nature` le prend sur elle.
@@ -398,14 +399,11 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
             Err(p) => (None, Some(p)),
         };
         let nature_declaree = declare.as_ref().and_then(|d| d.nature.as_ref()).map(|n| n.cle);
-        let natures = natures
+        // Chaque nature proposee, et ce qu'elle demande que la DSN ne declare pas.
+        let proposees: Vec<(&droit::natures::Nature, Vec<Demande>)> = natures
             .iter()
             .filter(|x| nature_declaree.is_none_or(|n| n == x.cle))
-            .map(|x| NatureProposee {
-                cle: x.cle,
-                libelle: x.libelle.clone(),
-                demande: demande(x, en_cours).into_iter().filter(|champ| !declare.as_ref().is_some_and(|d| d.declare(*champ))).collect(),
-            })
+            .map(|x| (x.as_ref(), demande(x, en_cours).into_iter().filter(|champ| !declare.as_ref().is_some_and(|d| d.declare(*champ))).collect()))
             .collect();
         // Le mois de la derniere DSN qui l'a declare, tel que l'ecran le lit (« de novembre 2026 »).
         let mois_au = c.payes.map(|p| p.fin().mois_civil());
@@ -430,12 +428,12 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
             )),
             _ => None,
         };
+        let numero_ou = match &au_dit {
+            Some(a) => format!("Sur la DSN {}.", a),
+            None => "Sur sa dernière DSN.".to_string(),
+        };
         out.push(ADire {
-            numero_placeholder: match &au_dit {
-                Some(a) => format!("sur la DSN {}", a),
-                None => "sur sa dernière DSN".to_string(),
-            },
-            choix_dit: format!("Nature du contrat de {}", nom),
+            enregistrer: geste_de_la_nature(&salarie, &proposees, numero_ou)?,
             salarie,
             nom,
             contrats: c.nombre,
@@ -443,7 +441,6 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
             au_dit,
             en_cours,
             suite: suite.filter(|_| en_cours).map(|m| m.to_string()),
-            natures,
             dit,
             en_cours_dit,
             dsn_non_relue,
@@ -465,9 +462,8 @@ pub(crate) struct ADire {
     /// Paye le dernier mois repris : son contrat court peut-etre encore (`suite` : le mois qui suit).
     pub(crate) en_cours: bool,
     pub(crate) suite: Option<String>,
-    pub(crate) natures: Vec<NatureProposee>,
-    pub(crate) numero_placeholder: String,
-    pub(crate) choix_dit: String,
+    /// Le geste qui dit sa nature (`geste_de_la_nature`) : les natures proposees sont les choix de sa case `nature`.
+    pub(crate) enregistrer: GesteDeLaNature,
     pub(crate) dit: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) en_cours_dit: Option<String>,
@@ -476,13 +472,75 @@ pub(crate) struct ADire {
     pub(crate) dsn_non_relue: Option<socle::texte::Phrase>,
 }
 
-/// Une nature de permanent qui peut se dire, et ce qu'elle demande d'un contrat qui court encore.
-#[derive(Debug, serde::Serialize)]
-pub(crate) struct NatureProposee {
-    pub(crate) cle: droit::natures::NatureDeContrat,
-    pub(crate) libelle: String,
-    pub(crate) demande: Vec<Demande>,
+/// Ce qui designe le salarie dont la ligne dit la nature, a la charge du geste qui l'enregistre.
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct NatureDuSalarie {
+    salarie: IdSalarie,
 }
+
+/// Ce que la case de la nature montre d'abord : la seule nature proposee ; plusieurs, aucune.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub(crate) struct ValeursDeLaNature {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nature: Option<droit::natures::NatureDeContrat>,
+}
+
+/// Ce que la case de la nature offre : les natures proposees, chacune son code, son libelle et les cases qu'elle ouvre.
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ChoixDeLaNature {
+    nature: Vec<crate::ouverture::Choix>,
+}
+
+/// LE GESTE QUI DIT LA NATURE D'UN SALARIE (`importation-nature`), comme tout geste : sa charge, ce qui designe le
+/// salarie ; sa boite, ses cases.
+pub(crate) type GesteDeLaNature = crate::imprevus::GesteDeRoute<NatureDuSalarie, ValeursDeLaNature, ChoixDeLaNature>;
+
+const ENREGISTRER: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Enregistrer");
+
+/// La case de la charge d'`importation-nature` ou se dit ce qu'une nature demande.
+fn case_de(champ: Demande) -> &'static str {
+    use crate::declaration::cle;
+    match champ {
+        Demande::Debut => cle!(ChargeNature, debut),
+        Demande::Fin => cle!(ChargeNature, fin),
+        Demande::Numero => cle!(ChargeNature, numero),
+        Demande::Salaire => cle!(ChargeNature, salaire),
+        Demande::Quotite => cle!(ChargeNature, quotite),
+    }
+}
+
+/// LE GESTE QUI DIT LA NATURE DU SALARIE `salarie`. Sa boite fait saisir la nature, a choisir parmi `natures` (choisie
+/// d'avance quand il n'y en a qu'une), puis, dans l'ordre de la charge, ce que l'une d'elles demande (`Demande`) : chaque
+/// nature ouvre les cases de ce qu'elle demande (`ouvre` de son choix), et la boite ne montre que celles de la nature
+/// choisie. Au-dessus des cases, ou se lisent le numero (`numero_ou`) et la duree du travail.
+fn geste_de_la_nature(salarie: &IdSalarie, natures: &[(&droit::natures::Nature, Vec<Demande>)], numero_ou: String) -> R<GesteDeLaNature> {
+    use crate::declaration::cle;
+    let demandees = |champ: Demande| natures.iter().any(|(_, d)| d.contains(&champ));
+    let mut cases = vec![cle!(ChargeNature, nature)];
+    let mut phrases = Vec::new();
+    for champ in [Demande::Debut, Demande::Fin, Demande::Numero, Demande::Salaire, Demande::Quotite] {
+        if !demandees(champ) {
+            continue;
+        }
+        cases.push(case_de(champ));
+        match champ {
+            Demande::Numero => phrases.push(format!("{} {}", crate::ouverture::aide("import_numero")?, numero_ou)),
+            Demande::Quotite => phrases.push(crate::ouverture::aide("import_quotite")?.to_string()),
+            Demande::Debut | Demande::Fin | Demande::Salaire => {}
+        }
+    }
+    let valeurs = ValeursDeLaNature {
+        nature: match natures {
+            [(n, _)] => Some(n.cle),
+            _ => None,
+        },
+    };
+    let choix = ChoixDeLaNature {
+        nature: natures.iter().map(|(x, d)| crate::ouverture::Choix::de(x.cle, &x.libelle).ouvrant(d.iter().copied().map(case_de).collect())).collect(),
+    };
+    Ok(GesteDeLaNature::avec_cases(crate::catalogue::Route::ImportationNature, NatureDuSalarie { salarie: salarie.clone() }, ENREGISTRER, cases, valeurs, choix).disant(phrases))
+}
+
 
 fn refus(m: impl Into<String>) -> socle::echec::Echec {
     erreur(Classe::Refuse, m)
@@ -499,11 +557,11 @@ charge! {
     pub(crate) struct ChargeNature {
         pub(crate) salarie: IdSalarie = legendes::SALARIE,
         pub(crate) nature: droit::natures::NatureDeContrat = dit("Nature du contrat", "une nature que ses pièces permettent (cdi, cdd, cddu_spectacle…)"),
-        pub(crate) debut: Option<Jour> = dit("Début", "le contrat court encore : son début").avancee(),
-        pub(crate) fin: Option<Jour> = dit("Terme", "son terme, s'il en a un").avancee(),
-        pub(crate) numero: Option<engagement::numeros::NumeroContrat> = dit("Numéro déclaré", "son numéro, tel que la DSN de l'ancien logiciel l'a déclaré").avancee(),
+        pub(crate) debut: Option<Jour> = dit("Début du contrat", "le contrat court encore : son début").avancee(),
+        pub(crate) fin: Option<Jour> = dit("Fin prévue", "son terme, s'il en a un").avancee(),
+        pub(crate) numero: Option<engagement::numeros::NumeroContrat> = dit("Numéro du contrat", "son numéro, tel que la DSN de l'ancien logiciel l'a déclaré").avancee(),
         /// Le salaire, un nombre, ou tel que la personne l'a tape (« 1 850,00 »), converti a la porte (`Charge::lire`).
-        pub(crate) salaire: Option<socle::grandeurs::MontantUnitaire> = dit("Salaire mensuel", "son salaire mensuel").avancee(),
+        pub(crate) salaire: Option<socle::grandeurs::MontantUnitaire> = dit("Salaire mensuel brut", "son salaire mensuel").avancee(),
         pub(crate) quotite: Option<socle::grandeurs::Heures> = dit("Heures par mois", "sa durée du travail, en heures par mois").avancee(),
     }
 }
@@ -556,6 +614,28 @@ fn dire_lu(ctx: &Contexte, charge: &ChargeNature, dsn: &DsnReprises) -> R<Nature
     let mut contrat = engagement::saisie::Carte::default();
     let mut debut_dit: Option<Jour> = None;
     let champs = demande(nat, en_cours);
+    // Ce que la charge dit et que cette nature ne demande pas (une case que son choix n'ouvre pas) ne s'ecrirait nulle
+    // part : la route le refuse en le nommant, plutot que de le taire.
+    let dit = |champ: Demande| match champ {
+        Demande::Debut => charge.debut.is_some(),
+        Demande::Fin => charge.fin.is_some(),
+        Demande::Numero => charge.numero.is_some(),
+        Demande::Salaire => charge.salaire.is_some(),
+        Demande::Quotite => charge.quotite.is_some(),
+    };
+    if let Some(champ) = [Demande::Debut, Demande::Fin, Demande::Numero, Demande::Salaire, Demande::Quotite].into_iter().find(|c| dit(*c) && !champs.contains(c)) {
+        return Err(refus(format!(
+            "{} ne se dit pas pour un {} : cette nature n'ouvre pas sa case. Rien n'a été écrit.",
+            match champ {
+                Demande::Debut => "La date de début",
+                Demande::Fin => "La date de fin",
+                Demande::Numero => "Le numéro du contrat",
+                Demande::Salaire => "Le salaire mensuel",
+                Demande::Quotite => "La durée du travail",
+            },
+            nat.libelle
+        )));
+    }
     // Ce que la charge tait, la DSN reprise le dit peut-etre : elle ne se lit que s'il en manque.
     let tait = |champ: &Demande| match champ {
         Demande::Debut => charge.debut.is_none(),

@@ -16,7 +16,6 @@
 {"route":"enregistrer-fiche","charge":{"nom":"spectacle","cle":"objet-256Z00921041","confirme":true,"changements":[{"case":"titre","valeur":"Les Fausses Confidences"}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"spectacle","cle":"objet-256Z00921042","confirme":true,"changements":[{"case":"titre","valeur":"Le Barbier de Séville"}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"spectacle","confirme":true,"changements":[{"case":"titre","valeur":"Les Plaideurs"},{"case":"numero_objet","valeur":"256Z00921043"}]}}
-{"route":"revue-spectacles","charge":{"annee":2026,"continuent":["objet-256Z00921041","objet-256Z00921042","les-plaideurs"]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"CHAMPMESLE","debut":"2022-03-01","rang":0}},"changements":[{"case":"nature","valeur":"cdi"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"CHAMPMESLE","debut":"2022-03-01","rang":0}},"changements":[{"case":"salarie","valeur":"CHAMPMESLE"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"CHAMPMESLE","debut":"2022-03-01","rang":0}},"changements":[{"case":"salaire_mensuel","valeur":3943.42}]}}
@@ -511,6 +510,5 @@
 {"heure":"2027-01-05T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-12"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-12","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-12"}}
-{"heure":"2027-01-12T10:00:00","route":"revue-spectacles","charge":{"annee":2027,"continuent":["objet-256Z00921041","objet-256Z00921042","les-plaideurs"]}}
 {"heure":"2027-01-29T10:00:00","route":"cloture","charge":{"annee":"2026"}}
 {"geste":"jour","jour":"2027-01-30"}

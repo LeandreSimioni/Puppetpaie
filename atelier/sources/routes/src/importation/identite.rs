@@ -150,7 +150,7 @@ pub(crate) fn questions(ctx: &Contexte, declares: &[SalarieDeclare], a_venir: &H
 /// une DSN reprise qui ne se relit plus, ou des reponses gardees qui ne se lisent pas, ne ferment pas l'etat de l'import ;
 /// aucune question ne se dit, et `non_relues` dit pourquoi. Une panne reste une panne.
 pub(crate) fn en_attente(ctx: &Contexte) -> R<IdentitesEnAttente> {
-    let aucune = IdentitesEnAttente { questions: Vec::new(), non_relues: None };
+    let aucune = IdentitesEnAttente { titre: LA_MEME_PERSONNE, questions: Vec::new(), non_relues: None };
     if sans_nir(ctx).is_empty() {
         return Ok(aucune);
     }
@@ -163,6 +163,7 @@ pub(crate) fn en_attente(ctx: &Contexte) -> R<IdentitesEnAttente> {
         Ok(l) => l,
         Err(e) if e.dit_un_manque() => {
             return Ok(IdentitesEnAttente {
+                titre: LA_MEME_PERSONNE,
                 questions: Vec::new(),
                 non_relues: Some(socle::phrase!("Les questions d'identité des DSN reprises ne se relisent pas : {}", e.phrase)),
             })
@@ -170,12 +171,17 @@ pub(crate) fn en_attente(ctx: &Contexte) -> R<IdentitesEnAttente> {
         Err(e) => return Err(e),
     };
     let q = questions(ctx, &lecture.salaries, &HashSet::new())?;
-    Ok(IdentitesEnAttente { questions: q.into_iter().map(IdentiteADire::de).collect(), non_relues: None })
+    Ok(IdentitesEnAttente { titre: LA_MEME_PERSONNE, questions: q.into_iter().map(IdentiteADire::de).collect(), non_relues: None })
 }
+
+/// Le titre des questions d'identite, dans l'etat de l'import comme dans son compte rendu.
+pub(crate) const LA_MEME_PERSONNE: &str = "Est-ce la même personne ?";
 
 /// Les questions d'identite qui attendent la compagnie, et ce qui n'a pas pu se relire pour les poser.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct IdentitesEnAttente {
+    /// Le titre des questions, quand il y en a.
+    titre: &'static str,
     questions: Vec<IdentiteADire>,
     #[serde(skip_serializing_if = "Option::is_none")]
     non_relues: Option<Phrase>,

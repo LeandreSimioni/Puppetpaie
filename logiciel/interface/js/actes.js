@@ -283,23 +283,20 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     ${noteFictive()}
     <div id="d-depots"></div>`);
 
-  // LES DÉPÔTS QUE LA ROUTE OUVRE (`principal`, `autres`, `sans_test`), et pourquoi le réel ne l'est pas
-  // (`reel_ferme`) : chacun un geste de `deposer`, qui demande lui-même le mot de passe du réel (`faireLeGeste`). Un
-  // geste qui ouvre une boîte (le renvoi, le réel sans test) l'ouvre par-dessus celle-ci.
+  // LES DÉPÔTS QUE LA ROUTE OUVRE (`gestes`, le principal par son rang ; `sans_test`), et pourquoi le réel ne l'est
+  // pas (`reel_ferme`) : chacun un geste de `deposer`, qui demande lui-même le mot de passe du réel (`faireLeGeste`).
+  // Un geste qui ouvre une boîte (le renvoi, le réel sans test) l'ouvre par-dessus celle-ci.
   const poserLesDepots = (x) => {
     const el = document.getElementById("d-depots");
     if (!el) return;
-    const gestes = [...x.autres, x.principal, ...(x.sans_test ? [x.sans_test] : [])];
-    const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
-      + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
+    const gestes = [...x.gestes, ...(x.sans_test ? [x.sans_test] : [])];
     el.innerHTML = `
       <div class="actions">
         <button class="secondaire" onclick="fermerBoite()">Annuler</button>
-        ${boutons((g) => x.autres.includes(g), "secondaire")}
-        ${boutons((g) => g === x.principal, "primaire")}
+        ${boutonsDesGestes(gestes, (g) => g !== x.sans_test)}
       </div>
       ${x.reel_ferme ? `<p class="discret">${echapper(x.reel_ferme)}</p>` : ""}
-      ${x.sans_test ? `<p class="discret">${boutons((g) => g === x.sans_test, "lien")}</p>` : ""}`;
+      ${x.sans_test ? `<p class="discret">${boutonsDesGestes(gestes, (g) => g === x.sans_test)}</p>` : ""}`;
     brancherLesGestes(el, gestes, enteteDuDepot, apresLeDepot);
   };
   // Le refus d'un réel déjà parti pour ce mois ouvre son avertissement ; le renvoi, voulu, repart avec `forcer` (le
@@ -371,9 +368,10 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
   // LE MOIS QU'ON VIENT DE FERMER PART EN TEST TOUT SEUL (l'action le dit, `tester`) :
   // « on produit la DSN de test complète et on attend le retour du test,
   // ensuite on propose d'envoyer la DSN réelle ». Un test n'engage rien.
-  // Seul un test part ainsi : le principal que la route rend, quand c'en est un (jamais le réel).
-  else if (testerDabord && a.principal.charge.mode === "test") {
-    await faireLeGeste(a.principal, enteteDuDepot, apresLeDepot);
+  // Seul un test part ainsi : le principal que la route rend (son rang), quand c'en est un (jamais le réel).
+  else if (testerDabord) {
+    const principal = a.gestes.find((g) => g.rang === "principal");
+    if (principal && principal.charge.mode === "test") await faireLeGeste(principal, enteteDuDepot, apresLeDepot);
   }
 }
 
@@ -459,13 +457,11 @@ async function boiteEnvoi(mois) {
     a = await api("envoi-apercu", { mois });
   } catch (e) { dire(e.message, "erreur"); return; }
 
-  // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont la case `salaries` (ses choix, ce
-  // qu'elle montre d'abord : `valeurs`) est la colonne cochée de la liste ; celui qui exige le mot de passe (`demande`)
-  // le fait taper. La liste n'a de messages que si un départ est ouvert.
-  const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
-  const coches = (cle) => a.principal.valeurs.salaries.includes(cle);
-  const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
-    + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
+  // LES DÉPARTS QUE LA ROUTE OUVRE (`gestes`, le principal par son rang), chacun un geste dont la case `salaries` (ses
+  // choix, ce qu'elle montre d'abord : `valeurs`) est la colonne cochée de la liste ; celui qui exige le mot de passe
+  // (`demande`) le fait taper. La liste n'a de messages que si un départ est ouvert.
+  const gestes = a.gestes;
+  const coches = (cle) => gestes.some((g) => g.valeurs.salaries.includes(cle));
   ouvrirBoite(`
     <h3>${echapper(a.titre)}</h3>
     ${moisEnGros(mois)}
@@ -493,8 +489,7 @@ async function boiteEnvoi(mois) {
     ${gestes.some((g) => g.demande) ? noteFictive() : ""}
     <div class="actions" id="e-departs">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      ${boutons((g) => g !== a.principal, "secondaire")}
-      ${boutons((g) => g === a.principal, "primaire")}
+      ${boutonsDesGestes(gestes)}
     </div>`);
 
   document.querySelectorAll("#e-departs [data-geste]").forEach((b) => {
@@ -542,12 +537,10 @@ async function boiteSignature(charge) {
   } catch (e) { dire(e.message, "erreur"); return; }
 
   const contrats = a.a_envoyer;
-  // LES DÉPARTS QUE LA ROUTE OUVRE (`principal`, `autres`), chacun un geste dont les cases (`contrats`, `avenants`) se
-  // remplissent de la part de chaque contrat coché (`part`) ; celui qui exige le mot de passe (`demande`) le fait taper.
-  // Un contrat est coché d'abord quand la route le dit (`coche`).
-  const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
-  const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
-    + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
+  // LES DÉPARTS QUE LA ROUTE OUVRE (`gestes`, le principal par son rang), chacun un geste dont les cases (`contrats`,
+  // `avenants`) se remplissent de la part de chaque contrat coché (`part`) ; celui qui exige le mot de passe (`demande`)
+  // le fait taper. Un contrat est coché d'abord quand la route le dit (`coche`).
+  const gestes = a.gestes;
   ouvrirBoite(`
     <h3>${echapper(a.titre)}</h3>
     ${moisEnGros(mois)}
@@ -570,8 +563,7 @@ async function boiteSignature(charge) {
     </div>`}
     <div class="actions" id="s-departs">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      ${boutons((g) => g !== a.principal, "secondaire")}
-      ${boutons((g) => g === a.principal, "primaire")}
+      ${boutonsDesGestes(gestes)}
     </div>`);
 
   // UN DÉPART : la charge du geste, chacune de ses cases remplie de la part des contrats cochés ; l'impression ouvre le
@@ -709,11 +701,10 @@ async function boiteAvenant(mois, salarie, debut, numero) {
   } catch (e) { dire(e.message, "erreur"); return; }
   const mods = a.modifications;
   const cite = (textes) => textes.map((x) => `<p class="citation">« ${echapper(x)} »</p>`).join("");
-  // LES ENVOIS QUE LA ROUTE OUVRE (`principal` : l'avenant ; `autres` : annule et remplace), chacun un geste qui exige le
-  // mot de passe ; ceux qui ont des cases (l'avenant et sa date d'effet) les prennent dans celles que la route rend.
-  const gestes = [...a.autres, ...(a.principal ? [a.principal] : [])];
-  const boutons = (garde, classe) => boutonsDesGestes(gestes, (g) => garde(g) && !g.demande, classe)
-    + boutonsDesGestes(gestes, (g) => garde(g) && !!g.demande, `${classe} envoi`);
+  // LES ENVOIS QUE LA ROUTE OUVRE (`gestes` : annule et remplace, et l'avenant, le principal par son rang), chacun un
+  // geste qui exige le mot de passe ; ceux qui ont des cases (l'avenant et sa date d'effet) les prennent dans celles que
+  // la route rend.
+  const gestes = a.gestes;
   ouvrirBoite(`
     <h3>${echapper(a.titre)}</h3>
     <p class="discret">${echapper(a.situation)}</p>
@@ -734,8 +725,7 @@ async function boiteAvenant(mois, salarie, debut, numero) {
     <p class="discret"><a href="#" id="av-pieces">Ce qui est parti</a></p>
     <div class="actions" id="av-envois">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
-      ${boutons((g) => g !== a.principal, "secondaire")}
-      ${boutons((g) => g === a.principal, "primaire")}
+      ${boutonsDesGestes(gestes)}
     </div>`);
   const cases = document.getElementById("av-cases");
   if (cases) brancherLesCases(cases);

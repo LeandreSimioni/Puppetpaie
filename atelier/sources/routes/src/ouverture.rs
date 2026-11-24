@@ -709,7 +709,7 @@ struct FicheAttendue {
 
 /// Les demandes de fiche parties et pas encore revenues, les plus anciennes d'abord, comme la page les lit.
 fn fiches_attendues(ctx: &Contexte) -> R<Vec<FicheAttendue>> {
-    Ok(crate::fiches::fiches_attendues(ctx)?
+    Ok(crate::fiches::fiches_attendues(&ctx.racine)?
         .into_iter()
         .map(|a| {
             let demande_dit = format!("demandée le {}", a.quand.jour().jj_mm_aaaa());
@@ -777,7 +777,7 @@ pub(crate) struct ConfigurationDite {
     configuration: ConfigurationDeLaPage,
 }
 
-/// La route `configuration` : celle aussi que rendent les routes qui l'ont changee (`rappels::revue`).
+/// La route `configuration`.
 pub(crate) fn configuration_dite(ctx: &Contexte) -> R<ConfigurationDite> {
     let configuration = configuration(ctx)?;
     Ok(ConfigurationDite { phrase: dire_la_configuration(&configuration), configuration })
@@ -1235,7 +1235,10 @@ pub(crate) struct Choix {
     dit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     groupe: Option<String>,
-    /// Les parties d'une valeur faite de parties que ce choix ouvre (`catalogue::Forme::Parties`).
+    /// Ce que ce choix ouvre : les parties d'une valeur faite de parties (`catalogue::Forme::Parties`), ou les cases du
+    /// geste dont il est une case qui ne valent que pour lui (la nature d'un contrat repris,
+    /// `importation::nature::geste_de_la_nature`). Une partie ou une case qu'aucun choix n'ouvre est toujours la ; une
+    /// qu'un choix ouvre n'est la que quand l'un de ceux qui l'ouvrent est choisi.
     #[serde(skip_serializing_if = "Option::is_none")]
     ouvre: Option<Vec<&'static str>>,
     /// Le document qui montre ce choix, qu'on ouvre a cote de lui (le bulletin d'exemple d'un modele du bulletin).
@@ -1295,6 +1298,11 @@ impl Choix {
     /// Le groupe ou il se range.
     pub(crate) fn sous(self, groupe: Option<String>) -> Choix {
         Choix { groupe, ..self }
+    }
+
+    /// Les cases de son geste qu'il ouvre, celles qui ne valent que pour lui (aucune : il n'en ouvre pas).
+    pub(crate) fn ouvrant(self, cases: Vec<&'static str>) -> Choix {
+        Choix { ouvre: Some(cases), ..self }
     }
 }
 

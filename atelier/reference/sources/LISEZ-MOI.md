@@ -31,6 +31,13 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `unicode/unicode-norme-18.0.0-chapitre-3-20261015.html` : transcription (extraits) `unicode/unicode-norme-18.0.0-chapitre-3-extraits-20261015.md`
 - `unicode/unicode-politique-de-stabilite-20261015.html` : transcription (extraits) `unicode/unicode-politique-de-stabilite-extraits-20261015.md`
 
+## Où le moteur s'en sert (les fichiers posés à la racine)
+
+- `kali-3090-titres-iv-v-sante-20260923.md` et `casc-svp-fiche-codification-dsn-202606.txt` : la CASC-SVP à 0,50 %
+  depuis le 01/01/2026 (CCN 3090, art. 4.22 A ; « Taux de 0,50 % à compter du 1er janvier 2026 »), convergence qui
+  fonde aussi la ligne `convention` de Coolpaie dans `logiciel/donnees/ecarts-connus-base.json` (le taux du texte d'un
+  écart connu, `engagement::ecarts_connus`, lu par la comparaison des paies importées, `engagement::ecarts::confronter`).
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).

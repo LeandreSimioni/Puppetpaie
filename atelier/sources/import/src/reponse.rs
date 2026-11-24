@@ -402,6 +402,14 @@ pub struct FicheImportee {
     pub lu_dans_dit: Option<String>,
     /// Creee, completee ou deja la, faite ; a creer ou a completer, a faire.
     pub pastille: Pastille,
+    /// CE QUI SE MONTRE DE SES ANOMALIES (`dire_ce_qui_se_montre`) : ses valeurs fausses, « <case> : <ce qui ne va
+    /// pas> » ; une case vide n'est pas une faute (ce qu'un acte exige, « Pour démarrer » le dit apres l'import).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fautes: Vec<String>,
+    /// ELLE S'OUVRE POUR SE COMPLETER : creee, nommee, avec une faute (`dire_ce_qui_se_montre`) ; le compte rendu de
+    /// l'import en rend le geste (`routes::import`).
+    #[serde(skip)]
+    pub a_completer: bool,
 }
 
 impl FicheImportee {
@@ -417,10 +425,28 @@ impl FicheImportee {
             lu_dans: None,
             lu_dans_dit: None,
             pastille: Pastille::de(EtatDEcran::AFaire, "à créer"),
+            fautes: Vec::new(),
+            a_completer: false,
         };
         f.ajouter_ecarts(ecarts);
         f.poser(donnees, anomalies);
         f
+    }
+
+    /// CE QUI SE MONTRE D'ELLE, une fois tout ce que l'import en dit pose : ses fautes (ses anomalies de gravite
+    /// `Erreur`, sous le libelle de leur case), et si elle s'ouvre pour se completer, creee et nommee, quand elle en a.
+    pub fn dire_ce_qui_se_montre(&mut self) {
+        self.fautes = self
+            .anomalies
+            .iter()
+            .filter(|a| a.gravite == declarations::champs::Gravite::Erreur)
+            // Une anomalie se dit sous le libelle de sa case ; celle d'une case sans libelle, sous son champ.
+            .map(|a| match &a.libelle {
+                Some(l) => format!("{} : {}", l, a.message),
+                None => format!("{} : {}", a.champ, a.message),
+            })
+            .collect();
+        self.a_completer = self.etat == EtatFiche::Creee && self.fiche.nommee().is_some() && !self.fautes.is_empty();
     }
 
     /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.
@@ -756,8 +782,12 @@ pub struct Importation {
     pub aem: usize,
     pub premier_mois: Option<Mois>,
     pub dernier_mois: Option<Mois>,
+    /// Les fiches, que le compte rendu de l'import rend chacune avec son geste (`routes::import`).
+    #[serde(skip)]
     pub entreprise: Option<FicheImportee>,
+    #[serde(skip)]
     pub salaries: Vec<FicheImportee>,
+    #[serde(skip)]
     pub spectacles: Vec<FicheImportee>,
     /// Les contrats attestes par les AEM deposees.
     pub contrats: usize,
@@ -768,8 +798,8 @@ pub struct Importation {
     pub avertissements: Vec<String>,
     pub rien_a_faire: bool,
     pub ecrit: bool,
-    /// Les fichiers que l'import a ecrits.
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    /// Les fichiers que l'import a ecrits, que le compte rendu de l'import rend dans ce qui le clot (`routes::import`).
+    #[serde(skip)]
     pub fichiers: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub copie: Option<Copie>,
@@ -786,7 +816,8 @@ pub struct Importation {
     pub parametrage: Vec<String>,
     pub declarations_dit: String,
     pub titre_dit: &'static str,
-    /// Ce que le bouton reprendrait.
+    /// Ce que le bouton reprendrait, que le compte rendu de l'import dit dans ce qui le clot (`routes::import`).
+    #[serde(skip)]
     pub reprendre: String,
     pub pastilles: ParSort<Pastille>,
     /// L'encart de ce qui est repris, ou qu'il n'y a rien a reprendre : fait.
@@ -796,7 +827,9 @@ pub struct Importation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub couleur: Option<&'static str>,
     /// Les individus que les DSN declarent et que l'import met de cote, le temps que la compagnie dise s'ils sont le
-    /// salarie d'une fiche sans NIR (`QuestionDIdentite`).
+    /// salarie d'une fiche sans NIR (`QuestionDIdentite`) ; leurs questions, le compte rendu de l'import les dit dans ce
+    /// qui le clot (`routes::import`).
+    #[serde(skip)]
     pub identites: Vec<QuestionDIdentite>,
     /// Ce qu'une DSN reprise par cet import declare d'un contrat repris ou d'un matricule autrement que la carte ou la
     /// fiche, et ce qu'il en advient (`ValeurDeLaDsn`).

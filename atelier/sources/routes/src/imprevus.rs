@@ -1303,12 +1303,14 @@ pub(crate) struct ResumeDeSuspension {
 /// (`choix`, `X`) et ce que la boite dit au-dessus (`phrases` ; un geste sans case qui en dit ouvre sa boite, pour les
 /// dire avant de partir : une confirmation). `demande` : le mot de passe du logiciel que le geste exige, que la page fait
 /// taper dans sa boite du mot de passe avant de partir (`js/boites.js`, `demanderMotDePasse`) ; aucune : il n'en exige
-/// pas. Le moteur ne rend que ceux qu'il ouvre.
+/// pas. `rang` : s'il est le geste principal de son ecran, que la page dessine en bouton principal (`RangDuGeste`). Le
+/// moteur ne rend que ceux qu'il ouvre.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct GesteDeRoute<C, V = ValeursDeDepart, X = ChoixDesCases> {
     route: Route,
     charge: C,
     libelle: &'static str,
+    rang: RangDuGeste,
     cases: Vec<&'static str>,
     valeurs: V,
     choix: X,
@@ -1325,7 +1327,12 @@ impl<C, V, X> GesteDeRoute<C, V, X> {
     /// Le geste dont la boite fait saisir les cases `cases` de la fiche de sa route, montrant d'abord `valeurs`, et
     /// offrant `choix` aux cases qui se choisissent.
     pub(crate) fn avec_cases(route: Route, charge: C, libelle: Affiche, cases: Vec<&'static str>, valeurs: V, choix: X) -> GesteDeRoute<C, V, X> {
-        GesteDeRoute { route, charge, libelle: libelle.texte(), cases, valeurs, choix, phrases: Vec::new(), demande: None, parties: BTreeMap::new() }
+        GesteDeRoute { route, charge, libelle: libelle.texte(), rang: RangDuGeste::Second, cases, valeurs, choix, phrases: Vec::new(), demande: None, parties: BTreeMap::new() }
+    }
+
+    /// Le meme geste, le geste principal de son ecran (« Importer »).
+    pub(crate) fn principal(self) -> GesteDeRoute<C, V, X> {
+        GesteDeRoute { rang: RangDuGeste::Principal, ..self }
     }
 
     /// Le meme geste, sa case `cle` faite des parties `parties`.
@@ -1342,6 +1349,22 @@ impl<C, V, X> GesteDeRoute<C, V, X> {
     /// Le meme geste, exigeant le mot de passe du logiciel que `demande` dit (aucune : il n'en exige pas).
     pub(crate) fn exigeant(self, demande: Option<compagnie::demande::DemandeDuMotDePasse>) -> GesteDeRoute<C, V, X> {
         GesteDeRoute { demande, ..self }
+    }
+}
+
+/// LE RANG D'UN GESTE DANS SON ECRAN : le geste principal (« Importer », « Reprendre »), que la page dessine en bouton
+/// principal, ou un geste second, en lien.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RangDuGeste {
+    Principal,
+    Second,
+}
+
+impl RangDuGeste {
+    /// Le geste principal si `principal`, un geste second sinon.
+    pub(crate) fn principal_si(principal: bool) -> RangDuGeste {
+        if principal { RangDuGeste::Principal } else { RangDuGeste::Second }
     }
 }
 
@@ -1405,6 +1428,7 @@ impl<C> GesteDeRoute<C> {
             route,
             charge,
             libelle: libelle.texte(),
+            rang: RangDuGeste::Second,
             cases: Vec::new(),
             valeurs: ValeursDeDepart::default(),
             choix: ChoixDesCases::default(),
@@ -2888,13 +2912,21 @@ pub(crate) struct FinLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     avant_signaler: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    la_dire: Option<&'static str>,
+    la_dire: Option<VersLaCase>,
     rang: String,
     gestes: Vec<GesteDEcheance>,
 }
 
-/// Ce que l'ecran dit d'une fin a qui il manque une case, et le mot qui mene a la case.
-const LA_DIRE: &str = "La dire";
+/// LE MOT QUI MENE A LA CASE QUI MANQUE A UNE FIN (`a_saisir`), dans la carte de son contrat : son libelle et son rang
+/// (`RangDuGeste`, la page en tire la forme du bouton).
+#[derive(Debug, Clone, Serialize)]
+struct VersLaCase {
+    libelle: &'static str,
+    rang: RangDuGeste,
+}
+
+/// Ce que l'ecran dit d'une fin a qui il manque une case, et le mot qui mene a la case, un geste second.
+const LA_DIRE: VersLaCase = VersLaCase { libelle: "La dire", rang: RangDuGeste::Second };
 
 /// LA FIN D'UNE CARTE VALIDEE QUI NE SE LIT PLUS (son contrat finit avant de commencer, son salarie n'est plus dit) : on
 /// ne sait ni si elle finit ce mois-ci, ni si elle se signale. Elle ne porte que ce qu'il faut corriger (`a_corriger`)

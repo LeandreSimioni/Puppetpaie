@@ -19,6 +19,7 @@ pub mod cumul;
 pub mod duree;
 pub mod departs;
 pub mod ecarts;
+pub mod ecarts_connus;
 pub mod effectif_repris;
 pub mod empreinte;
 pub mod heures_en_plus;
