@@ -111,11 +111,12 @@ pub struct Restauration {
     pub ecartes: usize,
     /// CE QUI NE DESCENDRA JAMAIS PAR CETTE VOIE, quelle que soit la tentative : deux dossiers ou deux fichiers de meme
     /// nom au meme endroit du Drive, un nom impossible ici, un document sans empreinte (un document Google), un fichier
-    /// deja la qu'elle garde tel quel. Un fichier par ligne.
+    /// que Google refuse de donner (`passagere` faux : un 403, un 404), un fichier deja la qu'elle garde tel quel. Un
+    /// fichier par ligne.
     pub incidents: Vec<String>,
-    /// CE QUI N'EST PAS DESCENDU POUR UNE RAISON PASSAGERE : Google qui n'a pas rendu le contenu (un 429, un 5xx, un delai,
-    /// la connexion), un contenu dont l'empreinte ne colle pas, une ecriture que le disque a refusee. Une nouvelle
-    /// restauration du meme dossier le retente. Un fichier par ligne.
+    /// CE QUI N'EST PAS DESCENDU POUR UNE RAISON PASSAGERE : Google qui n'a pas rendu le contenu cette fois
+    /// (`passagere` : la connexion, un delai, un 408, un 429, un 5xx), un contenu dont l'empreinte ne colle pas, une
+    /// ecriture que le disque a refusee. Une nouvelle restauration du meme dossier le retente. Un fichier par ligne.
     pub a_retenter: Vec<String>,
     /// Le reseau est tombe en route : arretee. La relancer reprend.
     pub hors_ligne: bool,
@@ -389,9 +390,14 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
                 resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
                 break;
             }
-            // Ce que Google n'a pas rendu cette fois (un 429, un 5xx, un delai, une autorisation a relier) : a retenter.
-            Err(e) => {
+            // Ce que Google n'a pas rendu cette fois (un delai, une reponse coupee, un 408, un 429, un 5xx) : a retenter.
+            Err(e) if passagere(&e) => {
                 resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
+                continue;
+            }
+            // Ce que Google refuse de donner (un 403, un 404, une autorisation retiree) : il ne descendra pas par cette voie.
+            Err(e) => {
+                resultat.incidents.push(format!("{} : {} Il reste dans le Drive.", relatif, e.echec.phrase));
                 continue;
             }
         };
@@ -447,6 +453,17 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
     };
     ecrire_index(cible, &index)?;
     Ok(resultat)
+}
+
+/// UNE ERREUR DE TELECHARGEMENT PASSAGERE, par ce que la reponse de Google en dit et jamais par sa phrase : aucune reponse
+/// (la connexion, un delai, une reponse coupee : pas de statut), un 408 (« Request Timeout »), un 429 (« Too Many
+/// Requests »), un 5xx (le serveur). Tout autre statut (un 4xx : refuse, introuvable, autorisation retiree) est une
+/// reponse definitive de Google : une nouvelle tentative rendrait la meme.
+fn passagere(e: &ErreurGoogle) -> bool {
+    match e.statut {
+        None => true,
+        Some(s) => matches!(s.as_u16(), 408 | 429 | 500..=599),
+    }
 }
 
 /// Ecrit `contenu` a `chemin` par un `.part` renomme, SANS JAMAIS REMPLACER : `Ok(false)` si `chemin` existe deja.

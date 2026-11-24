@@ -251,28 +251,38 @@ pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&socle::secret::
     // L'ouverture gardee de son coffre part avec elle ; qu'il y en ait eu une ou non ne change rien.
     poste.coffre(racine).oublier_ouverture_gardee()?;
     crate::gestes::administrateur::oublier(inst, racine)?;
-    effacer(racine)?;
+    effacer(racine, "La compagnie ne se supprime pas : fermez ce qui l'utilise, puis recommencez. Rien n'a été supprimé.")?;
     Ok(nom)
 }
 
-/// Le dossier `racine` renomme en dossier cache a cote, puis efface ; ce qui resiste reste cache, et s'efface au lancement
-/// suivant (`effacer_les_restes`). Echoue seulement si le renommage echoue : alors rien n'a bouge.
-fn effacer(racine: &Path) -> R<()> {
+/// Ce que l'effacement d'un dossier a fait (`effacer`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Efface {
+    /// Le dossier est parti.
+    Tout,
+    /// Une partie resiste : elle reste cachee (aucune liste ne la voit), et part au lancement suivant.
+    ResteCache,
+}
+
+/// LE DOSSIER `racine` renomme d'abord en dossier cache a cote (que `installation::est_cache` ecarte de toute liste : un
+/// effacement coupe ne laisse jamais une moitie de compagnie qui deviendrait une tuile), puis efface ; ce qui resiste
+/// reste cache, et s'efface au lancement suivant (`effacer_les_restes`). Echoue seulement si le renommage echoue (le refus
+/// dit `si_rien`) : alors rien n'a bouge. Le seul effacement d'un dossier de compagnie : la suppression d'une compagnie,
+/// l'abandon d'une reprise du Drive et la sortie d'une reprise neuve refusee (`accueil::drive`) le prennent.
+pub(crate) fn effacer(racine: &Path, si_rien: &str) -> R<Efface> {
     let parent = racine.parent().ok_or_else(|| refus("Un dossier sans parent ne se supprime pas."))?;
     let nom = racine.file_name().ok_or_else(|| refus("Un dossier sans nom ne se supprime pas."))?.to_string_lossy().into_owned();
     let instant = socle::temps::maintenant_ms();
     let cache = parent.join(format!("{}{}-{}", PREFIXE_RESTE, nom, instant));
-    std::fs::rename(racine, &cache).map_err(|e| {
-        refus_avec(
-            "La compagnie ne se supprime pas : fermez ce qui l'utilise, puis recommencez. Rien n'a été supprimé.",
-            Lieu { chemin: Some(racine.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
-        )
-    })?;
+    std::fs::rename(racine, &cache).map_err(|e| refus_avec(si_rien, Lieu { chemin: Some(racine.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() }))?;
     // Ce qui resiste reste cache, et part au lancement suivant (`effacer_les_restes`).
-    if let Err(e) = std::fs::remove_dir_all(&cache) {
-        eprintln!("{}", socle::echec::du_disque(&cache, &e).en_lignes());
+    match std::fs::remove_dir_all(&cache) {
+        Ok(()) => Ok(Efface::Tout),
+        Err(e) => {
+            eprintln!("{}", socle::echec::du_disque(&cache, &e).en_lignes());
+            Ok(Efface::ResteCache)
+        }
     }
-    Ok(())
 }
 
 /// Les restes d'une suppression, au lancement : ceux qui sont partis, et la phrase de chacun qui resiste encore (il reste
