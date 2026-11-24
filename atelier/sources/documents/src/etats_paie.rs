@@ -716,7 +716,7 @@ fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::etat
         ));
     }
     if d.coordonnees {
-        avert.push("Ce fichier porte le NIR, la date de naissance et l'adresse des salariés : il reste dans prive/, et ne s'envoie qu'à qui en a besoin.".to_string());
+        avert.push("Ce fichier porte le NIR, la date de naissance et l'adresse des salariés : il reste dans le dossier de la compagnie, et ne s'envoie qu'à qui en a besoin.".to_string());
     }
     let groupes = grouper(&lignes, regroupement)?;
     let refs: Vec<&LigneLivre> = lignes.iter().collect();

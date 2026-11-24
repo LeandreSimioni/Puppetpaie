@@ -898,7 +898,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
         n => socle::phrase!("{} : {} fichiers écrits.", titre, n),
     };
     let ecran = EcranDUnEtat {
-        personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans prive/, et ne s'envoie qu'à qui en a besoin."),
+        personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans le dossier de la compagnie, et ne s'envoie qu'à qui en a besoin."),
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),
         sources: "Sources",
         ouvrir: (casc.is_none() && !ecrits.is_empty()).then_some("Ouvrir le dossier"),
