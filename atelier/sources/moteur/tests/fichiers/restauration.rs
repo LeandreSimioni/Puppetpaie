@@ -45,6 +45,13 @@ fn sauvegarder_dans(r: &Path, d: &mut FauxDrive) {
     assert!(s.incidents.is_empty(), "{:?}", s.incidents);
 }
 
+/// La restauration dans `cible`, comme la reprise et `moteur restaurer` la font : le dossier cree, son verrou pris.
+fn restaurer_dans(cible: &Path, vu: &compagnie::sur_le_drive::DossierVu, d: &mut FauxDrive) -> Result<compagnie::restauration::Restauration, envois::drive::ErreurGoogle> {
+    std::fs::create_dir_all(cible).unwrap();
+    let verrou = compagnie::restauration::VerrouDeRestauration::prendre(cible).unwrap();
+    restaurer(cible, vu, RD, d, &verrou)
+}
+
 /// Le seul dossier du Drive, tel que la vue le montre : celui de la compagnie sauvegardee.
 fn le_seul(d: &mut FauxDrive) -> compagnie::sur_le_drive::DossierVu {
     let mut vus = compagnie::sur_le_drive::voir(d, RD).unwrap();
@@ -87,7 +94,7 @@ fn un_dossier_qui_porte_autre_chose_refuse_et_rien_n_est_ecrit_ni_efface() {
     let avant = tout(&cible);
     let vu = le_seul(&mut d);
     d.journal.clear();
-    let e = restaurer(&cible, &vu, RD, &mut d).unwrap_err().echec;
+    let e = restaurer_dans(&cible, &vu, &mut d).unwrap_err().echec;
     assert_eq!(e.classe, Some(socle::echec::Classe::DossierNonVide));
     // La phrase dit le cas en mots ; les fichiers vont a part.
     assert!(e.phrase.contains("2 fichier(s)") && e.phrase.contains("Rien n'a été redescendu, rien n'a été effacé"), "{}", e.phrase);
@@ -115,7 +122,7 @@ fn une_empreinte_qui_ne_colle_pas_n_ecrit_rien_de_ce_fichier() {
     d.fichier_mut("PuppetPaie/source/sauvegarde/paies/2026-06/dupont.json").md5 = Some(envois::drive::EmpreinteMd5::lire(&"0".repeat(32)).unwrap());
     let cible = base.join("cible");
     let vu = le_seul(&mut d);
-    let r = restaurer(&cible, &vu, RD, &mut d).unwrap();
+    let r = restaurer_dans(&cible, &vu, &mut d).unwrap();
     // Un contenu abime en route se retente : la restauration n'est pas complete, rien n'est perdu pour elle.
     assert!(r.incidents.is_empty(), "{:?}", r.incidents);
     assert_eq!(r.a_retenter.len(), 1, "{:?}", r.a_retenter);

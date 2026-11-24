@@ -124,6 +124,11 @@ fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>, r
     if raisons.iter().any(|r| r == "storageQuotaExceeded") {
         return Some(RaisonDeGoogle::DrivePlein);
     }
+    // Ce que Google dit d'un fichier qu'il ne donne pas (`google-drive-api-gerer-les-erreurs-20261020.txt`,
+    // « fileNotDownloadable », « appNotAuthorizedToFile ») : avant « insufficient », qui ne les nomme pas.
+    if raisons.iter().any(|r| r == "fileNotDownloadable" || r == "appNotAuthorizedToFile") {
+        return Some(RaisonDeGoogle::FichierRefuse);
+    }
     if statut == ureq::http::StatusCode::FORBIDDEN && corps.to_lowercase().contains("insufficient") {
         return Some(RaisonDeGoogle::PermissionManquante);
     }

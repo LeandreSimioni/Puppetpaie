@@ -102,7 +102,17 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     if !json {
         dire!("Restauration de Drive/{}/{} vers {}", racine_drive, depuis.nom, cible.display());
     }
-    let r = match restauration::restaurer(&cible, &depuis, racine_drive, &mut client) {
+    // Le dossier ou ecrire, que la commande nomme : il se cree ici, une fois, avant le verrou ; `restaurer` ne le cree
+    // jamais (un dossier disparu en route ne revient pas).
+    if let Err(e) = std::fs::create_dir_all(&cible) {
+        let e = socle::echec::du_disque(&cible, &e);
+        return refus(e.classe, &e.en_lignes());
+    }
+    let verrou = match restauration::VerrouDeRestauration::prendre(&cible) {
+        Ok(v) => v,
+        Err(e) => return refus(e.classe, &e.en_lignes()),
+    };
+    let r = match restauration::restaurer(&cible, &depuis, racine_drive, &mut client, &verrou) {
         Ok(r) => r,
         Err(e) if e.echec.classe == Some(socle::echec::Classe::DossierNonVide) => {
             return refus(e.echec.classe, &format!("{}\nRestaurer dans un dossier vide, ou mettre ces fichiers de cote, puis relancer.", e.echec.en_lignes()));

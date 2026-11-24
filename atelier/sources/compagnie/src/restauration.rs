@@ -41,7 +41,7 @@ use std::path::{Path, PathBuf};
 
 
 use crate::coffre::{Coffre, SERVICES};
-use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
+use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive, SorteDErreur};
 use crate::sauvegarde::{ecarte, ecrire_index, inventaire, DossierDuDrive, Index, SAUVEGARDE};
 use crate::sur_le_drive::{DossierVu, GenreDuDossier};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -111,22 +111,39 @@ pub struct Restauration {
     pub ecartes: usize,
     /// CE QUI NE DESCENDRA JAMAIS PAR CETTE VOIE, quelle que soit la tentative : deux dossiers ou deux fichiers de meme
     /// nom au meme endroit du Drive, un nom impossible ici, un document sans empreinte (un document Google), un fichier
-    /// que Google refuse de donner (`passagere` faux : un 403, un 404), un fichier deja la qu'elle garde tel quel. Un
-    /// fichier par ligne.
+    /// dont Google dit lui-meme qu'il ne se donne pas (`envois::drive::SorteDErreur::DuFichier`), un fichier deja la
+    /// qu'elle garde tel quel. Un fichier par ligne.
     pub incidents: Vec<String>,
-    /// CE QUI N'EST PAS DESCENDU POUR UNE RAISON PASSAGERE : Google qui n'a pas rendu le contenu cette fois
-    /// (`passagere` : la connexion, un delai, un 408, un 429, un 5xx), un contenu dont l'empreinte ne colle pas, une
-    /// ecriture que le disque a refusee. Une nouvelle restauration du meme dossier le retente. Un fichier par ligne.
+    /// CE QUI N'EST PAS DESCENDU ET SE RETENTE : toute autre erreur de Google sur un fichier (passagere, sans reponse, ou
+    /// qui ne dit rien du fichier), un contenu dont l'empreinte ne colle pas, une ecriture que le disque a refusee. Une
+    /// nouvelle restauration du meme dossier le retente. Un fichier par ligne.
     pub a_retenter: Vec<String>,
-    /// Le reseau est tombe en route : arretee. La relancer reprend.
-    pub hors_ligne: bool,
+    /// Arretee en route (`ArretDeLaRestauration`), et pourquoi ; aucune : elle a tente chaque fichier.
+    pub arret: Option<ArretDeLaRestauration>,
+}
+
+/// POURQUOI UNE RESTAURATION S'EST ARRETEE EN ROUTE, sans tenter les fichiers suivants : chaque cas laisse ce qui est
+/// descendu, et une nouvelle restauration du meme dossier reprend ou elle en est.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArretDeLaRestauration {
+    /// Le reseau est tombe (`ErreurGoogle::injoignable`).
+    HorsLigne,
+    /// L'autorisation du compte Google ne vaut plus (`SorteDErreur::Autorisation`) : relier le Drive, puis reprendre.
+    AutorisationPerdue,
+    /// Le verrou de cette restauration n'est plus le sien (`VerrouDeRestauration`) : un autre geste a pris la main.
+    VerrouPerdu,
 }
 
 impl Restauration {
     pub fn resume(&self) -> String {
         let mut t = format!("Restauration : {} fichier(s) redescendu(s), {}, {} deja la.", self.redescendus.len(), self.octets, self.deja_la);
-        if self.hors_ligne {
-            t.push_str(" Hors connexion en route : relancer la restauration reprend ou elle en est.");
+        if let Some(a) = self.arret {
+            t.push_str(match a {
+                ArretDeLaRestauration::HorsLigne => " Hors connexion en route : relancer la restauration reprend ou elle en est.",
+                ArretDeLaRestauration::AutorisationPerdue => " L'autorisation Google ne vaut plus : relier le Drive, puis relancer la restauration.",
+                ArretDeLaRestauration::VerrouPerdu => " Un autre geste a pris la main sur ce dossier : arretee.",
+            });
         } else if !self.a_retenter.is_empty() {
             t.push_str(&format!(" {} fichier(s) a retenter : relancer la restauration les retente.", self.a_retenter.len()));
         }
@@ -137,9 +154,9 @@ impl Restauration {
     }
 
     /// LA RESTAURATION A-T-ELLE TOUT REDESCENDU ? Chaque fichier est la, sauf ceux qui ne descendront jamais par cette
-    /// voie (`incidents`) : ni connexion tombee, ni fichier a retenter.
+    /// voie (`incidents`) : aucun arret en route, aucun fichier a retenter.
     pub fn complete(&self) -> bool {
-        !self.hors_ligne && self.a_retenter.is_empty()
+        self.arret.is_none() && self.a_retenter.is_empty()
     }
 
     /// D'OU VIENT LE COFFRE `coffre` de la compagnie restauree : descendu du Drive dans cette restauration meme, ou dans
@@ -166,7 +183,7 @@ impl Restauration {
             ecartes: self.ecartes,
             incidents: self.incidents.clone(),
             a_retenter: self.a_retenter.clone(),
-            hors_ligne: self.hors_ligne,
+            arret: self.arret,
             a_faire,
         }
     }
@@ -195,7 +212,8 @@ pub struct RestaurationDite {
     pub ecartes: usize,
     pub incidents: Vec<String>,
     pub a_retenter: Vec<String>,
-    pub hors_ligne: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arret: Option<ArretDeLaRestauration>,
     pub a_faire: Vec<String>,
 }
 
@@ -247,13 +265,48 @@ fn le_dossier(client: &mut dyn Drive, parent: &IdDrive, nom: &str, chemin: &str)
     }
 }
 
-/// `restaurer` : rend `cible` tel que le dossier `depuis` (de la vue du Drive, sous la racine `racine_drive`) le porte.
-/// Rend le compte rendu, n'imprime rien.
+/// UNE RESTAURATION A LA FOIS PAR DOSSIER, d'un processus a l'autre (la fenetre sert ses routes en parallele, et `moteur
+/// route` ou `moteur restaurer` sont d'autres processus) : un fichier cache a cote du dossier cible
+/// (`.restauration-<dossier>.verrou`, que `installation::est_cache` ecarte ; `socle::verrou`), pris avant de restaurer
+/// ou d'abandonner une reprise, rendu a la fin du geste. `restaurer` l'exige et le rafraichit a chaque fichier : une
+/// longue restauration ne passe pas pour abandonnee, et celle qui l'a perdu s'arrete.
+pub struct VerrouDeRestauration {
+    cible: PathBuf,
+    verrou: socle::verrou::Verrou,
+}
+
+impl VerrouDeRestauration {
+    /// Le verrou du dossier `cible` ; tenu par un autre geste, un refus qui le dit, et rien n'est fait.
+    pub fn prendre(cible: &Path) -> socle::echec::R<VerrouDeRestauration> {
+        let nom = NomDeFichier::du(cible)?;
+        let p = cible.with_file_name(format!(".restauration-{}.verrou", nom));
+        let qui = socle::verrou::marque("restauration du Drive", socle::processus::numero(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
+        match socle::verrou::Verrou::prendre(&p, &qui, socle::verrou::DELAI_VERROU).map_err(|m| m.reclasser(socle::echec::Classe::Disque))? {
+            Ok(verrou) => Ok(VerrouDeRestauration { cible: cible.to_path_buf(), verrou }),
+            Err(_) => Err(socle::echec::erreur(socle::echec::Classe::Refuse, "Un autre geste tient déjà ce dossier sur ce poste (une reprise, un abandon) : réessayer quand il aura fini. Rien n'est fait.")),
+        }
+    }
+
+    /// Le verrou est-il encore le sien ? La date de son fichier repart de maintenant (`Verrou::rafraichir`).
+    fn rafraichir(&self) -> socle::echec::R<bool> {
+        Ok(self.verrou.rafraichir()?.is_ok())
+    }
+}
+
+/// `restaurer` : rend `cible` tel que le dossier `depuis` (de la vue du Drive, sous la racine `racine_drive`) le porte,
+/// sous son verrou (`VerrouDeRestauration`, pris sur ce meme dossier). Rend le compte rendu, n'imprime rien.
 ///
 /// Un `Err` est un refus : rien n'a ete ecrit (sauvegarde introuvable ou ambigue, dossier qui n'est pas une sauvegarde,
-/// reseau tombe pendant l'inventaire, dossier local qui n'est pas vide). Un incident en route (un fichier) n'arrete pas
+/// reseau tombe pendant l'inventaire, dossier local qui n'est pas vide ou qui n'existe pas), ou le dossier a disparu en
+/// route (rien de plus n'est ecrit : `restaurer` ne cree jamais `cible`). Un incident en route (un fichier) n'arrete pas
 /// les autres et laisse l'index juste.
-pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &mut dyn Drive) -> Result<Restauration, ErreurGoogle> {
+pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &mut dyn Drive, verrou: &VerrouDeRestauration) -> Result<Restauration, ErreurGoogle> {
+    if verrou.cible != cible {
+        return Err(ErreurGoogle::from(socle::echec::erreur(socle::echec::Classe::DefautDuLogiciel, "Défaut du logiciel : la restauration tient le verrou d'un autre dossier. Rien n'est fait.")));
+    }
+    if !cible.is_dir() {
+        return Err(ErreurGoogle::from(socle::echec::erreur(socle::echec::Classe::Refuse, "Le dossier où la compagnie doit revenir n'existe pas (abandonné, ou supprimé) : rien n'est redescendu.")));
+    }
     let compte = client.compte();
     let mut resultat = Restauration {
         cible: cible.to_path_buf(),
@@ -265,7 +318,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         ecartes: 0,
         incidents: Vec::new(),
         a_retenter: Vec::new(),
-        hors_ligne: false,
+        arret: None,
     };
 
     // 1. L'inventaire du Drive, sans rien y creer : l'arbre du dossier choisi.
@@ -378,6 +431,11 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
             resultat.incidents.push(format!("{} : le Drive n'en donne pas d'empreinte (un document Google ?), il n'est pas redescendu.", relatif));
             continue;
         };
+        // Le verrou se rafraichit a chaque fichier ; perdu (un autre geste a la main), la restauration s'arrete.
+        if !verrou.rafraichir()? {
+            resultat.arret = Some(ArretDeLaRestauration::VerrouPerdu);
+            break;
+        }
         let chemin = relatif.texte().split('/').fold(cible.to_path_buf(), |p, s| p.join(s));
         if socle::fichiers::present(&chemin)? {
             resultat.incidents.push(format!("{} : il existe deja ici, il est garde tel quel.", relatif));
@@ -386,21 +444,33 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         let contenu = match client.telecharger(&d.id) {
             Ok(c) => c,
             Err(e) if e.injoignable => {
-                resultat.hors_ligne = true;
+                resultat.arret = Some(ArretDeLaRestauration::HorsLigne);
                 resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
                 break;
             }
-            // Ce que Google n'a pas rendu cette fois (un delai, une reponse coupee, un 408, un 429, un 5xx) : a retenter.
-            Err(e) if passagere(&e) => {
-                resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
-                continue;
-            }
-            // Ce que Google refuse de donner (un 403, un 404, une autorisation retiree) : il ne descendra pas par cette voie.
-            Err(e) => {
-                resultat.incidents.push(format!("{} : {} Il reste dans le Drive.", relatif, e.echec.phrase));
-                continue;
-            }
+            // LE SEUL CLASSEMENT DES ERREURS DE GOOGLE (`envois::drive::sorte`) : ce que Google dit du fichier lui-meme ne
+            // descendra pas par cette voie ; une autorisation qui ne vaut plus arrete tout (relier le Drive) ; le reste se
+            // retente.
+            Err(e) => match envois::drive::sorte(&e) {
+                SorteDErreur::DuFichier => {
+                    resultat.incidents.push(format!("{} : {} Il reste dans le Drive.", relatif, e.echec.phrase));
+                    continue;
+                }
+                SorteDErreur::Autorisation => {
+                    resultat.arret = Some(ArretDeLaRestauration::AutorisationPerdue);
+                    resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
+                    break;
+                }
+                SorteDErreur::Passagere | SorteDErreur::SansReponse | SorteDErreur::Autre => {
+                    resultat.a_retenter.push(format!("{} : {}", relatif, e.echec.phrase));
+                    continue;
+                }
+            },
         };
+        // Le dossier a disparu en route (une reprise abandonnee) : rien ne le recree.
+        if !cible.is_dir() {
+            return Err(disparu());
+        }
         let recue = EmpreinteMd5::des_octets(&contenu);
         if recue != *attendue {
             resultat.a_retenter.push(format!(
@@ -421,7 +491,10 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         }
     }
 
-    // 4. L'index, comme la sauvegarde l'ecrit, pour ce qui est verifie seulement.
+    // 4. L'index, comme la sauvegarde l'ecrit, pour ce qui est verifie seulement ; jamais dans un dossier disparu.
+    if !cible.is_dir() {
+        return Err(disparu());
+    }
     let (presents, _) = inventaire(cible)?;
     let mut fichiers = BTreeMap::new();
     let mut index_dossiers = BTreeMap::new();
@@ -455,15 +528,9 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
     Ok(resultat)
 }
 
-/// UNE ERREUR DE TELECHARGEMENT PASSAGERE, par ce que la reponse de Google en dit et jamais par sa phrase : aucune reponse
-/// (la connexion, un delai, une reponse coupee : pas de statut), un 408 (« Request Timeout »), un 429 (« Too Many
-/// Requests »), un 5xx (le serveur). Tout autre statut (un 4xx : refuse, introuvable, autorisation retiree) est une
-/// reponse definitive de Google : une nouvelle tentative rendrait la meme.
-fn passagere(e: &ErreurGoogle) -> bool {
-    match e.statut {
-        None => true,
-        Some(s) => matches!(s.as_u16(), 408 | 429 | 500..=599),
-    }
+/// Le refus d'une restauration dont le dossier cible a disparu en route.
+fn disparu() -> ErreurGoogle {
+    ErreurGoogle::from(socle::echec::erreur(socle::echec::Classe::Refuse, "Le dossier où la compagnie revenait a disparu en route (une reprise abandonnée ?) : rien de plus n'est écrit."))
 }
 
 /// Ecrit `contenu` a `chemin` par un `.part` renomme, SANS JAMAIS REMPLACER : `Ok(false)` si `chemin` existe deja.

@@ -598,6 +598,9 @@ un libellé, chacun sa forme.
 | geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
 | provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
 | ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
+| sorte d'une erreur de Google (passagère, sans réponse, autorisation, du fichier, autre) : le seul classement | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
+| pourquoi une restauration s'est arrêtée en route (hors ligne, autorisation perdue, verrou perdu) | `compagnie::restauration::ArretDeLaRestauration` | `compagnie/src/restauration.rs` |
+| verrou d'une restauration du Drive sur un dossier (une à la fois, d'un processus à l'autre) | `compagnie::restauration::VerrouDeRestauration` | `compagnie/src/restauration.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
 | titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |

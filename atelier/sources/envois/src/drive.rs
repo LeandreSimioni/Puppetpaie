@@ -314,8 +314,30 @@ pub const NOUVELLES_TENTATIVES: u32 = 3;
 /// autant.
 const ATTENTE_DE_BASE_MS: u64 = 1000;
 
-/// Une erreur que Google dit passagere : a retenter apres une attente (voir `NOUVELLES_TENTATIVES`).
-pub fn passagere(e: &ErreurGoogle) -> bool {
+/// CE QU'UNE ERREUR DE GOOGLE DIT, LE SEUL CLASSEMENT (`sorte`) : la sauvegarde retente ce qui est passager
+/// (`passagere`) ; la restauration range chaque fichier par lui (`compagnie::restauration`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDErreur {
+    /// Google dit lui-meme que c'est passager : 500, 502, 503, 504, 429, un 403 de limite de debit
+    /// (`google-drive-api-gerer-les-erreurs-20261020.txt`, « 429 errors », « 500, 502, 503, 504 errors »,
+    /// « rateLimitExceeded », « userRateLimitExceeded » ;
+    /// `google-drive-api-televerser-20261020.txt`, « Handle media upload errors »).
+    Passagere,
+    /// Aucune reponse de Google : la connexion, un delai, une reponse coupee (aucun statut).
+    SansReponse,
+    /// L'autorisation ne vaut plus : perdue ou expiree (`invalid_grant`, ou tout refus du point de jeton :
+    /// `Client::jeton_acces`), une permission qui manque, un 401 rendu malgre un jeton neuf (« authError », « Invalid
+    /// Credentials », l. 549-573 : « direct the user through the OAuth flow »). Relier le Drive.
+    Autorisation,
+    /// Google dit que CE FICHIER ne se donne pas : 404 « notFound » (« the user doesn't have read access to a file, or the
+    /// file doesn't exist », l. 1150-1172), ou `RaisonDeGoogle::FichierRefuse`. Une autre tentative rendrait la meme.
+    DuFichier,
+    /// Tout le reste : un refus de Google qui ne dit rien du fichier.
+    Autre,
+}
+
+/// La sorte de l'erreur `e` (`SorteDErreur`), par son statut et la raison que Google donne, jamais par la phrase.
+pub fn sorte(e: &ErreurGoogle) -> SorteDErreur {
     // Un 403 n'est passager que s'il dit une limite de debit.
     // Ce que Google a dit est dans le detail, a part (`google::panne_de_google`).
     let limite = || {
@@ -324,7 +346,19 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
     };
     use ureq::http::StatusCode;
     let passagers = [StatusCode::INTERNAL_SERVER_ERROR, StatusCode::BAD_GATEWAY, StatusCode::SERVICE_UNAVAILABLE, StatusCode::GATEWAY_TIMEOUT, StatusCode::TOO_MANY_REQUESTS];
-    e.statut.is_some_and(|s| passagers.contains(&s)) || (e.statut == Some(StatusCode::FORBIDDEN) && limite())
+    match (e.raison, e.statut) {
+        (Some(RaisonDeGoogle::AutorisationPerdue | RaisonDeGoogle::PermissionManquante), _) | (_, Some(StatusCode::UNAUTHORIZED)) => SorteDErreur::Autorisation,
+        (Some(RaisonDeGoogle::FichierRefuse), _) | (_, Some(StatusCode::NOT_FOUND)) => SorteDErreur::DuFichier,
+        (_, Some(s)) if passagers.contains(&s) || (s == StatusCode::FORBIDDEN && limite()) => SorteDErreur::Passagere,
+        (_, None) => SorteDErreur::SansReponse,
+        (_, Some(_)) => SorteDErreur::Autre,
+    }
+}
+
+/// Une erreur que Google dit passagere (`SorteDErreur::Passagere`) : a retenter apres une attente (voir
+/// `NOUVELLES_TENTATIVES`).
+pub fn passagere(e: &ErreurGoogle) -> bool {
+    sorte(e) == SorteDErreur::Passagere
 }
 
 /// Une erreur de l'API ou de la configuration, avec sa classe (`Google` pour ce qui est deja traduit en francais ;
@@ -354,6 +388,9 @@ pub enum RaisonDeGoogle {
     /// `storageQuotaExceeded` : « This error occurs when the user reaches their storage limit »
     /// (`atelier/reference/sources/google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt`, l. 961-985).
     DrivePlein,
+    /// Google refuse de donner ce fichier-la : `fileNotDownloadable` (« Only files with binary content can be downloaded »,
+    /// l. 575-591) ou `appNotAuthorizedToFile` (« your app isn't on the ACL for the file », l. 627-645).
+    FichierRefuse,
 }
 
 impl RaisonDeGoogle {
@@ -364,6 +401,7 @@ impl RaisonDeGoogle {
             RaisonDeGoogle::PermissionManquante => "Permission refusée : l'autorisation en cours ne couvre pas cette action. Lier de nouveau le Drive (Configuration › Mots de passe) pour redemander les permissions.",
             // Le remede : « Manage your storage in Drive, Gmail & Google Photos », « Buy more Google storage » (l. 979-985).
             RaisonDeGoogle::DrivePlein => "Le Drive du compte Google lié est plein : Google refuse d'y écrire. Faire de la place (Drive, Gmail, Google Photos) ou prendre plus d'espace chez Google ; la sauvegarde ne repart qu'ensuite.",
+            RaisonDeGoogle::FichierRefuse => "Google refuse ce fichier à PuppetPaie : ce n'est pas un fichier qui se télécharge (un document Google), ou l'application n'y a pas accès.",
         }
     }
 }
@@ -528,12 +566,18 @@ impl Client {
         if let Some(a) = self.acces.as_ref().filter(|a| !a.devoiler().is_empty()) {
             return Ok(a.clone());
         }
+        // L'AUTORISATION QUI NE SE RENOUVELLE PAS est une autorisation perdue (`SorteDErreur::Autorisation`) : aucun jeton
+        // de rafraichissement, ou un refus du point de jeton que Google ne dit pas passager et qui a une reponse (un 4xx).
+        let perdue = |e: ErreurGoogle| ErreurGoogle { raison: e.raison.or(Some(RaisonDeGoogle::AutorisationPerdue)), ..e };
         let Some(rafraichissement) = self.rafraichissement.clone()?.filter(|r| !r.devoiler().is_empty()) else {
-            return Err(ErreurGoogle::google(
+            return Err(perdue(ErreurGoogle::google(
                 "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
-            ));
+            )));
         };
-        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(std::time::Duration::from_secs(60)))??;
+        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(std::time::Duration::from_secs(60)))?.map_err(|e| match sorte(&e) {
+            SorteDErreur::Passagere | SorteDErreur::SansReponse => e,
+            SorteDErreur::Autorisation | SorteDErreur::DuFichier | SorteDErreur::Autre => perdue(e),
+        })?;
         self.acces = Some(acces.clone());
         Ok(acces)
     }
