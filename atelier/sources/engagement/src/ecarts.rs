@@ -300,7 +300,8 @@ pub struct Comparaison {
     /// Les libelles de cotisation du bulletin que la table ne rattache a aucune cotisation : non compares.
     pub non_rattachees: Vec<String>,
     /// Les ecarts connus de l'ancien logiciel sur lesquels la paie retombe exactement (`ecarts_connus`) : ce ne sont
-    /// pas des ecarts, la carte de la paie importee les explique a la compagnie ; rien n'en part chez l'editeur.
+    /// pas des ecarts, la carte de la paie importee les explique a la compagnie ; rien n'en part chez l'editeur. Vide
+    /// quand la paie ne se compare pas (`ecarts`, `Err`) : ils remplacent ceux de sa paie quand elle se compare.
     pub connus: Vec<crate::ecarts_connus::EcartConnuConstate>,
     /// Les annees dont la comparaison a pris l'effectif que les paies reprises proposent, la compagnie ne l'ayant pas dit
     /// (`Contexte::avec_les_effectifs_proposes`) ; vide : celui de la compagnie, ou aucun.
@@ -485,15 +486,15 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             }
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
-            let mut ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &[], &mut suivi).and_then(|r| confronter(&r, p, mois, &empreinte, &mut suivi));
+            let mut ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &[], &mut suivi).and_then(|r| confronter(&r, p, mois, &mut suivi));
             // UNE PAIE QUI RETOMBE EXACTEMENT SUR DES ECARTS CONNUS se refait, en memoire, aux taux que l'ancien logiciel a
             // appliques a ces lignes-la (`Contexte::avec_les_taux_appliques`), et se compare tout de nouveau : ce qui en
             // retombe (la prevoyance patronale dans l'assiette de la CSG, les nets) ne sonne pas, ce qui s'ecarte encore
-            // sonne. Les ecarts connus constates restent ceux de la premiere comparaison, au taux du texte.
+            // sonne. Les ecarts connus de taux sont ceux de la premiere comparaison, au taux du texte.
             if ecarts.is_ok() && !suivi.appliques.is_empty() {
                 let appliques = std::mem::take(&mut suivi.appliques);
                 let mut refait = Suivi::default();
-                ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &appliques, &mut refait).and_then(|r| confronter(&r, p, mois, &empreinte, &mut refait));
+                ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &appliques, &mut refait).and_then(|r| confronter(&r, p, mois, &mut refait));
                 let mut connus = std::mem::take(&mut suivi.connus);
                 for k in refait.connus.drain(..) {
                     if !connus.contains(&k) {
@@ -506,6 +507,11 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
                 return None;
             }
+            // UNE COMPARAISON QUI ECHOUE NE CONSTATE AUCUN ECART CONNU, meme si elle en a note avant son refus.
+            let connus = match ecarts.is_ok() {
+                true => connus,
+                false => Vec::new(),
+            };
             let ecarts = ecarts.map_err(|raison| NonComparee { sorte: SorteDeNonComparaison::du_refus(&raison, rien_de_livre, sorte), raison });
             Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, non_rattachees, connus, effectif_propose })
         })
@@ -914,7 +920,7 @@ fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, ligne: Option<&cra
 /// Les ecarts de la paie refaite `r` du mois `mois` a ce que le bulletin de la paie importee `p` imprime ; `c` note les
 /// lignes de cotisation que la table ne rattache a aucune cotisation, et les ecarts connus de l'ancien logiciel
 /// (`ecarts_connus`) qui n'en sont pas. Refus : la table des ecarts connus ne se lit pas.
-fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCourte, c: &mut Suivi) -> R<Vec<Ecart>> {
+fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, c: &mut Suivi) -> R<Vec<Ecart>> {
     let (paie, garanties, atmp_lu, cotisations) = (&r.paie, &r.garanties, r.atmp_lu, r.cotisations);
     let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.as_ref());
     // Ce que les cotisations imprimees a tort, deja relevees, font cotiser dans les totaux du bulletin, salarial et
@@ -1003,7 +1009,7 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
                         explique_pat = explique_pat + employeur;
                         explique_sal = explique_sal + salarie;
                     }
-                    c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(empreinte, &k, employeur, salarie));
+                    c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(&k, employeur, salarie));
                 }
                 None => ecarts.push(ecart(MesureDeLEcart::AbsenteDuCalcul)),
             }
@@ -1078,7 +1084,7 @@ fn confronter(r: &Refaite, p: &PaieVersee, mois: Mois, empreinte: &EmpreinteCour
                 }
             }
             let (employeur, salarie) = if salarie { (Montant::ZERO, leur - notre) } else { (leur - notre, Montant::ZERO) };
-            c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(empreinte, &connu, employeur, salarie));
+            c.connus.push(crate::ecarts_connus::EcartConnuConstate::de(&connu, employeur, salarie));
         }
         ecarts.extend(ici);
     }

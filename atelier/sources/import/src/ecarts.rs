@@ -222,18 +222,19 @@ struct DetailSigne<'a> {
     detail: &'a Detail,
 }
 
-/// Le registre des ecarts connus constates sur les paies importees (`EcartConnuConstate`) : une paie se compare une
-/// fois, ce qu'elle a constate se garde, et la carte de la paie importee l'explique a la compagnie (`mois`).
+/// Le registre des ecarts connus constates sur les paies importees (`EcartConnuConstate`), ranges sous l'empreinte de
+/// leur paie (`engagement::ecarts::empreinte`) : ceux de la derniere comparaison de chaque paie, que la carte de la paie
+/// importee explique a la compagnie (`mois`).
 fn registre_des_connus(racine: &Path) -> PathBuf {
     racine.join(envois::journal::JOURNAL).join("ecarts-connus.json")
 }
 
-/// LES ECARTS CONNUS CONSTATES SUR LES PAIES IMPORTEES (`EcartConnuConstate`), la seule lecture de leur registre ; aucun
-/// tant qu'il n'existe pas.
-pub fn ecarts_connus_notes(racine: &Path) -> R<Vec<EcartConnuConstate>> {
+/// LES ECARTS CONNUS CONSTATES SUR LES PAIES IMPORTEES (`EcartConnuConstate`), par paie, la seule lecture de leur
+/// registre ; aucun tant qu'il n'existe pas.
+pub fn ecarts_connus_notes(racine: &Path) -> R<BTreeMap<EmpreinteCourte, Vec<EcartConnuConstate>>> {
     let p = registre_des_connus(racine);
     if !socle::fichiers::existe(&p) {
-        return Ok(Vec::new());
+        return Ok(BTreeMap::new());
     }
     socle::forme::lire_fichier(&p, "Le registre des écarts connus des paies importées ne se lit pas : le signaler au développeur.")
 }
@@ -266,7 +267,7 @@ impl<T> RegistreLu<T> {
 
 /// LES ECARTS CONNUS CONSTATES SUR LES PAIES IMPORTEES, tels que leur registre se lit (`ecarts_connus_notes`), pour la
 /// carte d'une paie importee (`mois`) : l'incident d'un registre illisible se note une fois, a l'ouverture (`noter`).
-pub fn ecarts_connus_lus(racine: &Path) -> RegistreLu<Vec<EcartConnuConstate>> {
+pub fn ecarts_connus_lus(racine: &Path) -> RegistreLu<BTreeMap<EmpreinteCourte, Vec<EcartConnuConstate>>> {
     RegistreLu::de(ecarts_connus_notes(racine))
 }
 
@@ -296,11 +297,11 @@ const REGISTRE_DES_COMPAREES: &str = "journal/ecarts-import.json";
 
 /// LA REVUE DES PAIES IMPORTEES PAS ENCORE COMPAREES (`rapports`), ce que `noter` ecrit : les rapports a noter au journal
 /// des incidents, les empreintes des paies qui ne sont plus a comparer (le registre des paies comparees), et les ecarts
-/// connus que les paies comparees ont constates (leur registre).
+/// connus de chaque paie qui s'est comparee (leur registre), aucun si elle n'en constate pas : ils remplacent les siens.
 pub struct Revue {
     pub rapports: Vec<Rapport>,
     pub faites: Vec<EmpreinteCourte>,
-    pub connus: Vec<EcartConnuConstate>,
+    pub connus: BTreeMap<EmpreinteCourte, Vec<EcartConnuConstate>>,
 }
 
 /// Les rapports des paies importees de la compagnie que le registre `deja` ne dit pas deja comparees, les empreintes des
@@ -319,9 +320,10 @@ fn rapports(ctx: &Contexte, deja: &RegistreLu<BTreeSet<EmpreinteCourte>>) -> R<R
     // compagnie n'a pas ecrit sa valeur, et ses rapports deja notes ne se notent pas deux fois (leur registre).
     let pour_de_bon = |c: &&Comparaison| !c.a_refaire() && c.effectif_propose.is_empty();
     let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(pour_de_bon).map(|c| c.empreinte.clone()).collect();
-    // LES ECARTS CONNUS se gardent des qu'ils sont constates, la paie fut-elle comparee avec ce qui n'est que propose :
-    // leur registre est a part de celui des paies comparees, et la carte de la paie les montre.
-    let connus = comparaisons.iter().flat_map(|c| c.connus.iter().cloned()).collect();
+    // LES ECARTS CONNUS D'UNE PAIE sont ceux de sa derniere comparaison qui aboutit, la paie fut-elle comparee avec ce
+    // qui n'est que propose : leur registre est a part de celui des paies comparees, et la carte de la paie les montre.
+    // Une comparaison qui echoue n'en dit rien.
+    let connus = comparaisons.iter().filter(|c| c.ecarts.is_ok()).map(|c| (c.empreinte.clone(), c.connus.clone())).collect();
     Ok(Revue { rapports: rapports_de(ctx, &comparaisons)?, faites, connus })
 }
 
@@ -493,21 +495,23 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
         s.extend(neuves);
         socle::ecriture::ecrire_json(&registre_des_notes(racine), &s, 0)?;
     }
-    // Les ecarts connus constates, avant le registre qui dit leurs paies comparees : une paie qui les a constates ne se
-    // compare plus, ils se gardent. Leur registre illisible : ces paies-la restent a comparer.
+    // Les ecarts connus de chaque paie comparee remplacent les siens, avant le registre qui dit leurs paies comparees :
+    // une paie comparee pour de bon ne se compare plus, ils se gardent. Leur registre illisible : les paies qui en ont
+    // constate restent a comparer.
     match connus_notes {
-        RegistreLu::Lu(mut notes_connus) => {
-            let avant = notes_connus.len();
-            for k in connus {
-                if !notes_connus.contains(&k) {
-                    notes_connus.push(k);
-                }
+        RegistreLu::Lu(notes_connus) => {
+            let mut neuf = notes_connus.clone();
+            for (paie, siens) in connus {
+                match siens.is_empty() {
+                    true => neuf.remove(&paie),
+                    false => neuf.insert(paie, siens),
+                };
             }
-            if notes_connus.len() > avant {
-                socle::ecriture::ecrire_json(&registre_des_connus(racine), &notes_connus, 2)?;
+            if neuf != notes_connus {
+                socle::ecriture::ecrire_json(&registre_des_connus(racine), &neuf, 2)?;
             }
         }
-        RegistreLu::Illisible(_) => faites.retain(|f| !connus.iter().any(|k| k.paie == *f)),
+        RegistreLu::Illisible(_) => faites.retain(|f| connus.get(f).is_none_or(|siens| siens.is_empty())),
     }
     if let (RegistreLu::Lu(mut toutes), false) = (comparees, faites.is_empty()) {
         toutes.extend(faites);

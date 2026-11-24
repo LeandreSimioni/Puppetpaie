@@ -20,7 +20,7 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use socle::echec::R;
-use socle::fichiers::{forme_en_cache, CheminRelatif, EmpreinteCourte, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::grandeurs::{Montant, Taux};
 use socle::mois::Mois;
 
@@ -151,13 +151,12 @@ pub fn de(logiciel: Option<&LogicielDUnBulletin>, mois: Mois, statut: Option<dro
 }
 
 /// UN ECART CONNU CONSTATE sur une paie importee, et sa note dans `journal/ecarts-connus.json` (`import::ecarts`, la
-/// seule lecture) : la paie (son empreinte, `ecarts::empreinte`), ce que la ligne connue dit, et ce que la compagnie et
-/// le salarie ont cotise de plus (positif) ou de moins (negatif) que le texte, en euros, sur ce bulletin. Ce que la
-/// compagnie lit de son historique ; rien n'en part chez l'editeur.
+/// seule lecture), rangee sous l'empreinte de sa paie (`ecarts::empreinte`) : ce que la ligne connue dit, et ce que la
+/// compagnie et le salarie ont cotise de plus (positif) ou de moins (negatif) que le texte, en euros, sur ce bulletin.
+/// Ce que la compagnie lit de son historique ; rien n'en part chez l'editeur.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EcartConnuConstate {
-    pub paie: EmpreinteCourte,
     pub logiciel: LogicielDUnBulletin,
     pub cotisation: RegroupementDeComparaison,
     pub constate: Constat,
@@ -170,11 +169,10 @@ pub struct EcartConnuConstate {
 }
 
 impl EcartConnuConstate {
-    /// Celui que la ligne `connu` constate sur la paie `paie` : ce que la compagnie (`employeur`) et le salarie
-    /// (`salarie`) ont cotise de plus ou de moins que le texte.
-    pub fn de(paie: &EmpreinteCourte, connu: &EcartConnu, employeur: Montant, salarie: Montant) -> EcartConnuConstate {
+    /// Celui que la ligne `connu` constate sur une paie : ce que la compagnie (`employeur`) et le salarie (`salarie`) ont
+    /// cotise de plus ou de moins que le texte.
+    pub fn de(connu: &EcartConnu, employeur: Montant, salarie: Montant) -> EcartConnuConstate {
         EcartConnuConstate {
-            paie: paie.clone(),
             logiciel: connu.logiciel.clone(),
             cotisation: connu.cotisation.clone(),
             constate: connu.constate,

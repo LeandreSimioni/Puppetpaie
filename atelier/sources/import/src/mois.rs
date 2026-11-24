@@ -742,7 +742,7 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
         // Les ecarts connus que la comparaison de cette paie a constates (`engagement::ecarts_connus::EcartConnuConstate`).
         let empreinte = i.paies().get(&mois).map(|p| engagement::ecarts::empreinte(&i, mois, p));
         let siens = match &connus {
-            RegistreLu::Lu(v) => RegistreLu::Lu(v.iter().filter(|k| Some(&k.paie) == empreinte.as_ref()).collect()),
+            RegistreLu::Lu(par_paie) => RegistreLu::Lu(empreinte.as_ref().and_then(|e| par_paie.get(e)).into_iter().flatten().collect()),
             RegistreLu::Illisible(e) => RegistreLu::Illisible(e.clone()),
         };
         cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae, siens)?);
