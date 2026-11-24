@@ -3823,10 +3823,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "633.06",
+     "base": "875",
      "taux_sal": "4.83",
-     "montant_sal": "30.58",
-     "montant_pat": "37.92",
+     "montant_sal": "42.26",
+     "montant_pat": "52.41",
      "masquer_base_et_taux": false
     },
     {
@@ -3875,9 +3875,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "705.86",
+     "base": "975.63",
      "montant_sal": "0",
-     "montant_pat": "0.49",
+     "montant_pat": "0.68",
      "masquer_base_et_taux": false
     },
     {
@@ -3931,8 +3931,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "714.46",
-   "pas": "71.45"
+   "net_imposable": "702.78",
+   "pas": "70.28"
   },
   {
    "salarie": "5",
@@ -3994,10 +3994,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "633.06",
+     "base": "825",
      "taux_sal": "4.83",
-     "montant_sal": "30.58",
-     "montant_pat": "37.92",
+     "montant_sal": "39.85",
+     "montant_pat": "49.42",
      "masquer_base_et_taux": false
     },
     {
@@ -4046,9 +4046,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "705.86",
+     "base": "919.88",
      "montant_sal": "0",
-     "montant_pat": "0.49",
+     "montant_pat": "0.64",
      "masquer_base_et_taux": false
     },
     {
@@ -4102,8 +4102,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "671.89",
-   "pas": "73.24"
+   "net_imposable": "662.62",
+   "pas": "72.23"
   },
   {
    "salarie": "6",
@@ -4165,10 +4165,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "633.06",
+     "base": "850",
      "taux_sal": "4.83",
-     "montant_sal": "30.58",
-     "montant_pat": "37.92",
+     "montant_sal": "41.06",
+     "montant_pat": "50.92",
      "masquer_base_et_taux": false
     },
     {
@@ -4217,9 +4217,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "705.86",
+     "base": "947.75",
      "montant_sal": "0",
-     "montant_pat": "0.49",
+     "montant_pat": "0.66",
      "masquer_base_et_taux": false
     },
     {
@@ -4273,8 +4273,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "693.18",
-   "pas": "81.1"
+   "net_imposable": "682.7",
+   "pas": "79.88"
   },
   {
    "salarie": "7",
@@ -4515,10 +4515,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "633.06",
+     "base": "700",
      "taux_sal": "6.9",
-     "montant_sal": "43.68",
-     "montant_pat": "54.13",
+     "montant_sal": "48.3",
+     "montant_pat": "59.85",
      "masquer_base_et_taux": false
     },
     {
@@ -4567,9 +4567,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "705.86",
+     "base": "780.5",
      "montant_sal": "0",
-     "montant_pat": "0.71",
+     "montant_pat": "0.78",
      "masquer_base_et_taux": false
     },
     {
@@ -4631,8 +4631,8 @@
      "masquer_base_et_taux": true
     }
    ],
-   "net_imposable": "555.09",
-   "pas": "24.42"
+   "net_imposable": "550.47",
+   "pas": "24.22"
   },
   {
    "salarie": "1",
@@ -8757,10 +8757,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "785",
+     "base": "1050",
      "taux_sal": "4.83",
-     "montant_sal": "37.92",
-     "montant_pat": "47.02",
+     "montant_sal": "50.72",
+     "montant_pat": "62.9",
      "masquer_base_et_taux": false
     },
     {
@@ -8809,9 +8809,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "875.28",
+     "base": "1170.75",
      "montant_sal": "0",
-     "montant_pat": "0.61",
+     "montant_pat": "0.82",
      "masquer_base_et_taux": false
     },
     {
@@ -8865,8 +8865,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "856.14",
-   "pas": "85.61"
+   "net_imposable": "843.34",
+   "pas": "84.33"
   },
   {
    "salarie": "5",
@@ -8935,10 +8935,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "785",
+     "base": "990",
      "taux_sal": "4.83",
-     "montant_sal": "37.92",
-     "montant_pat": "47.02",
+     "montant_sal": "47.82",
+     "montant_pat": "59.3",
      "masquer_base_et_taux": false
     },
     {
@@ -8987,9 +8987,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "875.28",
+     "base": "1103.85",
      "montant_sal": "0",
-     "montant_pat": "0.61",
+     "montant_pat": "0.77",
      "masquer_base_et_taux": false
     },
     {
@@ -9043,8 +9043,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "805.05",
-   "pas": "87.75"
+   "net_imposable": "795.15",
+   "pas": "86.67"
   },
   {
    "salarie": "6",
@@ -9113,10 +9113,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "785",
+     "base": "1020",
      "taux_sal": "4.83",
-     "montant_sal": "37.92",
-     "montant_pat": "47.02",
+     "montant_sal": "49.27",
+     "montant_pat": "61.1",
      "masquer_base_et_taux": false
     },
     {
@@ -9165,9 +9165,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "875.28",
+     "base": "1137.3",
      "montant_sal": "0",
-     "montant_pat": "0.61",
+     "montant_pat": "0.8",
      "masquer_base_et_taux": false
     },
     {
@@ -9221,8 +9221,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "830.59",
-   "pas": "97.18"
+   "net_imposable": "819.24",
+   "pas": "95.85"
   },
   {
    "salarie": "7",
@@ -9477,10 +9477,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "785",
+     "base": "840",
      "taux_sal": "6.9",
-     "montant_sal": "54.17",
-     "montant_pat": "67.12",
+     "montant_sal": "57.96",
+     "montant_pat": "71.82",
      "masquer_base_et_taux": false
     },
     {
@@ -9529,9 +9529,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "875.28",
+     "base": "936.6",
      "montant_sal": "0",
-     "montant_pat": "0.88",
+     "montant_pat": "0.94",
      "masquer_base_et_taux": false
     },
     {
@@ -9593,8 +9593,8 @@
      "masquer_base_et_taux": true
     }
    ],
-   "net_imposable": "664.36",
-   "pas": "29.23"
+   "net_imposable": "660.57",
+   "pas": "29.07"
   },
   {
    "salarie": "1",
@@ -16188,10 +16188,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "654.17",
+     "base": "875",
      "taux_sal": "4.83",
-     "montant_sal": "31.6",
-     "montant_pat": "39.18",
+     "montant_sal": "42.26",
+     "montant_pat": "52.41",
      "masquer_base_et_taux": false
     },
     {
@@ -16240,9 +16240,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "729.4",
+     "base": "975.63",
      "montant_sal": "0",
-     "montant_pat": "0.51",
+     "montant_pat": "0.68",
      "masquer_base_et_taux": false
     },
     {
@@ -16296,8 +16296,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "713.44",
-   "pas": "71.34"
+   "net_imposable": "702.78",
+   "pas": "70.28"
   },
   {
    "salarie": "5",
@@ -16359,10 +16359,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "654.17",
+     "base": "825",
      "taux_sal": "4.83",
-     "montant_sal": "31.6",
-     "montant_pat": "39.18",
+     "montant_sal": "39.85",
+     "montant_pat": "49.42",
      "masquer_base_et_taux": false
     },
     {
@@ -16411,9 +16411,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "729.4",
+     "base": "919.88",
      "montant_sal": "0",
-     "montant_pat": "0.51",
+     "montant_pat": "0.64",
      "masquer_base_et_taux": false
     },
     {
@@ -16467,8 +16467,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "670.87",
-   "pas": "73.12"
+   "net_imposable": "662.62",
+   "pas": "72.23"
   },
   {
    "salarie": "6",
@@ -16530,10 +16530,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "654.17",
+     "base": "850",
      "taux_sal": "4.83",
-     "montant_sal": "31.6",
-     "montant_pat": "39.18",
+     "montant_sal": "41.06",
+     "montant_pat": "50.92",
      "masquer_base_et_taux": false
     },
     {
@@ -16582,9 +16582,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "729.4",
+     "base": "947.75",
      "montant_sal": "0",
-     "montant_pat": "0.51",
+     "montant_pat": "0.66",
      "masquer_base_et_taux": false
     },
     {
@@ -16638,8 +16638,8 @@
      "masquer_base_et_taux": false
     }
    ],
-   "net_imposable": "692.16",
-   "pas": "80.98"
+   "net_imposable": "682.7",
+   "pas": "79.88"
   },
   {
    "salarie": "7",
@@ -16880,10 +16880,10 @@
     {
      "famille": "RETRAITE",
      "libelle": "Sécurité sociale plafonnée",
-     "base": "654.17",
+     "base": "700",
      "taux_sal": "6.9",
-     "montant_sal": "45.14",
-     "montant_pat": "55.93",
+     "montant_sal": "48.3",
+     "montant_pat": "59.85",
      "masquer_base_et_taux": false
     },
     {
@@ -16932,9 +16932,9 @@
     {
      "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
      "libelle": "Autres contributions dues par l'employeur",
-     "base": "729.4",
+     "base": "780.5",
      "montant_sal": "0",
-     "montant_pat": "0.73",
+     "montant_pat": "0.78",
      "masquer_base_et_taux": false
     },
     {
@@ -16996,8 +16996,8 @@
      "masquer_base_et_taux": true
     }
    ],
-   "net_imposable": "553.63",
-   "pas": "24.36"
+   "net_imposable": "550.47",
+   "pas": "24.22"
   },
   {
    "salarie": "1",
