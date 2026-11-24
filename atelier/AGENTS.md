@@ -305,7 +305,8 @@ peu au salarié sur le moment, et coûte au salarié des droits (sa retraite) ; 
 garde. Une tolérance qu'on trouve encore appliquée se présente à Léandre, chiffrée ; il décide. Une tolérance à
 laquelle chacun consent reste (Léandre, 24/11/2026 : « on met que chacun consent ») : celles de la déduction
 forfaitaire spécifique, que la compagnie choisit et que chaque salarié accepte ou refuse, informé de ce qu'elle change
-pour ses droits (BOSS, frais professionnels, § 2180-2190 ; la fiche Entreprise et la fiche du salarié l'expliquent) :
+pour ses droits (BOSS, frais professionnels, § 2180-2190 ; le formulaire « Remplir ma fiche » le lui explique, chiffres
+à l'appui) :
 la déduction sans frais réellement supportés (§ 2310) et sa limite de 7 600 € comptée par employeur (§ 2160).
 
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
