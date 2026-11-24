@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::IdentiteAllegement,
-        geste: "Dire ce qu'une image à poser pèserait dans chaque document, gardée telle quelle ou allégée, sans rien poser.",
+        geste: "Montrer ce qu'une image pèserait dans les documents, gardée ou allégée.",
         charge: &ChargePoser::CHARGE,
         exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","allegement":"alleger","poids":20}"#,
         rend: "phrase (le poids de l'image reçue, ce qu'elle pèserait telle quelle dans chaque document, et allégée au poids visé quand on l'allège), media (son type), image (celle qui se poserait, en base64)",
