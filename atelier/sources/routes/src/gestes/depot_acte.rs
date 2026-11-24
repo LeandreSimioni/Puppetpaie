@@ -426,7 +426,7 @@ pub fn deposer_dsn_dans(
         let (quoi, place) = if apercu.est_signalement() {
             ("Signalement", crate::envois_en_fond::PlaceDeLEnvoi::Ailleurs)
         } else {
-            ("DSN", crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dsn })
+            ("DSN", crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dsn, part: crate::envois_en_fond::CeQuiPartDeLEtape::Dsn(nic.cloned()) })
         };
         crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dsn, place, format!("{} {}", quoi, socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
     }
@@ -554,7 +554,9 @@ pub(crate) fn deposer_dpae_avec(
     };
     let mut suites = Suites::default();
     if mode == Mode::Reel {
-        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dpae, crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dpae }, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
+        let part = crate::envois_en_fond::CeQuiPartDeLEtape::Contrats(embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect());
+        let place = crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dpae, part };
+        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dpae, place, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
     }
     let fait = envois::depot_acte::deposer_dpae(ctx, &porte, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
     let faites = crate::gestes::suites::faire(ctx, suites)?;

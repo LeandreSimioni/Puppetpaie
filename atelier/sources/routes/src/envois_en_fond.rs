@@ -24,7 +24,9 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
+use droit::fiche::{Courriel, Nic};
+use engagement::numeros::NumeroContrat;
 use serde::Serialize;
 use socle::echec::{Classe, R};
 use socle::memoire::{repris, tenu};
@@ -35,15 +37,68 @@ use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Dite, Refus, Reponse};
 use crate::etapes::QuelleEtape;
 
-/// OU UN ENVOI SE DIT, en plus du bandeau : l'etape du mois d'ou il part (`etat-du-mois` la dit « en cours d'envoi » a
-/// la place de son geste, puis son issue dans le cadre du mois), la demande de fiche a la personne d'adresse `adresse`
-/// (la fiche d'un salarie neuf la dit en cours, a cote de son geste : une demande a une autre personne reste a faire),
-/// ou ailleurs (un dossier, la regularisation CASC-SVP depuis les Exports, un signalement), ou son geste reste a sa place.
+/// OU UN ENVOI SE DIT, en plus du bandeau : l'etape du mois d'ou il part, et ce qu'il en emporte (`part` : `etat-du-mois`
+/// et `etat-par-engagement` disent « en cours d'envoi » a la place du geste de ce qu'il emporte, et de cela seul, puis
+/// son issue dans le cadre du mois), la demande de fiche a la personne d'adresse `adresse` (la fiche d'un salarie neuf
+/// a cette adresse la dit en cours a la place de son geste ; a une autre, le geste reste), ou ailleurs (un dossier, la
+/// regularisation CASC-SVP depuis les Exports, un signalement), ou son geste reste a sa place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PlaceDeLEnvoi {
-    Etape { mois: Mois, etape: QuelleEtape },
-    Fiche { adresse: String },
+    Etape { mois: Mois, etape: QuelleEtape, part: CeQuiPartDeLEtape },
+    Fiche { adresse: Courriel },
     Ailleurs,
+}
+
+/// CE QU'UN ENVOI EMPORTE DE SON ETAPE, nomme au depart par la route qui l'a verifie : des contrats (a la signature, les
+/// contrats et les avenants ; a la DPAE, les embauches), chacun par son salarie et le numero de son contrat ; les
+/// documents de ces salaries ; la DSN de cet etablissement (aucun : celle de la compagnie, qui n'en a qu'un).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CeQuiPartDeLEtape {
+    Contrats(Vec<(IdSalarie, Option<NumeroContrat>)>),
+    Salaries(Vec<IdSalarie>),
+    Dsn(Option<Nic>),
+}
+
+impl CeQuiPartDeLEtape {
+    /// Emporte-t-il ce qui part de l'engagement du salarie `salarie`, sous le contrat `numero` ?
+    pub(crate) fn emporte(&self, salarie: Option<&IdSalarie>, numero: Option<&NumeroContrat>) -> bool {
+        let Some(s) = salarie else { return false };
+        match self {
+            CeQuiPartDeLEtape::Contrats(cs) => cs.iter().any(|(x, n)| x == s && n.as_ref() == numero),
+            CeQuiPartDeLEtape::Salaries(ss) => ss.contains(s),
+            // La DSN n'a pas de carre : elle se dit par etablissement (`emporte_la_dsn`).
+            CeQuiPartDeLEtape::Dsn(_) => false,
+        }
+    }
+
+    /// Emporte-t-il la DSN des etablissements `nics` (aucun : la compagnie n'en nomme pas) ?
+    pub(crate) fn emporte_la_dsn(&self, nics: &[Nic]) -> bool {
+        match self {
+            CeQuiPartDeLEtape::Dsn(None) => true,
+            CeQuiPartDeLEtape::Dsn(Some(n)) => nics.is_empty() || nics.contains(n),
+            CeQuiPartDeLEtape::Contrats(_) | CeQuiPartDeLEtape::Salaries(_) => false,
+        }
+    }
+}
+
+impl PlaceDeLEnvoi {
+    /// UN SECOND ENVOI DE LA MEME ROUTE (les avenants apres les contrats) part sous le meme numero : ce qu'il emporte de
+    /// la meme etape du meme mois s'ajoute a ce que le premier emporte.
+    fn etendre(&mut self, autre: PlaceDeLEnvoi) {
+        if let (
+            PlaceDeLEnvoi::Etape { mois, etape, part: CeQuiPartDeLEtape::Contrats(cs) },
+            PlaceDeLEnvoi::Etape { mois: m, etape: e, part: CeQuiPartDeLEtape::Contrats(autres) },
+        ) = (self, autre)
+        {
+            if *mois == m && *etape == e {
+                for c in autres {
+                    if !cs.contains(&c) {
+                        cs.push(c);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// CE QUI PART, tel qu'un envoi le dit au moment de partir (`partir`) : ce qui part, en mots (« 2 contrats », « DSN de
@@ -87,13 +142,23 @@ thread_local! {
 /// sert en fond, la page recoit maintenant « en cours d'envoi » (`ce_qui_part` le dit) et la route continue ici ;
 /// partout ailleurs, rien. Une compagnie aux envois simules ne part jamais en fond : rien ne quitte le poste, rien ne
 /// se fait attendre. Une seule fois par route : un second envoi de la meme route (les avenants apres les contrats, la
-/// demande de taux apres la DPAE) part sur le meme fil, sous le meme numero.
+/// demande de taux apres la DPAE) part sur le meme fil, sous le meme numero, et ce qu'il emporte de la meme etape
+/// s'ajoute a ce que le premier emporte (`PlaceDeLEnvoi::etendre`).
 pub(crate) fn partir(ctx: &Contexte, ce_qui_part: impl FnOnce() -> R<EnvoiQuiPart>) -> R<()> {
-    let attendu = ATTENTE.with(|a| a.borrow().as_ref().is_some_and(|x| x.numero.is_none()));
-    if !attendu || compagnie::bridage::branchement(&ctx.racine)?.joue() {
+    let attendu = ATTENTE.with(|a| a.borrow().as_ref().map(|x| x.numero));
+    let Some(deja) = attendu else { return Ok(()) };
+    if compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok(());
     }
     let c = ce_qui_part()?;
+    if let Some(numero) = deja {
+        ATTENTE.with(|a| {
+            if let Some(x) = a.borrow().as_ref() {
+                x.registre.etendre(numero, c.place);
+            }
+        });
+        return Ok(());
+    }
     ATTENTE.with(|a| {
         if let Some(x) = a.borrow_mut().as_mut() {
             let phrase = en_cours(&c.quoi);
@@ -252,44 +317,65 @@ pub fn existants(racine: &Path) -> R<Option<Arc<EnvoisEnFond>>> {
     Ok(tenu(&PAR_COMPAGNIE).iter().find(|(k, _)| *k == c).map(|(_, e)| e.clone()))
 }
 
-/// Ceux de `racine` pour une lecture : un registre qui ne se trouve pas se note, et la lecture se rend sans lui (une
-/// lecture ne refuse pas en bloc).
+/// LA DERNIERE ERREUR NOTEE D'UNE LECTURE DU REGISTRE (`pour_une_lecture`) : une erreur qui dure se note une fois, et de
+/// nouveau seulement apres une lecture qui a reussi, ou si elle change.
+static ERREUR_NOTEE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Ceux de `racine` pour une lecture : un registre qui ne se trouve pas se note (une fois tant que l'erreur dure), et la
+/// lecture se rend sans lui (une lecture ne refuse pas en bloc).
 fn pour_une_lecture(racine: &Path) -> Option<Arc<EnvoisEnFond>> {
-    match existants(racine) {
-        Ok(e) => e,
+    let lu = existants(racine);
+    let mut notee = tenu(&ERREUR_NOTEE);
+    match lu {
+        Ok(e) => {
+            *notee = None;
+            e
+        }
         Err(e) => {
-            compagnie::diagnostic::noter_moteur(&format!("Les envois en fond ne se lisent pas ; la lecture se rend sans eux ({}).", e.en_lignes()));
+            let dit = e.en_lignes();
+            if notee.as_deref() != Some(dit.as_str()) {
+                compagnie::diagnostic::noter_moteur(&format!("Les envois en fond ne se lisent pas ; la lecture se rend sans eux ({}).", dit));
+                *notee = Some(dit);
+            }
             None
         }
     }
 }
 
-/// CE QUE LES ENVOIS EN FOND DISENT D'UN MOIS, a sa lecture (`etat-du-mois`, `etat-par-engagement`) : les etapes d'ou un
-/// envoi est en cours et ce qui en part (que `etapes::LesDeuxEtats` dit a la place de leurs gestes), et les envois du
-/// mois tels que le cadre les dit. Aucun en ligne de commande.
+/// CE QUE LES ENVOIS EN FOND DISENT D'UN MOIS, a sa lecture (`etat-du-mois`, `etat-par-engagement`) : les envois en
+/// cours, chacun son etape, ce qu'il en emporte et ce qui part en mots (que `etapes::LesDeuxEtats` dit a la place des
+/// gestes de ce qu'il emporte, et de cela seul), et les envois du mois tels que le cadre les dit. Aucun en ligne de
+/// commande.
 pub(crate) struct EnvoisDuMois {
-    en_cours: Vec<(QuelleEtape, String)>,
+    en_cours: Vec<(QuelleEtape, CeQuiPartDeLEtape, String)>,
     pub(crate) dits: Vec<EnvoiDit>,
 }
 
 impl EnvoisDuMois {
+    /// Aucun envoi : la lecture telle que l'etat la garde.
+    pub(crate) fn aucun() -> EnvoisDuMois {
+        EnvoisDuMois { en_cours: Vec::new(), dits: Vec::new() }
+    }
+
     /// Ceux du mois `mois` de la compagnie `racine`.
     pub(crate) fn de(racine: &Path, mois: Mois) -> EnvoisDuMois {
-        let Some(e) = pour_une_lecture(racine) else { return EnvoisDuMois { en_cours: Vec::new(), dits: Vec::new() } };
+        let Some(e) = pour_une_lecture(racine) else { return EnvoisDuMois::aucun() };
         let en_cours = e
             .en_cours_ou()
             .into_iter()
             .filter_map(|(p, quoi)| match p {
-                PlaceDeLEnvoi::Etape { mois: m, etape } if m == mois => Some((etape, quoi)),
+                PlaceDeLEnvoi::Etape { mois: m, etape, part } if m == mois => Some((etape, part, quoi)),
                 PlaceDeLEnvoi::Etape { .. } | PlaceDeLEnvoi::Fiche { .. } | PlaceDeLEnvoi::Ailleurs => None,
             })
             .collect();
         EnvoisDuMois { en_cours, dits: e.dits_du_mois(mois) }
     }
 
-    /// Ce qui part en cours de l'etape `etape` (« 2 contrats »), s'il y en a.
-    pub(crate) fn de_l_etape(&self, etape: QuelleEtape) -> Option<&str> {
-        self.en_cours.iter().find(|(e, _)| *e == etape).map(|(_, quoi)| quoi.as_str())
+    /// « 1 contrat » : ce qui part des envois en cours de l'etape `etape` qui emportent ce que `emporte` reconnait, tous
+    /// (deux envois de la meme etape se disent l'un et l'autre) ; rien s'il n'y en a pas.
+    pub(crate) fn ce_qui_part(&self, etape: QuelleEtape, emporte: impl Fn(&CeQuiPartDeLEtape) -> bool) -> Option<String> {
+        let quoi: Vec<&str> = self.en_cours.iter().filter(|(e, p, _)| *e == etape && emporte(p)).map(|(_, _, q)| q.as_str()).collect();
+        (!quoi.is_empty()).then(|| quoi.join(", "))
     }
 
     /// Aucun envoi en cours ce mois : la lecture est celle que l'etat garde.
@@ -298,14 +384,14 @@ impl EnvoisDuMois {
     }
 }
 
-/// « 2 contrats en cours d'envoi… », telle que la case d'une etape la dit a la place de son geste.
+/// « 2 contrats en cours d'envoi… », telle qu'une case la dit a la place de son geste.
 pub(crate) fn phrase_en_cours(quoi: &str) -> String {
     en_cours(quoi).to_string()
 }
 
-/// Les demandes de fiche en cours de la compagnie `racine` (`EnvoisEnFond::fiches_en_cours`), pour la fiche d'un
-/// salarie neuf.
-pub(crate) fn fiches_en_cours(racine: &Path) -> Vec<String> {
+/// LES DEMANDES DE FICHE EN COURS de la compagnie `racine`, chacune son adresse et sa phrase (« Demande de fiche à …
+/// en cours d'envoi… »), pour la fiche d'un salarie neuf.
+pub(crate) fn fiches_en_cours(racine: &Path) -> Vec<(Courriel, String)> {
     match pour_une_lecture(racine) {
         Some(e) => e.fiches_en_cours(),
         None => Vec::new(),
@@ -340,7 +426,7 @@ fn empeche(lache: bool) -> Option<&'static str> {
 /// elle n'a pas eu lieu, elle ne compte plus, et sans autre fermeture en cours les envois repartent comme avant. Chaque
 /// transport a son delai : l'attente a une fin.
 pub fn fermer_apres_les_envois(fermer: impl FnOnce() -> bool) {
-    FERMETURES.fetch_add(1, Ordering::SeqCst);
+    let mut fermeture = UneFermeture::comptee();
     // Une compagnie dont le registre nait pendant l'attente y entre : on ne s'arrete qu'a un tour ou rien n'est en vol.
     loop {
         let toutes: Vec<Arc<EnvoisEnFond>> = tenu(&PAR_COMPAGNIE).iter().map(|(_, e)| e.clone()).collect();
@@ -351,8 +437,27 @@ pub fn fermer_apres_les_envois(fermer: impl FnOnce() -> bool) {
             e.attendre();
         }
     }
-    if !fermer() {
-        FERMETURES.fetch_sub(1, Ordering::SeqCst);
+    fermeture.a_eu_lieu = fermer();
+}
+
+/// UNE FERMETURE COMPTEE (`FERMETURES`) : elle se decompte en se defaisant, quoi qu'il arrive (une attente ou une
+/// fermeture qui panique comprises), sauf si elle a eu lieu.
+struct UneFermeture {
+    a_eu_lieu: bool,
+}
+
+impl UneFermeture {
+    fn comptee() -> UneFermeture {
+        FERMETURES.fetch_add(1, Ordering::SeqCst);
+        UneFermeture { a_eu_lieu: false }
+    }
+}
+
+impl Drop for UneFermeture {
+    fn drop(&mut self) {
+        if !self.a_eu_lieu {
+            FERMETURES.fetch_sub(1, Ordering::SeqCst);
+        }
     }
 }
 
@@ -436,7 +541,7 @@ impl EnvoisEnFond {
     }
 
     /// L'envoi part : il prend son numero, et remplace ce que le bandeau disait d'un envoi au bout de la meme route et de
-    /// la meme place (le meme mois).
+    /// la meme place (le meme mois, ce qu'il emporte : l'echec d'un envoi pour d'autres reste dit).
     fn inscrire(&self, route: Route, c: EnvoiQuiPart) -> NumeroDEnvoi {
         let numero = NumeroDEnvoi(self.dernier.fetch_add(1, Ordering::SeqCst) + 1);
         let mut envois = tenu(&self.envois);
@@ -444,6 +549,13 @@ impl EnvoisEnFond {
         let etat = EtatDUnEnvoi::EnCours(en_cours(&c.quoi).to_string());
         envois.push(EnvoiEnFond { numero, route, quoi: c.quoi, place: c.place, refaire: c.refaire, avertissements: c.avertissements, suivre: None, etat, dit_au_passage: false });
         numero
+    }
+
+    /// Ce qu'un second envoi de la meme route emporte s'ajoute a l'envoi `numero` (`PlaceDeLEnvoi::etendre`).
+    fn etendre(&self, numero: NumeroDEnvoi, place: PlaceDeLEnvoi) {
+        if let Some(e) = tenu(&self.envois).iter_mut().find(|e| e.numero == numero) {
+            e.place.etendre(place);
+        }
     }
 
     /// L'envoi `numero` est au bout : la phrase de sa route, ou son refus.
@@ -471,10 +583,15 @@ impl EnvoisEnFond {
             .collect()
     }
 
-    /// Les demandes de fiche en cours, chacune sa phrase (« Demande de fiche à … en cours d'envoi… ») : la fiche d'un
-    /// salarie neuf les dit a cote de son geste.
-    pub(crate) fn fiches_en_cours(&self) -> Vec<String> {
-        self.en_cours_ou().into_iter().filter(|(p, _)| matches!(p, PlaceDeLEnvoi::Fiche { .. })).map(|(_, quoi)| en_cours(&quoi).to_string()).collect()
+    /// Les demandes de fiche en cours, chacune son adresse et sa phrase (« Demande de fiche à … en cours d'envoi… »).
+    fn fiches_en_cours(&self) -> Vec<(Courriel, String)> {
+        self.en_cours_ou()
+            .into_iter()
+            .filter_map(|(p, quoi)| match p {
+                PlaceDeLEnvoi::Fiche { adresse } => Some((adresse, en_cours(&quoi).to_string())),
+                PlaceDeLEnvoi::Etape { .. } | PlaceDeLEnvoi::Ailleurs => None,
+            })
+            .collect()
     }
 
     /// Une route servie en fond est-elle en vol (partie ou non encore) ?
@@ -498,7 +615,7 @@ impl EnvoisEnFond {
 
     /// UN PASSAGE DE LA VEILLE (`Veille::tour`) : un envoi parti sans refus se dit jusqu'au passage qui suit celui-ci (un
     /// passage entier au moins), puis plus ; un envoi qui a echoue reste dit jusqu'a ce qu'un envoi de la meme route et
-    /// du meme mois reparte.
+    /// de la meme place (le meme mois, ce qu'il emporte) reparte.
     pub fn oublier_les_partis(&self) {
         let mut envois = tenu(&self.envois);
         envois.retain(|e| !(e.dit_au_passage && matches!(e.etat, EtatDUnEnvoi::Parti(_))));

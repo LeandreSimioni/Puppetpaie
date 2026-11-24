@@ -399,12 +399,14 @@ fn noter(quoi: &str, e: &Echec) {
 // ------------------------------------------------------------------------------------------------- ce qui se garde
 
 /// L'ETAT GARDE D'UN MOIS, en memoire : son empreinte, ses deux etats en leur forme (`etat-par-engagement` et le bilan
-/// du mois : ce que disent le coffre et les envois en cours s'y ajoute a chaque lecture, `du_mois`), et les autres
-/// lectures de l'ecran, ecrites.
+/// du mois : ce que disent le coffre et les envois en cours s'y ajoute a chaque lecture, `du_mois`), `etat-par-engagement`
+/// rendu tel qu'il se lit sans envoi en cours (il ne se refait que pendant un envoi), et les autres lectures de l'ecran,
+/// ecrites.
 struct EtatDuMois {
     mois: Mois,
     empreinte: Empreinte,
     etats: crate::etapes::LesDeuxEtats,
+    par_engagement: Rendu,
     lectures: Vec<(Route, String)>,
 }
 
@@ -519,7 +521,8 @@ impl EtatDuMois {
         let mut lectures: BTreeMap<&'static str, ALaPage> = self.lectures.iter().map(|(r, t)| (r.nom(), ALaPage::Ecrite(t))).collect();
         // Les envois du mois en cours, lus une fois pour les deux etats : la meme surcouche.
         let envois = crate::envois_en_fond::EnvoisDuMois::de(racine, self.mois);
-        lectures.insert(Route::EtatParEngagement.nom(), ALaPage::Faite(Reponse::de(Route::EtatParEngagement, self.etats.par_engagement(&envois).and_then(en_json))));
+        let par_engagement = if envois.aucun_en_cours() { Ok(self.par_engagement.clone()) } else { self.etats.par_engagement(&envois).and_then(en_json) };
+        lectures.insert(Route::EtatParEngagement.nom(), ALaPage::Faite(Reponse::de(Route::EtatParEngagement, par_engagement)));
         lectures.insert(Route::EtatDuMois.nom(), ALaPage::Faite(Reponse::de(Route::EtatDuMois, du_mois(racine, &self.etats, envois).and_then(en_json))));
         EcranDuMois { phrase: self.etats.bilan_garde().phrase(), mois: self.mois, lectures, perime }
     }
@@ -657,7 +660,8 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: Empreinte
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let etats = crate::etapes::les_deux_etats(ctx, mois)?;
-    Ok(EtatDuMois { mois, empreinte, etats, lectures })
+    let par_engagement = Rendu::de(&etats.par_engagement(&crate::envois_en_fond::EnvoisDuMois::aucun())?)?;
+    Ok(EtatDuMois { mois, empreinte, etats, par_engagement, lectures })
 }
 
 /// L'etat de l'ouverture, refait : les lectures de la page qui s'ouvre (`LECTURES_OUVERTURE`), telles quelles, et le

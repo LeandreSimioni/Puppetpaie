@@ -1177,7 +1177,11 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     crate::envois_en_fond::partir(ctx, || {
         Ok(crate::envois_en_fond::EnvoiQuiPart {
             quoi: format!("Documents {} ({})", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(messages.len(), "salarié", "salariés")),
-            place: crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois, etape: crate::etapes::QuelleEtape::Documents },
+            place: crate::envois_en_fond::PlaceDeLEnvoi::Etape {
+                mois,
+                etape: crate::etapes::QuelleEtape::Documents,
+                part: crate::envois_en_fond::CeQuiPartDeLEtape::Salaries(messages.iter().map(|m| m.pour.clone()).collect()),
+            },
             refaire: Some(crate::etapes::refaire_les_documents(mois)),
             avertissements: avertissements.clone(),
         })
