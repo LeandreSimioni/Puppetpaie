@@ -203,8 +203,38 @@ pub struct TexteEnTraces {
     pub polices_absentes: Vec<String>,
 }
 
-/// Les familles generiques du CSS : elles designent toujours une police du poste, jamais une absente.
+/// Les familles generiques du CSS : elles designent toujours une police du poste, jamais une absente
+/// (`poser_les_familles_generiques`).
 const FAMILLES_GENERIQUES: [&str; 5] = ["serif", "sans-serif", "cursive", "fantasy", "monospace"];
+
+/// LES FAMILLES GENERIQUES POSEES SUR DES POLICES DE CE POSTE : fontdb les nomme d'office Times New Roman, Arial, Comic
+/// Sans MS, Impact et Courier New, qu'un poste n'a pas toujours. Chacune garde ce nom si le poste l'a, sinon prend la
+/// premiere famille de sa liste que le poste a ; sans aucune, elle prend la famille sans empattement du poste, et
+/// celle-ci, a defaut de sa liste, la premiere police du poste qui n'est pas a chasse fixe, sinon la premiere tout court.
+/// Un poste sans police n'a rien a poser (`textes_en_traces` refuse alors en le disant).
+fn poser_les_familles_generiques(polices: &mut usvg::fontdb::Database) {
+    use usvg::fontdb::Family;
+    let present = |polices: &usvg::fontdb::Database, nom: &str| polices.faces().any(|f| f.families.iter().any(|(n, _)| n == nom));
+    let premiere = |polices: &usvg::fontdb::Database, d_office: &Family, liste: &[&str]| -> Option<String> {
+        let nom = polices.family_name(d_office);
+        if present(polices, nom) {
+            return Some(nom.to_string());
+        }
+        liste.iter().find(|n| present(polices, n)).map(|n| n.to_string())
+    };
+    let sans = premiere(polices, &Family::SansSerif, &["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans", "Noto Sans", "FreeSans", "Segoe UI", "Verdana"])
+        .or_else(|| polices.faces().find(|f| !f.monospaced).or_else(|| polices.faces().next()).and_then(|f| f.families.first()).map(|(n, _)| n.clone()));
+    let Some(sans) = sans else { return };
+    let serif = premiere(polices, &Family::Serif, &["Times New Roman", "Times", "Liberation Serif", "DejaVu Serif", "Noto Serif", "FreeSerif", "Georgia"]);
+    let mono = premiere(polices, &Family::Monospace, &["Courier New", "Courier", "Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "FreeMono", "Consolas"]);
+    let cursive = premiere(polices, &Family::Cursive, &[]);
+    let fantasy = premiere(polices, &Family::Fantasy, &[]);
+    polices.set_serif_family(serif.unwrap_or_else(|| sans.clone()));
+    polices.set_monospace_family(mono.unwrap_or_else(|| sans.clone()));
+    polices.set_cursive_family(cursive.unwrap_or_else(|| sans.clone()));
+    polices.set_fantasy_family(fantasy.unwrap_or_else(|| sans.clone()));
+    polices.set_sans_serif_family(sans);
+}
 
 /// LE SVG `octets` SANS TEXTE : les documents n'impriment pas le texte d'un SVG (`dessin::Image::svg`), il se dessine
 /// donc une fois, a la pose, avec les polices du poste (usvg, `fontdb::Database::load_system_fonts`), et c'est le SVG
@@ -225,18 +255,28 @@ pub fn textes_en_traces(octets: &[u8]) -> Result<Option<TexteEnTraces>, Refus> {
     }
     let mut polices = usvg::fontdb::Database::new();
     polices.load_system_fonts();
+    poser_les_familles_generiques(&mut polices);
+    let connue = |famille: &str| FAMILLES_GENERIQUES.contains(&famille) || polices.faces().any(|f| f.families.iter().any(|(n, _)| n == famille));
     let mut textes = Vec::new();
     let mut polices_absentes: Vec<String> = Vec::new();
     for noeud in &noeuds {
+        // Un texte dont aucune famille n'est sur ce poste prend la famille sans empattement du poste : une autre police
+        // le dessine, et la phrase le dit (`polices_absentes`).
+        if let usvg::NodeKind::Text(ref mut t) = *noeud.borrow_mut() {
+            for span in t.chunks.iter_mut().flat_map(|c| c.spans.iter_mut()) {
+                for famille in &span.font.families {
+                    if !connue(famille) && !polices_absentes.contains(famille) {
+                        polices_absentes.push(famille.clone());
+                    }
+                }
+                if !span.font.families.iter().any(|f| connue(f)) {
+                    span.font.families.push("sans-serif".to_string());
+                }
+            }
+        }
         let (dessin, dit) = {
             let usvg::NodeKind::Text(ref t) = *noeud.borrow() else { continue };
             let dit = t.chunks.iter().map(|c| c.text.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
-            for famille in t.chunks.iter().flat_map(|c| &c.spans).flat_map(|s| &s.font.families) {
-                let connue = FAMILLES_GENERIQUES.contains(&famille.as_str()) || polices.faces().any(|f| f.families.iter().any(|(n, _)| n == famille));
-                if !connue && !polices_absentes.contains(famille) {
-                    polices_absentes.push(famille.clone());
-                }
-            }
             let Some(parent) = noeud.parent() else {
                 return Err(Refus::defaut("SVG : un texte sans parent dans l'arbre lu"));
             };
