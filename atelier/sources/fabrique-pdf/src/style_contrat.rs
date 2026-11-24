@@ -61,10 +61,11 @@ pub fn police() -> Police {
 
 /// Le corps du texte courant.
 const CORPS: Mesure = mesure!("7.5");
-/// L'espace sous un paragraphe du texte.
-const APRES_PARAGRAPHE: Mesure = mesure!("1.8");
+/// L'espace sous un paragraphe du texte. Lui et le suivant sont serrés pour que le contrat ordinaire d'un intermittent
+/// (le modèle par défaut, treize articles, ses signatures) tienne sur une page, logo compris.
+const APRES_PARAGRAPHE: Mesure = mesure!("1.5");
 /// L'espace au-dessus du titre d'un article.
-const AVANT_ARTICLE: Mesure = Mesure::entier(3);
+const AVANT_ARTICLE: Mesure = mesure!("2.5");
 
 /// Les trois mises en page (le `style` de la description : « contrat », « avenant »,
 /// « attestation »).
