@@ -27,6 +27,7 @@ async function rafraichirApresVeille(v) {
   try {
     await dessinerEtatsDesEngagements(mois);
     await rafraichirActions();
+    await relireFichesAttendues();
   } catch (e) { dire(e.message, "erreur"); }
 }
 

@@ -4616,7 +4616,7 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
     }
     let sauf: Vec<droit::fiche::CaseDeFiche> = if caisse_conges { Vec::new() } else { vec![documents::conges_spectacles::CLE_ADHERENT.into()] };
     match crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dsn, &fiches, &sauf)? {
-        Some(m) => Err(refus(m)),
+        Some(m) => Err(m),
         None => Ok(()),
     }
 }

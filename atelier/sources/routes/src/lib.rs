@@ -335,11 +335,12 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         Route::HorlogeRattraper => crate::horloge::route(&ctx, charge),
         autre => return Err(enveloppe::route_inconnue(autre.nom())),
     };
-    // UN ACTE REFUSE A UNE COMPAGNIE QUI N'A PAS FINI DE DEMARRER dit tout ce qui lui manque, pas un manque a la fois.
-    // Les mots de passe et les comptes (`routes::coffre`), le filet et les messages au developpeur (`routes::filet`) ne
-    // dependent d'aucun de ces manques : leur refus se dit seul.
+    // UN ACTE REFUSE PARCE QU'UN MANQUE DE « POUR DEMARRER » LE BLOQUE (une case qu'il exige, le taux AT/MP, l'effectif :
+    // sa classe le dit) dit tout ce qui manque encore, pas un manque a la fois. Tout autre refus dit ce qui corrige CE
+    // geste, et se dit seul.
+    let bloque_au_demarrage = |e: &Echec| matches!(e.classe, Some(Classe::CaseExigee | Classe::TauxAtmpAbsent | Classe::EffectifAbsent));
     match rendu {
-        Err(e) if est_une_ecriture(route) && !dans(coffre::ROUTES) && !dans(filet::ROUTES) && e.classe != Some(Classe::EnvoiBride) => {
+        Err(e) if est_une_ecriture(route) && bloque_au_demarrage(&e) => {
             // Un refus qui porte une donnee a part (l'etat d'un mois, les anomalies d'une fiche, un chemin) se dit seul.
             if e.a_part.is_some() {
                 return Err(e);

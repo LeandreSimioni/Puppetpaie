@@ -475,18 +475,13 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
     let completer = Completer::de(ctx, F::a_juger(&plate), &|k| montres.contains(&k), &listes)?;
     let mut cases = Vec::new();
     let mut avance_ouvert = false;
-    for c in table.iter().filter(|c| montres.contains(&c.cle) || completer.en_lecture(c.cle)) {
+    for c in table.iter().filter(|c| montres.contains(&c.cle)) {
         let ecrite = |chemin: &[&str]| plate.ecrite_au_chemin(c.cle, chemin);
         let Some(mut case) = case_du_champ(c, plate.valeur_ecrite(c.cle), &ecrite, mobilite)? else { continue };
         if !completer.case(ctx, &mut case)? {
             continue;
         }
-        let ouverte = montres.contains(&c.cle);
-        if !ouverte {
-            case.forme = Forme::Objet;
-            case.choix = None;
-        }
-        avance_ouvert |= ouverte && case.place == PlaceDeLaCase::Avance && c.ecart(&plate, du_code_postal.as_ref().map(|c| c.as_str()));
+        avance_ouvert |= case.place == PlaceDeLaCase::Avance && c.ecart(&plate, du_code_postal.as_ref().map(|c| c.as_str()));
         case.anomalie = anomalies.iter().find(|a| a_l_ecran(&table, a.champ) == c.cle).cloned();
         case.temps = historique.iter().find(|h| h.temps.champ == CaseDatee::Case(c.cle)).map(|h| h.temps.clone());
         cases.push(case);
@@ -523,16 +518,6 @@ impl<'a> Completer<'a> {
             }
             FicheAJuger::Spectacle(_) => Completer::Rien,
         })
-    }
-
-    /// LA CASE QUE LA FICHE FERME ET QUE LA ROUTE REND POURTANT, EN LECTURE : la profession de la deduction forfaitaire
-    /// d'un salarie quand la compagnie n'exerce pas l'option (rien ne s'y saisit ; elle porte la phrase qui le dit et le
-    /// renvoi a la fiche de l'entreprise, ou l'option se pose).
-    fn en_lecture(&self, k: CaseDeFiche) -> bool {
-        match self {
-            Completer::Salarie(_, listes, _) => !listes.deduction_forfaitaire_exercee && k == CaseDeFiche::from(droit::fiche::CaseSalarie::DeductionForfaitaire),
-            Completer::Entreprise(_) | Completer::Rien => false,
-        }
     }
 
     /// La case completee ; faux : la route ne l'ouvre pas (`completer_le_salarie`).
@@ -712,13 +697,12 @@ fn choix_de(choix: &[String], libelles: Option<&Libelles>) -> Vec<Choix> {
 /// LES LISTES QUE LA FICHE D'UN SALARIE OFFRE, lues une fois par reponse (la fiche rendue, ou toutes les lignes de
 /// « Pour démarrer ») : les pays de naissance (la table « Pays » de la DSN), les pays de nationalite (le COG de l'INSEE,
 /// chacun avec la nationalite DSN qui s'en deduit), les metiers qu'une fiche choisit (`metiers::metiers_d_une_fiche`), et
-/// ce que la fiche de l'entreprise dit de la deduction forfaitaire specifique (sa phrase, et si la compagnie l'exerce).
+/// ce que la fiche de l'entreprise dit de la deduction forfaitaire specifique (sa phrase, quand la compagnie l'exerce).
 pub(crate) struct ListesDuSalarie {
     pays_naissance: Vec<Choix>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     metiers: Vec<Choix>,
-    deduction_forfaitaire: String,
-    deduction_forfaitaire_exercee: bool,
+    deduction_forfaitaire: Option<String>,
 }
 
 /// LA COMPLEMENTAIRE SANTE D'UN SALARIE AU MOIS, telle que la fiche la fait dire : la convention ne la fait pas choisir
@@ -811,7 +795,6 @@ impl ListesDuSalarie {
             pays: droit::nationalite::servir()?,
             metiers,
             deduction_forfaitaire: crate::ouverture::deduction_forfaitaire_dite(ctx)?,
-            deduction_forfaitaire_exercee: ctx.entreprise.deduction_forfaitaire_option.code().is_some(),
         })
     }
 }
@@ -886,7 +869,7 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
             }
         }
     } else if est(S::DeductionForfaitaire) {
-        case.dit.push(listes.deduction_forfaitaire.clone());
+        case.dit.extend(listes.deduction_forfaitaire.clone());
         case.renvoi = Some(RenvoiDeLaFiche::Case { libelle: "Fiche de l'entreprise", fiche: NomDeFiche::Entreprise, case: CaseEntreprise::DeductionForfaitaireOption.into() });
     }
     Ok(true)

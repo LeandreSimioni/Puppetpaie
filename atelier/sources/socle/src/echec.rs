@@ -81,6 +81,9 @@ classes! {
     PreuveInsuffisante,
     /// La saisie n'est pas finie.
     SaisieIncomplete,
+    /// Un acte refuse : une case qu'il exige est vide dans une fiche (`declarations::champs::refus_des_manques`) ; la
+    /// phrase les nomme toutes, avec leur fiche.
+    CaseExigee,
     /// Aucun document a envoyer ou a imprimer.
     AucunDocument,
     /// La fiche porte des anomalies.
@@ -228,7 +231,7 @@ impl Echec {
     /// illisible, un calcul impossible) ? Une route qui lit rend le premier a sa place, dans sa reponse, et laisse
     /// remonter la seconde : regarder n'est jamais refuse, une panne ne se deguise pas en manque.
     pub fn dit_un_manque(&self) -> bool {
-        matches!(self.classe, None | Some(Classe::Refuse | Classe::Manque | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete))
+        matches!(self.classe, None | Some(Classe::Refuse | Classe::Manque | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete | Classe::CaseExigee))
     }
 
     /// Le meme refus, sa phrase recomposee par `f` (« <ce qu'on faisait> : <la phrase> ») : sa classe et ce qu'il porte a

@@ -532,7 +532,7 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> R<Vec<String>>
         fiches.push((crate::champs::FicheAJuger::Salarie(&e.salarie.champs), format!("la fiche de {}", qui)));
     }
     if let Some(m) = crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dpae, &fiches, &[])? {
-        return Err(refus(m));
+        return Err(m);
     }
     if embauches.is_empty() {
         return Ok(Vec::new());

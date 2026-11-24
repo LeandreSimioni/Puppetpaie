@@ -237,14 +237,27 @@ function brancherFichesAttendues() {
   };
   document.querySelectorAll("[data-oublier-fiche]").forEach((b) => {
     b.onclick = async () => {
+      b.disabled = true;
       try {
-        await api("fiche-oublier-demande", { adresse: b.dataset.oublierFiche });
+        const r = await api("fiche-oublier-demande", { adresse: b.dataset.oublierFiche });
         // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
         ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
         dessinerConfig();
-      } catch (e) { dire(e.message, "erreur"); }
+        dire(r.phrase, undefined);
+      } catch (e) { b.disabled = false; dire(e.message, "erreur"); }
     };
   });
+}
+
+/* Après un passage de la veille (une réponse a pu arriver) : la liste des demandes attendues relue et repeinte en
+   place, sans toucher à la fiche ouverte. */
+async function relireFichesAttendues() {
+  if (!ETAT) return;
+  ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
+  const encart = document.querySelector("#config-liste .attente-fiches");
+  if (!encart) return;
+  encart.outerHTML = fichesAttenduesHtml();
+  brancherFichesAttendues();
 }
 
 /* UN MONTANT S'ECRIT D'UNE SEULE FACON : « 1 053,08 € ». Le

@@ -861,12 +861,24 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
 // ----------------------------------------------------- fiche-oublier-demande
 
 /// `fiche-oublier-demande` : `{"adresse"}`, la personne a qui la fiche a ete demandee ; ses demandes en attente sont
-/// abandonnees.
+/// abandonnees. Une demande a cette adresse qui n'attend deja plus rien (sa reponse est arrivee, ou on y a deja renonce :
+/// la liste vue avant une releve, un second clic) ne se refuse pas : rien ne change, et la phrase dit ce qui l'a close.
 fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
     let adresse = strip(&c.adresse).to_lowercase();
     let codes: Vec<CodeDeDemande> = fiches_attendues(&ctx.racine)?.into_iter().filter(|a| *a.adresse == *adresse).map(|a| a.code).collect();
     if codes.is_empty() {
-        return Err(refus(format!("Aucune demande de fiche en attente pour {}.", adresse)));
+        let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
+        let close = lignes.iter().filter_map(journal::Ligne::fiche).filter(|e| e.accepte && *e.detail.adresse == *adresse).filter_map(|e| e.retours.last()).max_by_key(|r| r.quand);
+        let phrase = match close {
+            None => return Err(refus(format!("Aucune demande de fiche n'a été envoyée à {}.", adresse))),
+            Some(r) if r.abandon => socle::phrase!("Plus rien n'attend de {} : la demande a déjà été abandonnée.", adresse),
+            Some(r) => socle::phrase!(
+                "Plus rien n'attend de {} : sa réponse est arrivée le {} ; sa fiche est dans Configuration › Salariés.",
+                adresse,
+                r.quand.jour_de_paris().jj_mm_aaaa()
+            ),
+        };
+        return Ok(DemandeOubliee { phrase, adresse });
     }
     // CE QUI REVIENT SE RANGE SUR LA LIGNE DE LA DEMANDE : ici, qu'on y renonce.
     for code in &codes {

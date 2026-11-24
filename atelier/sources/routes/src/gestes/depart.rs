@@ -780,7 +780,7 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
         fiches.push((FicheAJuger::Spectacle(&sp.champs), qui));
     }
     match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Bulletin, &fiches, &[])? {
-        Some(m) => Err(erreur(Classe::Refuse, m)),
+        Some(m) => Err(m),
         None => Ok(()),
     }
 }
