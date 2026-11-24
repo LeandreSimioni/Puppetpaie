@@ -27,6 +27,6 @@ fn une_journee_de_plus_de_24_heures_se_refuse_et_plus_de_10_heures_se_dit() {
     let id = reussi(&saisir(&c, "2026-11", Some(&id), &regie(json!(11)), jour))["engagement"].clone();
     let a = route(&c, "apercu", json!({"mois": "2026-11", "modifications": []}), jour);
     let dits: Vec<Value> = reussi(&a)["paies"].as_array().unwrap().iter().filter(|p| p["bornes"]["du"] == "2026-11-28").flat_map(|p| p["avertissements"].as_array().cloned().unwrap_or_default()).collect();
-    assert!(dits.iter().any(|t| t.as_str().is_some_and(|t| t.contains("11 h le 28/11") && t.contains("L. 3121-18"))), "{:?}", dits);
+    assert!(dits.iter().any(|t| t["texte"].as_str().is_some_and(|t| t.contains("11 h le 28/11") && t.contains("L. 3121-18"))), "{:?}", dits);
     reussi(&route(&c, "valider-engagement", json!({"mois": "2026-11", "engagement": id}), jour));
 }

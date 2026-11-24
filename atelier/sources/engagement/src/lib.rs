@@ -891,13 +891,15 @@ impl Avis {
 struct AvisEcrit {
     texte: String,
     info: bool,
-    #[serde(default)]
     convention: Option<socle::garde_reseau::Url>,
 }
 
 impl From<AvisEcrit> for Avis {
     fn from(a: AvisEcrit) -> Avis {
         const AVANT: &str = " vérifiez-le sur le texte de la convention : ";
+        // L'ancienne phrase ecrivait « {phrase}{AVANT}{adresse}. » : seul ce dernier point se retire, et une adresse
+        // qui finit elle-meme par un point le garde. Une adresse qui ne se lit pas laisse l'avis tel qu'il s'ecrivait,
+        // la phrase entiere : le meme texte qu'avant, rien de perdu.
         let ancienne = || {
             let (phrase, adresse) = a.texte.rsplit_once(AVANT)?;
             let adresse = socle::garde_reseau::Url::lire(adresse.strip_suffix('.')?).ok()?;

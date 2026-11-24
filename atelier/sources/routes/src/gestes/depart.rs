@@ -449,9 +449,9 @@ pub(crate) struct DsnFabriquee {
 }
 
 impl DsnFabriquee {
-    /// Ce que la fabrique dit avant le depot : les avertissements, et les informations.
-    pub(crate) fn avis(&self) -> (Vec<String>, Vec<String>) {
-        let de = |info: bool| self.avertissements.iter().filter(|a| a.info == info).map(|a| a.texte.clone()).collect::<Vec<_>>();
+    /// Ce que la fabrique dit avant le depot : les avertissements, et les informations, chacun avec son lien.
+    pub(crate) fn avis(&self) -> (Vec<crate::mois::AvisVu>, Vec<crate::mois::AvisVu>) {
+        let de = |info: bool| self.avertissements.iter().filter(|a| a.info == info).map(crate::mois::AvisVu::de).collect::<Vec<_>>();
         (de(false), de(true))
     }
 }

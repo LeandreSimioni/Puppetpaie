@@ -1991,12 +1991,17 @@ pub(crate) struct AvisVu {
 
 impl AvisVu {
     /// Une phrase que la vue ajoute, sans lien.
-    fn phrase(texte: String) -> AvisVu {
+    pub(crate) fn phrase(texte: String) -> AvisVu {
         AvisVu { texte, lien: None }
     }
 
-    fn de(a: &engagement::Avis) -> AvisVu {
+    pub(crate) fn de(a: &engagement::Avis) -> AvisVu {
         AvisVu { texte: a.texte.clone(), lien: a.convention.clone().map(LienDuTexte::de_la_convention) }
+    }
+
+    /// Sa phrase seule, pour une ligne de `moteur route --texte`.
+    pub(crate) fn texte(&self) -> &str {
+        &self.texte
     }
 }
 
@@ -2356,8 +2361,8 @@ struct ParSalarie {
 struct PaieACompleter {
     a_completer: String,
     salarie: CleEcrite,
-    avertissements: [String; 0],
-    informations: [String; 0],
+    avertissements: [AvisVu; 0],
+    informations: [AvisVu; 0],
     contrat: EcritsSeuls,
     /// Ses bornes, lues de ce que sa carte dit ou de ses jours coches (`bornes_dites`, sans ses jours travailles que la
     /// paie seule connait) ; rien tant qu'elle ne dit pas son debut.
@@ -2420,8 +2425,8 @@ struct Calcul {
     total_net: Option<Montant>,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
+    avertissements: Vec<AvisVu>,
+    informations: Vec<AvisVu>,
 }
 
 /// L'APERCU (`apercu`) : le mois tel que l'ecran le montre, rien d'ecrit.
@@ -2442,9 +2447,11 @@ struct Apercu {
     total_cout_dit: &'static str,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
-    avertissements: Vec<String>,
-    informations: Vec<String>,
-    /// Ce que le moteur dit de chaque engagement (les encarts de sa carte), en phrases : le mois, puis ses paies.
+    avertissements: Vec<AvisVu>,
+    informations: Vec<AvisVu>,
+    /// Ce que le moteur dit de chaque engagement (les encarts de sa carte), en phrases : le mois, puis ses paies. Les
+    /// textes seuls, pour `moteur route --texte` ; le lien d'un avis est dans `avertissements` et `informations`, et dans
+    /// ceux de sa paie.
     phrases: Vec<String>,
 }
 
@@ -2472,7 +2479,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         None => socle::phrase!("{} : {}.", r.libelle, socle::ecran::compte(paies.len(), "paie", "paies")),
     };
     let mut phrases: Vec<String> = Vec::new();
-    for t in r.avertissements.iter().chain(r.informations.iter()).chain(paies.iter().flat_map(|p| p.paie.textes())) {
+    for t in r.avertissements.iter().chain(r.informations.iter()).map(|a| &a.texte).chain(paies.iter().flat_map(|p| p.paie.textes())) {
         if !phrases.contains(t) {
             phrases.push(t.clone());
         }
@@ -2710,11 +2717,11 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois, lignes: &R<LignesPreremplies>) ->
             }
         })
         .collect::<Vec<_>>();
-    let mut avertissements = archives_employees(&paies)?;
+    let mut avertissements: Vec<AvisVu> = archives_employees(&paies)?.into_iter().map(AvisVu::phrase).collect();
     let mut informations = Vec::new();
     for v in &vues {
-        avertissements.extend(v.avertissements.iter().map(|a| a.texte.clone()));
-        informations.extend(v.informations.iter().map(|a| a.texte.clone()));
+        avertissements.extend(v.avertissements.iter().cloned());
+        informations.extend(v.informations.iter().cloned());
     }
     let paies: Vec<PaieVue> = vues.into_iter().map(|v| PaieVue::Calculee(Box::new(v))).collect();
     Ok(Calcul {
