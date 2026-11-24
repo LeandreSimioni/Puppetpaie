@@ -180,12 +180,17 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
     let nom: Vec<String> = [lu(p.prenom_affichage.portee(), p.prenom.portee()), lu(p.nom_affichage.portee(), p.nom.portee())].into_iter().flatten().collect();
     let titre = if nom.is_empty() { cle.to_string() } else { nom.join(" ") };
     let matricule = p.code_salarie.portee().map(str::trim).filter(|m| !m.is_empty()).map(|m| format!("matricule {}", m));
-    let mut gestes = Vec::new();
-    if super::ce_qui_lie(ctx, cle)?.is_none() {
-        let disparait = super::ce_que_supprimer_dit(ctx, &titre, &ctx.fiche_de(cle)?.champs)?;
-        let charge = super::ChargeSupprimerSalarie { cle: cle.clone() };
-        gestes.push(GesteDeRoute::sans_cases(crate::catalogue::Route::SupprimerSalarie, charge, SUPPRIMER_LE_SALARIE).disant(disparait));
-    }
+    // REGARDER N'EST JAMAIS REFUSE : un fichier que la recherche des liens ne lit pas (le stock, les imprevus, le journal)
+    // ne ferme pas la fiche ; le geste n'est alors pas offert, et seule la route `supprimer-salarie`, appelee, le refuse
+    // en le disant.
+    let offerte = ctx.fiche_de(cle).and_then(|f| super::suppression_offerte(ctx, cle, &titre, &f.champs));
+    let gestes = match offerte {
+        Ok(Some(disparait)) => {
+            let charge = super::ChargeSupprimerSalarie { cle: cle.clone() };
+            vec![GesteDeRoute::sans_cases(crate::catalogue::Route::SupprimerSalarie, charge, SUPPRIMER_LE_SALARIE).disant(disparait)]
+        }
+        Ok(None) | Err(_) => Vec::new(),
+    };
     Ok(EnteteDeLaFiche {
         salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents", gestes }),
         ..EnteteDeLaFiche::de(titre, matricule, None, Some(CoutDeLaFiche::Salarie { de: cle.clone() }))

@@ -149,16 +149,6 @@ pub fn presentes(o: &Objet) -> R<BTreeMap<Mois, PaieEcrite>> {
     Ok(out)
 }
 
-/// Le salarie `cle` a-t-il une paie ecrite, presente ou d'une version passee, dans l'un des fichiers des paies ?
-pub fn en_porte(racine: &std::path::Path, cle: &droit::contexte::IdSalarie) -> R<bool> {
-    for m in mois_payes(racine)? {
-        if fichier(racine, m)?.is_some_and(|f| f.paies.iter().any(|e| e.salarie == *cle)) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 /// Le nombre de paies ecrites de `mois`, celles des versions presentes des engagements.
 pub fn nombre(racine: &std::path::Path, mois: Mois) -> R<usize> {
     Ok(fichier(racine, mois)?.iter().flat_map(|f| &f.paies).filter(|e| e.presente.is_some()).count())
