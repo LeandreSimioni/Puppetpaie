@@ -1143,6 +1143,11 @@ forme! {
         /// 2019, art. 1er : 130 % ; `reduction::reduction_generale_sous_dfs`).
         pub limite_reduction_generale: Taux,
         pub rubriques_abattues: Vec<IdDeCotisation>,
+        /// Les avantages que l'annexe 2, II, de l'arrete laisse hors de l'assiette pour toute profession sous DFS, par le
+        /// type d'autre element de revenu brut (S21.G00.54.001) que la rubrique qui les paie declare
+        /// (`Rubrique::dsn_autres_bruts`) : la prise en charge des titres de transport (18) et la part patronale des
+        /// titres-restaurant (17) (`engagement::calcul::dfs_applicable`).
+        pub avantages_hors_assiette: Vec<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
     }
 }
 

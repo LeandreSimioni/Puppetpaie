@@ -169,15 +169,22 @@ au régime AGIRC-ARRCO »).
 3. **Un cadre sous DFS** : refusé (l'assiette de l'Apec sous DFS n'est dans aucun texte déposé ; ses tranches journalières).
 4. **Un remboursement de frais réintégré** (hors annexe 2) : porté. Il entre dans l'assiette avant l'abattement
    (`calcul::dfs_applicable`, `calcul::abattement_dfs` ; arrêté, art. 9, I, al. 4 ; BOSS § 2240 ; l'exemple de l'Urssaf,
-   `../urssaf-frais-professionnels/urssaf-frais-professionnels-20261030.txt`, l. 1146-1157), dans l'assiette du chômage
-   d'un intermittent (art. 49 des annexes : les rémunérations « entrant dans l'assiette des cotisations de sécurité
-   sociale », « avant application de l'abattement » ; la fiche net-entreprises 484 : « 4500 + 500 = 5000 » au 51 de
-   type 002), dans la remuneration comparée au seuil d'un taux réduit (`droit::reduction::au_dela_du_seuil`) et dans
-   celle « sans application du même abattement » de la réduction générale (`droit::reduction::reduction_generale_sous_dfs`,
-   INFÉRENCE écrite là) ; la DSN les déclare en bloc 54 de type 35 (`bloc-S21.G00.54.txt` l. 39-43 ; `dsn::autre_revenu`).
+   `../urssaf-frais-professionnels/urssaf-frais-professionnels-20261030.txt`, l. 1146-1157) ; une paie sans ligne de
+   salaire qui en rembourse s'abat sur eux seuls. Il entre dans l'assiette du chômage d'un intermittent (art. 49 des
+   annexes : les rémunérations « entrant dans l'assiette des cotisations de sécurité sociale », « avant application de
+   l'abattement » ; la fiche net-entreprises 484 : « 4500 + 500 = 5000 » au 51 de type 002), dans la remuneration
+   comparée au seuil d'un taux réduit (`droit::reduction::au_dela_du_seuil`) et dans celle de la réduction générale
+   calculée avec la déduction ; celle « sans application du même abattement », dont la réduction ne dépasse pas 130 %,
+   est le brut seul, frais exclus (BOSS, allègements généraux, § 190 et § 350,
+   `../boss/boss-allegements-generaux-20261123.txt` ; `droit::reduction::reduction_generale_sous_dfs`) ; la DSN les
+   déclare en bloc 54 de type 35 (`bloc-S21.G00.54.txt` l. 39-43 ; `dsn::autre_revenu`). La majoration de 11,5 % porte
+   sur toute l'assiette abattue, frais compris (INFÉRENCE : la lettre circulaire Acoss 2013-019, R6, la pose sur
+   l'assiette abattue, sans dire la part des frais).
    Ni la CSG (INFÉRENCE : l'Urssaf dit que la DFS « ne s'applique pas au calcul de la CSG et de la CRDS », dont l'assiette
    reste la sienne, frais exclus ; aucun texte déposé ne dit la réintégration pour elle) ni les Congés Spectacles, la
-   prévoyance ou les contributions conventionnelles, dont l'assiette est le brut, ne les comptent. Reste refusée
+   prévoyance ou les contributions conventionnelles, dont l'assiette est le brut, ne les comptent. Restent dehors, pour
+   toute profession, la prise en charge des titres de transport et la part patronale des titres-restaurant (annexe 2, II,
+   1° et 2° ; reconnues au type 18 ou 17 de leur rubrique, `avantages_hors_assiette` du barème). Reste refusée
    (`calcul::dfs_applicable`) une ligne hors assiette qui n'est pas un remboursement de frais (une rubrique de nature
    `indemnite`) : le rescrit BOSS-RES-000010 (`../boss/boss-frais-professionnels-20261013.txt`, § 2325) veut une indemnité
    de transport conventionnelle dans l'assiette « dès le 1er euro », et aucun texte déposé ne dit ce qu'une autre

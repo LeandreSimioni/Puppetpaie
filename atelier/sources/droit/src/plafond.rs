@@ -291,8 +291,7 @@ impl RemunerationsRegularisees {
 ///   vieillesse plafonnee et le FNAL : BOSS, assiette generale, § 1230, « l'ensemble des remunerations dues par un meme
 ///   employeur a un meme salarie, y compris au titre de plusieurs contrats, successifs ou non ») et la part abattue de la
 ///   CSG (§ 290, « Les regles de calcul du plafond sont les memes »). Les autres tranches ont chez lui leurs propres
-///   regles, et ses paies n'entrent pas dans le cumul d'un contrat au mois du meme salarie : sa retraite complementaire
-///   se compte sur le plafond de l'annee, a part (circulaire Agirc-Arrco 2018-09-DC, annexe A, art. 1, « les
+///   regles : sa retraite complementaire se compte sur le plafond de l'annee, a part (circulaire Agirc-Arrco 2018-09-DC, annexe A, art. 1, « les
 ///   remunerations versees dans l'annee par chaque employeur sont traitees de facon distincte, dans les limites
 ///   annuelles des assiettes T1 et T2 », `tranches_sous_le_plafond_annuel`) : la tranche 2, la tranche 1 + 2 et la CET ;
 ///   sa prevoyance sur les tranches journalieres (Audiens, Parametres 2026, l. 41-46, « les plafonds applicables sont

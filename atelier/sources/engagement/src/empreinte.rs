@@ -120,6 +120,7 @@ fn entree_tient(ctx: &Contexte, k: &CleLue, v: &ValeurLue) -> R<bool> {
         // Une lecture qu'aucun calcul ne note : celle qu'une compagnie a ecrite ne tient pas, et la paie se recalcule.
         CleLue::Datee(LectureDatee::PaiesAuMois { .. }) => false,
         CleLue::Datee(LectureDatee::PaiesIntermittentes { mois, salarie }) => *v == ValeurLue::Empreinte(crate::etats::empreinte_des_paies_validees_intermittentes(ctx, *mois, salarie)?),
+        CleLue::Datee(LectureDatee::PaiesRegularisees { mois, salarie }) => *v == ValeurLue::Empreinte(crate::etats::empreinte_des_paies_validees_regularisees(ctx, *mois, salarie)?),
         CleLue::Datee(LectureDatee::Reprises { mois, salarie }) => *v == ValeurLue::Empreinte(crate::importe::empreinte_des_reprises(racine, *mois, salarie)?),
         CleLue::Datee(LectureDatee::Saisie { mois, salarie }) => stock::empreinte_de_la_saisie_du_mois(racine, *mois, salarie.as_ref())?.is_some_and(|e| *v == ValeurLue::Saisie(e)),
         CleLue::Imprevus { salarie } => *v == ValeurLue::Empreinte(crate::imprevus::empreinte_du_salarie(racine, salarie)?),

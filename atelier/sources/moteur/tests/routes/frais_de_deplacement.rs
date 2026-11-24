@@ -116,12 +116,16 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
 /// SOUS DEDUCTION FORFAITAIRE SPECIFIQUE, LE REMBOURSEMENT DE FRAIS ENTRE DANS L'ASSIETTE AVANT L'ABATTEMENT : arrete du
 /// 4 septembre 2025, art. 9, I, al. 4 (`atelier/reference/sources/dfs/arrete-2025-frais-professionnels/articles-20261110.md`,
 /// l. 43 : « y compris, le cas échéant, les indemnités versées [...] à titre de remboursement des frais professionnels,
-/// à l'exception de celles » de l'annexe 2, qui ne nomme pas le repas d'une artiste dramatique) ; BOSS, Frais
-/// professionnels, § 2240 (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2794-2796). Le
-/// chômage d'un intermittent les compte, avant l'abattement (fiche net-entreprises 484 : « 4500 + 500 = 5000 »).
-/// FULLER, artiste dramatique (18 % en 2026, art. 9, II), deux cachets de 150 € et un repas de 20 € au restaurant, sous
-/// sa limite de 21,40 € : 300 + 20 = 320 ; la déduction, 320 × 18 % = 57,60 ; l'assiette abattue, 262,40 (246 si le repas
-/// restait dehors).
+/// à l'exception de celles » de son annexe 2) ; BOSS, Frais professionnels, § 2240
+/// (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2794-2796). L'annexe 2
+/// (`atelier/reference/sources/dfs/annexes-2025/legi-arrete-20250904-frais-professionnels-annexe2-frais-hors-assiette-20250907.txt`)
+/// ne laisse dehors, pour une artiste dramatique, que « Les indemnités journalières de "défraiement" » d'une tournée
+/// (I, 2°) : pas un défraiement remboursé au réel. Le chômage d'un intermittent les compte, avant l'abattement (fiche
+/// net-entreprises 484 : « 4500 + 500 = 5000 »).
+/// FULLER, artiste dramatique (18 % en 2026, art. 9, II), deux cachets de 150 € et 20 € de défraiement au réel : 300 + 20
+/// = 320 ; l'assiette abattue, 320 × 0,82 = 262,40 (246 si le défraiement restait dehors) ; la déduction, 320 − 262,40 =
+/// 57,60. L'assiette minimum (CSS R. 242-1, al. 6) ne joue pas : 2 cachets de 7 heures au SMIC horaire restent sous
+/// 262,40.
 #[test]
 fn sous_dfs_le_remboursement_de_frais_entre_dans_l_assiette_avant_l_abattement() {
     let d = dossier_de_test("frais_de_deplacement", "dfs");
@@ -142,7 +146,7 @@ fn sous_dfs_le_remboursement_de_frais_entre_dans_l_assiette_avant_l_abattement()
     let jours = json!(["2026-11-20", "2026-11-21"]);
     let lignes = json!([
         {"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []},
-        {"rubrique": "repas", "quantite": {"unites": 1}, "taux": 20, "territoire": null, "cases": ["restaurant"], "lieu": null, "dates": ["2026-11-20"], "planning": []},
+        {"rubrique": "defraiement_reel", "montant": 20},
     ]);
     let carte = json!({"ecrite": identite(&c, mois, "FULLER", None)});
     reussi(&route(&c, "enregistrer-saisie", json!({"mois": "2026-11", "carte": carte, "changements": [{"case": "lignes", "valeur": lignes}]}), jour));

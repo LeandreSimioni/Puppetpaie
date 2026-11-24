@@ -2260,8 +2260,8 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
     (déduction forfaitaire spécifique, heures supplémentaires, exonération des heures en plus). Ce lecteur prend ses
     paies telles que les pièces les disent (`importe::PaieReprise`), sans les ranger ni rien calculer d'elles : une
     nature encore à dire, le barème ou la convention de leur mois ne font refuser aucun de ces calculs. Le calcul qui les
-    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-au-mois <mois> <salarié>` pour les seules
-    validées de ses contrats payés au mois, que la régularisation du plafond lit sans calculer les autres, et
+    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-regularisees <mois> <salarié>` pour les seules
+    validées de ses contrats qui se régularisent (pas d'artiste), que la régularisation du plafond lit sans calculer les autres, et
     `paies-intermittentes <mois> <salarié>` pour celles de ses contrats d'intermittent, que l'année de sa retraite
     complémentaire lit) : un
     réimport, un bulletin qui complète une paie de DSN, une ligne rattachée font recalculer la paie validée qui les a

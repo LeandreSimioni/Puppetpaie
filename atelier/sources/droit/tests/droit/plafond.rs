@@ -272,22 +272,4 @@ fn la_regularisation_cumule_chaque_assiette_sur_sa_base_et_ses_paies() {
     let b = payer(&mut annee, "420", "500", "1291.94", intermittent);
     // 1 260 - 645,97 : plus que le brut abattu de B, il rattrape A.
     assert_eq!((b.t1, b.abattue_csg), (montant("614.03"), montant("500")));
-
-    // 3. Un CDI (janvier : 3 000 sur 4 005 ; mars : 4 700 sur 4 005) et un contrat de technicien en fevrier (5 jours,
-    // 645,97, 1 000 €) : une seule masse pour la tranche 1 et la CSG ; la tranche 2 et la CET du CDI ne cumulent que ses
-    // paies.
-    let mut annee = AnneeAnterieure::debut();
-    let janvier = payer(&mut annee, "3000", "3000", "4005", PorteesParLaPaie::Toutes);
-    assert_eq!((janvier.t1, janvier.t2, janvier.cet), (montant("3000"), Montant::ZERO, Montant::ZERO));
-    // Le technicien prend le plafond que le CDI n'a pas use : 4 000 sous 4 650,97, moins 3 000 (645,97 contrat seul).
-    let fevrier = payer(&mut annee, "1000", "1000", "645.97", intermittent);
-    assert_eq!((fevrier.t1, fevrier.abattue_csg), (montant("1000"), montant("1000")));
-    let mars = payer(&mut annee, "4700", "4700", "4005", PorteesParLaPaie::Toutes);
-    // Tranche 1 : 8 700 au-dessus de 8 655,97 (4 005 + 645,97 + 4 005), donc 8 655,97 - 3 000 - 1 000.
-    assert_eq!(mars.t1, montant("4655.97"));
-    // Tranche 2 et CET, sur les seules paies du CDI : 7 700 sous 8 010 ; ni tranche 2 ni CET (melees au technicien,
-    // 8 700 au-dessus de 8 655,97, la CET serait due).
-    assert_eq!((mars.t2, mars.cet, mars.t1_t2), (Montant::ZERO, Montant::ZERO, montant("4700")));
-    // La CSG : 8 700 sous 4 x 8 655,97, moins 3 000 et 1 000.
-    assert_eq!(mars.abattue_csg, montant("4700"));
 }

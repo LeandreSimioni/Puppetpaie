@@ -146,10 +146,18 @@ Ce qu'on en lit :
   jour du mois civil suivant. Le paragraphe dit « exonération », pas « taux spécifiques ».
 - **§ 250-280** (l. 371-405) : les taux réduits cumulables avec la réduction : journalistes rémunérés à la pige, VRP à
   cartes multiples, professions médicales à temps partiel. Les artistes du spectacle n'y sont pas.
+- **§ 350** (l. 523-560) : le montant calculé avec la déduction est « plafonné à 130 % du montant qui aurait été calculé
+  si cette déduction n'avait pas été prise en compte » ; ses deux exemples (2 200 € de brut et 200 € de frais, puis 2 200 €
+  et 100 €) donnent le même montant sans la déduction, 537,53 €, celui des 2 200 € seuls : sans la déduction, les frais
+  restent hors de l'assiette. Les coefficients des exemples (24,43 %, 34,87 %, 38,82 %) ne se retrouvent pas avec le Tdelta
+  du § 440 (0,3821 pour 70 salariés : 24,72 %, 35,29 %, 39,29 %) ; ils supposent un Tdelta d'environ 0,3773 : le moteur
+  suit le tableau du § 440 et le D. 241-7.
 - **§ 820** (l. 1281-1292) : pour un salarié intermittent, le SMIC du coefficient « est basé sur la durée de travail
   inscrite au contrat de travail du salarié » ; rien sur la durée d'un cachet.
 
-Où le moteur s'en sert : § 190, dans la règle du seuil des taux réduits de 2025 (`droit::reduction::au_dela_du_seuil`,
+Où le moteur s'en sert : § 190 et § 350, la réduction générale sous déduction forfaitaire spécifique
+(`droit::reduction::reduction_generale_sous_dfs` : sur le brut et les frais abattus, dans la limite de 130 % de celle du
+brut seul) ; § 190, dans la règle du seuil des taux réduits de 2025 (`droit::reduction::au_dela_du_seuil`,
 les revenus déduction forfaitaire spécifique déduite). § 220 à 280 : ce que fait déjà le barème 2026 (l'artiste n'a pas
 la réduction générale, `par_statut.technicien.reduction_generale.statuts`), non cité dans le barème. § 220 (l. 331) :
 `logiciel/donnees/ecarts-connus-base.json`, la ligne `reduction_generale` de Coolpaie, l'écart connu d'une réduction

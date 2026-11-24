@@ -128,24 +128,31 @@ fn repartir_la_reduction(rg: &ParametresDeLaReduction, coefficient: Coefficient,
 /// dans des limites et conditions fixees par arrete >> ; arrete du 4 decembre 2019, art. 1er (redaction de l'arrete du
 /// 4 septembre 2025, art. 11 ; `atelier/reference/sources/dfs/arrete-2019-reduction-generale/`) : << Le montant de la
 /// reduction generale [...] calcule pour les remunerations apres application de l'abattement forfaitaire [...] ne peut
-/// exceder, pour ces remunerations, 130 % du montant la reduction calcule sans application du meme abattement. >> La
-/// reduction se calcule donc sur le brut abattu (`abattu`), dans la limite (`limite`, lue au bareme :
-/// `deduction_forfaitaire.limite_reduction_generale`) de celle des memes remunerations sans l'abattement (`brut` :
-/// l'assiette avant l'abattement, le brut et les frais que la deduction reintegre,
-/// `engagement::calcul::DeductionForfaitaire::avant_abattement`). INFERENCE, ecrite comme telle : << ces
-/// remunerations >> sont celles que l'abattement abat, remboursements de frais reintegres compris (arrete du 4 septembre
-/// 2025, art. 9, I, al. 4) ; aucun texte depose ne dit la remuneration << sans application du meme abattement >> d'une
-/// paie qui en reintegre.
+/// exceder, pour ces remunerations, 130 % du montant la reduction calcule sans application du meme abattement. >> Le
+/// BOSS, Allegements generaux (`atelier/reference/sources/boss/boss-allegements-generaux-20261123.txt`), dit les deux
+/// remunerations :
+/// - avec la deduction, `abattu` : le brut et les frais qu'elle reintegre, abattus (§ 190, l. 241-252 : « la
+///   rémunération intègre les sommes versées au titre du remboursement de frais professionnels » ; « 1 900 × (1 – 10%)
+///   soit 1 710 € », 100 € de frais compris) ;
+/// - sans elle, `brut` : le brut seul, les frais restant alors hors de l'assiette (§ 350, l. 523-560 : 2 200 € de brut
+///   et 200 € de frais, puis 2 200 € et 100 € de frais, donnent le meme montant « si cette déduction n'avait pas été
+///   prise en compte », 537,53 €, celui des 2 200 € seuls).
+/// La reduction se calcule sur `abattu`, dans la limite (`limite`, lue au bareme :
+/// `deduction_forfaitaire.limite_reduction_generale`) de celle de `brut` (§ 350 : « plafonné à 130 % du montant qui
+/// aurait été calculé si cette déduction n'avait pas été prise en compte »).
 pub fn reduction_generale_sous_dfs(
     rg: Option<&ParametresDeLaReduction>, limite: Taux, statut: Option<Statut>, brut: Montant, abattu: Montant, heures: Heures, caisse_conges: bool,
 ) -> R<Option<ReductionGenerale>> {
     let Some(apres) = reduction_generale(rg, statut, abattu, heures, caisse_conges)? else { return Ok(None) };
-    // Le brut entier (au moins le brut abattu) ouvre la reduction des qu'elle s'ouvre sur l'abattu (memes parametres,
-    // meme statut, memes heures).
-    let Some(sans) = reduction_generale(rg, statut, brut, heures, caisse_conges)? else {
-        return Err(socle::echec::refus("La réduction générale s'ouvre sur le brut abattu mais pas sur le brut entier : le signaler au développeur."));
+    // Sans la deduction (memes parametres, meme statut, memes heures, qui ont ouvert la reduction sur l'abattu), seul le
+    // brut compte : une paie sans brut (des frais reintegres seuls) n'y a aucune reduction (`reduction_generale` n'en
+    // calcule pas sur un brut nul), et 130 % de rien est rien.
+    let sans = match reduction_generale(rg, statut, brut, heures, caisse_conges)? {
+        Some(sans) => sans.montant,
+        None if brut <= Montant::ZERO => Montant::ZERO,
+        None => return Err(socle::echec::refus("La réduction générale s'ouvre sur le brut abattu mais pas sur le brut : le signaler au développeur.")),
     };
-    let limite = sans.montant.fois_taux(limite).au_centime();
+    let limite = sans.fois_taux(limite).au_centime();
     if apres.montant <= limite {
         return Ok(Some(apres));
     }

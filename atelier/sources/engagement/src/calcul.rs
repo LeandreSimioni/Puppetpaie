@@ -782,6 +782,9 @@ pub struct DfsDuSalarie {
     /// hors de l'assiette pour cette profession ; tout autre remboursement de frais se reintegre (art. 9, I, al. 4 ;
     /// `dfs_applicable`).
     pub frais_hors_assiette: Vec<droit::catalogue::CodeDeRubrique>,
+    /// Les avantages que l'annexe 2, II, laisse hors de l'assiette pour toute profession, par le type d'autre element de
+    /// revenu brut de leur rubrique (`DfsDuBareme::avantages_hors_assiette`).
+    pub avantages_hors_assiette: Vec<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
 }
 
 /// UN REFUS DU CALCUL QUI PORTE A PART le champ a dire, quand il y en a un, et le detail, pour le developpeur.
@@ -864,6 +867,7 @@ silence vaut accord >>). Dire lequel ({}, {}) ou son refus ({}). Rien n'est calc
         rubriques: dfs.rubriques_abattues.clone(),
         plafond_annuel: dfs.plafond_annuel,
         frais_hors_assiette: fiche_prof.frais_hors_assiette.clone(),
+        avantages_hors_assiette: dfs.avantages_hors_assiette.clone(),
     }))
 }
 
@@ -882,6 +886,16 @@ silence vaut accord >>). Dire lequel ({}, {}) ou son refus ({}). Rien n'est calc
 ///   (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2794-2796) : ils << entrent
 ///   obligatoirement dans l'assiette des cotisations, prealablement a l'application de la deduction >> ; § 2250 (l. 2808) :
 ///   l'annexe 2 en est la << liste limitative >>.
+/// - l'annexe 2, II (`atelier/reference/sources/dfs/annexes-2025/legi-arrete-20250904-frais-professionnels-annexe2-frais-hors-assiette-20250907.txt`),
+///   laisse hors de l'assiette, pour toute profession, << La prise en charge obligatoire de 50 % du coût des titres de
+///   transport des salariés ou la prime de transport de 4 euros >> (1°) et << La part contributive de l'employeur dans les
+///   titres-restaurant dans les limites prévues au 19° de l'article 81 du code général des impôts >> (2°) : une ligne
+///   dont la rubrique declare le type 18 (transports publics) ou 17 (titres-restaurant) reste dehors, ni reintegree ni
+///   refusee (`DfsDuBareme::avantages_hors_assiette`). INFERENCE, ecrite comme telle : la ligne hors assiette d'une
+///   rubrique de type 18 est la prise en charge obligatoire (le moteur ne connait pas le cout du titre, et ne voit pas une
+///   part au-dela de 50 %) ; celle de type 17 est dans les limites du CGI, puisque la compagnie l'a mise hors assiette.
+///   La prime de transport de 4 euros (arrete du 28 septembre 1948, que l'annexe de 2005 nommait) n'a pas de type a
+///   elle : le type 19 (transports personnels) porte aussi d'autres prises en charge, il n'en est pas.
 /// Une ligne hors assiette se classe par ce qu'elle est, la nature de sa rubrique (`Rubrique::hors_assiette`), pas par
 /// son code : un remboursement de frais d'une rubrique de la compagnie est un remboursement de frais.
 /// - une ligne hors assiette qui n'est pas un remboursement de frais (une indemnite) : le rescrit BOSS-RES-000010 (meme
@@ -915,7 +929,13 @@ l'Apec). L'assiette de l'Apec sous deduction n'est dans aucun texte depose (atel
     }
     let mut reintegres = Montant::ZERO;
     for l in lb.iter().filter(|l| !l.soumis && !l.montant.est_nul()) {
-        let genre = rubrique(racine, &l.code, jour)?.hors_assiette()?;
+        let r = rubrique(racine, &l.code, jour)?;
+        // L'annexe 2, II, pour toute profession : la prise en charge des titres de transport, la part patronale des
+        // titres-restaurant (`DfsDuBareme::avantages_hors_assiette`), reconnues au type que leur rubrique declare.
+        if r.dsn_autres_bruts.is_some_and(|t| o.avantages_hors_assiette.contains(&t)) {
+            continue;
+        }
+        let genre = r.hors_assiette()?;
         if genre == HorsAssiette::Revenu {
             return Err(refus_detaille(format!("{} : la ligne « {} » est hors assiette sans être un remboursement de frais, et il est sous déduction forfaitaire spécifique : la soumettre, ou en faire un remboursement de frais.", qui, l.libelle), None, format!(
                 "{} : la ligne << {} >> est hors assiette et n'est pas un remboursement de frais, pour un salarie sous \
@@ -1746,7 +1766,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 
     // 7.4 : les assiettes, par rubrique de salaire. La CSG abat la part du brut sous quatre plafonds, le plafond de la
     // vieillesse, regularisee sur l'annee comme lui (CSS L. 136-2, I ; BOSS, assiette generale, § 290 :
-    // `regularisees.abattue_csg`, `Pile::assiette_csg`).
+    // `regularisees.abattue_csg`, `Pile::assiette_csg`). INFERENCE, ecrite comme telle : sous deduction forfaitaire
+    // specifique, les frais reintegres (7.5 bis) n'entrent pas dans l'assiette de la CSG. Leur reintegration est celle de
+    // l'assiette des cotisations de securite sociale que la deduction abat (arrete du 4 septembre 2025, art. 9, I, al. 4) ;
+    // la CSG garde la sienne, ou un remboursement de frais n'est pas un revenu d'activite, et l'Urssaf dit que la
+    // deduction « ne s'applique pas au calcul de la CSG et de la CRDS » (`atelier/reference/sources/dfs/LISEZ-MOI.md`,
+    // « Ce qui manque », 4) ; aucun texte depose ne dit la reintegration pour elle.
     let abattue_csg = regularisees.abattue_csg;
     let (maj115, maj110) = (bar.majoration_conges_115, bar.majoration_conges_110);
     let assiettes = |montant: Montant, cs: bool| -> Assiettes {
@@ -1807,19 +1832,25 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // Le brut abattu (la somme des assiettes abattues), sur lequel se calcule la reduction generale (7.9).
     let mut brut_abattu: Option<Montant> = None;
     if let Some((o, reintegres)) = &dfs_du_salarie {
-        if soumises.is_empty() && !reintegres.est_nul() {
-            return Err(refus(format!(
-                "{} : la paie rembourse des frais sous déduction forfaitaire spécifique sans aucune ligne de salaire : les frais entrent dans l'assiette avant l'abattement (arrêté du 4 septembre 2025, art. 9, I, al. 4), qui n'a aucune rubrique où les poser. Ajouter le salaire de la paie.",
-                eng.qui()
-            )));
+        // Une paie sans ligne de salaire qui rembourse des frais reintegres : les frais sont toute l'assiette avant
+        // l'abattement (art. 9, I, al. 4), qui porte sur eux. Ils prennent leur propre part, sans brut : l'abattement
+        // les y pose entiers (`abattement_dfs`, « sur la premiere quand le brut est nul »).
+        let mut montants: Vec<Montant> = soumises.iter().map(|l| l.montant).collect();
+        if montants.is_empty() && !reintegres.est_nul() {
+            montants.push(Montant::ZERO);
+            par_rubrique.push(assiettes(Montant::ZERO, false));
         }
         let deja = dfs_deja_deduite(ctx, eng, &sal, precedentes)?;
-        let montants: Vec<Montant> = soumises.iter().map(|l| l.montant).collect();
         let (deduction, assiettes_abattues) = abattement_dfs(o, &montants, brut, *reintegres, deja, plafond, &mut avis_dfs);
         let mut somme_abattue = Montant::ZERO;
         for (r, abattu) in par_rubrique.iter_mut().zip(assiettes_abattues) {
             somme_abattue += abattu;
             r.dfs = Some(abattu);
+            // INFERENCE, ecrite comme telle : la majoration de 11,5 % (et de 10 %) porte sur toute l'assiette abattue, la
+            // part des frais reintegres comprise. La lettre circulaire Acoss 2013-019 (annexe 1, R6 ;
+            // `atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md`) la pose sur l'assiette abattue, qui
+            // compte les frais depuis l'art. 9, I, al. 4 ; aucun texte depose ne dit si la part des frais, qui n'est pas
+            // du salaire dont la caisse paiera les conges, s'en retire.
             r.x115_dfs = Some((abattu * maj115).au_centime());
             r.x110_dfs = Some((abattu * maj110).au_centime());
         }
@@ -1958,9 +1989,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // 15/11/2024, art. 49). Sous le plafond, rien ne bouge : les bases sont le brut, et le brut majore tel qu'il
         // etait.
         plafond_intermittent = Some(plafond_urssaf);
-        // Sous deduction forfaitaire specifique, la tranche 1 se regularise sur le brut abattu (`brut_plafonne_dfs`, plus
-        // bas, que la DSN declare : `dsn::cle_abattue`) ; la forme non abattue, que rien ne cotise ni ne declare alors,
-        // est celle de la paie seule.
+        // Sous deduction forfaitaire specifique, la tranche 1 de la securite sociale se regularise sur le brut abattu
+        // (`brut_plafonne_dfs`, plus bas : la vieillesse plafonnee, le FNAL, la base 02, `dsn::cle_abattue`). La forme
+        // non abattue reste lue par ce que la deduction n'abat pas : la contribution conventionnelle de la 3090 (`ccn`,
+        // CASC-SVP, « dans la limite de la tranche A », hors de `rubriques_abattues`). Elle est alors celle de la paie
+        // seule : le cumul de l'annee ne garde la tranche 1 que sur la base de calcul des cotisations, abattue
+        // (`droit::plafond::AnneeAnterieure`), et la tranche A d'un brut non abattu regularisee n'a pas de cumul.
         let t1 = if brut_abattu.is_some() { brut.min(plafond_urssaf) } else { regularisees.t1 };
         bases.insert(Assiette::BrutPlafonne, t1);
         bases.insert(Assiette::BrutX115Plafonne, majoree(t1, brut, bases[&Assiette::BrutX115]));
@@ -2107,8 +2141,9 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.9 : la reduction generale, apres les cotisations.
     let statut = sal.statut.dite().copied();
     let caisse_conges = bases[&Assiette::BrutCs] > Montant::ZERO;
-    // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite que le bareme dit de celle du brut entier
-    // (`deduction_forfaitaire.limite_reduction_generale`, `reduction_generale_sous_dfs`).
+    // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite que le bareme dit de celle du brut seul, sans
+    // les frais reintegres (BOSS, allegements generaux, § 350 ; `deduction_forfaitaire.limite_reduction_generale`,
+    // `reduction_generale_sous_dfs`).
     // Le SMIC horaire de la reduction (`smic_horaire_reference`) ; sans lui, pas de reduction.
     let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference);
     let absence = smic_d_une_absence(&lb, smic_horaire_rg);
@@ -2123,7 +2158,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let rg = match brut_abattu {
         Some(abattu) => {
             let limite = bar.deduction_forfaitaire.as_ref().ok_or_else(|| socle::fichiers::absent("deduction_forfaitaire"))?.limite_reduction_generale;
-            reduction_generale_sous_dfs(bar.reduction_generale.as_ref(), limite, statut, brut + reintegres, abattu, heures_rg, caisse_conges)?
+            reduction_generale_sous_dfs(bar.reduction_generale.as_ref(), limite, statut, brut, abattu, heures_rg, caisse_conges)?
         }
         None => reduction_generale(bar.reduction_generale.as_ref(), statut, brut, heures_rg, caisse_conges)?,
     };
