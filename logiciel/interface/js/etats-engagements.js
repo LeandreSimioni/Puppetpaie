@@ -86,7 +86,7 @@ async function boitePieces(ligne, acte) {
     ? `<ul class="liste-pieces">${pieces.map((p, i) => `<li>
         <span><b>${echapper(p.quoi)}</b> — ${echapper(p.quand_dit)}
           ${p.absente ? `<br><span class="discret">${echapper(p.absente)}</span>` : ""}</span>
-        ${p.ouvrir ? `<button class="secondaire p-ouvrir" data-i="${i}">${echapper(p.ouvrir.libelle)}</button>` : ""}
+        ${p.ouvrir ? `<button class="${classeDuGeste(p.ouvrir)} p-ouvrir" data-i="${i}">${echapper(p.ouvrir.libelle)}</button>` : ""}
       </li>`).join("")}</ul>`
     : montre.vide ? `<p class="discret">${echapper(montre.vide)}</p>` : "";
   ouvrirBoite(`

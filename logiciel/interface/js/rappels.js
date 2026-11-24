@@ -462,7 +462,7 @@ async function dessinerExercices() {
       <span class="rang-infos">
         ${echapper(x.infos_dit)}
       </span>
-      ${x.actions.map((a, k) => `<button class="secondaire" data-action="${k}">${echapper(a.libelle)}</button>`).join("")}
+      ${x.actions.map((a, k) => `<button class="${classeDuGeste(a)}" data-action="${k}">${echapper(a.libelle)}</button>`).join("")}
       ${boutonsRanges(x.gestes)}
     </div>`).join("") + `<p class="note"><button class="lien" id="ouvrir-exercices">${echapper(r.dossier_dit)}</button></p>`;
   cible.querySelectorAll("[data-exercice]").forEach((rang) => {

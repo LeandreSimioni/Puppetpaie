@@ -418,7 +418,7 @@ async function apresLImport(r) {
   const demarrage = document.getElementById("import-demarrage");
   if (demarrage) await peindreDemarrage(demarrage);
   // CE QUI RESTE À DIRE : la nature des contrats repris se demande en tête de la page ; on y va.
-  const aDire = document.querySelector("[data-nature-rang]");
+  const aDire = document.querySelector("[data-nature]");
   const vers = aDire || document.getElementById("import-etat");
   if (vers) vers.scrollIntoView({ block: aDire ? "center" : "start" });
 }
