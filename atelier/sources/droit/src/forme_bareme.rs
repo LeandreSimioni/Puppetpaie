@@ -525,9 +525,9 @@ forme! {
 }
 
 /// LE PLAFOND DU TECHNICIEN INTERMITTENT : `par_contrat`, la seule valeur, une TOLERANCE RETENUE et non une regle
-/// (Leandre, 19/11/2026) : le BOSS (assiette generale) lui admet le plafond des jours remuneres au § 1090, ecrit pour les
-/// salaries « non eligibles a la reduction du plafond », la classe que le § 1250 sort de la regularisation ; et le § 1230
-/// regularise « l'ensemble des remunerations dues par un meme employeur a un meme salarie, y compris au titre de
+/// (Leandre, 19/11/2026) : le BOSS (assiette generale) ecrit son § 1090, ou il nomme « les salaries intermittents », pour
+/// les salaries « non eligibles a la reduction du plafond », la classe que le § 1250 sort de la regularisation ; et le
+/// § 1230 regularise « l'ensemble des remunerations dues par un meme employeur a un meme salarie, y compris au titre de
 /// plusieurs contrats ». Aucun texte depose ne nomme le technicien : son plafond reste celui de chaque contrat, comme celui
 /// que le moteur lui calcule (`plafond::pour_paie`), tant qu'aucun texte ne tranche.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

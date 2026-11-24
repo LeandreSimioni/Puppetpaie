@@ -25,7 +25,7 @@ pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
 use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
 use droit::reduction::{au_dela_du_seuil, reduction_generale, reduction_generale_sous_dfs};
-use droit::plafond::{plafond_permanent, pour_paie, EngagementPlafond};
+use droit::plafond::{plafond_de_la_periode, pour_paie, EngagementPlafond};
 
 
 /// Un taux de cotisation qu'une addition compose (le taux reduit et son complement, une part et la CET) : a trois
@@ -1612,7 +1612,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // la tranche 1 ne depasse pas le plafond mensuel et rien n'echappe a la tranche 2 sous huit plafonds. Ce que
     // « mensuel » couvre, le texte ne le dit pas : la lecture et son INFERENCE sont ecrites dans la note de
     // `limite_du_plafond_journalier` du bareme 2026. Une paie d'intermittent est celle d'un contrat dans un mois civil
-    // (`Engagement::periode_payee`, ses journees datees dans la periode : `droit::plafond::pour_paie`) : un contrat a
+    // (`Engagement::periode_payee`, le contrat borne au mois, dont `droit::plafond::pour_paie` tire le plafond) : un contrat a
     // cheval sur deux mois a une paie par mois, chacune sous le plafond mensuel de son mois.
     // Un salarie au mois n'a pas de tranche journaliere.
     struct DejaDansLeMois {
@@ -2293,11 +2293,12 @@ fn avis_de_la_bascule(eng: &Engagement, bascule: droit::plafond::BasculeDeLaCet,
     Avis { info: true, texte }
 }
 
-/// Le plafond de securite sociale d'un engagement (`plafond::plafond_permanent`, `plafond::pour_paie`) : celui que le bas du bulletin imprime, et
+/// Le plafond de securite sociale d'un engagement (`plafond::plafond_de_la_periode`, `plafond::pour_paie`) : celui que le bas du bulletin imprime, et
 /// celui sur lequel s'assoient la vieillesse plafonnee, le FNAL et le chomage d'un intermittent (`calculer`, 7.6).
 /// `sal` : la fiche du salarie telle que la paie la lit (`emploi_de`), pour son statut : l'arrete du 24/01/1975 ne
-/// vise que les artistes ; un technicien, comme un artiste engage cinq jours ou plus, a le plafond proratise sur les
-/// jours remuneres de la paie (BOSS, assiette generale, § 1090, `atelier/reference/sources/boss/`). Textes :
+/// vise que les artistes ; un technicien, comme un artiste engage cinq jours ou plus, a le prorata calendaire de la part
+/// du contrat que couvre la periode de paie (CSS R. 242-2, I, al. 3 ; BOSS, assiette generale, § 700, 740 et 1090,
+/// `atelier/reference/sources/boss/`). Textes :
 /// atelier/reference/sources/plafond-intermittents/LISEZ-MOI.md.
 pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &ChampsSalarie) -> R<Montant> {
     let nat = e.nat()?;
@@ -2310,7 +2311,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         // Les jours d'absence que l'employeur ne remunere pas reduisent le plafond (CSS R. 242-2, I, al. 4 ; BOSS § 820-920) :
         // ceux que la deduction du mois a dits (`conges::lignes_du_mois`).
         let sans_remuneration = e.sans_remuneration.as_ref().ok_or_else(|| socle::fichiers::absent("sans_remuneration"))?;
-        return plafond_permanent(&e.periode_payee()?, sans_remuneration, tp, &pss_du_contexte(ctx));
+        return plafond_de_la_periode(&e.periode_payee()?, sans_remuneration, tp, &pss_du_contexte(ctx));
     }
     // Le plafond d'un intermittent depend de son statut (artiste : arrete du 24/01/1975, art. 3 ; technicien : R. 242-2
     // CSS).
@@ -2496,7 +2497,7 @@ pub(crate) fn net_negatif(ctx: &Contexte, p: &Paie) -> R<Option<Avis>> {
 
 /// Le plafond sur lequel se pose le forfait de sante d'un salarie au mois (`pss_periode`, la rubrique `mutuelle` et la
 /// base 18 du bloc 79) : celui de la periode de paie, reduit au prorata des jours quand le contrat ne la couvre pas
-/// (`plafond::plafond_permanent`), mais SANS la correction du temps partiel.
+/// (`plafond::plafond_de_la_periode`), mais SANS la correction du temps partiel.
 ///
 /// LES TEXTES. Les accords de sante fixent une cotisation « au titre de la couverture du seul salarie » en pourcentage
 /// du « plafond mensuel de la securite sociale » (IDCC 1285, accord du 30/01/2026, art. 6 ; IDCC 3090, accord du
@@ -2513,7 +2514,7 @@ pub(crate) fn net_negatif(ctx: &Contexte, p: &Paie) -> R<Option<Avis>> {
 /// xii-20260923.md`, l. 73), le plafond que R. 242-2 corrige ; elle suit le plafond corrige, comme la retraite
 /// complementaire (`plafond_de_l_engagement`). Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
 pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Montant> {
-    plafond_permanent(&e.periode_payee()?, &droit::plafond::JoursSansRemuneration::aucun(), None, &pss_du_contexte(ctx))
+    plafond_de_la_periode(&e.periode_payee()?, &droit::plafond::JoursSansRemuneration::aucun(), None, &pss_du_contexte(ctx))
 }
 
 /// Le plafond d'un salarie a temps partiel, et ce que S21.G00.40.084 en declare.
@@ -2521,7 +2522,7 @@ pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Montant> 
 /// LA PRORATISATION EST LA REGLE, Y RENONCER EST LE CHOIX.
 /// - CSS L. 242-8 : pour un salarie a temps partiel (L. 3123-1 C. trav.), « il est opere un abattement d'assiette »
 ///   destine a compenser l'ecart avec un temps complet -- un imperatif ; R. 242-2, I, dernier alinea, en donne la
-///   mesure (`plafond::plafond_permanent`) ;
+///   mesure (`plafond::plafond_de_la_periode`) ;
 /// - fiche net-entreprises 3369 (03/04/2026) : « Par defaut, le salarie a temps partiel cotise uniquement a hauteur de
 ///   la quotite de travail de son contrat. L'employeur peut choisir de ne pas proratiser le plafond de Securite sociale
 ///   pour tous les salaries a temps partiel de son etablissement » ; BOSS, assiette generale, § 760 : « Le salarie a

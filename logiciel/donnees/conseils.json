@@ -2090,17 +2090,23 @@
       "domaine": "paie générale",
       "public": "employeur",
       "quand": "toujours",
-      "texte": "Pour un technicien intermittent, ou un artiste engagé cinq jours ou plus, l'administration admet que le plafond de la Sécurité sociale soit réduit aux seuls jours rémunérés. Pour un mois de 31 jours avec 3 jours payés, en {annee} : {bareme:plafond_securite_sociale/mensuel} × 3/31, soit {bareme:plafond_securite_sociale/mensuel*3/31,2}.",
+      "texte": "Pour un technicien intermittent, ou un artiste engagé cinq jours ou plus, le plafond de la Sécurité sociale de chaque paie est réduit aux jours du contrat dans le mois, jours non travaillés compris. Pour un contrat de 8 jours dans un mois de 31 jours, en {annee} : {bareme:plafond_securite_sociale/mensuel} × 8/31, soit {bareme:plafond_securite_sociale/mensuel*8/31,2}, que le salarié ait travaillé 2 ou 8 de ces jours.",
       "source": [
         {
           "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
           "emetteur": "boss",
+          "article": "§ 740",
+          "citation": "Pour les salariés non mensualisés, le plafond retenu est ajusté en fonction de la période d'emploi à laquelle se rattache la paie."
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
           "article": "§ 1090",
-          "citation": "Toutefois, il est admis que : pour les salariés intermittents, le plafond soit proratisé pour ne tenir compte que des jours ayant donné lieu à rémunération"
+          "citation": "ne sont pas éligibles à la réduction du plafond : pour ces salariés, s'ils ne sont pas mensualisés, le plafond applicable dépend uniquement de la périodicité de la paie"
         }
       ],
       "ciblage": "quand un intermittent est engagé 5 jours ou plus, ou est technicien",
-      "certitude": "sourcé (calcul de l'exemple : 4005 × 3 / 31 = 387,58)"
+      "certitude": "sourcé (calcul de l'exemple : 4005 × 8 / 31 = 1 033,55)"
     },
     {
       "id": "taux-reduits-artistes",

@@ -1503,7 +1503,7 @@ pub(crate) fn lignes_du_mois(
 /// saisit pas comme tel. La prime d'anciennete de la convention n'en est pas (`lignes_du_mois`).
 ///
 /// Le prorata du contrat (R. 242-2, I, al. 3) et la correction du temps partiel (§ 910) s'appliquent ensuite
-/// (`droit::plafond::plafond_permanent`).
+/// (`droit::plafond::plafond_de_la_periode`).
 fn plafond_du_mois(
     sans_remuneration: std::collections::BTreeSet<socle::date::Jour>, presence: &Periode, prime_versee: bool,
 ) -> droit::plafond::JoursSansRemuneration {

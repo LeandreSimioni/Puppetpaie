@@ -664,9 +664,9 @@ fn refaire<'a>(
     // UN BULLETIN QUI N'IMPRIME PAS SES JOURS TRAVAILLES en dit la periode et le nombre (`jours_comptes`) :
     // - autant de jours que la periode : ce sont tous les siens ;
     // - moins, dans une periode qui tient dans un mois : le calcul ne lit des jours que leur nombre, leur mois et le
-    //   premier. Le plafond d'un intermittent compte les jours remuneres mois par mois (BOSS, assiette generale, § 1090)
-    //   ou 12 heures du plafond horaire de l'annee par journee (arrete du 24/01/1975, art. 3, al. 2 : `droit::plafond`),
-    //   et l'engagement court se juge sur le debut et la fin du contrat ; le minimum conventionnel et le bareme se
+    //   premier. Le plafond d'un artiste engage moins de cinq jours compte 12 heures du plafond horaire de l'annee par
+    //   journee (arrete du 24/01/1975, art. 3, al. 2 : `droit::plafond`), et l'engagement court se juge sur le debut et
+    //   la fin du contrat ; le minimum conventionnel et le bareme se
     //   lisent au premier jour, qui est le debut de la periode. Le debut et les jours qui le suivent en tiennent lieu.
     // Sans ce nombre, une periode de plus d'un jour ne dit pas combien : la paie ne se compare pas.
     let mensuelle = nature.proprietes().map_err(|m| refusee(c, m))?.mensuelle();

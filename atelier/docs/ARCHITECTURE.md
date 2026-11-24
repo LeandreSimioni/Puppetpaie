@@ -2544,8 +2544,10 @@ le module la dit avec ses textes (`atelier/reference/sources/`) :
 - un **artiste** engagé moins de cinq jours calendaires : 12 × le PSS horaire
   par journée de travail de la paie (arrêté du 24/01/1975, art. 3, al. 2) ;
 - tout **autre intermittent** (artiste engagé cinq jours ou plus, technicien) :
-  le PSS mensuel au prorata des jours rémunérés de la paie, mois par mois (la
-  tolérance du BOSS, § 1090, appliquée : le BOSS est opposable) ;
+  le PSS mensuel au prorata des jours calendaires du contrat dans la période de
+  la paie, mois par mois, quels que soient les jours travaillés (CSS R. 242-2,
+  I, al. 3 ; BOSS § 700 et 740 ; la tolérance du § 1090 sur les jours
+  rémunérés n'est pas appliquée) ;
 - un **permanent** : le PSS au prorata des jours de sa période de paie
   couverts par le contrat (CSS R. 242-2), moins les jours d'absence que
   l'employeur ne rémunère pas (R. 242-2, I, al. 4 ; BOSS § 820-920 : une
@@ -3382,7 +3384,7 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 | numéro d'objet (40.050) | oui | **INTERDIT** — CCH-11 ne l'autorise que pour les natures 02 et 10 |
 | congés payés | caisse des Congés Spectacles (40.022, cotisation 15,5 %), sauf un CDDU de douze mois ou plus | chez l'employeur : compteur, indemnité, solde ; sauf le CDD de droit commun de moins de douze mois d'un artiste, déclaré à la caisse (`caisse_conges::affilie`) |
 | assiettes FNAL / taxe d'apprentissage | brut **majoré** de 11,5 % et de 10 % (CSS L. 243-1-3, D. 243-0-2), pour un contrat déclaré à la caisse des Congés Spectacles | brut nu ; tranche 1 majorée de 11,5 % (FNAL) et brut majoré de 11,5 % (taxe d'apprentissage) pour un contrat déclaré à la caisse (`par_caisse_conges.affilie` du barème) |
-| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours rémunérés (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
+| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours calendaires du contrat dans la paie (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
 | chômage | 9,75 / 2,40 dans la limite de quatre plafonds, recouvré par **France Travail** | 4,00 + AGS 0,25 dans la limite de quatre plafonds de la période, recouvré par l'**Urssaf** (CTP 772, 937) |
 | retraite complémentaire | taux Audiens, tranches **journalières** | droit commun, tranches **mensuelles** |
 | formation professionnelle | 2,00 % (CTP 983) | 0,55 % (CTP 959) |

@@ -5,8 +5,7 @@
 //! artiste, periode d'engagement continu de moins de cinq jours (du debut a la fin du contrat, jours calendaires) :
 //!     plafond = PSS horaire x 12 x journees de travail accomplies dans la paie (dates distinctes)
 //! autre intermittent (artiste engage cinq jours ou plus, technicien) :
-//!     plafond = au centime( somme, pour chaque jour ayant donne lieu a remuneration dans la paie (dates distinctes),
-//!                           de PSS mensuel de son annee / jours de son mois )
+//!     plafond = au centime( PSS mensuel x jours calendaires du contrat dans la periode de paie / jours du mois )
 //! permanent (mensualise) :
 //!     plafond = au centime( PSS mensuel x jours de la periode de paie couverts par le contrat, hors absence non
 //!                           remuneree / jours du mois )
@@ -19,16 +18,20 @@
 //!   soient le nombre d'heures et la nature du travail effectues dans ladite journee. » Une journee, pas un cachet ;
 //!   « est egal », pas un plancher ; la duree de l'engagement, pas une suite de jours travailles. L'arrete ne vise que
 //!   les artistes (art. 1 : 15° de L. 311-3 CSS) ;
-//! - BOSS, assiette generale, version du 01/08/2026, § 1090 (`boss/boss-assiette-generale-20260801.txt`,
-//!   l. 1472-1483) : les artistes du spectacle « ne sont pas eligibles a la reduction du plafond » ; « Toutefois, il est
-//!   admis que : pour les salaries intermittents, le plafond soit proratise pour ne tenir compte que des jours ayant
-//!   donne lieu a remuneration ». Tolerance appliquee (le BOSS est opposable) a tout
-//!   intermittent hors de l'arrete de 1975 ; le prorata se fait comme au § 700 (« valeur mens. du plafond x (nombre de
-//!   jours de la periode d'emploi / nombre de jours calendaires du mois) »), les jours de la periode d'emploi etant
-//!   ici les jours remuneres de la paie. Un jour remunere se lit sur les lignes datees ; il ne se devine pas ;
 //! - CSS R. 242-2, I, al. 2 et 3 (`code-de-la-securite-sociale/articles-20261010.md`) : le plafond « retenu pour
 //!   chaque paie », « reduit[s] a due proportion du nombre de jours de la periode pendant laquelle les personnes sont
-//!   employees » : la regle d'un permanent, sur la periode de sa paie ;
+//!   employees » ; BOSS, assiette generale, version du 01/08/2026, § 690-750 (`boss/boss-assiette-generale-20260801.txt`,
+//!   l. 987-1025) : « a proportion des jours couverts par le contrat de travail au cours de cette periode », la formule
+//!   du § 700, « valeur mens. du plafond x (nombre de jours de la periode d'emploi / nombre de jours calendaires du
+//!   mois) », et le § 740, « Pour les salaries non mensualises, le plafond retenu est ajuste en fonction de la periode
+//!   d'emploi a laquelle se rattache la paie ». La regle de tout salarie hors de l'arrete de 1975, permanent ou
+//!   intermittent : les jours de la periode d'emploi sont les jours calendaires du contrat dans la periode de la paie,
+//!   les deux bornes incluses, quels que soient les jours travailles ;
+//! - BOSS, assiette generale, § 1090 (l. 1472-1483), premiere phrase : les artistes du spectacle « ne sont pas eligibles
+//!   a la reduction du plafond : pour ces salaries, s'ils ne sont pas mensualises, le plafond applicable depend uniquement
+//!   de la periodicite de la paie ». Aucun jour d'absence ne sort donc du prorata d'un artiste. La tolerance du meme
+//!   paragraphe (« il est admis que [...] le plafond soit proratise pour ne tenir compte que des jours ayant donne lieu a
+//!   remuneration ») n'est pas appliquee : la loi, sans la tolerance (Leandre, 24/11/2026) ;
 //! - CSS D. 242-19 : la valeur horaire (dans le bareme, `plafond_securite_sociale`).
 //!
 //! Les plafonds (PSS) ne sont pas dans le code : le module recoit un resolveur `annee -> Pss`
@@ -95,60 +98,39 @@ pub fn plafond_journees(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Mont
     Ok(total)
 }
 
-/// BOSS, assiette generale, § 1090 (tolerance) et § 700 (la formule) : pour chaque jour ayant donne lieu a
-/// remuneration (dates distinctes), mois par mois : PSS mensuel de l'annee x jours remuneres du mois / jours du mois ;
-/// la somme, non arrondie (la forme du prorata de `plafond_permanent`).
-pub fn plafond_jours_remuneres(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let jours: BTreeSet<Jour> = dates.iter().copied().collect();
-    let mut par_mois: std::collections::BTreeMap<socle::mois::Mois, usize> = Default::default();
-    for j in jours {
-        *par_mois.entry(j.mois_civil()).or_default() += 1;
-    }
-    let mut total: Montant = nulle();
-    for (mois, n) in par_mois {
-        total += pss(mois.annee())?.mensuel.prorata(Jours::de_dates(n), Jours::fixes(mois.jours()));
-    }
-    Ok(total)
-}
-
-/// Le refus d'un intermittent dont les journees de travail ne se lisent pas.
+/// Le refus d'un artiste engage moins de cinq jours dont les journees de travail ne se lisent pas : l'arrete de 1975
+/// compte son plafond par journee, et une journee ne se devine pas.
 #[track_caller]
-fn journees_illisibles(contrat: &Periode, court: bool, dites: Jours, datees: usize) -> socle::echec::Echec {
-    let regle = if court {
-        "le plafond d'un artiste engage moins de cinq jours se compte par journee de travail accomplie, repetitions \
-         comprises (arrete du 24/01/1975, art. 3, al. 2)"
-    } else {
-        "le plafond d'un intermittent se proratise sur les jours ayant donne lieu a remuneration (BOSS, assiette \
-         generale, § 1090)"
-    };
+fn journees_illisibles(contrat: &Periode, dites: Jours, datees: usize) -> socle::echec::Echec {
     socle::refus!(
-        "Contrat du {} au {} : {}, et la saisie dit {} jour(s) travaille(s) pour {} date(s). Dater chaque journee de \
-         travail sur les lignes de paie : elle ne se devine pas.",
-        contrat.debut().iso(), contrat.fin().iso(), regle, dit(dites), datees)
+        "Contrat du {} au {} : le plafond d'un artiste engage moins de cinq jours se compte par journee de travail \
+         accomplie, repetitions comprises (arrete du 24/01/1975, art. 3, al. 2), et la saisie dit {} jour(s) \
+         travaille(s) pour {} date(s). Dater chaque journee de travail sur les lignes de paie : elle ne se devine pas.",
+        contrat.debut().iso(), contrat.fin().iso(), dit(dites), datees)
 }
 
-/// Le plafond d'un contrat d'intermittent, arrondi au centime, pour les journees `dates` (celles d'une paie, ou de
-/// tout le contrat). `artiste` : le statut (l'arrete de 1975 ne vise que les artistes). Artiste engage moins de cinq
-/// jours : 12 x PSS horaire par journee (arrete de 1975). Sinon : le prorata du PSS mensuel sur les jours remuneres
-/// (BOSS § 1090). Sans date, ou avec une date hors du contrat : refus.
+/// Le plafond d'un contrat d'intermittent entier, arrondi au centime. `artiste` : le statut (l'arrete de 1975 ne vise
+/// que les artistes). Artiste engage moins de cinq jours : 12 x PSS horaire par journee `dates` (arrete de 1975) ; sans
+/// date, ou avec une date hors du contrat, refus. Sinon : le prorata calendaire du contrat (`plafond_de_la_periode`,
+/// R. 242-2, I, al. 3), sans jour retire, quels que soient les jours travailles. Le plafond d'une paie :
+/// `pour_paie`.
 pub fn plafond_urssaf(contrat: &Periode, artiste: bool, pss: &dyn Fn(Annee) -> R<Pss>, dates: &[Jour]) -> R<Montant> {
-    let court = engagement_court(contrat, artiste);
+    if !engagement_court(contrat, artiste) {
+        return plafond_de_la_periode(contrat, &JoursSansRemuneration::aucun(), None, pss);
+    }
     if dates.is_empty() {
-        return Err(journees_illisibles(contrat, court, nulle(), 0));
+        return Err(journees_illisibles(contrat, nulle(), 0));
     }
     if let Some(j) = dates.iter().find(|j| !contrat.contient(j)) {
         return Err(socle::refus!("journee de travail le {} hors du contrat du {} au {}", j.iso(), contrat.debut().iso(), contrat.fin().iso()));
     }
-    if court {
-        Ok(plafond_journees(dates, pss)?.au_centime())
-    } else {
-        Ok(plafond_jours_remuneres(dates, pss)?.au_centime())
-    }
+    Ok(plafond_journees(dates, pss)?.au_centime())
 }
 
-/// Le plafond d'un permanent (mensualise) pour sa periode de paie, arrondi au centime : le prorata calendaire de
-/// R. 242-2, I, al. 3 (PSS mensuel x jours calendaires de la periode / jours du mois, mois par mois, les deux bornes
-/// incluses), et, quand l'employeur l'a choisi pour un salarie a temps partiel, la
+/// Le plafond d'une periode de paie, arrondi au centime : le prorata calendaire de R. 242-2, I, al. 3 (PSS mensuel x
+/// jours calendaires de la periode / jours du mois, mois par mois, les deux bornes incluses ; BOSS, assiette generale,
+/// § 700), celui de tout salarie hors de l'arrete de 1975, permanent ou intermittent, sur la part du contrat que la
+/// periode `periode` couvre, et, quand l'employeur l'a choisi pour un salarie a temps partiel, la
 /// correction du dernier alinea du meme I : « l'employeur est en droit de corriger le plafond, sans pouvoir augmenter sa
 /// valeur mensuelle, a due proportion de la duree de travail inscrite a leur contrat de travail [...], majoree du
 /// nombre d'heures complementaires [...], rapportee a celle correspondant a la plus courte des durees mentionnees au 1°
@@ -164,7 +146,7 @@ pub fn plafond_urssaf(contrat: &Periode, artiste: bool, pss: &dyn Fn(Annee) -> R
 /// remuneres de la periode d'emploi / nombre de jours calendaires du mois) », les jours remuneres etant « le nombre de
 /// jours calendaires desquels sont retires les jours d'absence ne donnant pas lieu a maintien de la remuneration ». La
 /// correction du temps partiel s'applique ensuite (§ 910 ; l'exemple du § 770 multiplie les deux rapports).
-pub fn plafond_permanent(
+pub fn plafond_de_la_periode(
     periode: &Periode, sans_remuneration: &JoursSansRemuneration, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>,
 ) -> R<Montant> {
     let mut prorata: Montant = nulle();
@@ -184,7 +166,7 @@ pub fn plafond_permanent(
     }
 }
 
-/// LES JOURS D'ABSENCE SANS REMUNERATION D'UNE PAIE, qui reduisent son plafond (`plafond_permanent`) : CSS R. 242-2, I,
+/// LES JOURS D'ABSENCE SANS REMUNERATION D'UNE PAIE, qui reduisent son plafond (`plafond_de_la_periode`) : CSS R. 242-2, I,
 /// al. 4, dernier tiret ; BOSS, assiette generale, § 820-900 (`boss/boss-assiette-generale-20260801.txt`, l. 1142-1203).
 /// Un jour y entre quand l'absence de ce jour « ne donne pas lieu a un maintien de la remuneration par l'employeur »
 /// (§ 840) ; une absence « partiellement ou totalement remuneree par l'employeur, sous forme de versement visant au
@@ -451,21 +433,36 @@ pub struct EngagementPlafond {
     pub periode: Periode,
     /// Le contrat, du debut a la fin.
     pub contrat: Periode,
-    /// Les jours travailles de la paie, dates (les dates distinctes de toutes les lignes).
+    /// Les jours travailles de la paie, dates (les dates distinctes de toutes les lignes) : l'arrete de 1975 les compte.
     pub dates_travail: Vec<Jour>,
     /// Les jours travailles que la saisie dit (saisis, sinon les dates distinctes).
     pub jours: Jours,
 }
 
 /// Le plafond d'UNE paie d'intermittent (R. 242-2 : le plafond « retenu pour chaque paie » ; celui d'un permanent :
-/// `plafond_permanent`) : les journees datees de CETTE paie (aucune journee dans le mois, aucun plafond) : 12 x horaire
-/// chacune pour un artiste engage moins de cinq jours, sinon le prorata mensuel des jours remuneres (BOSS § 1090). Une
-/// journee dite et non datee refuse, une date hors de la periode de paie aussi.
+/// `plafond_de_la_periode`, avec ses absences et son temps partiel).
+///
+/// Artiste engage moins de cinq jours : 12 x horaire par journee datee de CETTE paie (arrete de 1975 ; aucune journee
+/// dans le mois, aucun plafond) ; une journee dite et non datee refuse, une date hors de la periode de paie aussi.
+///
+/// Tout autre intermittent : le prorata calendaire de la part du contrat que couvre la periode de paie
+/// (`plafond_de_la_periode`, R. 242-2, I, al. 3 ; BOSS § 700 et 740), quels que soient les jours travailles. Aucun jour
+/// n'en sort : l'artiste « n'est pas eligible a la reduction du plafond » (BOSS § 1090), et le moteur ne connait aucun
+/// jour d'absence sans remuneration d'un technicien intermittent (`Engagement::sans_remuneration` n'est deduit que du
+/// mois d'un salarie au mois). Sans correction du temps partiel : le moteur ne la calcule que pour un contrat paye au
+/// mois (`engagement::calcul::plafond_de_l_engagement`).
 pub fn pour_paie(e: &EngagementPlafond, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let court = engagement_court(&e.contrat, e.artiste);
+    if !engagement_court(&e.contrat, e.artiste) {
+        let couverte = e.periode.croise(&e.contrat).ok_or_else(|| {
+            socle::refus!(
+                "la periode de paie du {} au {} ne touche pas le contrat du {} au {}",
+                e.periode.debut().iso(), e.periode.fin().iso(), e.contrat.debut().iso(), e.contrat.fin().iso())
+        })?;
+        return plafond_de_la_periode(&couverte, &JoursSansRemuneration::aucun(), None, pss);
+    }
     let datees = e.dates_travail.iter().collect::<BTreeSet<_>>().len();
     if e.jours != Jours::de_dates(datees) {
-        return Err(journees_illisibles(&e.contrat, court, e.jours, datees));
+        return Err(journees_illisibles(&e.contrat, e.jours, datees));
     }
     if datees == 0 {
         return Ok(Montant::ZERO);

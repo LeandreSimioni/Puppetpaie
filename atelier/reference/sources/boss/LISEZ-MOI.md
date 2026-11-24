@@ -29,17 +29,16 @@ Ce que le moteur en lit (chapitre 6) :
 - **§ 1090** (l. 1472-1483) : les artistes du spectacle « ne sont pas éligibles à la réduction du plafond » ; non
   mensualisés, le plafond « dépend uniquement de la périodicité de la paie » ; « Toutefois, il est admis que : pour les
   salariés intermittents, le plafond soit proratisé pour ne tenir compte que des jours ayant donné lieu à
-  rémunération ». **Tolérance appliquée depuis la vague 1o** (10/10/2026, tranché par Léandre : le BOSS est opposable,
-  et le but n'est pas de faire payer le plus aux compagnies) : tout intermittent hors de l'arrêté de 1975 (artiste
-  engagé cinq jours ou plus, technicien) a, pour chaque paie, le PSS mensuel × jours rémunérés du mois / jours du mois
-  (la formule du § 700) ; les jours rémunérés sont les dates distinctes des lignes de la paie, et une journée dite et
-  non datée refuse. La vague 1l l'avait écartée (« une tolérance, pas le texte ») et appliquait le prorata calendaire
-  de tout le contrat.
+  rémunération ». **La tolérance n'est pas appliquée** (Léandre, 24/11/2026 : « pas de tolérance, c'est la loi ») :
+  tout intermittent hors de l'arrêté de 1975 (artiste engagé cinq jours ou plus, technicien) a, pour chaque paie, le
+  PSS mensuel × jours calendaires du contrat dans la période de paie / jours du mois (CSS R. 242-2, I, al. 3 ; la
+  formule du § 700 et le § 740), quels que soient les jours travaillés. La première phrase du § 1090 (l'artiste
+  « n'est pas éligible à la réduction du plafond ») fait qu'aucun jour d'absence ne sort de son prorata.
 - § 1100 : « 12 fois le plafond horaire par jour d'engagement » pour un artiste engagé moins de cinq jours ; le moteur
   suit l'arrêté (« par journée de travail accomplie »).
 
-Où le moteur s'en sert : `atelier/sources/paie/src/plafond.rs` (le plafond d'un contrat), `calcul::plafond_de_l_engagement`
-(lots 1i, 1l et 1o, `prive/journal/archives/2026-10-08-lots/norme/corrections/`).
+Où le moteur s'en sert : `atelier/sources/droit/src/plafond.rs` (`pour_paie`, `plafond_de_la_periode`),
+`engagement::calcul::plafond_de_l_engagement`.
 
 ## `boss-frais-professionnels-20261013.pdf` — Autres éléments de rémunération › Frais professionnels
 

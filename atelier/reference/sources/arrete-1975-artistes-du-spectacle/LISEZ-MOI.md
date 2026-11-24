@@ -13,16 +13,16 @@ les pièces, `articles-20261010.md` le texte.
   ligne `reduction_generale` de Coolpaie dans `logiciel/donnees/ecarts-connus-base.json` : des taux spécifiques, qui
   ne se cumulent pas avec la réduction générale (`engagement::ecarts_connus::Constat::AbsenteDuCalcul`).
 - art. 3, al. 2 : le plafond d'un artiste engagé moins de cinq jours continus, douze fois le plafond horaire par
-  journée de travail. Le moteur : `paie/src/plafond.rs` (`plafond_urssaf`, `pour_paie`, `plafond_journees`), à la
+  journée de travail. Le moteur : `droit/src/plafond.rs` (`plafond_urssaf`, `pour_paie`, `plafond_journees`), à la
   lettre depuis la vague 1l (10/10/2026, `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1l.md`) : la « période
   d'engagement continu » est le contrat, du début à la fin, en jours calendaires ; une journée de travail est une date
   distincte des lignes de paie (répétitions comprises, quel que soit le nombre de cachets du jour) ; le plafond « est
   égal » à 12 × le plafond horaire par journée, sans maximum avec le prorata ; une journée dite et non datée refuse.
-  L'arrêté ne vise que les artistes (art. 1, 15° de L. 311-3 CSS) : un technicien a le prorata de R. 242-2 (depuis la
-  vague 1o : le prorata des jours rémunérés de la paie, BOSS § 1090, comme un artiste engagé cinq jours ou plus). Avant la
-  vague 1l, `plafond.rs` comptait des cachets, jugeait « isolé » un cachet sur les jours travaillés d'affilée et prenait
-  le maximum avec le prorata. Depuis la vague 1i, ce plafond porte la vieillesse plafonnée, le FNAL et le chômage dans
-  `calcul::calculer` (voir `../plafond-intermittents/LISEZ-MOI.md`).
+  L'arrêté ne vise que les artistes (art. 1, 15° de L. 311-3 CSS) : un technicien, comme un artiste engagé cinq jours
+  ou plus, a le prorata calendaire de R. 242-2, I, al. 3, sur les jours du contrat dans la période de la paie, quels
+  que soient les jours travaillés (la tolérance du BOSS § 1090 sur les jours rémunérés n'est pas appliquée). Ce
+  plafond porte la vieillesse plafonnée, le FNAL et le chômage dans `calcul::calculer` (voir
+  `../plafond-intermittents/LISEZ-MOI.md`).
 - Lectures concordantes : BOSS, assiette générale, § 680 et § 1100 (`../boss/`, version du 01/08/2026 ; le § 1100 dit
   « par jour d'engagement » là où l'arrêté dit « journée de travail accomplie » : le moteur suit l'arrêté) ; modèle de
   calcul de l'Urssaf, `… artiste . plafond proratisé` (`../urssaf-mon-entreprise/`, « nombre jours travaillés »).
