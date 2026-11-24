@@ -77,6 +77,7 @@ async function ouvrirLaFicheRendue(fiche) {
       <div class="entete-fiche">
         ${r.titre ? `<h2>${echapper(r.titre)}${r.sous_titre ? ` <span class="discret">— ${echapper(r.sous_titre)}</span>` : ""}</h2>` : ""}
         ${s ? `<button type="button" class="secondaire petit" data-exporter>${echapper(s.exporter)}</button>` : ""}
+        ${s && s.gestes.length ? `<span data-gestes-salarie>${boutonsDesGestes(s.gestes)}</span>` : ""}
       </div>
       ${r.cout ? `<div class="cout-annee" data-cote="${echapper(r.cout.cote)}" data-cout-de="${echapper(r.cout.de)}"></div>` : ""}
       ${s ? `<div class="fiche-imprevus" id="fiche-imprevus"></div><div class="fiche-conseils" id="fiche-conseils"></div>` : ""}
@@ -128,6 +129,16 @@ async function ouvrirLaFicheRendue(fiche) {
     form.querySelector("[data-exporter]").onclick = () => exporterSalarie(s.cle);
     dessinerImprevusDuSalarie(s.cle);
     dessinerConseilsDuSalarie(s.cle);
+    // Les gestes que la route rend dans l'en-tête (supprimer un salarié que rien ne lie) : leur boîte dit ce qui
+    // s'efface ; fait, la fiche n'est plus, la liste se redessine sans elle.
+    const gestes = form.querySelector("[data-gestes-salarie]");
+    if (gestes) brancherLesGestes(gestes, s.gestes, { titre: r.titre }, async (rep) => {
+      oublierLEcran(cases);
+      poserEtat(rep.etat);
+      CLE_ACTIVE = null;
+      FICHE_NEUVE = false;
+      dessinerConfig();
+    });
   }
   if (inv && inv.geste) {
     const bloc = form.querySelector("[data-invitation]");
