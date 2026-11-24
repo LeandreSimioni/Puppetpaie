@@ -68,6 +68,7 @@ async function ouvrirLaFicheRendue(fiche) {
   // Une autre fiche s'est ouverte pendant que la route répondait : c'est elle qui se dessine.
   if (FICHE_COURANTE !== fiche) return;
   FICHE_SANS_LISTE = !r.annuler;
+  dessinerSuppression();
   const encart = (x) => (x.erreurs_titre ? `<div class="encart erreur"><b>${echapper(x.erreurs_titre)}</b> — ${echapper(x.erreurs_note)}</div>` : "");
   const s = r.salarie;
   const inv = r.invitation;
