@@ -2969,7 +2969,8 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   exactement sur une ligne (le taux du bulletin est celui appliqué quand le nôtre est celui du texte ; son montant est le
   nôtre, chaque ligne au taux du texte refaite au taux appliqué, à la tolérance de la comparaison) n'est pas un écart :
   la paie se refait alors en mémoire, ces lignes-là au taux que l'ancien logiciel a appliqué, par le même chemin du
-  barème (`droit::contexte::TauxApplique`, `Contexte::avec_les_taux_appliques`), et se compare tout de nouveau ; ce qui
+  barème (`droit::contexte::TauxApplique`, `Contexte::avec_les_taux_appliques` : la compagnie que la pile lit les
+  porte, `entreprise_lue`, comme l'effectif proposé, et le dernier étage de `bareme_applique` les pose), et se compare tout de nouveau ; ce qui
   en retombe (la prévoyance patronale dans l'assiette de la CSG, les nets, les totaux) ne sonne pas, ce qui s'écarte
   encore sonne, et rien ne s'écrit. Une ligne peut aussi constater une cotisation que le bulletin imprime à tort et que
   le moteur ne calcule pas (`ecarts_connus::Constat::AbsenteDuCalcul` : la réduction générale appliquée à un artiste en

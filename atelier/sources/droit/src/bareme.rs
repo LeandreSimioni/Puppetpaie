@@ -1168,7 +1168,8 @@ pub fn bareme_applique(
     bar = bareme_cadre(bar, sal, Some(nat))?;
     bar = bareme_prevoyance(bar, fiche, sal, Some(nat), fin_periode)?;
     bar = bareme_regime_local(bar, fiche, sal)?;
-    bareme_vm(bar, sal)
+    bar = bareme_vm(bar, sal)?;
+    Ok(bareme_taux_appliques(bar, &ent.taux_appliques))
 }
 
 /// LA COMPAGNIE QUE LA PILE LIT : sa fiche au jour du bareme, et son effectif de l'annee (`contexte::effectif_de`), que
@@ -1188,6 +1189,26 @@ pub struct EntrepriseLue {
     /// l'effectif qui la remplace (`bareme_convention`). Une annee que l'ancien logiciel a payee n'a pas a dire
     /// l'effectif de l'annee d'avant.
     pub taux_lus: bool,
+    /// Les taux qu'un ancien logiciel a appliques autrement que le texte, pour la seule comparaison d'une paie importee
+    /// (`contexte::Contexte::avec_les_taux_appliques`) ; vide : la pile du texte.
+    pub taux_appliques: Vec<crate::contexte::TauxApplique>,
+}
+
+/// LES TAUX APPLIQUES PAR UN ANCIEN LOGICIEL (`EntrepriseLue::taux_appliques`) : chaque rubrique d'une cotisation qu'un
+/// taux applique nomme porte, sur sa part, le taux applique au lieu de celui du texte ; une rubrique dont la part ne
+/// porte pas le taux du texte reste telle quelle. Sans taux applique, la pile meme.
+fn bareme_taux_appliques(mut bar: Pile, taux: &[crate::contexte::TauxApplique]) -> Pile {
+    use crate::forme_bareme::TauxDate;
+    for t in taux {
+        for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == t.cotisation) {
+            match t.part {
+                Part::TauxPat if r.taux_pat == Some(TauxDate(t.texte)) => r.taux_pat = Some(TauxDate(t.applique)),
+                Part::TauxSal if r.taux_sal == Some(t.texte) => r.taux_sal = Some(t.applique),
+                Part::TauxPat | Part::TauxSal => {}
+            }
+        }
+    }
+    bar
 }
 
 // ---------------------------------------------------- les etablissements

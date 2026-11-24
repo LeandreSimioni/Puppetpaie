@@ -1216,7 +1216,7 @@ pub struct Contexte {
 
 /// UN TAUX QU'UN ANCIEN LOGICIEL A APPLIQUE AUTREMENT QUE LE TEXTE, sur une paie importee qui retombe exactement sur
 /// l'un de ses ecarts connus (`engagement::ecarts_connus`) : la rubrique de la cotisation `cotisation` dont la part `part`
-/// porte le taux du texte `texte` le porte a `applique` (`Contexte::appliquer_les_taux_appliques`). La comparaison refait
+/// porte le taux du texte `texte` le porte a `applique` (`bareme::bareme_applique`, son dernier etage). La comparaison refait
 /// ainsi la paie telle que l'ancien logiciel l'a calculee, et ce qui en retombe (l'assiette de la CSG, les nets) ne se
 /// compte pas pour un ecart. Rien ne s'ecrit.
 #[derive(Debug, Clone, PartialEq)]
@@ -1360,29 +1360,13 @@ impl Contexte {
         })
     }
 
-    /// LES TAUX QU'UN ANCIEN LOGICIEL A APPLIQUES AUTREMENT QUE LE TEXTE (`TauxApplique`) : le meme contexte, dont la pile
-    /// d'une paie porte ces taux-la (`appliquer_les_taux_appliques`). Pour la seule comparaison d'une paie importee qui
-    /// retombe exactement sur des ecarts connus : rien ne s'ecrit.
+    /// LES TAUX QU'UN ANCIEN LOGICIEL A APPLIQUES AUTREMENT QUE LE TEXTE (`TauxApplique`) : le meme contexte, dont la
+    /// compagnie que la pile lit les porte (`entreprise_lue`), et la pile d'une paie avec eux
+    /// (`bareme::bareme_applique`). Pour la seule comparaison d'une paie importee qui retombe exactement sur des ecarts
+    /// connus : rien ne s'ecrit.
     pub fn avec_les_taux_appliques(mut self, taux: Vec<TauxApplique>) -> Contexte {
         self.taux_appliques = taux;
         self
-    }
-
-    /// LA PILE D'UNE PAIE `bar`, chaque rubrique d'une cotisation qu'un taux applique nomme (`avec_les_taux_appliques`)
-    /// portant, sur sa part, le taux applique au lieu de celui du texte ; une rubrique dont la part ne porte pas le taux
-    /// du texte reste telle quelle. Sans taux applique, la pile meme.
-    pub fn appliquer_les_taux_appliques(&self, mut bar: Pile) -> Pile {
-        use crate::forme_bareme::{Part, TauxDate};
-        for t in &self.taux_appliques {
-            for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == t.cotisation) {
-                match t.part {
-                    Part::TauxPat if r.taux_pat == Some(TauxDate(t.texte)) => r.taux_pat = Some(TauxDate(t.applique)),
-                    Part::TauxSal if r.taux_sal == Some(t.texte) => r.taux_sal = Some(t.applique),
-                    Part::TauxPat | Part::TauxSal => {}
-                }
-            }
-        }
-        bar
     }
 
     /// LES EFFECTIFS QUE LES PAIES REPRISES PROPOSENT (`engagement::effectif_repris::EffectifRepris`) : le meme contexte,
@@ -1809,7 +1793,14 @@ impl Contexte {
     pub fn entreprise_lue(&self, jour: &Jour) -> R<crate::bareme::EntrepriseLue> {
         let fiche = self.entreprise_au(jour);
         let lu = self.effectif_lu(&fiche)?;
-        Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.annee()), cse: lu.cse(jour.annee()), cinquante: lu.cinquante(jour.annee()), taux_lus: false })
+        Ok(crate::bareme::EntrepriseLue {
+            fiche,
+            effectif: lu.valeur(jour.annee()),
+            cse: lu.cse(jour.annee()),
+            cinquante: lu.cinquante(jour.annee()),
+            taux_lus: false,
+            taux_appliques: self.taux_appliques.clone(),
+        })
     }
 
     /// Le plafond de la Securite sociale de l'annee, ses deux valeurs en euros entiers, d'apres la fiche entreprise de ce

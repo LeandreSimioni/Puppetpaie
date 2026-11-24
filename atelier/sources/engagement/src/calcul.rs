@@ -1130,9 +1130,7 @@ fn pile(ctx: &Contexte, sal: &SalarieDuContrat, nat: &Nature, fin: &Jour, caisse
         return Ok(v.clone());
     }
     let ent = droit::bareme::EntrepriseLue { taux_lus, ..ctx.entreprise_lue(fin)? };
-    // Les taux qu'un ancien logiciel a appliques, pour la seule comparaison d'une paie importee (`ecarts`) ; sans eux,
-    // la pile meme.
-    let bar = Arc::new(ctx.appliquer_les_taux_appliques(bareme_applique(&*ctx.bareme(fin)?, &ent, sal, nat, Some(fin), caisse, cpf_cdd, majoration)?));
+    let bar = Arc::new(bareme_applique(&*ctx.bareme(fin)?, &ent, sal, nat, Some(fin), caisse, cpf_cdd, majoration)?);
     socle::fichiers::ranger(cache, cle, bar.clone());
     Ok(bar)
 }
