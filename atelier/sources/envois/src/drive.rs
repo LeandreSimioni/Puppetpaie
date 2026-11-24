@@ -318,40 +318,37 @@ const ATTENTE_DE_BASE_MS: u64 = 1000;
 /// (`passagere`) ; la restauration range chaque fichier par lui (`compagnie::restauration`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SorteDErreur {
-    /// Google dit lui-meme que c'est passager : 500, 502, 503, 504, 429, un 403 de limite de debit
-    /// (`google-drive-api-gerer-les-erreurs-20261020.txt`, « 429 errors », « 500, 502, 503, 504 errors »,
-    /// « rateLimitExceeded », « userRateLimitExceeded » ;
+    /// Google dit lui-meme que c'est passager : 500, 502, 503, 504, 429, une limite de debit
+    /// (`RaisonDeGoogle::LimiteDeDebit`) (`google-drive-api-gerer-les-erreurs-20261020.txt`, « 429 errors », « 500, 502,
+    /// 503, 504 errors », « rateLimitExceeded », « userRateLimitExceeded » ;
     /// `google-drive-api-televerser-20261020.txt`, « Handle media upload errors »).
     Passagere,
     /// Aucune reponse de Google : la connexion, un delai, une reponse coupee (aucun statut).
     SansReponse,
-    /// L'autorisation ne vaut plus : perdue ou expiree (`invalid_grant`, ou tout refus du point de jeton :
-    /// `Client::jeton_acces`), une permission qui manque, un 401 rendu malgre un jeton neuf (« authError », « Invalid
-    /// Credentials », l. 549-573 : « direct the user through the OAuth flow »). Relier le Drive.
+    /// L'autorisation ne vaut plus, Google le dit : `RaisonDeGoogle::AutorisationPerdue` (`invalid_grant`, « authError »)
+    /// ou `RaisonDeGoogle::PermissionManquante`. Relier le Drive.
     Autorisation,
-    /// Google dit que CE FICHIER ne se donne pas : 404 « notFound » (« the user doesn't have read access to a file, or the
-    /// file doesn't exist », l. 1150-1172), ou `RaisonDeGoogle::FichierRefuse`. Une autre tentative rendrait la meme.
-    DuFichier,
-    /// Tout le reste : un refus de Google qui ne dit rien du fichier.
+    /// UN REFUS DE GOOGLE (un 4xx) que ni l'autorisation ni une limite de debit n'expliquent : 404 « notFound » (« the
+    /// user doesn't have read access to a file, or the file doesn't exist », l. 1150-1172), `RaisonDeGoogle::FichierRefuse`,
+    /// « domainPolicy », « download_restricted_for_revision », un 410, le Drive plein, la page d'un relais. Une autre
+    /// tentative rendrait le meme.
+    Definitive,
+    /// Une autre reponse, que Google ne dit ni passagere ni refusee (un 5xx hors de la liste de Google, un 3xx).
     Autre,
 }
 
-/// La sorte de l'erreur `e` (`SorteDErreur`), par son statut et la raison que Google donne, jamais par la phrase.
+/// La sorte de l'erreur `e` (`SorteDErreur`), par son statut et la raison que Google donne (lue a la porte,
+/// `google::traduire`), jamais par la phrase.
 pub fn sorte(e: &ErreurGoogle) -> SorteDErreur {
-    // Un 403 n'est passager que s'il dit une limite de debit.
-    // Ce que Google a dit est dans le detail, a part (`google::panne_de_google`).
-    let limite = || {
-        let m = e.echec.en_lignes().to_lowercase();
-        m.contains("rate limit") || m.contains("ratelimitexceeded")
-    };
     use ureq::http::StatusCode;
     let passagers = [StatusCode::INTERNAL_SERVER_ERROR, StatusCode::BAD_GATEWAY, StatusCode::SERVICE_UNAVAILABLE, StatusCode::GATEWAY_TIMEOUT, StatusCode::TOO_MANY_REQUESTS];
     match (e.raison, e.statut) {
-        (Some(RaisonDeGoogle::AutorisationPerdue | RaisonDeGoogle::PermissionManquante), _) | (_, Some(StatusCode::UNAUTHORIZED)) => SorteDErreur::Autorisation,
-        (Some(RaisonDeGoogle::FichierRefuse), _) | (_, Some(StatusCode::NOT_FOUND)) => SorteDErreur::DuFichier,
-        (_, Some(s)) if passagers.contains(&s) || (s == StatusCode::FORBIDDEN && limite()) => SorteDErreur::Passagere,
-        (_, None) => SorteDErreur::SansReponse,
+        (Some(RaisonDeGoogle::AutorisationPerdue | RaisonDeGoogle::PermissionManquante), _) => SorteDErreur::Autorisation,
+        (Some(RaisonDeGoogle::LimiteDeDebit), _) => SorteDErreur::Passagere,
+        (_, Some(s)) if passagers.contains(&s) => SorteDErreur::Passagere,
+        (_, Some(s)) if s.is_client_error() => SorteDErreur::Definitive,
         (_, Some(_)) => SorteDErreur::Autre,
+        (_, None) => SorteDErreur::SansReponse,
     }
 }
 
@@ -369,7 +366,7 @@ pub struct ErreurGoogle {
     pub echec: Echec,
     /// Le statut HTTP d'une reponse d'erreur de Google (rien d'autre n'en porte) : de quoi decider d'une nouvelle tentative.
     pub statut: Option<ureq::http::StatusCode>,
-    /// Ce que Google a dit qui demande un geste de la compagnie, quand il l'a dit (`google::panne_de_google`).
+    /// Ce que Google a dit de l'erreur par sa raison, quand il l'a dit (`google::panne_de_google`).
     pub raison: Option<RaisonDeGoogle>,
     /// LA CONNEXION N'A PAS ABOUTI (`transport::Panne::Reseau` : aucun reseau, le nom de Google qui ne se resout pas, la
     /// connexion refusee ou coupee avant la reponse) : la sauvegarde et la restauration s'arretent la et reprennent au
@@ -377,11 +374,13 @@ pub struct ErreurGoogle {
     pub injoignable: bool,
 }
 
-/// CE QUE GOOGLE DIT QUI DEMANDE UN GESTE DE LA COMPAGNIE, reconnu dans sa reponse d'erreur (`google::traduire`) : la
-/// phrase que la compagnie lit, et la cause que la sauvegarde en dit (`compagnie::sauvegarde::cause_de`).
+/// CE QUE GOOGLE DIT DE SON ERREUR PAR SA RAISON, reconnu a la porte dans sa reponse (`google::traduire`) : la phrase
+/// que la compagnie lit, la sorte de l'erreur (`sorte`) et la cause que la sauvegarde en dit
+/// (`compagnie::sauvegarde::cause_de`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RaisonDeGoogle {
-    /// `invalid_grant` : l'autorisation perdue ou expiree.
+    /// `invalid_grant` (le point de jeton), ou « authError » (un 401 de l'API malgre un jeton neuf) : l'autorisation
+    /// perdue ou expiree.
     AutorisationPerdue,
     /// Un 403 « insufficient » : une permission qui manque a l'autorisation.
     PermissionManquante,
@@ -391,6 +390,9 @@ pub enum RaisonDeGoogle {
     /// Google refuse de donner ce fichier-la : `fileNotDownloadable` (« Only files with binary content can be downloaded »,
     /// l. 575-591) ou `appNotAuthorizedToFile` (« your app isn't on the ACL for the file », l. 627-645).
     FichierRefuse,
+    /// `rateLimitExceeded` ou `userRateLimitExceeded` : la limite de debit du projet ou du compte, a retenter apres une
+    /// attente (« Use exponential backoff to retry the request », l. 889-1149).
+    LimiteDeDebit,
 }
 
 impl RaisonDeGoogle {
@@ -402,6 +404,7 @@ impl RaisonDeGoogle {
             // Le remede : « Manage your storage in Drive, Gmail & Google Photos », « Buy more Google storage » (l. 979-985).
             RaisonDeGoogle::DrivePlein => "Le Drive du compte Google lié est plein : Google refuse d'y écrire. Faire de la place (Drive, Gmail, Google Photos) ou prendre plus d'espace chez Google ; la sauvegarde ne repart qu'ensuite.",
             RaisonDeGoogle::FichierRefuse => "Google refuse ce fichier à PuppetPaie : ce n'est pas un fichier qui se télécharge (un document Google), ou l'application n'y a pas accès.",
+            RaisonDeGoogle::LimiteDeDebit => "Google limite pour un moment le nombre d'appels : réessayer un peu plus tard.",
         }
     }
 }
@@ -566,18 +569,16 @@ impl Client {
         if let Some(a) = self.acces.as_ref().filter(|a| !a.devoiler().is_empty()) {
             return Ok(a.clone());
         }
-        // L'AUTORISATION QUI NE SE RENOUVELLE PAS est une autorisation perdue (`SorteDErreur::Autorisation`) : aucun jeton
-        // de rafraichissement, ou un refus du point de jeton que Google ne dit pas passager et qui a une reponse (un 4xx).
-        let perdue = |e: ErreurGoogle| ErreurGoogle { raison: e.raison.or(Some(RaisonDeGoogle::AutorisationPerdue)), ..e };
+        // AUCUNE AUTORISATION A RENOUVELER (aucun jeton de rafraichissement) : le compte est a lier, comme une autorisation
+        // perdue (`SorteDErreur::Autorisation`). Un refus du point de jeton garde ce que Google en dit (`google::traduire` :
+        // `invalid_grant` seul est l'autorisation perdue ; un `invalid_client`, la page d'un relais gardent leur sorte).
         let Some(rafraichissement) = self.rafraichissement.clone()?.filter(|r| !r.devoiler().is_empty()) else {
-            return Err(perdue(ErreurGoogle::google(
-                "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
-            )));
+            return Err(ErreurGoogle {
+                raison: Some(RaisonDeGoogle::AutorisationPerdue),
+                ..ErreurGoogle::google("Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.")
+            });
         };
-        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(std::time::Duration::from_secs(60)))?.map_err(|e| match sorte(&e) {
-            SorteDErreur::Passagere | SorteDErreur::SansReponse => e,
-            SorteDErreur::Autorisation | SorteDErreur::DuFichier | SorteDErreur::Autre => perdue(e),
-        })?;
+        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(std::time::Duration::from_secs(60)))??;
         self.acces = Some(acces.clone());
         Ok(acces)
     }

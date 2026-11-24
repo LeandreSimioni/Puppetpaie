@@ -598,7 +598,7 @@ un libellé, chacun sa forme.
 | geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
 | provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
 | ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
-| sorte d'une erreur de Google (passagère, sans réponse, autorisation, du fichier, autre) : le seul classement | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
+| sorte d'une erreur de Google (passagère, sans réponse, autorisation, définitive, autre) : le seul classement | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
 | pourquoi une restauration s'est arrêtée en route (hors ligne, autorisation perdue, verrou perdu) | `compagnie::restauration::ArretDeLaRestauration` | `compagnie/src/restauration.rs` |
 | verrou d'une restauration du Drive sur un dossier (une à la fois, d'un processus à l'autre) | `compagnie::restauration::VerrouDeRestauration` | `compagnie/src/restauration.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
@@ -620,7 +620,7 @@ un libellé, chacun sa forme.
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
-| ce que Google dit qui demande un geste de la compagnie (l'autorisation perdue, une permission qui manque, le Drive plein) | `RaisonDeGoogle` | `envois/src/drive.rs` |
+| ce que Google dit de son erreur par sa raison, lue à la porte (l'autorisation perdue, une permission qui manque, le Drive plein, un fichier refusé, la limite de débit) | `RaisonDeGoogle` | `envois/src/drive.rs` |
 | sorte d'un refus de la boîte courriel (le mot de passe refusé, la boîte injoignable, autre) ; le refus et sa sorte : `RefusDeLaBoite` | `SorteDeRefusDeLaBoite` | `envois/src/courriel.rs` |
 | une demande de la page dans un onglet du navigateur, sans serveur ; la réponse que la fenêtre lui sert : `ReponseALOnglet` ; la première page que l'hôte demande, la fenêtre née : `PremierePageDeLOnglet` | `DemandeDeLOnglet` | `moteur/src/interface/onglet.rs` |
 | ce qui arrête un envoi SMTP (la réponse négative et son code, le délai, le TLS, l'échange interrompu), avant sa phrase ; le dialogue SMTP sur un flux : `Smtp`, une réponse : `ReponseSmtp`, ce que le serveur offre : `Extensions` | `ArretDeLEnvoi` | `envois/src/courriel.rs` |

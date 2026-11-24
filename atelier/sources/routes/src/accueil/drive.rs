@@ -690,10 +690,15 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
             if envois::drive::sorte(&e) == envois::drive::SorteDErreur::Autorisation {
                 return Err(erreur(Classe::Google, format!("{} Rien n'est repris.", RELIER_PUIS_REPRENDRE)));
             }
+            // Le disque qui refuse en route : ce qui etait revenu part avec le dossier neuf.
+            if e.echec.classe == Some(Classe::Disque) {
+                return Err(socle::echec::Echec { phrase: format!("{} Son dossier neuf est effacé : rien n'est repris.", e.echec.phrase), ..e.echec });
+            }
             return Err(e.echec);
         }
         // UNE REPRISE COMMENCEE QUI NE CONTINUE PAS (ce qu'elle a deja ramene n'est plus la copie du Drive, le dossier du
-        // Drive n'a plus sa sauvegarde, ou deux) : rien n'est ecrit ; l'ecran dit pourquoi, et propose de l'abandonner
+        // Drive n'a plus sa sauvegarde, ou deux ; ou le disque qui refuse en route, qui dit ce qui est revenu) : rien de
+        // plus n'est ecrit ; l'ecran dit pourquoi, et propose de l'abandonner
         // (et de la reprendre, sauf quand ce qu'elle a deja ramene a change : reprendre redirait la meme chose).
         Err(e) => {
             let retenter = e.echec.classe != Some(Classe::DossierNonVide);
@@ -703,6 +708,8 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
                 _ if e.injoignable => "Google ne répond pas : la connexion est peut-être coupée. Rien n'est écrit.".to_string(),
                 _ if relier => format!("{} Rien n'est écrit.", RELIER_PUIS_REPRENDRE),
                 Some(Classe::DossierNonVide | Classe::SauvegardeAbsente | Classe::SauvegardeAmbigue) => e.echec.phrase.clone(),
+                // Le disque qui refuse en route (le verrou, un fichier, l'index) : sa phrase, et ce qui est revenu reste.
+                Some(Classe::Disque) => format!("{} Ce qui est revenu reste ici.", e.echec.phrase),
                 _ => "Google n'a pas rendu la sauvegarde de ce dossier : rien n'est écrit.".to_string(),
             };
             let dit = if retenter {
