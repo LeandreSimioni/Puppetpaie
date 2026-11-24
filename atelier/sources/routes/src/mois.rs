@@ -124,7 +124,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::CopierEngagement,
-        geste: "Lire la copie d'un engagement du mois, sans son salarié, pour l'engager pour un autre.",
+        geste: "Copier un engagement du mois pour un autre salarié, sans rien écrire.",
         charge: &ChargeCopier::CHARGE,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0}}"#,
         rend: "phrase, copie (l'identité de l'engagement copié, à passer à enregistrer-saisie : carte {\"copie\": copie}), brouillon (la carte neuve telle que la copie l'ouvre : le spectacle, les lignes et leurs dates, le métier, les termes du contrat et la date du paiement ; vides : le salarié, le numéro, ce que la carte rend sans le faire saisir, ce que le salarié a fait ou pris ce mois, la fin du contrat) ; rien n'est écrit",
