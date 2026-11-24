@@ -314,7 +314,7 @@ fn le_contrat_d_un_permanent_qui_continue_dit_son_debut_et_son_numero() {
     let x = &etat["a_dire"][0];
     let cle = x["salarie"].as_str().unwrap().to_string();
     assert_eq!((x["en_cours"].clone(), x["suite"].clone()), (json!(true), json!("2025-06")), "{}", x);
-    let demande = |n: &str| x["natures"].as_array().unwrap().iter().find(|v| v["cle"] == json!(n)).unwrap()["demande"].clone();
+    let demande = |n: &str| x["enregistrer"]["choix"]["nature"].as_array().unwrap().iter().find(|v| v["code"] == json!(n)).unwrap()["ouvre"].clone();
     assert_eq!(demande("cdi"), json!(["debut", "numero", "salaire", "quotite"]));
     assert_eq!(demande("cdd"), json!(["debut", "fin", "numero", "salaire", "quotite"]));
 

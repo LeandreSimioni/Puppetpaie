@@ -694,11 +694,57 @@ function champsDuGeste(g) {
   return CATALOGUE[g.route].charge.filter((c) => g.cases.includes(c.nom));
 }
 
-/** Ce que la boîte d'un geste dit (`phrases`), puis ses cases ; `o.modifie` : voir `casesDesChamps`. */
-function casesDuGeste(g, o = {}) {
-  return `${g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
-    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple, parties: g.parties })}`;
+/** Les choix des cases du geste qui se choisissent (`choix`, sous la clé de chaque case), en paires `[clé, choix]`. */
+const choixDuGeste = (g) => Object.entries(g.choix || {}).filter(([, l]) => Array.isArray(l));
+
+/** Les clés des cases du geste dont un choix ouvre d'autres cases (`ouvre` d'un choix). */
+const clesQuiOuvrent = (g) => choixDuGeste(g).filter(([, l]) => l.some((c) => c.ouvre)).map(([cle]) => cle);
+
+/** LES CHAMPS DU GESTE QUI SONT OUVERTS quand ses cases disent `valeurs`, avec la règle des parties (`partiesDe`) : une
+ *  case qu'aucun choix n'ouvre est toujours là ; une case qu'un choix ouvre (`ouvre`) n'est là que quand l'un des choix
+ *  qui l'ouvrent est choisi. */
+function champsOuverts(g, valeurs) {
+  const tous = choixDuGeste(g);
+  const choisis = tous.map(([cle, l]) => l.find((c) => c.code !== "" && valeurs[cle] != null && c.code === String(valeurs[cle])))
+    .filter(Boolean);
+  return champsDuGeste(g).filter((c) => {
+    const ouvrent = tous.flatMap(([, l]) => l).filter((x) => (x.ouvre || []).includes(c.nom));
+    return !ouvrent.length || choisis.some((x) => ouvrent.includes(x));
+  });
 }
+
+/** Les gestes dont un choix ouvre des cases, sous le numéro de leur bloc (`data-ouvre-geste`), pour le redessiner. */
+const GESTES_QUI_OUVRENT = new Map();
+let NUMERO_DES_GESTES = 0;
+
+/** Les cases ouvertes du geste `g` quand elles disent `valeurs` (`champsOuverts`). */
+const casesOuvertes = (g, valeurs, o) =>
+  casesDesChamps(champsOuverts(g, valeurs), valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple, parties: g.parties });
+
+/** Ce que la boîte d'un geste dit (`phrases`), puis ses cases ouvertes (`champsOuverts`) ; `o.modifie` : voir
+ *  `casesDesChamps`. Quand un choix du geste ouvre des cases, elles sont dans un bloc qui se redessine quand ce choix
+ *  change (`data-ouvre-geste`). */
+function casesDuGeste(g, o = {}) {
+  const phrases = g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("");
+  const cases = casesOuvertes(g, g.valeurs, o);
+  if (!clesQuiOuvrent(g).length) return `${phrases}
+    ${cases}`;
+  const n = String(++NUMERO_DES_GESTES);
+  GESTES_QUI_OUVRENT.set(n, { g, o });
+  return `${phrases}
+    <div data-ouvre-geste="${n}">${cases}</div>`;
+}
+
+// Un choix qui ouvre des cases change : son bloc se redessine avec les cases que le choix fait ouvre, chaque case
+// gardant ce qu'on y a tapé ; une case qui se ferme ne se lit plus, et ne part donc pas dans la charge.
+document.addEventListener("change", (ev) => {
+  const bloc = ev.target.closest && ev.target.closest("[data-ouvre-geste]");
+  const geste = bloc && GESTES_QUI_OUVRENT.get(bloc.dataset.ouvreGeste);
+  const c = geste && ev.target.closest(".case[data-cle]");
+  if (!c || !clesQuiOuvrent(geste.g).includes(c.dataset.cle)) return;
+  bloc.innerHTML = casesOuvertes(geste.g, { ...geste.g.valeurs, ...lireLesCases(bloc) }, geste.o);
+  brancherLesCases(bloc);
+});
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */
 function chargeDuGeste(bloc, g) {
@@ -766,7 +812,8 @@ async function faireLeGeste(g, entete, apres, bouton) {
   // la route exige, vide, retient le geste et le dit sur elle.
   document.getElementById("geste-ok").onclick = () => {
     const charge = chargeDuGeste(bloc, g) || g.charge;
-    if (marquerLesManquantes(bloc, champsDuGeste(g), charge)) return;
+    // Seules les cases ouvertes se marquent : une case qu'un autre choix ouvrirait ne manque pas.
+    if (marquerLesManquantes(bloc, champsOuverts(g, { ...g.valeurs, ...lireLesCases(bloc) }), charge)) return;
     partir(charge, true);
   };
 }
