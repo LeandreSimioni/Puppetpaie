@@ -414,7 +414,7 @@ impl Question {
                 pourvu: Some(CaseSalarie::DeductionForfaitaire),
                 facultative: true,
                 avec_l_exemple_dfs: true,
-                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle ne s'applique que si tu as vraiment des frais pour ton travail, et pas si ton employeur te rembourse tous tes frais. Tes prestations sociales sont calculées sur la base de tes cotisations : avec la déduction, cette base est plus basse, et les prestations qui en dépendent aussi, par exemple ta retraite. La déduction porte sur tes cotisations de sécurité sociale et de retraite complémentaire, pas sur tes cotisations d'assurance chômage d'intermittent ni sur tes Congés Spectacles. Ton employeur doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
+                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle s'applique même si tu n'as pas de frais pour ton travail, ou si ton employeur te les rembourse : c'est admis jusqu'à sa disparition en 2032. Tes prestations sociales sont calculées sur la base de tes cotisations : avec la déduction, cette base est plus basse, et les prestations qui en dépendent aussi, par exemple ta retraite. La déduction porte sur tes cotisations de sécurité sociale et de retraite complémentaire, pas sur tes cotisations d'assurance chômage d'intermittent ni sur tes Congés Spectacles. Ton employeur doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
@@ -708,9 +708,9 @@ fn depourcent(t: &str) -> Option<String> {
 
 pub const SUJET: &str = "Ta fiche pour {compagnie}";
 
-pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.\n\nLe plus simple : ouvre ce lien, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.\n{lien}\n\nSi tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir ci-dessous, chacune suivie de ta réponse : ce que chacune demande est dit juste au-dessus.\n\n{questionnaire}\n\nCes informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.\n\nBien à toi,\n{signataire}\n{compagnie}\n";
+pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.\n\nLe plus simple : ouvre ce lien, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.\n{lien}\n\nSi tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir ci-dessous, chacune suivie de ta réponse : ce que chacune demande est dit juste après.\n\n{questionnaire}\n\nCes informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.\n\nBien à toi,\n{signataire}\n{compagnie}\n";
 
-pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{lien}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir, chacune suivie de ta réponse : ce que chacune demande est dit juste au-dessus.</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px;white-space:pre-wrap\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
+pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{lien}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir, chacune suivie de ta réponse : ce que chacune demande est dit juste après.</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px;white-space:pre-wrap\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
 
 /// CE QUI SE RECOPIE SANS LA PAGE : d'abord ce que chaque ligne demande, avec l'aide de sa question, mot pour mot celle
 /// de la page (une ligne qui commence par « cle — » : rien ne s'y prend pour une reponse, `lire_reponse`), puis les
@@ -725,7 +725,12 @@ pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font
 /// L'exemple de la deduction forfaitaire (`ExempleDfs`), le meme que la page montre, suit l'explication de sa question,
 /// une ligne par chiffre.
 pub fn a_recopier(code: &CodeDeDemande, questions: &[Question], exemple: Option<&ExempleDfs>) -> String {
-    let mut lignes: Vec<String> = Vec::new();
+    // D'abord les lignes a remplir et le code, puis ce que chacune demande (Leandre, 24/11/2026 : « d'abord les cases a
+    // remplir et ensuite l'explication des cases »). La lecture de la reponse ne depend pas de l'ordre (`lire_reponse`).
+    let mut lignes: Vec<String> = questions.iter().map(|q| format!("{}{}", q.declaree().cle, SEPARATEUR)).collect();
+    lignes.push(String::new());
+    lignes.push(format!("{}{}{}", CLE_DU_CODE, SEPARATEUR, code));
+    lignes.push(String::new());
     for q in questions {
         let d = q.declaree();
         let mut dit = format!("{} — {}", d.cle, d.libelle);
@@ -752,10 +757,6 @@ pub fn a_recopier(code: &CodeDeDemande, questions: &[Question], exemple: Option<
         }
         lignes.extend(exemple_de(&d, exemple).into_iter().map(|l| format!("   {}", l)));
     }
-    lignes.push(String::new());
-    lignes.extend(questions.iter().map(|q| format!("{}{}", q.declaree().cle, SEPARATEUR)));
-    lignes.push(String::new());
-    lignes.push(format!("{}{}{}", CLE_DU_CODE, SEPARATEUR, code));
     lignes.join("\n")
 }
 

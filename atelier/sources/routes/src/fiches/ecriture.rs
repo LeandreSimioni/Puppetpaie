@@ -733,7 +733,8 @@ pub(crate) fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichi
 }
 
 /// Le prochain matricule (S21.G00.30.019, que l'employeur choisit : `norme-dsn/texte-2027/bloc-S21.G00.30.txt`) : le
-/// plus grand code salarie numerique que le fichier ait jamais porte, plus un. Chaque valeur datee compte.
+/// plus grand code salarie numerique que le fichier porte, plus un. Chaque valeur datee compte. Le matricule d'un
+/// salarie supprime (`supprimer-salarie` : rien n'est jamais parti sous lui) peut donc se redonner.
 fn matricule_suivant(salaries: &droit::fiche::Salaries) -> R<droit::fiche::Matricule> {
     droit::fiche::Matricule::suivant(salaries.fiches.values().flat_map(|s| s.code_salarie.iter().flatten()).filter_map(|e| e.valeur.portee()))
 }
