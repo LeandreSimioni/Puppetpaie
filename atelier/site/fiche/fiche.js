@@ -51,10 +51,12 @@
     return r;
   }
 
+  // JJ/MM/AAAA, ou AAAA-MM-JJ, que le remplissage automatique du navigateur peut écrire : les deux que la relève lit.
   function dateJuste(t) {
     var m = /^\s*(\d{1,2})[\/.\- ](\d{1,2})[\/.\- ](\d{4})\s*$/.exec(t);
-    if (!m) return false;
-    var j = +m[1], mo = +m[2], a = +m[3];
+    var iso = /^\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*$/.exec(t);
+    if (!m && !iso) return false;
+    var j = m ? +m[1] : +iso[3], mo = m ? +m[2] : +iso[2], a = m ? +m[3] : +iso[1];
     var d = new Date(a, mo - 1, j);
     return d.getFullYear() === a && d.getMonth() === mo - 1 && d.getDate() === j;
   }
@@ -121,11 +123,26 @@
         c.choix.push(r);
       });
       bloc.appendChild(liste);
+    } else if (q.forme === "liste") {
+      // Une longue liste (les pays) : une liste déroulante, ses choix tels que le formulaire les déclare.
+      var menu = document.createElement("select");
+      menu.id = id;
+      menu.autocomplete = q.autocomplete || "off";
+      (q.choix || []).forEach(function (ch) {
+        var o = document.createElement("option");
+        o.value = ch.valeur;
+        o.textContent = ch.libelle;
+        menu.appendChild(o);
+      });
+      menu.addEventListener("change", function () { c.faute.classList.add("cache"); });
+      bloc.appendChild(menu);
+      c.champ = menu;
     } else {
       var champ = document.createElement("input");
       champ.type = "text";
       champ.id = id;
-      champ.autocomplete = "off";
+      // Le jeton que la question déclare : le navigateur propose ce qu'il sait ; sans jeton, rien.
+      champ.autocomplete = q.autocomplete || "off";
       champ.spellcheck = false;
       if (q.forme === "date") { champ.inputMode = "numeric"; champ.placeholder = "JJ/MM/AAAA"; }
       if (q.forme === "nir" || q.forme === "code_postal") champ.inputMode = "numeric";
@@ -157,6 +174,8 @@
       coche.addEventListener("change", function () { basculer(c); montrerLesConditions(); });
       bloc.appendChild(l);
       c.aucun = coche;
+      // Cochée d'avance quand le formulaire le déclare (c'est l'usage) : comme si la personne l'avait cochée.
+      if (q.aucun_coche) { coche.checked = true; basculer(c); }
     }
     bloc.appendChild(c.faute);
     return c;
