@@ -86,8 +86,8 @@ fn rappel_du_courriel(sujet: String, liste: String, pieces: &[(String, bool)], t
         (sujet, format!("{}{}", envoi::formater(RAPPEL_EN_PARTIE, &[("pieces", et_fr(&rappels))]), liste))
     }
 }
-const CORPS_SIGNATURE: &str = "Bonjour {prenom},\n\n{contrats}\n\nPour {le_signer}, un clic suffit : appuie sur le bouton « Je signe » de ce message, puis envoie la réponse qui s'ouvre, sans la modifier. Si ta messagerie n'affiche pas le bouton, réponds simplement à ce message en écrivant « Je signe » suivi de ce code : {code}\n\nTu recevras aussitôt {exemplaire} signé des deux parties, à conserver.{avant_travail}\n\nSi quelque chose ne correspond pas à ce qui était convenu, dis-le avant de signer plutôt qu'après : c'est plus simple à corriger.\n\nBien à toi,\n{signataire}\n{raison_sociale}\n";
-const HTML_SIGNATURE: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour {prenom},</p>\n<p>{contrats}</p>\n<p>Pour {le_signer}, un clic suffit : appuie sur le bouton, puis envoie la réponse qui s'ouvre, sans la modifier.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{mailto}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Je signe</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si le bouton ne fait rien, réponds simplement à ce message en écrivant « Je signe » suivi de ce code : <b>{code}</b></p>\n<p>Tu recevras aussitôt {exemplaire} signé des deux parties, à conserver.{avant_travail}</p>\n<p>Si quelque chose ne correspond pas à ce qui était convenu, dis-le avant de signer plutôt qu'après : c'est plus simple à corriger.</p>\n<p>Bien à toi,<br>{signataire}<br>{raison_sociale}</p>\n</div>\n";
+const CORPS_SIGNATURE: &str = "Bonjour {prenom},\n\n{contrats}\n\nAvant de signer, lis {exemplaire} en pièce jointe : en signant, tu déclares avoir lu et accepter ce qui y est écrit.\n\nPour {le_signer}, un clic suffit : appuie sur le bouton « Je signe » de ce message, puis envoie la réponse qui s'ouvre, sans la modifier. Si ta messagerie n'affiche pas le bouton, réponds simplement à ce message en écrivant « Je signe » suivi de ce code : {code}\n\nTu recevras aussitôt {exemplaire} signé des deux parties, à conserver.{avant_travail}\n\nSi quelque chose ne correspond pas à ce qui était convenu, dis-le avant de signer plutôt qu'après : c'est plus simple à corriger.\n\nBien à toi,\n{signataire}\n{raison_sociale}\n";
+const HTML_SIGNATURE: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour {prenom},</p>\n<p>{contrats}</p>\n<p><b>Avant de signer, lis {exemplaire} en pièce jointe</b> : en signant, tu déclares avoir lu et accepter ce qui y est écrit.</p>\n<p>Pour {le_signer}, un clic suffit : appuie sur le bouton, puis envoie la réponse qui s'ouvre, sans la modifier.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{mailto}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Je signe</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si le bouton ne fait rien, réponds simplement à ce message en écrivant « Je signe » suivi de ce code : <b>{code}</b></p>\n<p>Tu recevras aussitôt {exemplaire} signé des deux parties, à conserver.{avant_travail}</p>\n<p>Si quelque chose ne correspond pas à ce qui était convenu, dis-le avant de signer plutôt qu'après : c'est plus simple à corriger.</p>\n<p>Bien à toi,<br>{signataire}<br>{raison_sociale}</p>\n</div>\n";
 pub(crate) const CORPS_REPONSE: &str = "Je soussigné(e) {nom} déclare avoir lu et accepter {quoi}.\n\nCode de signature : {code}\n";
 
 // ------------------------------------------------------------------ les petits outils
@@ -311,7 +311,7 @@ fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a 
         fiches.push((FicheAJuger::Salarie(s), format!("la fiche de {}", crate::nom_a_l_ecran(s, cle))));
     }
     match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Contrat, &fiches, &[])? {
-        Some(m) => Err(refus(m)),
+        Some(m) => Err(m),
         None => Ok(()),
     }
 }
@@ -800,7 +800,12 @@ fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&
 /// compagnie y depose, si elle le veut, le PDF de ce contrat ; il est garde avec elle (la sauvegarde l'emporte) et part
 /// joint a chaque avenant envoye a la signature, pour que le salarie l'ait sous les yeux. Le logiciel ne le lit pas.
 pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &IdSalarie, debut: Jour) -> PathBuf {
-    racine.join("salaries").join(cle.as_str()).join(format!("contrat-du-{}", debut.iso()))
+    dossier_du_salarie(racine, cle).join(format!("contrat-du-{}", debut.iso()))
+}
+
+/// Le dossier du salarie `cle`, sous la compagnie : ce qu'elle y depose pour lui (ses contrats signes hors du logiciel).
+pub(crate) fn dossier_du_salarie(racine: &std::path::Path, cle: &IdSalarie) -> PathBuf {
+    racine.join("salaries").join(cle.as_str())
 }
 
 /// Les PDF deposes dans ce dossier, par ordre de nom.

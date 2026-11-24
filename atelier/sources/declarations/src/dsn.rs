@@ -1317,7 +1317,8 @@ d'adhésion de l'assureur.",
 d'un salarié « {} » ne sont pas connus.\n  {}\n  Déclarer quand même le rattacherait aux contrats d'une autre \
 population, ce que la plate-forme accepte sans rien dire. Rien n'est écrit.",
             nat.libelle, cle.population(), pourquoi
-        ));
+        )
+        .reclasser(socle::echec::Classe::CaseExigee));
     }
     let mut out: Vec<(ReferenceDAdhesion, PlaceDAffiliation)> = sec
         .references
@@ -1668,7 +1669,7 @@ fn licence_du_contrat(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, ent: &
         return si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.049"), Some(licence));
     }
     if crate::demarrage::licence_exigee(ent, spectacle)? && usage_admet(f, droit::rubrique!("S21.G00.40.049"), nature_dsn)? {
-        return Err(refus("La licence d'entrepreneur de spectacles manque : la saisir dans Configuration › Entreprise, « Licence d'entrepreneur de spectacles » (le numéro attribué par la DRAC, ou la référence du récépissé de déclaration). L'entrepreneur de spectacles vivants la déclare dans chaque contrat (S21.G00.40.049). Rien n'est écrit."));
+        return Err(refus("La licence d'entrepreneur de spectacles manque : la saisir dans Configuration › Entreprise, « Licence d'entrepreneur de spectacles » (le numéro attribué par la DRAC, ou la référence du récépissé de déclaration). L'entrepreneur de spectacles vivants la déclare dans chaque contrat (S21.G00.40.049). Rien n'est écrit.").reclasser(socle::echec::Classe::CaseExigee));
     }
     Ok(())
 }
@@ -4631,7 +4632,7 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
     }
     let sauf: Vec<droit::fiche::CaseDeFiche> = if caisse_conges { Vec::new() } else { vec![documents::conges_spectacles::CLE_ADHERENT.into()] };
     match crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dsn, &fiches, &sauf)? {
-        Some(m) => Err(refus(m)),
+        Some(m) => Err(m),
         None => Ok(()),
     }
 }

@@ -309,6 +309,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         .collect::<R<_>>()?;
     m.avertissements.push(Avis {
         info: true,
+        convention: None,
         texte: format!(
             "{} : le contrat (statut, categorie, duree du travail, salaire) change en cours de mois ; la paie se decoupe en {} periodes \
 elementaires, chacune payee pour ses heures (Cass. soc., 20/01/1999, n° 96-45.042), sur ses cotisations et sa part du plafond : {}. La DSN declare les remunerations et les bases de \

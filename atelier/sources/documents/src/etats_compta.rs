@@ -1667,7 +1667,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
                 paies
             }
-            Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
+            Err(e) if matches!(e.classe, Some(Classe::Refuse | Classe::Illisible | Classe::Manque | Classe::CaseExigee | Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.phrase));
                 ecartees = true;
                 continue;

@@ -42,11 +42,11 @@ use documents::ecrire_documents::Reserves;
 use documents::SorteDePieceProduite;
 
 fn info(texte: impl Into<String>) -> Avis {
-    Avis { info: true, texte: texte.into() }
+    Avis::de(texte.into(), true)
 }
 
 fn avertissement(texte: impl Into<String>) -> Avis {
-    Avis { info: false, texte: texte.into() }
+    Avis::de(texte.into(), false)
 }
 
 fn os(chemin: &Path, e: std::io::Error) -> Echec {
@@ -449,9 +449,9 @@ pub(crate) struct DsnFabriquee {
 }
 
 impl DsnFabriquee {
-    /// Ce que la fabrique dit avant le depot : les avertissements, et les informations.
-    pub(crate) fn avis(&self) -> (Vec<String>, Vec<String>) {
-        let de = |info: bool| self.avertissements.iter().filter(|a| a.info == info).map(|a| a.texte.clone()).collect::<Vec<_>>();
+    /// Ce que la fabrique dit avant le depot : les avertissements, et les informations, chacun avec son lien.
+    pub(crate) fn avis(&self) -> (Vec<crate::mois::AvisVu>, Vec<crate::mois::AvisVu>) {
+        let de = |info: bool| self.avertissements.iter().filter(|a| a.info == info).map(crate::mois::AvisVu::de).collect::<Vec<_>>();
         (de(false), de(true))
     }
 }
@@ -780,7 +780,7 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
         fiches.push((FicheAJuger::Spectacle(&sp.champs), qui));
     }
     match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Bulletin, &fiches, &[])? {
-        Some(m) => Err(erreur(Classe::Refuse, m)),
+        Some(m) => Err(m),
         None => Ok(()),
     }
 }

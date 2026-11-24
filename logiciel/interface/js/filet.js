@@ -122,11 +122,14 @@ function boiteSignalement() {
   };
   // Sur le contenu de CETTE boite : il disparait avec elle, l'ecouteur aussi.
   boite.addEventListener("paste", (e) => {
+    // Un presse-papiers peut annoncer une image sans en donner le fichier (une page web copiée) : elle ne se colle pas.
     const images = [...(e.clipboardData ? e.clipboardData.items : [])]
-      .filter((i) => i.type.startsWith("image/"));
+      .filter((i) => i.type.startsWith("image/"))
+      .map((i) => i.getAsFile())
+      .filter((f) => f);
     if (!images.length) return;
     e.preventDefault();
-    images.forEach((i) => poser(i.getAsFile()));
+    images.forEach(poser);
   });
   texte.addEventListener("input", changement);
 

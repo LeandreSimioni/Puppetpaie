@@ -349,8 +349,8 @@ pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -
     match regime_taxe_sur_les_salaires(ent, None).decision {
         Decision::NonDue => Ok(None),
         Decision::DueSur(p) => Ok(Some(p)),
-        // Une case de la fiche que la compagnie n'a pas dite : un manque.
-        Decision::ADire(phrase) => Err(socle::echec::refus(phrase).reclasser(socle::echec::Classe::Manque)),
+        // Une case de la fiche que la compagnie n'a pas dite, que « Pour démarrer » demande.
+        Decision::ADire(phrase) => Err(socle::echec::refus(phrase).reclasser(socle::echec::Classe::CaseExigee)),
     }
 }
 

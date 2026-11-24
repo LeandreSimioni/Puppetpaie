@@ -298,6 +298,17 @@ qui va à la sécu »). Ce qu'il explique à un salarié, il le dit entier, chif
 ce que la personne gagne, ce qu'elle perd, et ce que la compagnie y gagne ; jamais une phrase arrangée du côté de
 l'employeur, ni un commentaire. Une explication se donne par un exemple chiffré avant une grande phrase.
 
+**Pas de tolérance : la loi** (Léandre, 24/11/2026 : « pas de tolérance, c'est la loi », « j'ai choisi l'intérêt du
+salarié »). Ce que l'administration « admet » par tolérance (le BOSS : « par tolérance », « il est admis ») ne
+s'applique pas : le moteur calcule la règle du texte. Une tolérance fait économiser des cotisations à la compagnie et un
+peu au salarié sur le moment, et coûte au salarié des droits (sa retraite) ; le logiciel suit la règle, qui les lui
+garde. Une tolérance qu'on trouve encore appliquée se présente à Léandre, chiffrée ; il décide. Une tolérance à
+laquelle chacun consent reste (Léandre, 24/11/2026 : « on met que chacun consent ») : celles de la déduction
+forfaitaire spécifique, que la compagnie choisit et que chaque salarié accepte ou refuse, informé de ce qu'elle change
+pour ses droits (BOSS, frais professionnels, § 2180-2190 ; le formulaire « Remplir ma fiche » le lui explique, chiffres
+à l'appui) :
+la déduction sans frais réellement supportés (§ 2310) et sa limite de 7 600 € comptée par employeur (§ 2160).
+
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
 alerte le développeur et se raccourcit dans le moteur.

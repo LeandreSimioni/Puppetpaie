@@ -144,6 +144,7 @@ routes! {
         TaxeSurLesSalairesRegime = "taxe-sur-les-salaires-regime",
         EnregistrerFiche = "enregistrer-fiche",
         ActiverFiche = "activer-fiche",
+        SupprimerSalarie = "supprimer-salarie",
         FicheDemander = "fiche-demander",
         FichesRelever = "fiches-relever",
         FicheOublierDemande = "fiche-oublier-demande",
@@ -759,6 +760,8 @@ pub const MANQUE: Refus = Refus { classe: Classe::Manque, corriger: "le champ de
 pub(crate) const ILLISIBLE: Refus = Refus { classe: Classe::Illisible, corriger: "la date ou la valeur que la phrase dit illisible" };
 pub const FORME: Refus = Refus { classe: Classe::MalFormee, corriger: "le champ de la charge que la phrase nomme" };
 pub const OPERATION: Refus = Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit ; rien n'est écrit" };
+/// Le refus d'un acte ou d'un calcul qui attend une case de la configuration (`Classe::CaseExigee`).
+pub const CASE_EXIGEE: Refus = Refus { classe: Classe::CaseExigee, corriger: "les cases que la phrase nomme, dans Configuration" };
 
 impl Fiche {
     /// Le nom de la route.
