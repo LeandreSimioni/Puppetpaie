@@ -76,20 +76,23 @@ pub struct Manque {
 
 /// UNE VALEUR QUE LE MOTEUR PROPOSE pour la case d'une ligne, que la compagnie valide ou corrige : elle s'ecrit comme la
 /// case la tient, la page en remplit la case (un texte ; un jour en AAAA-MM-JJ), et se dit dans la phrase de la ligne
-/// (`dite` : un jour en JJ/MM/AAAA).
+/// (`dite` : un jour en JJ/MM/AAAA). Le code d'une case `choix` (`Choix`) ne se dit pas : la phrase de la ligne nomme
+/// deja le choix par son libelle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum ValeurProposee {
     Texte(String),
     Jour(Jour),
+    Choix(String),
 }
 
 impl ValeurProposee {
-    /// Ce que la phrase en dit.
-    fn dite(&self) -> String {
+    /// Ce que la phrase en dit ; `None` : le code d'un choix, que la phrase dit deja par son libelle.
+    fn dite(&self) -> Option<String> {
         match self {
-            ValeurProposee::Texte(t) => t.clone(),
-            ValeurProposee::Jour(j) => j.jj_mm_aaaa(),
+            ValeurProposee::Texte(t) => Some(t.clone()),
+            ValeurProposee::Jour(j) => Some(j.jj_mm_aaaa()),
+            ValeurProposee::Choix(_) => None,
         }
     }
 }
@@ -562,7 +565,7 @@ fn abattements_a_dire(ctx: &Contexte) -> R<Vec<Manque>> {
         let (propose, trouver) = match professions.as_deref() {
             None => (None, format!("{} ; le logiciel n'a pas la déduction forfaitaire spécifique de {} : dites la profession du salarié, si la compagnie l'abat ; {}.", debut, an, option)),
             Some([]) => (None, format!("{} : aucune profession n'a ce taux en {} ; dites la sienne, si la compagnie l'abat ; {}.", debut, an, option)),
-            Some([(p, libelle)]) => (Some(ValeurProposee::Texte(p.to_string())), format!("{} : en {}, c'est le taux de la profession « {} ». Validez-la ou corrigez-la ; {}.", debut, an, libelle, option)),
+            Some([(p, libelle)]) => (Some(ValeurProposee::Choix(p.to_string())), format!("{} : en {}, c'est le taux de la profession « {} ». Validez-la ou corrigez-la ; {}.", debut, an, libelle, option)),
             Some(plusieurs) => (
                 None,
                 format!(
@@ -820,12 +823,12 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         };
         // Une valeur que le moteur propose (`propose`) se dit dans la phrase : la ligne de commande la lit comme l'ecran.
         let de_l_embauche = match (&l.propose, &d_ou_l_embauche) {
-            (Some(p), Some(d)) if l.qui.is_none() && l.champ == premiere_embauche => Some(format!(" Proposé : « {} », {}. Validez-la ou corrigez-la.", p.dite(), d)),
+            (Some(p), Some(d)) if l.qui.is_none() && l.champ == premiere_embauche => p.dite().map(|p| format!(" Proposé : « {} », {}. Validez-la ou corrigez-la.", p, d)),
             _ => None,
         };
         let propose: String = match &de_l_embauche {
             Some(p) => p.clone(),
-            None => l.propose.iter().map(|p| format!(" Proposé : « {} ».", p.dite())).collect(),
+            None => l.propose.iter().filter_map(ValeurProposee::dite).map(|p| format!(" Proposé : « {} ».", p)).collect(),
         };
         // L'effectif que les paies reprises donnent, annee par annee, ou ce qui manque pour le calculer ; ce que la
         // compagnie valide avec ces valeurs (`EffectifRepris::reserves`, le meme d'une annee a l'autre) se dit une fois.
