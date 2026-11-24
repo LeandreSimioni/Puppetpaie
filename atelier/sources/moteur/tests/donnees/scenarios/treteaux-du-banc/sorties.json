@@ -745,7 +745,8 @@
       }
     },
     "courriels-simules/20261120-060000-000000_b3d98dc1.eml": [
-      "From: direction@les-treteaux.invalid",
+      "From:",
+      " =?utf-8?b?TGVzIFRyw6l0ZWF1eCBkdSBCYW5j?= <direction@les-treteaux.invalid>",
       "To: loie.fuller@exemple.invalid",
       "Subject: Ton contrat =?utf-8?q?sign=C3=A9?= - Le Banc des menteurs",
       "Date: Fri, 20 Nov 2026 06:00:00 +0100",
@@ -2224,7 +2225,7 @@
                 "existe racine:config/effectifs.json": "non",
                 "existe racine:config/rubriques-compagnie.json": "non",
                 "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "4565972d97b4b1465613c9f90024ddb803abfcb07dcde426c14b7580099b2ca5",
-                "fichier code:baremes/2026.json": "f80dc4b9163e0af75baac07d4be919c6544e47d2947c145f01fb9c0bb289a73c",
+                "fichier code:baremes/2026.json": "3cc1dc27abce5ddf9b5f777c974f0a6b22ca6edf2a7145490503ec6f1a142a25",
                 "fichier code:contrats-base.json": "48dab9343d5cb6bf745e841e11f0e127a80f9b87076128a58a09541f61a8f7c4",
                 "fichier code:emplois-base.json": "27dfee16122f2f5dd53afaf17a54c32ca5405e4136f96e87d3a3efe6886ca2c4",
                 "fichier code:minima-conventionnels.json": "4b37231523fbc6ac672237d8df9c5726adc04937728162d9bc00635a9f9e1be4",

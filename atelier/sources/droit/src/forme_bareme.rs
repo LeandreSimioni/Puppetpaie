@@ -524,45 +524,11 @@ forme! {
     }
 }
 
-/// LE PLAFOND DU TECHNICIEN INTERMITTENT : `par_contrat`, la seule valeur, une TOLERANCE RETENUE et non une regle
-/// (Leandre, 19/11/2026) : le BOSS (assiette generale) lui admet le plafond des jours remuneres au § 1090, ecrit pour les
-/// salaries « non eligibles a la reduction du plafond », la classe que le § 1250 sort de la regularisation ; et le § 1230
-/// regularise « l'ensemble des remunerations dues par un meme employeur a un meme salarie, y compris au titre de
-/// plusieurs contrats ». Aucun texte depose ne nomme le technicien : son plafond reste celui de chaque contrat, comme celui
-/// que le moteur lui calcule (`plafond::pour_paie`), tant qu'aucun texte ne tranche.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlafondDuTechnicienIntermittent {
-    ParContrat,
-}
-
 forme! {
-    /// QUELLES PAIES REGULARISENT LEURS ASSIETTES PLAFONNEES SUR L'ANNEE CIVILE (CSS R. 242-2, II ; BOSS, assiette
-    /// generale, § 1220-1250 : `plafond::assiettes_plafonnees`). Le permanent (paye au mois) se regularise ; l'artiste,
-    /// permanent ou non, ne se regularise pas (§ 1250 ; § 1090 : « Sont notamment vises les artistes du spectacle ») ; le
-    /// technicien intermittent, comme le dit `technicien_intermittent`.
-    pub struct RegularisationDuPlafond {
-        pub technicien_intermittent: PlafondDuTechnicienIntermittent,
-    }
-}
-
-impl RegularisationDuPlafond {
-    /// LA PAIE D'UN CONTRAT paye au mois (`mensuelle`) ou non, d'un artiste (`artiste`) ou d'un technicien, se
-    /// regularise-t-elle sur l'annee ? Les paies qui ne se regularisent pas n'entrent pas dans le cumul des autres : celles
-    /// d'un artiste qui a aussi un contrat de technicien a la compagnie (INFERENCE retenue par Leandre, 19/11/2026 : le
-    /// § 1230 fait masse de tous les contrats, le § 1250 sort l'artiste de la regularisation, aucun texte ne joint les
-    /// deux), et celles d'un technicien intermittent (`technicien_intermittent`).
-    pub fn regularise(&self, mensuelle: bool, artiste: bool) -> bool {
-        if artiste {
-            return false;
-        }
-        if mensuelle {
-            return true;
-        }
-        match self.technicien_intermittent {
-            PlafondDuTechnicienIntermittent::ParContrat => false,
-        }
-    }
+    /// LES TEXTES DE LA REGULARISATION DU PLAFOND SUR L'ANNEE CIVILE (CSS R. 242-2, II ; BOSS, assiette generale,
+    /// § 1220-1250), ses seules notes : la regle n'a aucune valeur a lire, elle est dans le moteur
+    /// (`plafond::se_regularise`, `plafond::assiettes_plafonnees`).
+    pub struct RegularisationDuPlafond {}
 }
 
 impl Pile {
@@ -1166,18 +1132,22 @@ crate::cle_opaque! {
 
 forme! {
     /// LA SECTION `deduction_forfaitaire` DU BAREME DE L'ANNEE : la regle (les professions, le taux de chaque categorie,
-    /// le plafond annuel, la limite de la reduction generale, les rubriques abattues, la tolerance du BOSS). Une forme du bareme, pas la DFS d'une paie
-    /// (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle d'un
-    /// salarie (`DfsDuSalarie`).
+    /// le plafond annuel, la limite de la reduction generale, les rubriques abattues). Une forme du bareme, pas la DFS
+    /// d'une paie (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle
+    /// d'un salarie (`DfsDuSalarie`).
     pub struct DfsDuBareme {
         pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
-        pub frais_cumulables: bool,
         pub taux: BTreeMap<CategorieDfs, Taux>,
         pub plafond_annuel: Montant,
         /// La limite de la reduction generale sous DFS, en pourcentage de celle du brut entier (arrete du 4 decembre
         /// 2019, art. 1er : 130 % ; `reduction::reduction_generale_sous_dfs`).
         pub limite_reduction_generale: Taux,
         pub rubriques_abattues: Vec<IdDeCotisation>,
+        /// Les avantages que l'annexe 2, II, de l'arrete laisse hors de l'assiette pour toute profession sous DFS, par le
+        /// type d'autre element de revenu brut (S21.G00.54.001) que la rubrique qui les paie declare
+        /// (`Rubrique::dsn_autres_bruts`) : la prise en charge des titres de transport (18) et la part patronale des
+        /// titres-restaurant (17) (`engagement::calcul::dfs_applicable`).
+        pub avantages_hors_assiette: Vec<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
     }
 }
 

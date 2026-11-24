@@ -20,7 +20,10 @@ papiers en sont tirés :
 
 - **les bulletins** : un par paie (un contrat, un mois), ses lignes telles que PuppetPaie les a payées (rubrique, quantité,
   taux), sa période, ses jours travaillés, son numéro d'objet, ses cotisations, son net imposable et l'impôt prélevé,
-  tels que PuppetPaie les a calculés : bulletins et DSN de décembre disent la même chose ;
+  tels que PuppetPaie les calcule (`moteur-atelier remplir-bulletins`, refait le 24/11/2026 quand le plafond des
+  intermittents est devenu celui des jours calendaires du contrat, avec la régularisation annuelle et la réduction
+  générale sous déduction forfaitaire) ; la DSN de décembre, fixe, garde les montants que le calcul d'avant donnait à
+  six paies de décembre : l'import ne compare que les bulletins ;
 - **la DSN de décembre 2025** : celle que PuppetPaie a fabriquée et déposée en jouant décembre, octet pour octet (fins de
   ligne CRLF comprises), sauf l'identité du logiciel émetteur (S10.G00.00.001 à .003 : « GHS », « sPAIEctacle »,
   « 12.4.0 »). Une compagnie n'apporte souvent que sa dernière DSN : c'est une **donnée** fixe, que rien du moteur ne
