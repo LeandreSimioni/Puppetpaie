@@ -1323,10 +1323,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
 | allègement d'une image à sa pose (la garder telle qu'elle est reçue, ou l'alléger au poids visé : la personne choisit en voyant ce que chacune pèse dans chaque document) | `Allegement` | `routes/src/identite.rs` |
-| image reçue telle qu'elle se poserait (ses octets, l'original ou l'image allégée, leur format, et ce que la phrase en dit : ce qu'elle pèse, et ce que la pose a fait de son texte) : ce que montre `identite-allegement` et qu'écrit `poser-identite`, un seul calcul | `ImageAPoser` | `routes/src/identite.rs` |
+| image reçue telle qu'elle se poserait (ses octets, l'original ou l'image allégée, leur format, et ce que la phrase en dit : ce qu'elle pèse) : ce que montre `identite-allegement` et qu'écrit `poser-identite`, un seul calcul | `ImageAPoser` | `routes/src/identite.rs` |
 | ce que l'allègement d'une image a donné, tel que la phrase le dit (son poids dans chaque document, sa largeur en pixels quand elle a été ramenée, le poids visé) ; l'image allégée elle-même est `Allegee` | `Allege` | `routes/src/identite.rs` |
 | image allégée par la fabrique (ses octets, son format, sa largeur, le poids reçu, gardée telle quelle ou non) | `Allegee` | `fabrique-pdf/src/alleger.rs` |
-| texte d'un SVG dessiné en tracés à sa pose, avec les polices du poste (le SVG réécrit sans texte, ce que ses textes disaient, les polices qu'il nomme et que le poste n'a pas) : les documents n'impriment pas le texte d'un SVG | `TexteEnTraces` | `fabrique-pdf/src/alleger.rs` |
 | numéro du format d'une description donnée à la fabrique (FORMAT.md, son champ `format` : un document, un remplissage, un ajout de champs ; celui que le logiciel écrit, `fabrique_pdf::FORMAT`) | `NumeroDuFormat` (lu tel qu'il est écrit ; la fabrique dit si elle le lit, ou le refuse en le citant) | `fabrique-pdf/src/description.rs` |
 | source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
 | durée d'un préavis | `DureeDuPreavis` | `engagement/src/solde.rs` |

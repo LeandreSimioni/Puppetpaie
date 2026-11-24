@@ -1091,7 +1091,6 @@ dependencies = [
  "cbc",
  "cipher",
  "flate2",
- "fontdb",
  "getrandom 0.2.17",
  "image",
  "lopdf",

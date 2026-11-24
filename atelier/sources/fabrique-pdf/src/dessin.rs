@@ -366,7 +366,7 @@ impl Image {
         use usvg::TreeParsing as _;
         let texte = std::str::from_utf8(donnees).map_err(|_| Refus::illisible("SVG illisible : pas de l'UTF-8"))?;
         if texte.contains("<text") {
-            return Err(Refus::illisible("le SVG contient du texte que les documents n'impriment pas"));
+            return Err(Refus::illisible("SVG avec du texte : le texte n'est pas pris en charge (à convertir en tracés)"));
         }
         let arbre = usvg::Tree::from_str(texte, &usvg::Options::default()).map_err(|e| Refus::illisible(format!("SVG illisible : {}", e)))?;
         let (l, h) = match (Mesure::par_son_texte(arbre.size.width()), Mesure::par_son_texte(arbre.size.height())) {
