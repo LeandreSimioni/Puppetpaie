@@ -588,8 +588,6 @@ pub(crate) struct ImageIdentite {
     pub(crate) automatique: bool,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) octets: Option<socle::grandeurs::Octets>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "format_ecrit")]
     pub(crate) format: Option<fabrique_pdf::alleger::FormatDImage>,
     #[serde(skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
@@ -631,7 +629,6 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             pose: pose.is_some(),
             automatique: quoi == documents::SorteDImage::Cachet,
             dossier: None,
-            octets: None,
             format: None,
             quand: None,
             fichier: None,
@@ -644,7 +641,6 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             None => e.dossier = Some(dossier.clone()),
             Some((f, format)) => {
                 let st = std::fs::metadata(&f).map_err(|x| socle::echec::du_disque(&f, &x).reclasser(Classe::Disque))?;
-                e.octets = Some(socle::grandeurs::Octets::du_disque(&st));
                 e.format = Some(format);
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
                 e.quand = socle::paris::mtime(&st).map(socle::paris::Moment::a_la_seconde);

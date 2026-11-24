@@ -230,19 +230,27 @@ fn chemin_identite(dossier: &Path, quoi: SorteDImage) -> R<Option<(PathBuf, Form
     Ok(None)
 }
 
-/// UNE IMAGE POSEE QUE LES DOCUMENTS N'IMPRIMENT PAS (un SVG au texte posé avant que la pose ne le dessine en tracés) :
-/// ce qui l'en empeche, lu comme la fabrique la lit (`poids_dans_un_document`) ; elle se repose, rien ne la reecrit
-/// d'office. Un defaut du logiciel remonte.
-fn ne_s_imprime_pas(ctx: &Contexte, quoi: SorteDImage) -> R<Option<String>> {
+/// CE QUE L'IMAGE POSEE `quoi` PESE DANS CHAQUE DOCUMENT, le poids que dit chaque phrase d'une image (`dans_un_document`,
+/// celui de l'aperçu et de la pose) ; ou, pour une image que les documents n'impriment pas (un SVG au texte posé avant
+/// que la pose ne le dessine en tracés), ce qui l'en empeche : elle se repose, rien ne la reecrit d'office. Rien de
+/// pose : rien. Un defaut du logiciel remonte.
+fn posee_dans_un_document(ctx: &Contexte, quoi: SorteDImage) -> R<Option<Result<Octets, String>>> {
     let Some((f, _)) = chemin_identite(&dossier_identite(ctx), quoi)? else {
         return Ok(None);
     };
     let octets = std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(socle::echec::Classe::Disque))?;
-    match fabrique_pdf::alleger::poids_dans_un_document(&octets, quoi.largeur_imprimee()) {
-        Ok(_) => Ok(None),
+    match dans_un_document(&octets, quoi) {
+        Ok(poids) => Ok(Some(Ok(poids))),
         Err(r) if r.classe == fabrique_pdf::Classe::DefautDuLogiciel => Err(documents::fabrique::echec(r)),
-        Err(r) => Ok(Some(r.phrase)),
+        Err(r) => Ok(Some(Err(r.phrase))),
     }
+}
+
+/// LE POIDS D'UNE IMAGE DANS CHAQUE DOCUMENT QUI LA PORTE, a la largeur ou les documents l'impriment
+/// (`documents::SorteDImage::largeur_imprimee`) : la fabrique la ramene a la resolution d'impression et la comprime
+/// (`fabrique_pdf::alleger::poids_dans_un_document`). Le seul poids qu'une phrase dise d'une image.
+fn dans_un_document(octets: &[u8], quoi: SorteDImage) -> Result<Octets, fabrique_pdf::Refus> {
+    fabrique_pdf::alleger::poids_dans_un_document(octets, quoi.largeur_imprimee()).map(Octets::de_longueur)
 }
 
 /// L'adresse ou la fenetre sert l'image `quoi` a la page (`interface::Fenetre::identite`, par `identite-image`).
@@ -318,11 +326,8 @@ fn a_poser(charge: &ChargePoser) -> R<ImageAPoser> {
         None => poids,
     };
     let illisible = |r| documents::fabrique::echec(r).reformuler(|p| format!("Le fichier n'est pas lisible : {}.", p));
-    // Ce que chaque document en ecrit, a la largeur que les documents impriment (`documents::largeur_imprimee`) : la
-    // fabrique le ramene a la resolution d'impression, et le comprime.
     let largeur = quoi.largeur_imprimee();
-    let dans_un_document = |o: &[u8]| fabrique_pdf::alleger::poids_dans_un_document(o, largeur).map(Octets::de_longueur).map_err(illisible);
-    let tel_quel = dans_un_document(&octets)?;
+    let tel_quel = dans_un_document(&octets, quoi).map_err(illisible)?;
     match (charge.allegement, charge.poids) {
         (Allegement::Garder, None) => Ok(ImageAPoser { dit: dit(dire_le_poids(recu, tel_quel, None)), octets, format }),
         (Allegement::Garder, Some(_)) => Err(refus("Le poids visé ne vaut que pour alléger l'image : gardée telle quelle, elle n'en a pas.")),
@@ -332,7 +337,7 @@ fn a_poser(charge: &ChargePoser) -> R<ImageAPoser> {
                 return Err(refus(format!("Le poids visé est un nombre de Ko, de 1 Ko à {} : {} ne l'est pas.", OCTETS_MAX, objectif)));
             }
             let a = fabrique_pdf::alleger::alleger(&octets, largeur, objectif.en_usize()).map_err(illisible)?;
-            let allegee = Allege { poids: dans_un_document(&a.octets)?, largeur: (!a.telle_quelle).then_some(a.largeur), objectif };
+            let allegee = Allege { poids: dans_un_document(&a.octets, quoi).map_err(illisible)?, largeur: (!a.telle_quelle).then_some(a.largeur), objectif };
             Ok(ImageAPoser { dit: dit(dire_le_poids(recu, tel_quel, Some(allegee))), octets: a.octets, format: a.format })
         }
     }
@@ -422,7 +427,7 @@ fn identite(ctx: &Contexte) -> R<Identite> {
 
 /// La pastille d'une image : la sienne, posee, ou celle que le logiciel dessine, faites ; rien de pose, a faire, sauf le
 /// logo, facultatif : sans lui, rien n'est imprime a sa place. Posee mais que les documents n'impriment pas
-/// (`ne_s_imprime_pas`) : a reposer.
+/// (`posee_dans_un_document`) : a reposer.
 fn pastille_de(quoi: SorteDImage, e: &ImageIdentite, a_reposer: bool) -> socle::ecran::Pastille {
     if a_reposer {
         return socle::ecran::Pastille::de(socle::ecran::EtatDEcran::AFaire, "à reposer");
@@ -515,12 +520,16 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> R<EcranDeLIdentite> {
     // Le tampon que le logiciel dessine ne se montre que si la fiche Entreprise lui donne de quoi le dessiner.
     let dessine = documents::cachet::svg(&ctx.entreprise).is_some();
     let choix = choix_de_la_pose()?;
-    // Une image posee que les documents n'impriment pas se dit a reposer, sur son rang : les documents qui la portent
-    // sont refuses tant qu'elle reste.
-    let reposer = v.images().into_iter().map(|(quoi, e)| if e.pose { ne_s_imprime_pas(ctx, quoi) } else { Ok(None) }).collect::<R<Vec<_>>>()?;
-    let rangs = v.images().into_iter().zip(dits).zip(reposer).map(|(((quoi, e), (titre, dit)), reposer)| {
+    // Ce qu'une image posee pese dans chaque document ; une image que les documents n'impriment pas se dit a reposer,
+    // sur son rang : les documents qui la portent sont refuses tant qu'elle reste.
+    let poids = v.images().into_iter().map(|(quoi, e)| if e.pose { posee_dans_un_document(ctx, quoi) } else { Ok(None) }).collect::<R<Vec<_>>>()?;
+    let rangs = v.images().into_iter().zip(dits).zip(poids).map(|(((quoi, e), (titre, dit)), poids)| {
         let mut dit = vec![dit];
-        if let Some(pourquoi) = &reposer {
+        let reposer = match &poids {
+            Some(Err(pourquoi)) => Some(pourquoi),
+            Some(Ok(_)) | None => None,
+        };
+        if let Some(pourquoi) = reposer {
             dit.push(format!(
                 "L'image posée ne s'imprime pas : {}. La reposer (« {} ») : à la pose, le texte d'un SVG se dessine en tracés. Tant qu'elle reste, chaque document qui la porte est refusé.",
                 pourquoi,
@@ -528,9 +537,11 @@ fn ecran_de_l_identite(ctx: &Contexte, v: &Identite) -> R<EcranDeLIdentite> {
             ));
         }
         let designe = || ChargeQuoi { quoi };
-        // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`) ; le tampon dessine, d'ou il vient.
-        let etat = match (e.pose, &e.format, e.octets, &e.quand) {
-            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.nom().to_uppercase(), octets, quand.dit())),
+        // Une image posee dit sa forme et son jour (`ouverture::identite`), et son poids dans chaque document quand ils
+        // l'impriment (`posee_dans_un_document`) ; le tampon dessine, d'ou il vient.
+        let etat = match (e.pose, &e.format, &poids, &e.quand) {
+            (true, Some(format), Some(Ok(poids)), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.nom().to_uppercase(), poids, quand.dit())),
+            (true, Some(format), Some(Err(_)), Some(quand)) => Some(format!("{}, posé le {}", format.nom().to_uppercase(), quand.dit())),
             (true, ..) => None,
             (false, ..) if e.automatique => Some("dessiné depuis la fiche Entreprise, il la suit : rien à faire".to_string()),
             (false, ..) => None,
