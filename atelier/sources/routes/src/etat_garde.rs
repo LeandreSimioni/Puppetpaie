@@ -300,9 +300,12 @@ fn signer_dossier(h: &mut Sha256, base: &Path, rel: &str, profond: bool, garder:
 ///   veille ; lue par l'horloge seulement (le jour d'un `Contexte` ne la lit pas) ;
 /// - `journal/signalements.json` : « Un probleme, une idee ? » (`problemes.rs`) ; lu par `signalements` et
 ///   `importation-etat` ;
-/// - `journal/incidents.json` : le journal des incidents.
-const HORS_DE_L_ECRAN: [CheminRelatif; 7] = [
+/// - `journal/incidents.json` : le journal des incidents ;
+/// - `config/.ouverture-etape.json` : l'etape d'un passage de l'ouverture, reecrite a chaque etape ; lue par la veille
+///   de la fenetre seulement (`gestes::ouverture::etape_en_cours`).
+const HORS_DE_L_ECRAN: [CheminRelatif; 8] = [
     socle::fichiers::TRACE_DE_L_OUVERTURE,
+    socle::fichiers::ETAPE_DE_L_OUVERTURE,
     compagnie::sauvegarde::INDEX,
     compagnie::incidents::DIAGNOSTIC,
     compagnie::installation::FICHIER_HORLOGE,
