@@ -302,10 +302,11 @@ l'employeur, ni un commentaire. Une explication se donne par un exemple chiffré
 salarié »). Ce que l'administration « admet » par tolérance (le BOSS : « par tolérance », « il est admis ») ne
 s'applique pas : le moteur calcule la règle du texte. Une tolérance fait économiser des cotisations à la compagnie et un
 peu au salarié sur le moment, et coûte au salarié des droits (sa retraite) ; le logiciel suit la règle, qui les lui
-garde. Une tolérance qu'on trouve encore appliquée se présente à Léandre, chiffrée ; il décide. Deux restent, par
-sa décision du 24/11/2026 : la déduction forfaitaire spécifique sans frais réellement supportés (BOSS, frais
-professionnels, § 2310 : le salarié y consent chaque année, informé de ses conséquences sur ses droits, § 2190) et sa
-limite de 7 600 € comptée par employeur (§ 2160 : une compagnie ne connaît pas ce que les autres employeurs déduisent).
+garde. Une tolérance qu'on trouve encore appliquée se présente à Léandre, chiffrée ; il décide. Une tolérance à
+laquelle chacun consent reste (Léandre, 24/11/2026 : « on met que chacun consent ») : celles de la déduction
+forfaitaire spécifique, que la compagnie choisit et que chaque salarié accepte ou refuse, informé de ce qu'elle change
+pour ses droits (BOSS, frais professionnels, § 2180-2190 ; la fiche Entreprise et la fiche du salarié l'expliquent) :
+la déduction sans frais réellement supportés (§ 2310) et sa limite de 7 600 € comptée par employeur (§ 2160).
 
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
