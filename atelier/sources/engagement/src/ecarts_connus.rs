@@ -187,11 +187,11 @@ impl EcartConnuConstate {
 
     /// CE QUE LA CARTE DE LA PAIE IMPORTEE EN DIT, en une phrase, chiffres a l'appui (AGENTS, « Le logiciel est neutre ») :
     /// qui a cotise combien de moins (ou de plus) que le texte, pour quoi, aux deux taux pour un taux, et pourquoi.
-    /// « La compagnie a cotisé 3,12 € de moins que le texte pour la prévoyance de ses salariés (1,04 % au lieu de
-    /// 1,11 %) : … »
+    /// « La compagnie a cotisé 3,12 € de moins que le texte pour la prévoyance de ses salariés (Audiens, non cadres), à
+    /// 1,04 % au lieu de 1,11 % : … »
     pub fn phrase(&self) -> String {
         let taux = match self.constate {
-            Constat::Taux { applique, texte, .. } => format!(" ({} % au lieu de {} %)", socle::texte::virgule(applique), socle::texte::virgule(texte)),
+            Constat::Taux { applique, texte, .. } => format!(", à {} % au lieu de {} %", socle::texte::virgule(applique), socle::texte::virgule(texte)),
             Constat::AbsenteDuCalcul { .. } => String::new(),
         };
         let dit = |qui: &str, x: Montant| {
