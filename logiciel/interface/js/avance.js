@@ -729,20 +729,24 @@ function casesDuGeste(g, o = {}) {
   const cases = casesOuvertes(g, g.valeurs, o);
   if (!clesQuiOuvrent(g).length) return `${phrases}
     ${cases}`;
+  // Les blocs d'une boîte fermée ne sont plus dans la page : leur geste s'oublie.
+  GESTES_QUI_OUVRENT.forEach((_, k) => { if (!document.querySelector(`[data-ouvre-geste="${k}"]`)) GESTES_QUI_OUVRENT.delete(k); });
   const n = String(++NUMERO_DES_GESTES);
-  GESTES_QUI_OUVRENT.set(n, { g, o });
+  GESTES_QUI_OUVRENT.set(n, { g, o, tape: {} });
   return `${phrases}
     <div data-ouvre-geste="${n}">${cases}</div>`;
 }
 
 // Un choix qui ouvre des cases change : son bloc se redessine avec les cases que le choix fait ouvre, chaque case
-// gardant ce qu'on y a tapé ; une case qui se ferme ne se lit plus, et ne part donc pas dans la charge.
+// gardant ce qu'on y a tapé, même fermée puis rouverte (`tape`) ; une case fermée n'est pas dans la page, et ne part
+// donc pas dans la charge.
 document.addEventListener("change", (ev) => {
   const bloc = ev.target.closest && ev.target.closest("[data-ouvre-geste]");
   const geste = bloc && GESTES_QUI_OUVRENT.get(bloc.dataset.ouvreGeste);
   const c = geste && ev.target.closest(".case[data-cle]");
   if (!c || !clesQuiOuvrent(geste.g).includes(c.dataset.cle)) return;
-  bloc.innerHTML = casesOuvertes(geste.g, { ...geste.g.valeurs, ...lireLesCases(bloc) }, geste.o);
+  geste.tape = { ...geste.tape, ...lireLesCases(bloc) };
+  bloc.innerHTML = casesOuvertes(geste.g, { ...geste.g.valeurs, ...geste.tape }, geste.o);
   brancherLesCases(bloc);
 });
 
