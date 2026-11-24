@@ -308,6 +308,45 @@ function lireLaCase(x) {
   return CASES[x.dataset.forme].lire(x);
 }
 
+/** UN FICHIER DÉPOSÉ SUR `zone` (glissé depuis le poste) : `preneur()`, au moment du glisser, rend ce qui le prend (une
+ *  fonction des fichiers déposés), ou rien quand personne ne le prend ici. Un dépôt qui ne porte pas de fichier ne fait
+ *  rien. La zone ne se branche qu'une fois (la boîte sert à toutes les boîtes). */
+function recevoirLeFichier(zone, preneur) {
+  if (zone.dataset.depot) return;
+  zone.dataset.depot = "1";
+  const porteUnFichier = (ev) => ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+  zone.addEventListener("dragover", (ev) => {
+    if (!porteUnFichier(ev) || !preneur()) return;
+    ev.preventDefault();
+    zone.classList.add("depot-survole");
+  });
+  zone.addEventListener("dragleave", (ev) => { if (!zone.contains(ev.relatedTarget)) zone.classList.remove("depot-survole"); });
+  zone.addEventListener("drop", (ev) => {
+    zone.classList.remove("depot-survole");
+    if (!porteUnFichier(ev) || !ev.dataTransfer.files.length) return;
+    ev.preventDefault();
+    const prendre = preneur();
+    if (!prendre) return;
+    ev.stopPropagation();
+    prendre(ev.dataTransfer.files);
+  });
+}
+
+/** Ce qui pose un dépôt dans la case fichier `x` (`deposerLeFichier`), si elle est à l'écran. */
+const dansLaCase = (x) => (x && x.isConnected ? (fichiers) => deposerLeFichier(x, fichiers) : null);
+
+/** La case fichier de `bloc` quand il n'en a qu'une, sinon rien. */
+function seuleCaseFichier(bloc) {
+  const l = bloc.querySelectorAll('input[type="file"][data-case]');
+  return l.length === 1 ? l[0] : null;
+}
+
+/** Pose `fichiers` (ceux d'un dépôt) dans la case fichier `x`, et la fait lire. */
+function deposerLeFichier(x, fichiers) {
+  x.files = fichiers;
+  x.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 /** Branche ce qu'une case fait seule dans `bloc` : le « + » d'une liste, les calendriers (`o` : ce que le calendrier lit
  *  des mois passés, `o.passes(mois, salarie)`, quand l'écran qui l'appelle le sait). */
 function brancherLesCases(bloc, o = {}) {
@@ -341,18 +380,22 @@ function brancherLesCases(bloc, o = {}) {
       l.onerror = () => dire(String(l.error), "erreur");
       l.readAsDataURL(f);
     };
+    // Un fichier se dépose aussi sur sa case, ou sur la boîte quand elle n'en a qu'une : c'est le même choix.
+    recevoirLeFichier(x.closest(".case") || x, () => dansLaCase(x));
+    const boite = x.closest("#boite");
+    if (boite) recevoirLeFichier(boite, () => dansLaCase(seuleCaseFichier(boite)));
   });
   // Les rangées : « + » en ajoute une (le modèle vide), la croix retire la sienne ; la case le dit comme une saisie.
-  const dire = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
+  const changer = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
   bloc.querySelectorAll("[data-rangee-plus]").forEach((b) => {
     b.onclick = () => {
       b.before(b.previousElementSibling.content.cloneNode(true));
       brancherLesCases(b.parentElement, o);
-      dire(b.parentElement);
+      changer(b.parentElement);
     };
   });
   bloc.querySelectorAll(".retirer-rangee").forEach((b) => {
-    b.onclick = () => { const liste = b.closest(".case-rangees"); b.closest(".rangee").remove(); dire(liste); };
+    b.onclick = () => { const liste = b.closest(".case-rangees"); b.closest(".rangee").remove(); changer(liste); };
   });
   poserLesCalendriers(bloc, o);
 }
@@ -925,6 +968,18 @@ function routeQuiRend(place) {
   return Object.values(CATALOGUE).find((f) => f.affichage === "rendu" && f.ecran === place);
 }
 
+/** L'IMAGE `src` EN GRAND, par-dessus la page ; un clic ou Échap la referme. */
+function montrerEnGrand(src, alt) {
+  const voile = document.createElement("div");
+  voile.className = "image-en-grand";
+  voile.innerHTML = `<img src="${echapper(src)}" alt="${echapper(alt || "")}">`;
+  const fermer = () => { voile.remove(); document.removeEventListener("keydown", echap, true); };
+  const echap = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); fermer(); } };
+  voile.onclick = fermer;
+  document.addEventListener("keydown", echap, true);
+  document.body.appendChild(voile);
+}
+
 /** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (`routeQuiRend`). Sa charge : le mois de l'écran quand sa fiche le
  *  prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
 async function dessinerLEcranRendu(cible, f) {
@@ -969,6 +1024,19 @@ function poserLEcranRendu(cible, r, relire) {
   cible.querySelectorAll("[data-rang]").forEach((b) => {
     const x = rangs[+b.dataset.rang];
     brancherLesGestes(b, x.gestes, { titre: x.titre }, relire);
+    // Un fichier déposé sur le rang ouvre le geste du rang qui prend un fichier (quand il n'y en a qu'un), le fichier
+    // déjà choisi dans sa case.
+    const prenants = x.gestes.filter((g) => champsDuGeste(g).some((c) => c.forme === "fichier"));
+    if (prenants.length === 1) {
+      recevoirLeFichier(b, () => (b.isConnected ? (fichiers) => {
+        faireLeGeste(prenants[0], { titre: x.titre }, relire);
+        const c = seuleCaseFichier(document.getElementById("geste-cases"));
+        if (c) deposerLeFichier(c, fichiers);
+      } : null));
+    }
+    // L'image du rang s'ouvre en grand d'un clic.
+    const img = b.querySelector(".rang-apercu img");
+    if (img) img.onclick = () => montrerEnGrand(img.src, img.alt);
   });
   if (!r.cases) return;
   const bloc = cible.querySelector("[data-ecran-cases]");
