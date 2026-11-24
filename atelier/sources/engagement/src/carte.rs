@@ -740,22 +740,31 @@ impl Brouillon {
 }
 
 impl Brouillon {
-    /// LA COPIE DE CE BROUILLON POUR UN AUTRE SALARIE (Leandre, 24/11/2026 : « copier l'engagement pour proposer à un autre
-    /// salarié, c'est hyper courant ») : un brouillon neuf de sa nature, qui prend chaque case qui se copie
-    /// (`se_copie`) telle qu'elle est, et laisse vides les autres, le salarie le premier. `qui` : le salarie que le refus
-    /// nomme.
-    pub fn copie_pour_un_autre_salarie(&self, qui: &str) -> R<Brouillon> {
+    /// LA CARTE PROPOSEE A UN AUTRE SALARIE, copiee de ce brouillon (Leandre, 24/11/2026 : « copier l'engagement pour
+    /// proposer à un autre salarié, c'est hyper courant ») : les changements qui la font d'une carte neuve de sa nature
+    /// (`Changement::qui_font`), chaque case qui se copie (`se_copie`) telle qu'elle est ; les autres restent vides, le
+    /// salarie le premier. Ce sont ceux qu'`enregistrer-saisie` ecrit, par le chemin d'une carte neuve.
+    ///
+    /// Une ligne de frais ne garde pas sa case « justificatif » : elle dit que la compagnie garde la facture de CE salarie
+    /// (`engagement::frais_au_dela`, BOSS § 270 ; § 1280), et copiee, elle exonererait les frais de qui n'en a fourni
+    /// aucune.
+    pub fn proposee_a_un_autre_salarie(&self) -> Changements {
         let n = self.nature();
         let de = self.en_carte();
         let mut c = Carte { nature: Some(n), ..Carte::default() };
         for x in Brouillon::cases(n).iter().copied().filter(|x| se_copie(n, *x)) {
             c.prendre(&de, x);
         }
-        Brouillon::de_la_carte(&c, qui)
+        for l in c.lignes.iter_mut().flatten() {
+            if let LignePaie::Frais(f) = l {
+                f.cases.retain(|k| *k != crate::ligne::CaseDeFrais::Justificatif);
+            }
+        }
+        Changements(Changement::qui_font(&c))
     }
 }
 
-/// UNE CASE D'UNE CARTE DE NATURE `n` QUI SE COPIE POUR UN AUTRE SALARIE (`Brouillon::copie_pour_un_autre_salarie`) :
+/// UNE CASE D'UNE CARTE DE NATURE `n` QUI SE COPIE POUR UN AUTRE SALARIE (`Brouillon::proposee_a_un_autre_salarie`) :
 /// ce que l'engagement fait faire (le spectacle, les lignes et leurs dates, le metier, les termes du contrat, la date du
 /// paiement). Ne se copie pas ce qui appartient au salarie ou a un acte : le salarie ; le numero (celui d'un contrat
 /// deja declare) ; ce que la carte rend sans le faire saisir (`PlaceDeLaCase::Rendue` : les bornes, les jours et
@@ -892,7 +901,9 @@ fn metier_de(o: &crate::stock::Objet) -> R<Option<droit::emplois::CodeEmploi>> {
 macro_rules! changements {
     ( $( $(#[$va:meta])* $v:ident ( $t:ty ) = $cle:tt => $champ:ident ),* $(,)? ) => {
         /// UN CHANGEMENT D'UNE CASE DU BROUILLON : `{"case": "salarie", "valeur": "FULLER"}` ; `{"case": "nature",
-        /// "valeur": "cdi"}` change sa nature, qui ne se vide jamais.
+        /// "valeur": "cdi"}` change sa nature, qui ne se vide jamais. Il s'ecrit comme il se lit (une route le rend
+        /// quand elle rend la charge d'`enregistrer-saisie`, `Changement::qui_font`) : chaque valeur dans l'ecriture
+        /// de sa case (`socle::ecriture::CaseEcrite` : une grandeur en nombre JSON).
         #[derive(Debug, Clone, PartialEq, Deserialize)]
         #[serde(tag = "case", content = "valeur", deny_unknown_fields)]
         pub enum Changement<L = LignePaie, N = IdSalarie, P = IdSpectacle, M = IdDeModele> {
@@ -908,6 +919,41 @@ macro_rules! changements {
             #[serde(rename = "modele_contrat")]
             ModeleContrat(Option<M>),
             $( $(#[$va])* #[serde(rename = $cle)] $v(Option<$t>), )*
+        }
+
+        impl<L: Serialize, N: Serialize, P: Serialize, M: Serialize> Serialize for Changement<L, N, P, M> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                use serde::ser::SerializeStruct;
+                use socle::ecriture::CaseEcrite;
+                let mut m = s.serialize_struct("Changement", 2)?;
+                match self {
+                    Changement::Nature(x) => {
+                        m.serialize_field("case", "nature")?;
+                        m.serialize_field("valeur", x)?;
+                    }
+                    Changement::Salarie(x) => {
+                        m.serialize_field("case", "salarie")?;
+                        m.serialize_field("valeur", x)?;
+                    }
+                    Changement::Spectacle(x) => {
+                        m.serialize_field("case", "spectacle")?;
+                        m.serialize_field("valeur", x)?;
+                    }
+                    Changement::Lignes(x) => {
+                        m.serialize_field("case", "lignes")?;
+                        m.serialize_field("valeur", x)?;
+                    }
+                    Changement::ModeleContrat(x) => {
+                        m.serialize_field("case", "modele_contrat")?;
+                        m.serialize_field("valeur", x)?;
+                    }
+                    $( Changement::$v(x) => {
+                        m.serialize_field("case", $cle)?;
+                        m.serialize_field("valeur", &CaseEcrite(x))?;
+                    } )*
+                }
+                m.end()
+            }
         }
 
         impl<L, N, P, M> Changement<L, N, P, M> {
@@ -942,6 +988,30 @@ macro_rules! changements {
                     Changement::ModeleContrat(x) => Changement::ModeleContrat(x.map(|id| IdDeModele::de_la_charge(&id)).transpose()?),
                     $( Changement::$v(x) => Changement::$v(x), )*
                 })
+            }
+
+            /// LES CHANGEMENTS QUI FONT LA CARTE `c` D'UNE CARTE NEUVE DE SA NATURE, tels qu'un appelant les donne : un
+            /// par case remplie, sa nature exceptee (la carte neuve la porte) ; le salarie, le spectacle et le modele par
+            /// leur cle, chaque ligne telle qu'elle se donne (`LignePaie::donnee` : une ligne que le moteur pose ne se
+            /// donne pas, il la pose de nouveau).
+            fn qui_font(c: &Carte) -> Vec<Self> {
+                let mut out = Vec::new();
+                if let Some(x) = &c.salarie {
+                    out.push(Changement::Salarie(Some(x.clone().into())));
+                }
+                if let Some(x) = &c.spectacle {
+                    out.push(Changement::Spectacle(Some(x.clone().into())));
+                }
+                if let Some(x) = &c.lignes {
+                    out.push(Changement::Lignes(Some(x.iter().filter_map(LignePaie::donnee).collect())));
+                }
+                if let Some(x) = &c.modele_contrat {
+                    out.push(Changement::ModeleContrat(Some(x.clone().into())));
+                }
+                $( if let Some(x) = &c.$champ {
+                    out.push(Changement::$v(Some(x.clone())));
+                } )*
+                out
             }
         }
 
@@ -1009,7 +1079,7 @@ changements! {
 /// l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus souvent) ; un
 /// appelant en ligne de commande, toutes les cases d'une carte d'un coup. Aucun : la carte s'enregistre telle qu'elle est
 /// (Leandre, 16/11 : « on peut appuyer sur enregistrer comme on veut »).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
 
