@@ -74,15 +74,20 @@ fn fichiers_dans(dossiers: &[PathBuf]) -> R<Vec<PathBuf>> {
 // ------------------------------------------------------------- le journal des pieces ecrites
 
 /// LA DSN DU MOIS EST-ELLE ECRITE ? Une DSN mensuelle du mois notee au journal des ecritures, et toujours la ou le moteur
-/// l'a ecrite (`sorties/<mois>/`). Un fichier DSN que le moteur n'a pas note (pose a la main) ne compte pas. C'est le
-/// critere de l'accueil (`crate::ouverture::bilan_des_mois`), des rappels (`crate::rappels::dsn_deposable`) et de
-/// l'etape de depot (`routes::etapes`).
+/// l'a ecrite (les sorties du mois, `documents::sorties_du_mois::SortiesDuMois`). Un fichier DSN que le moteur n'a pas
+/// note (pose a la main) ne compte pas. C'est le critere de l'accueil (`crate::ouverture::bilan_des_mois`), des rappels
+/// (`crate::rappels::dsn_deposable`) et de l'etape de depot (`routes::etapes`).
 pub(crate) fn mois_ecrit(racine: &Path, mois: Mois) -> R<bool> {
     let prefixe = format!("{}/", mois);
-    let sorties = documents::DossierDuMois::des_mois(racine);
-    Ok(journal_des_ecritures(racine)?
-        .keys()
-        .any(|k| k.strip_prefix(&prefixe).is_some_and(crate::etapes::est_une_dsn_mensuelle) && sorties.join(k).is_file()))
+    let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, mois)?;
+    for k in journal_des_ecritures(racine)?.keys() {
+        if let Some(nom) = k.strip_prefix(&prefixe).filter(|n| crate::etapes::est_une_dsn_mensuelle(n)) {
+            if sorties.existe(documents::PieceDuMois::Dsn.dossier(), &NomDeFichier::lire(nom)?)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 // ------------------------------------------------------------- la DSN, a son depot

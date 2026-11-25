@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use socle::echec::Classe;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use droit::contexte::Contexte;
 use socle::echec::erreur;
@@ -341,79 +341,9 @@ const DECEMBRE: u32 = 12;
 
 // ------------------------------------------------------------------ la cloture
 
-/// Les exercices clos de la compagnie, sous sa racine.
-pub(crate) const EXERCICES: CheminRelatif = CheminRelatif::du_moteur("config/exercices.json");
-
-/// `config/exercices.json` : chaque annee close (`clos`, sa cloture sous son annee) et les clotures retirees (`rouverts`),
-/// dans l'ordre ou elles l'ont ete. Lu par sa forme (`lire_exercices`), ecrit par `ecrire_exercices`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Exercices {
-    clos: BTreeMap<Annee, ExerciceNote>,
-    rouverts: Vec<ExerciceRouvertNote>,
-}
-
-/// La cloture d'une annee : quand, par qui, l'archive (son chemin sous la racine, sa taille, son empreinte, le nombre de
-/// fichiers qu'elle reunit), si elle a ete forcee, et les mois clos sans DSN acceptee.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ExerciceNote {
-    #[serde(with = "socle::paris::ecrit::seconde")]
-    pub(crate) le: Moment,
-    qui: String,
-    archive: CheminRelatif,
-    octets: Octets,
-    empreinte: Empreinte,
-    fichiers: u64,
-    forcee: bool,
-    sans_dsn: Vec<Mois>,
-}
-
-/// Une cloture retiree : la cloture telle qu'elle etait, son annee, quand et par qui elle l'a ete.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct ExerciceRouvertNote {
-    #[serde(with = "socle::paris::ecrit::seconde")]
-    le: Moment,
-    qui: String,
-    archive: CheminRelatif,
-    octets: Octets,
-    empreinte: Empreinte,
-    fichiers: u64,
-    forcee: bool,
-    sans_dsn: Vec<Mois>,
-    annee: Annee,
-    #[serde(with = "socle::paris::ecrit::seconde")]
-    rouvert_le: Moment,
-    rouvert_par: String,
-}
-
-impl Exercices {
-    /// La cloture de l'annee `annee`, ou `None`.
-    pub(crate) fn de(&self, annee: Annee) -> Option<&ExerciceNote> {
-        self.clos.get(&annee)
-    }
-
-    /// Les annees closes, et leur cloture.
-    pub(crate) fn clos(&self) -> &BTreeMap<Annee, ExerciceNote> {
-        &self.clos
-    }
-}
-
-/// `config/exercices.json`, lu par sa forme : aucune annee close s'il n'existe pas. Le texte est lu une fois tant qu'il
-/// ne change pas (l'etat d'un mois le demande pour chaque mois) ; le refus d'un fichier illisible ne se garde pas.
-pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
-    let p = EXERCICES.dans(racine);
-    match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))? {
-        Some(e) => Ok((*e).clone()),
-        None => Ok(Exercices { clos: BTreeMap::new(), rouverts: Vec::new() }),
-    }
-}
-
-fn ecrire_exercices(ctx: &Contexte, tous: &Exercices) -> R<()> {
-    let chemin = EXERCICES.dans(&ctx.racine);
-    socle::ecriture::ecrire_json(&chemin, tous, 1).map_err(|m| m.reclasser(Classe::Disque))
-}
+// Les exercices clos (`config/exercices.json`) se lisent et s'ecrivent avec la porte des sorties d'un mois, qu'ils
+// decident (`documents::sorties_du_mois`).
+use documents::sorties_du_mois::{ecrire_exercices, lire_exercices, ExerciceNote, ExerciceRouvertNote};
 
 /// Les fichiers sous `d`, triés par chemin (les chemins se comparent composant par composant). Un dossier absent n'en a
 /// aucun ; un dossier qui ne se lit pas se refuse.
@@ -574,7 +504,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             sans_dsn: if forcer { sans_dsn } else { Vec::new() },
         },
     );
-    ecrire_exercices(ctx, &tous)?;
+    ecrire_exercices(&ctx.racine, &tous)?;
     Ok(ExerciceClos { annee, le, archive, octets: Octets::de(&octets), empreinte, fichiers: n, manques })
 }
 
@@ -673,7 +603,7 @@ fn rouvrir_exercice(ctx: &Contexte, annee: Annee, qui: &str) -> R<ExerciceRouver
         rouvert_le: maintenant(),
         rouvert_par: qui.to_string(),
     });
-    ecrire_exercices(ctx, &tous)?;
+    ecrire_exercices(&ctx.racine, &tous)?;
     Ok(ExerciceRouvert { annee, etait_clos_depuis, archive })
 }
 

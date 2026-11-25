@@ -133,6 +133,13 @@ pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> R<String
     if chemin.trim().is_empty() || p.components().any(|c| c == Component::ParentDir) {
         return Err(socle::echec::refus_avec("Ce chemin ne mène à rien à ouvrir.", socle::echec::Lieu { chemin: Some(chemin.to_string()), ..Default::default() }));
     }
+    // Un chemin relatif passe par la porte des sorties d'un mois : la piece d'une annee close s'ouvre par sa copie.
+    if !p.is_absolute() {
+        let a_ouvrir = documents::sorties_du_mois::SortiesDuMois::a_ouvrir(racine, &socle::fichiers::CheminRelatif::du(p)?)?;
+        if !a_ouvrir.starts_with(racine) {
+            return ouvrir(&a_ouvrir);
+        }
+    }
     let f = if p.is_absolute() { p.to_path_buf() } else { racine.join(p) };
     let dans = f.starts_with(racine);
     if creer && dans && !f.exists() {

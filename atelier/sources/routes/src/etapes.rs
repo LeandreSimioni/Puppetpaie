@@ -2703,9 +2703,9 @@ impl<'a> Moteur<'a> {
 
     // ------------------------------------------------------- les autres routes
 
-    /// `exercice_clos` : l'annee `annee` est-elle close (`gestes::exercice_ecrit::lire_exercices`) ?
+    /// `exercice_clos` : l'annee `annee` est-elle close (`documents::sorties_du_mois::lire_exercices`) ?
     pub(crate) fn exercice_clos(&self, annee: socle::mois::Annee) -> R<bool> {
-        Ok(crate::gestes::exercice_ecrit::lire_exercices(self.racine())?.de(annee).is_some())
+        Ok(documents::sorties_du_mois::lire_exercices(self.racine())?.de(annee).is_some())
     }
 
     /// `mois_a_ouvrir` : le plus ancien mois passe dont une etape n'est pas

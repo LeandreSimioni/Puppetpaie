@@ -302,7 +302,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
         (format!("{} revenu signé", piece), format!("Reçu signé le {}, noté à la main.", quand))
     };
     let signe = match (ligne.mois(), r.fichier_signe.as_ref()) {
-        (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f),
+        (Some(m), Some(f)) => documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, m)?.chercher(f)?.map(|d| d.chemin(m).joint(f)),
         _ => None,
     };
     Ok(RetourLu {
@@ -310,7 +310,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
         quand: Some(r.quand),
         phrases: vec![phrase],
         pastille: Some(Pastille::de(if !r.recu { socle::ecran::EtatDEcran::Information } else { socle::ecran::EtatDEcran::Fait }, "signé")),
-        piece: signe.map(|p| CheminRelatif::sous(&ctx.racine, &p)).transpose()?,
+        piece: signe,
         organisme: None,
     })
 }

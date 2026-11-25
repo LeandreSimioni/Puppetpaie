@@ -1321,6 +1321,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | rangement d'une pièce produite | `documents::Rangement` | `documents/src/lib.rs` |
 | dossier hors d'un mois | `documents::DossierHorsDuMois` | `documents/src/lib.rs` |
 | dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
+| sorties d'un mois (en vrac, ou dans l'archive de son exercice clos) | `documents::sorties_du_mois::SortiesDuMois` | `documents/src/sorties_du_mois.rs` |
 | dossier de travail | `documents::DossierDeTravail` | `documents/src/lib.rs` |
 | rubrique de l'Historique | `RubriqueDeLHistorique` | `routes/src/historique_mois.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
@@ -1605,7 +1606,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   salariés, leurs pièces, le PDF qui les réunit pour l'imprimer, la preuve d'une signature). L'écrivain et les
   lecteurs d'une pièce le prennent d'elle (`PieceDuMois::dossier`) et le joignent par `sous`, ou sous la compagnie par
   `dans` ; son chemin relatif à la compagnie, `chemin`, est le seul à écrire `sorties/<mois>` (`DES_MOIS` : `sorties`,
-  écrit une fois ; `des_mois` le joint) ; un nom seul se cherche dans les deux (`TOUS`, `envois::etats::chemin_piece`).
+  écrit une fois ; `des_mois` le joint). C'est le chemin qu'écrit une pièce ; elle s'y lit par les sorties du mois.
+- **sorties d'un mois** : la porte de toute lecture d'une pièce d'un mois : en vrac sous `sorties/<mois>/` tant que son
+  année est ouverte, dans l'archive de son exercice (`Exercice_AAAA.zip`, sous le même chemin relatif) dès qu'elle est
+  close ; `config/exercices.json` le décide, et rien d'autre (`SortiesDuMois::du_mois`, qui lit aussi ce fichier :
+  `lire_exercices`, `ecrire_exercices`). Elle rend la liste des pièces d'un dossier du mois (`noms`), leur présence
+  (`existe`), leurs octets (`octets`), et, pour ce qui s'ouvre par un chemin (la fabrique PDF, le poste, la lecture
+  d'une DSN), un fichier (`fichier` : la copie d'une pièce d'une année close va dans le dossier temporaire du
+  système) ; un nom seul se cherche dans l'envoi puis les sorties (`chercher`) ; un chemin rendu à la page s'ouvre par
+  `a_ouvrir` ; les mois qui ont des sorties, en vrac ou archivées : `mois_des_sorties`. Aucun lecteur ne joint
+  `sorties/<mois>/` lui-même.
 - **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
   attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
   type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les

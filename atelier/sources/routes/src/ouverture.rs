@@ -908,31 +908,10 @@ const AEM_DE_L_ANCIEN_LOGICIEL: (&str, &str) = ("AEM_", "AEM");
 /// ancien -- `(mois, fichiers du dossier de sortie)`.
 pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<NomDeFichier>)>> {
     let mut vus: BTreeSet<Mois> = engagement::stock::mois_saisis(racine)?.into_iter().collect();
-    // Les entrees d'un dossier (aucune s'il n'existe pas) ; un dossier qui ne se lit pas se refuse.
-    let entrees = |d: &Path| -> R<Vec<std::fs::DirEntry>> {
-        match std::fs::read_dir(d) {
-            Ok(rd) => rd.map(|e| e.map_err(|x| socle::echec::du_disque(d, &x))).collect(),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(e) => Err(socle::echec::du_disque(d, &e)),
-        }
-    };
-    let mut dossiers: BTreeMap<Mois, PathBuf> = BTreeMap::new();
-    // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
-    for d in socle::fichiers::nommes_d_un_mois(&documents::DossierDuMois::des_mois(racine), None, false)? {
-        vus.insert(d.mois);
-        dossiers.insert(d.mois, d.chemin);
-    }
+    vus.extend(documents::sorties_du_mois::mois_des_sorties(racine)?);
     let mut out = Vec::new();
     for mois in vus.into_iter().rev() {
-        let mut fichiers: Vec<NomDeFichier> = Vec::new();
-        if let Some(d) = dossiers.get(&mois) {
-            for e in entrees(d)? {
-                if e.path().is_file() {
-                    fichiers.push(NomDeFichier::du(&e.path())?);
-                }
-            }
-            fichiers.sort();
-        }
+        let fichiers = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, mois)?.noms(documents::DossierDuMois::Sorties)?;
         out.push((mois, fichiers));
     }
     Ok(out)

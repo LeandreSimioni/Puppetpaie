@@ -25,6 +25,7 @@ pub mod libelles_courts;
 pub mod plan_comptable;
 pub mod prelevement;
 pub mod tableaux_export;
+pub mod sorties_du_mois;
 pub mod taxe_sur_les_salaires;
 
 /// UNE IMAGE DE L'IDENTITE DE LA COMPAGNIE : sa signature, son cachet (le tampon), son logo. Une liste du logiciel,

@@ -1321,8 +1321,8 @@ fn formater(modele: &str, valeurs: &[(&str, String)]) -> R<String> {
 // -------------------------------------------------------------- l'exercice
 
 /// La cloture de l'annee (ou `None`).
-pub(crate) fn exercice_clos(ctx: &Contexte, annee: Annee) -> R<Option<crate::gestes::exercice_ecrit::ExerciceNote>> {
-    Ok(crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?.de(annee).cloned())
+pub(crate) fn exercice_clos(ctx: &Contexte, annee: Annee) -> R<Option<documents::sorties_du_mois::ExerciceNote>> {
+    Ok(documents::sorties_du_mois::lire_exercices(&ctx.racine)?.de(annee).cloned())
 }
 
 /// Les mois de l'annee connus du dossier.
