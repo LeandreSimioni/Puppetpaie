@@ -1018,6 +1018,19 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         return Err(refus_avec(format!("Ce dossier n'est pas une installation de PuppetPaie. {}", rien), a_part_chemin(inst)));
     }
     let version = courante(&code)?;
+    // Le marqueur seul ne fait suivre aucune cle : une installation qui a deja une compagnie reelle ne s'ouvrirait plus
+    // ailleurs. Elle passe par « Rendre portable » (`coffre::rendre_portable`, avec le mot de passe) ; l'installation
+    // neuve que l'installeur portable complete n'a encore ni compagnie ni coffre.
+    if portable && !inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
+        for r in compagnies_de(inst)? {
+            if !crate::installation::est_fictive(&r)? {
+                return Err(socle::refus!(
+                    "Ce logiciel a déjà des compagnies : pour le rendre portable, utilisez « Rendre portable » à l'accueil, qui emporte la clé de leurs coffres. {}",
+                    rien
+                ));
+            }
+        }
+    }
     if a_installer(inst)?.is_some() {
         return Err(socle::refus!("Une mise à jour attend le redémarrage : redémarrez PuppetPaie, puis recommencez. {}", rien));
     }

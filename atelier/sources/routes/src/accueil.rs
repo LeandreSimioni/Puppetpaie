@@ -143,7 +143,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::PortableCompleter,
         geste: "Ajouter au dossier les systèmes qui lui manquent (Windows, Linux, macOS).",
         charge: &ChargePortable::CHARGE,
-        exemple: r#"{"portable":true}"#,
+        exemple: r#"{}"#,
         rend: "ajoutes, absents (les systèmes que la version n'a pas), version, portable, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le réseau, la mise à jour en attente, ou ce que la phrase dit ; rien n'est posé" }],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
