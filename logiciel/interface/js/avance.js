@@ -594,9 +594,8 @@ function brancherLesBulles(bloc, ouvertes) {
  *  ligne telle qu'elle était écrite (une clé qui ne se dessine pas garde sa valeur). Les jours d'une colonne partent tous
  *  dans sa première clé, les autres vides : la route les range par mois (`ligne::ranger`). Une ligne dont on vient de
  *  changer la rubrique garde les clés que la nouvelle dit aussi. Un jour qui a sa rangée sous la ligne (« par jour »)
- *  dit ce que ses cases disent (sa quantité, son lieu : `{jour, quantite, lieu}`), un jour qui n'en dit rien est nu. Une
- *  ligne dont les jours ont leur quantité ne dit la sienne que si l'on a touché à sa case (le seul confort de la saisie :
- *  quelle case a bougé) : la route la répartit alors, sinon elle est la somme des jours. */
+ *  dit ce que ses cases disent (sa quantité, son lieu : `{jour, quantite, lieu}`), un jour qui n'en dit rien est nu. La
+ *  route tient ensemble la quantité de la ligne et celle de ses jours (`LignePaie::jours_tenus`). */
 function lireLesLignes(bloc) {
   return [...bloc.querySelectorAll(".ligne-paie[data-ligne]")].map((rangee) => {
     const lu = JSON.parse(rangee.dataset.valeur);
@@ -623,29 +622,8 @@ function lireLesLignes(bloc) {
         });
       });
     }
-    if (!r) return lu;
-    const donnee = ligneDonnee(lu, r);
-    const q = rangee.querySelector('[data-case][data-cle="quantite"]');
-    if (q && q.value === q.defaultValue && rangee.querySelector('[data-jour-cle="quantite"]')) delete donnee.quantite;
-    return donnee;
+    return r ? ligneDonnee(lu, r) : lu;
   });
-}
-
-/** UNE LIGNE ÉCRITE QUI REPART SANS QU'ON AIT TAPÉ SA QUANTITÉ (`p` : `par_jour` de ce que la route rend d'elle) :
- *  chacun de ses jours dit la quantité que la route lui rend (`valeur`), et la ligne ne dit pas la sienne, qui est leur
- *  somme. Une ligne dont la route ne rend pas la quantité de ses jours repart telle quelle. */
-function sansQuantiteTapee(l, p) {
-  if (!p || !p.jours.some((j) => j.quantite)) return l;
-  const rendus = new Map(p.jours.map((j) => [j.jour, j]));
-  const jour = (d) => {
-    const j = rendus.get(jourDe(d));
-    if (!j || !j.quantite) return d;
-    const e = typeof d === "object" ? { ...d } : { jour: jourDe(d) };
-    if (j.quantite.valeur == null) delete e.quantite; else e.quantite = j.quantite.valeur;
-    return Object.keys(e).length > 1 ? e : e.jour;
-  };
-  const { quantite, ...reste } = l;
-  return { ...reste, dates: (l.dates || []).map(jour) };
 }
 
 /* ------------------------------------------------ une case qu'une route décrit */

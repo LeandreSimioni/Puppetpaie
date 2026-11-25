@@ -267,8 +267,8 @@ function dessinerLaCarte(div) {
       changer(div, [{ case: bloc.dataset.cle, valeur: lignes }]);
     };
   });
-  // La croix d'un jour sous « par jour » : le jour quitte sa ligne, avec sa quantité et son lieu ; la quantité de la ligne
-  // est la somme des jours qui restent (`lireLesLignes`).
+  // La croix d'un jour sous « par jour » : le jour quitte sa ligne, avec sa quantité et son lieu, et les lignes partent à
+  // la route (`LignePaie::jours_tenus`).
   div.querySelectorAll(".retirer-jour").forEach((b) => {
     b.onclick = () => {
       const bloc = b.closest(".case-lignes");
@@ -505,9 +505,8 @@ async function viserLeMontant(div, champs) {
       const t = e.lignes.find((x) => x.rang === i);
       const ligne = t ? { ...l, taux: t.taux } : l;
       // La ligne s'écrit avec les seules clés de sa rubrique, comme une ligne tapée (`lireLesLignes`) : le brouillon
-      // en porte d'autres, que la route ne lit pas. Sa quantité n'est pas tapée : ses jours disent chacun la leur.
-      const rendue = rendueDe(div) ? rendueDe(div).lignes.find((x) => x.ligne === i) : null;
-      return rubriqueDe(ligne.rubrique) ? sansQuantiteTapee(ligneDonnee(ligne, rubriqueDe(ligne.rubrique)), rendue && rendue.par_jour) : ligne;
+      // en porte d'autres, que la route ne lit pas.
+      return rubriqueDe(ligne.rubrique) ? ligneDonnee(ligne, rubriqueDe(ligne.rubrique)) : ligne;
     }) });
   }
   if ("salaire_mensuel" in e) changements.push({ case: "salaire_mensuel", valeur: e.salaire_mensuel });
@@ -685,14 +684,12 @@ function ouvrirLaFin(div, champ) {
 
 /** RETIRER DES JOURS PAYÉS PENDANT UN IMPRÉVU (`jours` : `{rubrique, iso}`, ce que la route `imprevus` nomme) : chaque
  *  jour quitte la ligne de sa rubrique qui le porte, et les lignes partent à la route, comme décochées au calendrier ; la
- *  ligne repart sans sa quantité, ses jours disant chacun la sienne (`sansQuantiteTapee`) : la route en fait la somme,
- *  qui ôte celle de chaque jour retiré (`LignePaie::jours_tenus`), et la carte se redessine de ce qu'elle rend. Rend le
- *  nombre de jours retirés : aucun quand la carte est validée et fermée, ou qu'aucune ligne ne les porte. */
+ *  route tient ensemble la quantité de la ligne et celle de ses jours (`LignePaie::jours_tenus`), et la carte se redessine
+ *  de ce qu'elle rend. Rend le nombre de jours retirés : aucun quand la carte est validée et fermée, ou qu'aucune ligne ne
+ *  les porte. */
 async function retirerDesJours(div, jours) {
   if (carteFermee(div)) return 0;
-  const rendues = rendueDe(div) ? rendueDe(div).lignes : [];
-  const parJour = (i) => (rendues.find((x) => x.ligne === i) || {}).par_jour;
-  const lignes = (div._carte[caseDesLignes(div).cle] || []).map((l, i) => sansQuantiteTapee({ ...l }, parJour(i)));
+  const lignes = (div._carte[caseDesLignes(div).cle] || []).map((l) => ({ ...l }));
   let retires = 0;
   // Les clés de jours d'une ligne : celles que sa rubrique dit de forme `jours`.
   const clesDeJours = (l) => (rubriqueDe(l.rubrique) ? rubriqueDe(l.rubrique).cles.filter((c) => c.forme === "jours").map((c) => c.cle) : []);
