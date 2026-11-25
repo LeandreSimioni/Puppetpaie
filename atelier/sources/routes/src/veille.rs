@@ -129,6 +129,23 @@ pub fn souci_de_la_sauvegarde(racine: &std::path::Path, d: Option<&Trace>) -> so
     })
 }
 
+/// LE GESTE « PRENDRE LA MAIN » QUE LE BANDEAU PROPOSE a cote de ce qui persiste de la sauvegarde, quand le dernier
+/// passage a trouve la main sur le Drive ailleurs (`compagnie::sauvegarde::SansLaMain`) : celui de l'ecran du Drive
+/// (`drive::geste_prendre_la_main`), dessine par la page comme tout geste rendu (`js/avance.js`, `faireLeGeste`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(transparent)]
+pub struct PrendreLaMain(crate::imprevus::GesteDeRoute<crate::SansCharge, crate::SansCharge, crate::SansCharge>);
+
+/// LE GESTE QUI PREND LA MAIN, MAINTENANT : quand l'index de la sauvegarde dit la main ailleurs, et que le Drive est
+/// encore lie (`ouverture::acces_pose`) ; aucun sinon. `Err` : le coffre ou l'index ne se lit pas.
+pub fn main_a_prendre(racine: &std::path::Path) -> socle::echec::R<Option<PrendreLaMain>> {
+    let ailleurs = compagnie::sauvegarde::lire_index(racine).map_err(|e| e.echec)?.is_some_and(|i| i.sans_la_main.is_some());
+    if !ailleurs || !crate::gestes::ouverture::acces_pose(racine, "google")? {
+        return Ok(None);
+    }
+    Ok(Some(PrendreLaMain(crate::drive::geste_prendre_la_main(crate::SansCharge {}, crate::drive::demande_de_la_main(racine)?))))
+}
+
 /// CE QUE LE BANDEAU DIT (`dit` de l'etat de la veille) : l'etat en une phrase, un service muet, ce qu'il y a a poser et
 /// ou, les retours nouveaux, ce que l'horloge d'une fictive a fait, et ce que dit un passage en cours ou fini. La page
 /// n'en ecrit rien.
@@ -140,6 +157,9 @@ pub struct DitDuBandeau {
     a_poser: Vec<APoser>,
     /// Ce qui persiste de la sauvegarde, vrai maintenant (`souci_de_la_sauvegarde`).
     sauvegarde_souci: Option<String>,
+    /// Le geste qui prend la main sur le Drive, quand la sauvegarde l'a trouvee ailleurs (`main_a_prendre`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prendre_la_main: Option<PrendreLaMain>,
     /// Les envois partis en fond (`envois_en_fond::EnvoisEnFond::dits`) : en cours, au bout, ou echoues avec le geste
     /// qui les refait.
     envois: Vec<crate::envois_en_fond::EnvoiDit>,
@@ -160,6 +180,7 @@ pub fn dit_du_bandeau(
     d: Option<&Trace>,
     a_poser: Vec<APoser>,
     sauvegarde_souci: Option<String>,
+    prendre_la_main: Option<PrendreLaMain>,
     envois: Vec<crate::envois_en_fond::EnvoiDit>,
     fermeture: bool,
     dans: Option<std::time::Duration>,
@@ -192,6 +213,7 @@ pub fn dit_du_bandeau(
         muets,
         a_poser,
         sauvegarde_souci,
+        prendre_la_main,
         envois,
         fermeture: fermeture.then_some("PuppetPaie se fermera dès que l'envoi en cours sera parti."),
         retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),

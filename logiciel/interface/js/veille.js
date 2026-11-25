@@ -114,6 +114,10 @@ function dessinerVeille(v) {
   if (d && k.sauvegarde_souci && !d.hors_ligne) {
     morceaux.push(`<span class="veille-sauvegarde"${d.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(k.sauvegarde_souci)}</span>`);
   }
+  // LA MAIN SUR LE DRIVE TROUVÉE AILLEURS : le geste qui la prend, tel que le moteur le rend (`prendre_la_main`).
+  if (k.prendre_la_main) {
+    morceaux.push(`<button class="lien" data-prendre-la-main>${echapper(k.prendre_la_main.libelle)}</button>`);
+  }
 
   // 2. LES NOUVELLES : ce qui est arrivé depuis le dernier regard.
   const nouvelles = [];
@@ -161,6 +165,9 @@ function dessinerVeille(v) {
   });
   texte.querySelectorAll("[data-aller]").forEach((b) => {
     b.onclick = () => allerAuxMotsDePasse();
+  });
+  texte.querySelectorAll("[data-prendre-la-main]").forEach((b) => {
+    b.onclick = (ev) => { ev.preventDefault(); faireLeGeste(k.prendre_la_main, {}, () => {}, b); };   // la sauvegarde qui suit (`ensuite`) relit le bandeau
   });
   texte.querySelectorAll("[data-refaire]").forEach((b) => {
     b.onclick = (ev) => { ev.preventDefault(); ouvrirGeste(envois[+b.dataset.refaire].refaire); };

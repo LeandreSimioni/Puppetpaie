@@ -13,7 +13,7 @@ use socle::memoire::tenu;
 
 use super::api::route;
 use routes::gestes::ouverture::ChargeOuverture;
-use routes::veille::{acces_a_poser, dit_du_bandeau, souci_de_la_sauvegarde, EtatDeLaVeille, SauvegardeQuiSuit};
+use routes::veille::{acces_a_poser, dit_du_bandeau, main_a_prendre, souci_de_la_sauvegarde, EtatDeLaVeille, SauvegardeQuiSuit};
 use routes::envois_en_fond::EnvoisEnFond;
 use routes::etat_garde::FileDesEtats;
 use routes::catalogue::Route;
@@ -116,10 +116,16 @@ impl Veille {
             Ok(s) => (s, None),
             Err(e) => (None, Some(e.phrase)),
         };
-        let erreur = [tenu(&self.erreur).clone(), illisible, marqueur, coffre, jeton].into_iter().flatten().next();
+        // La main sur le Drive trouvee ailleurs : le geste qui la prend ; un index ou un coffre qui ne se lit pas le dit dans
+        // l'erreur.
+        let (main, index) = match main_a_prendre(&self.racine) {
+            Ok(m) => (m, None),
+            Err(e) => (None, Some(e.phrase)),
+        };
+        let erreur = [tenu(&self.erreur).clone(), illisible, marqueur, coffre, jeton, index].into_iter().flatten().next();
         let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, .. } = self.etape();
         EtatDeLaVeille {
-            dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, self.envois.dits(), self.envois.fermeture_attend(), self.prochain_dans(), fictive),
+            dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, main, self.envois.dits(), self.envois.fermeture_attend(), self.prochain_dans(), fictive),
             // Sans fil, le tour qui reste du est un passage en cours pour la page : elle le suit, et sa demande le fait
             // (`suivie`).
             en_cours: en_cours || self.du.load(Ordering::SeqCst),

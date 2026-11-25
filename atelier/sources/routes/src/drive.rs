@@ -214,6 +214,21 @@ fn main_dite(main: Option<&compagnie::sauvegarde::LaMain>, a_ce_poste: bool) -> 
     }
 }
 
+/// LE MOT DE PASSE QUE « PRENDRE LA MAIN » DEMANDE : celui du logiciel s'il est pose (`coffre::exiger_mot_de_passe`),
+/// aucun sinon.
+pub(crate) fn demande_de_la_main(racine: &std::path::Path) -> R<Option<compagnie::demande::DemandeDuMotDePasse>> {
+    compagnie::coffre::Coffre::du_poste(racine).ouverture_exigee().and_then(|pose| pose.then(|| crate::coffre::demande(racine, GESTE_MAIN)).transpose())
+}
+
+/// LE GESTE « PRENDRE LA MAIN… » (`drive-prendre-la-main`), tel que l'ecran du Drive et le bandeau le rendent : `charge`,
+/// la sienne dans l'ecran qui le porte ; `demande`, celle de `demande_de_la_main`.
+pub(crate) fn geste_prendre_la_main<C>(charge: C, demande: Option<compagnie::demande::DemandeDuMotDePasse>) -> GesteDeRoute<C, SansCharge, SansCharge> {
+    GesteDeRoute::avec_cases(Route::DrivePrendreLaMain, charge, PRENDRE_LA_MAIN, Vec::new(), SansCharge {}, SansCharge {})
+        .disant(avant_de_prendre_la_main())
+        .exigeant(demande)
+        .principal()
+}
+
 /// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce que le geste change pour ce poste et pour l'autre, et ce que la
 /// sauvegarde qui suit fait du dossier.
 fn avant_de_prendre_la_main() -> Vec<String> {
@@ -305,9 +320,8 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
             None
         }
     };
-    // PRENDRE LA MAIN demande le mot de passe du logiciel s'il est pose (`exiger_mot_de_passe`) ; qu'il ne se lise pas, et
-    // le geste ne se propose pas (l'encart d'au-dessus le dit deja).
-    let demande_main = compagnie::coffre::Coffre::du_poste(&ctx.racine).ouverture_exigee().and_then(|pose| pose.then(|| crate::coffre::demande(&ctx.racine, GESTE_MAIN)).transpose());
+    // Qu'il ne se lise pas, et le geste qui prend la main ne se propose pas (l'encart d'au-dessus le dit deja).
+    let demande_main = demande_de_la_main(&ctx.racine);
     // Ce poste, tel que la main le nomme : qu'il ne se lise pas, et la main ne se dit pas.
     let ce_poste = match compagnie::sauvegarde::PosteSurLeDrive::de_ce_poste(&ctx.racine) {
         Ok(p) => Some(p),
@@ -341,12 +355,7 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
             let a_ce_poste = vu.main.as_ref().is_some_and(|m| m.poste == *p);
             dit.push(main_dite(vu.main.as_ref(), a_ce_poste));
             if let (false, Ok(d)) = (a_ce_poste, &demande_main) {
-                gestes.push(
-                    GesteDeRoute::avec_cases(Route::DrivePrendreLaMain, GesteDuDrive::PrendreLaMain(SansCharge {}), PRENDRE_LA_MAIN, Vec::new(), SansCharge {}, SansCharge {})
-                        .disant(avant_de_prendre_la_main())
-                        .exigeant(d.clone())
-                        .principal(),
-                );
+                gestes.push(geste_prendre_la_main(GesteDuDrive::PrendreLaMain(SansCharge {}), d.clone()));
             }
         }
         if let Some(d) = &demande {

@@ -590,12 +590,17 @@ un libellé, chacun sa forme.
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
 | identité d'une compagnie sur le Drive | `compagnie::sauvegarde::IdentiteSurLeDrive` | `compagnie/src/sauvegarde.rs` |
 | marque du dossier d'une compagnie dans le Drive | `envois::drive::MarqueDuDossier` | `envois/src/drive.rs` |
+| poste nommé sur le Drive (`poste:` et l'empreinte de la clé du poste, jamais un secret ni un nom) | `compagnie::sauvegarde::PosteSurLeDrive` | `compagnie/src/sauvegarde.rs` |
+| main sur le Drive d'une compagnie : le seul poste qui sauvegarde dans son dossier, et depuis quand | `compagnie::sauvegarde::LaMain` | `compagnie/src/sauvegarde.rs` |
+| ce poste n'a pas la main (un autre poste la tient depuis une date, ou elle ne se lit pas), tel que le dernier passage l'a noté dans l'index | `compagnie::sauvegarde::SansLaMain` | `compagnie/src/sauvegarde.rs` |
+| geste « Prendre la main » que le bandeau propose à côté de ce qui persiste de la sauvegarde | `routes::veille::PrendreLaMain` | `routes/src/veille.rs` |
 | sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
 | dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
 | fichiers d'un dossier du Drive, par nom, homonymes compris | `envois::drive::FichiersDuDossier` | `envois/src/drive.rs` |
 | corbeille du Drive, à part du client | `envois::drive::Corbeille` | `envois/src/drive.rs` |
 | reprise du Drive pas finie sur ce poste | `compagnie::restauration::RepriseEnCours` | `compagnie/src/restauration.rs` |
 | geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
+| geste de l'écran du Drive d'une compagnie (la charge de sa route : supprimer un dossier, prendre la main) | `GesteDuDrive` | `routes/src/drive.rs` |
 | provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
 | ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
 | sorte d'une erreur de Google pour un fichier demandé (du fichier, passagère, arrêt — autorisation ou non) : le seul classement de la restauration | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
