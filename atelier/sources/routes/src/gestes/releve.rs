@@ -14,7 +14,7 @@ use compagnie::consultation::{client_dpae, client_dsn};
 fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<(Releve, ADire)> {
     let faites = crate::gestes::suites::faire(ctx, s);
     let releve = r?;
-    let mut dit = ADire { incidents: releve.plateforme_non_lue.clone(), a_faire: Vec::new() };
+    let mut dit = ADire { incidents: releve.plateforme_non_lue.clone(), a_faire: Vec::new(), conduites: Vec::new() };
     dit.etendre(faites?);
     Ok((releve, dit))
 }

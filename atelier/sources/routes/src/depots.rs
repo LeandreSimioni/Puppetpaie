@@ -913,7 +913,10 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     } else if fait.ligne.nombre_de_retours() > 0 {
         suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
     } else {
-        Phrase::fixe("Dépôt réel effectué — ses retours sont attendus.")
+        match quoi {
+            Quoi::Dpae => Phrase::fixe("La DPAE est partie."),
+            Quoi::Dsn => Phrase::fixe("La DSN est partie."),
+        }
     };
     let phrase = socle::phrase!("{}{}", tranche, fait.suites.iter().map(|s| format!(" {}", s)).collect::<String>());
     // Ce qui suit la DSN reelle (les documents des salaries) se lit dans le cadre du mois (`etat-du-mois`, `ou_en_est`).

@@ -413,7 +413,7 @@ async function suivreDepot(quoi, flux, mois) {
 
 /** Ce que le relevé d'un suivi a à dire (`a_dire` du moteur) : ses incidents, puis ce qu'il reste à faire. */
 function phrasesDuReleve(aDire) {
-  return [...aDire.incidents, ...aDire.a_faire];
+  return [...aDire.incidents, ...aDire.a_faire, ...aDire.conduites];
 }
 
 /** Ce que le certificat de conformité (nature 41) dit de chaque personne. */

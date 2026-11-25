@@ -616,14 +616,16 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         }
     };
     // Le fichier a-t-il deja sa repetition conforme ? Un fichier ou un journal qui ne se lit pas se dit.
-    let teste = |f: &Path| -> R<bool> {
+    let repetition = |f: &Path| -> R<etats::Repetition> {
         let octets = std::fs::read(f).map_err(|e| socle::echec::du_disque(f, &e))?;
         let lignes = envois::journal::lu(&ctx.racine)?.lignes;
         let nom = NomDeFichier::du(f)?;
-        Ok(etats::repetition(&lignes, Acte::Dsn, &Empreinte::des_octets(&octets).courte(), &nom).conforme.is_some())
+        Ok(etats::repetition(&lignes, Acte::Dsn, &Empreinte::des_octets(&octets).courte(), &nom))
     };
+    let teste = |f: &Path| -> R<bool> { repetition(f).map(|r| r.conforme.is_some()) };
     let mut releve = false;
     let mut parties: Vec<String> = Vec::new();
+    let mut test_refuses: Vec<String> = Vec::new();
     for (l, fichier) in retenues.iter().zip(&fichiers) {
         let repete = match mode {
             Mode::Reel => teste(fichier).and_then(|deja| if deja { Ok(()) } else { deposer_dsn(ctx, fichier, Mode::Test, preuve, qui, false, contournement).map(|_| ()) }),
@@ -633,19 +635,38 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         if mode == Mode::Reel && !releve && matches!(&fait, Err(e) if e.classe == Some(Classe::RepetitionManquante)) {
             releve = true;
             // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place ; ce qu'il a
-            // a dire se dit avec la demande.
+            // a dire se dit avec la demande, sauf la conduite apres un signalement refuse : le refus de son test se dit
+            // ci-dessous en une phrase, et son detail se lit au releve des retours et au journal des depots.
             fait = envois::releve_retours::PlageDuReleve::derniere_journee()
                 .and_then(|plage| crate::gestes::releve::relever_retours(ctx, plage, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
                 .and_then(|(_, a_dire)| {
-                    dit.extend(a_dire.phrases());
+                    dit.extend(a_dire.incidents);
+                    dit.extend(a_dire.a_faire);
                     deposer_dsn(ctx, fichier, mode, preuve, qui, false, contournement).map(|_| ())
                 });
         }
         let qui_demande = ctx.nomme(&l.salarie);
         match fait {
             Ok(_) => parties.push(qui_demande),
-            Err(e) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase)),
+            // SON TEST A ETE REFUSE : la demande le dit en mots ; ce que le bilan a refuse se lit au journal des depots.
+            Err(e) => {
+                let refuse = match e.classe {
+                    Some(Classe::RepetitionManquante) => repetition(fichier).map(|r| r.conforme.is_none() && !r.ratees.is_empty()),
+                    _ => Ok(false),
+                };
+                match refuse {
+                    Ok(true) => test_refuses.push(qui_demande),
+                    Ok(false) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase)),
+                    // Le test qui ne se relit pas se dit, avec ce qui a retenu la demande.
+                    Err(m) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} {} Elle reste à demander.", qui_demande, en, e.phrase, m.phrase)),
+                }
+            }
         }
+    }
+    if !test_refuses.is_empty() {
+        // Une seule demande : la phrase ne la nomme pas, le depot ne portait qu'elle.
+        let pour = if retenues.len() == 1 { String::new() } else { format!(" pour {}", noms(&test_refuses)) };
+        dit.push(format!("La demande de taux de prélèvement à la source{} n'a pas pu partir : son test a été refusé. Elle reste à faire.", pour));
     }
     if !parties.is_empty() {
         dit.insert(0, format!("Taux de PAS demandé{} avec la DPAE pour {}.", en, noms(&parties)));
