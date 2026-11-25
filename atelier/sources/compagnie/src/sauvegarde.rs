@@ -787,6 +787,34 @@ pub fn main_reprise(racine: &Path) -> Result<(), ErreurGoogle> {
     }
 }
 
+/// LA DATE DE LA DERNIERE SAUVEGARDE NOTEE SUR UN DOSSIER (`MarqueDuDossier::derniere`, ecrite par `marque`) : aucune
+/// sans marque, ou quand elle n'en dit rien ; une date qui ne se lit pas se refuse (elle n'est pas absente).
+pub fn derniere_notee(m: Option<&MarqueDuDossier>) -> socle::echec::R<Option<Moment>> {
+    use serde::de::IntoDeserializer;
+    let Some(d) = m.and_then(|m| m.derniere.as_ref()) else { return Ok(None) };
+    let lu: Result<Moment, serde::de::value::Error> = socle::paris::ecrit::minute::deserialize(d.as_str().into_deserializer());
+    lu.map(Some).map_err(|e| {
+        socle::echec::refus_avec(
+            "La date de la dernière sauvegarde, notée sur le Drive, ne se lit pas.",
+            socle::echec::Lieu { detail: Some(format!("{} : {}", socle::fichiers::repr(d), e)), ..socle::echec::Lieu::default() },
+        )
+    })
+}
+
+/// DES CHANGEMENTS ONT-ILS ETE FAITS AILLEURS SUR LE DRIVE DEPUIS LA DERNIERE SAUVEGARDE DE CE POSTE ? Le dossier
+/// `dossier` dit sa derniere sauvegarde qui a envoye quelque chose (`derniere`, `MarqueDuDossier::derniere`), l'index de
+/// ce poste son dernier passage dans ce dossier (`Index::quand`, a la meme minute que la marque qu'il a posee ; un
+/// passage qui trouve la main ailleurs ne l'avance pas). Oui quand le dossier a ete sauvegarde apres ce passage, ou
+/// qu'il porte une sauvegarde et que ce poste n'y a jamais sauvegarde (aucun passage, ou celui d'un autre dossier). Non
+/// quand le dossier ne dit aucune sauvegarde.
+pub fn change_ailleurs(derniere: Option<Moment>, index: Option<&Index>, dossier: &IdDrive) -> bool {
+    let Some(d) = derniere else { return false };
+    match index {
+        Some(Index { quand: Some(q), compagnie: Some(c), .. }) if c == dossier => d > *q,
+        Some(_) | None => true,
+    }
+}
+
 /// LES DOSSIERS QUE L'INDEX CONNAIT DANS LE DOSSIER `compagnie` : aucun quand l'index est celui d'un autre dossier (le
 /// dossier commun d'avant, un dossier mis a la corbeille) ; ils se cherchent alors dans le Drive.
 pub fn dossiers_connus(index: Option<&Index>, compagnie: &IdDrive) -> BTreeMap<DossierDuDrive, IdDrive> {

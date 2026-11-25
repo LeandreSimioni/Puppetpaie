@@ -137,13 +137,14 @@ pub fn souci_de_la_sauvegarde(racine: &std::path::Path, d: Option<&Trace>) -> so
 pub struct PrendreLaMain(crate::imprevus::GesteDeRoute<crate::SansCharge, crate::SansCharge, crate::SansCharge>);
 
 /// LE GESTE QUI PREND LA MAIN, MAINTENANT : quand l'index de la sauvegarde dit la main ailleurs, et que le Drive est
-/// encore lie (`ouverture::acces_pose`) ; aucun sinon. `Err` : le coffre ou l'index ne se lit pas.
+/// encore lie (`ouverture::acces_pose`) ; aucun sinon. `Err` : le coffre ou l'index ne se lit pas. Sans reseau, il ne
+/// sait pas si le Drive a ete sauvegarde ailleurs depuis : sa boite le dit a sa condition (`drive::AvantLaMain::PeutEtre`).
 pub fn main_a_prendre(racine: &std::path::Path) -> socle::echec::R<Option<PrendreLaMain>> {
     let ailleurs = compagnie::sauvegarde::lire_index(racine).map_err(|e| e.echec)?.is_some_and(|i| i.sans_la_main.is_some());
     if !ailleurs || !crate::gestes::ouverture::acces_pose(racine, "google")? {
         return Ok(None);
     }
-    Ok(Some(PrendreLaMain(crate::drive::geste_prendre_la_main(crate::SansCharge {}, crate::drive::demande_de_la_main(racine)?, true))))
+    Ok(Some(PrendreLaMain(crate::drive::geste_prendre_la_main(crate::SansCharge {}, crate::drive::demande_de_la_main(racine)?, crate::drive::AvantLaMain::PeutEtre))))
 }
 
 /// CE QUE LE BANDEAU DIT (`dit` de l'etat de la veille) : l'etat en une phrase, un service muet, ce qu'il y a a poser et

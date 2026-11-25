@@ -8,7 +8,7 @@
 //!    ecarte de toute liste), par le chemin de « Reprendre » (`restauration::restaurer`, sous son verrou) ; la compagnie
 //!    n'est pas touchee. Pas tout revenu : elle reste telle quelle, le dossier cache garde ce qui est revenu, et la
 //!    recuperation suivante le continue ;
-//! 2. ce qui est propre au poste y passe depuis la compagnie (`PROPRES_AU_POSTE`, et les coffres mis de cote) : le coffre
+//! 2. ce qui tient la compagnie la lache (la fenetre), puis ce qui est propre au poste y passe depuis la compagnie (`PROPRES_AU_POSTE`, et les coffres mis de cote) : le coffre
 //!    et ses mots de passe restent ceux de ce poste (« Le coffre reste celui du poste »), comme le jeton Google, le
 //!    diagnostic, le journal des incidents et celui de l'interface ;
 //! 3. son index dit encore la main ailleurs (`Index::sans_la_main`) : tant que la main n'est pas notee sur le Drive, la
@@ -33,15 +33,9 @@ pub const PREFIXE_RECUPEREE: &str = ".recuperee-";
 pub const PREFIXE_REMPLACEE: &str = ".remplacee-";
 
 /// CE QUI EST PROPRE AU POSTE ET PASSE DE LA COMPAGNIE A CELLE QUI REVIENT : rien de cela ne monte au Drive
-/// (`sauvegarde::chemins_exclus`), sauf le coffre, qui reste celui de ce poste. L'index, la trace de l'ouverture et l'etat
-/// garde sont ceux de la compagnie qui revient : ils ne passent pas.
-const PROPRES_AU_POSTE: [CheminRelatif; 5] = [
-    socle::fichiers::JETON_GOOGLE,
-    crate::incidents::DIAGNOSTIC,
-    crate::incidents::INCIDENTS,
-    crate::installation::JOURNAL_INTERFACE,
-    CheminRelatif::du_moteur("config/coffre.bin"),
-];
+/// (`sauvegarde::chemins_exclus`) ; s'y ajoutent le coffre (`propres`), qui reste celui de ce poste. L'index, la trace de
+/// l'ouverture et l'etat garde sont ceux de la compagnie qui revient : ils ne passent pas.
+const PROPRES_AU_POSTE: [CheminRelatif; 4] = [socle::fichiers::JETON_GOOGLE, crate::incidents::DIAGNOSTIC, crate::incidents::INCIDENTS, crate::installation::JOURNAL_INTERFACE];
 
 /// CE QUE LA RECUPERATION A FAIT (`recuperer`).
 #[derive(Debug)]
@@ -88,9 +82,10 @@ fn coffres_de_cote(racine: &Path) -> R<Vec<CheminRelatif>> {
     Ok(v)
 }
 
-/// Ce qui est propre au poste dans `racine` : la liste fixe, et ses coffres mis de cote.
+/// Ce qui est propre au poste dans `racine` : la liste fixe, son coffre (`coffre::FICHIER`), et ses coffres mis de cote.
 fn propres(racine: &Path) -> R<Vec<CheminRelatif>> {
     let mut v = PROPRES_AU_POSTE.to_vec();
+    v.push(CheminRelatif::from(socle::fichiers::CONFIG).joint(&crate::coffre::FICHIER));
     v.extend(coffres_de_cote(racine)?);
     Ok(v)
 }
@@ -123,10 +118,16 @@ fn passer_ce_qui_est_au_poste(depuis: &Path, vers: &Path) -> R<()> {
 }
 
 /// RECUPERE DANS LA COMPAGNIE `racine` CE QUE PORTE SON DOSSIER `vu` DU DRIVE (sous `racine_drive`), ce poste n'ayant
-/// pas la main (`sans`, ce que son index en dira tant que l'appelant ne l'a pas prise). L'appelant a ferme la compagnie
-/// (sa veille, ses envois en fond) : l'echange la remplace sous elle. Un `Err` : rien n'a bouge (la restauration refuse,
-/// le disque refuse avant l'echange).
-pub fn recuperer(racine: &Path, vu: &DossierVu, racine_drive: &str, client: &mut dyn Drive, sans: SansLaMain) -> Result<Recuperation, ErreurGoogle> {
+/// pas la main (`sans`, ce que son index en dira tant que l'appelant ne l'a pas prise). `lacher` : ce qui tient la
+/// compagnie la lache (la fenetre : sa veille, ses envois en fond, son journal ; en ligne de commande, rien), une fois
+/// tout revenu, avant que rien ne s'y lise ni que l'echange la remplace sous elle. Un `Err` : rien n'a bouge (la
+/// compagnie est le dossier du logiciel lui-meme, comme pour sa suppression ; la restauration refuse ; le disque ou le
+/// lacher refusent avant l'echange).
+pub fn recuperer(racine: &Path, vu: &DossierVu, racine_drive: &str, client: &mut dyn Drive, sans: SansLaMain, lacher: &dyn Fn(&Path) -> R<()>) -> Result<Recuperation, ErreurGoogle> {
+    // L'echange renomme le dossier de la compagnie : celui du logiciel ne se renomme pas (le programme y est).
+    if crate::installation::est_le_logiciel(racine)? {
+        return Err(ErreurGoogle::from(socle::echec::refus("Cette compagnie est le dossier du logiciel lui-même : elle ne se remplace pas par ce qu'il y a sur le Drive. Rien n'a changé.")));
+    }
     let cache = a_cote(racine, PREFIXE_RECUPEREE)?;
     std::fs::create_dir_all(&cache).map_err(|e| ErreurGoogle::from(socle::echec::du_disque(&cache, &e)))?;
     let r = {
@@ -146,6 +147,7 @@ pub fn recuperer(racine: &Path, vu: &DossierVu, racine_drive: &str, client: &mut
     if !r.complete() {
         return Ok(Recuperation::PasAuBout(r));
     }
+    lacher(racine)?;
     passer_ce_qui_est_au_poste(racine, &cache)?;
     let index = lire_index(&cache)?.ok_or_else(|| ErreurGoogle::from(socle::echec::erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la compagnie revenue du Drive n'a pas d'index.")))?;
     ecrire_index(&cache, &Index { sans_la_main: Some(sans), ..index })?;

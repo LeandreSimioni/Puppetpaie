@@ -1016,29 +1016,30 @@ impl Fenetre {
                     }
                 }
                 // « PRENDRE LA MAIN » (`drive-prendre-la-main`) peut remplacer le dossier de la compagnie ouverte par ce
-                // qui revient du Drive : la fenetre la lache le temps du geste (sa veille, sa file des etats, ses envois),
-                // puis la rouvre, telle qu'elle est alors. Ce que la page en fait, la reponse le dit (`apres`).
+                // qui revient du Drive : la route decide tout (`routes::drive::prendre_la_main_lachant`) et lache la
+                // compagnie par la fenetre (sa veille, sa file des etats, ses envois) juste avant ; si elle l'a lachee, la
+                // fenetre la rouvre, telle qu'elle est alors. La sauvegarde que la reponse dit suivre (`ensuite`) part
+                // ensuite, sur la veille de la compagnie ouverte.
                 if nom == Route::DrivePrendreLaMain && veille.is_some() {
-                    let envoi_en_vol = routes::envois_en_fond::existants(&racine).map(|e| e.is_some_and(|e| e.en_vol()));
-                    let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
-                        RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a changé."))
-                    } else if matches!(envoi_en_vol, Ok(true)) {
-                        RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un envoi de cette compagnie est en cours : attendez que le bandeau le dise parti, puis recommencez. Rien n'a changé."))
-                    } else if let Err(e) = envoi_en_vol {
-                        RouteReponse::refusee_par(nom, Refus::de(None, e.reclasser(Classe::Refuse)))
-                    } else if let Err(e) = self.lacher(&racine) {
-                        RouteReponse::refusee_par(nom, Refus::de(None, e.reclasser(Classe::Refuse)))
-                    } else {
-                        let debut = Instant::now();
-                        let rendu = api::repondre(&racine, nom, &charge, None, None);
+                    let debut = Instant::now();
+                    let lachee = std::cell::Cell::new(false);
+                    let rendu = routes::garde_dans_la_fenetre(nom, || {
+                        RouteReponse::de(nom, routes::drive::prendre_la_main_lachant(&racine, &charge, &|r| {
+                            lachee.set(true);
+                            self.lacher(r)
+                        }))
+                    });
+                    if lachee.get() {
                         // Le journal de la fenetre redevient celui de la compagnie (lacher l'avait laisse), sans le recommencer.
                         *tenu(&self.journal) = Some(JOURNAL_INTERFACE.dans(&racine));
                         if let Err(e) = self.ouvrir(racine.clone()) {
                             self.ecrire(&format!("La compagnie ne se rouvre pas apres « Prendre la main » : {}\n", e.en_lignes()));
                         }
-                        self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
-                        rendu
-                    };
+                    }
+                    if let Phase::Ouverte { veille, .. } = self.phase() {
+                        veille.faire_suivre(&rendu);
+                    }
+                    self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
                     return Reponse::json(200, &rendu);
                 }
                 let debut = Instant::now();

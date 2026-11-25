@@ -5,11 +5,10 @@
 //! (`routes::drive`, `routes::accueil::drive`), et la restauration en ligne de commande.
 
 use envois::drive::{Drive, ErreurGoogle, IdDrive, MarqueDuDossier};
-use serde::de::IntoDeserializer;
 use socle::grandeurs::Octets;
 use socle::paris::Moment;
 
-use crate::sauvegarde::{IdentiteSurLeDrive, LaMain, SAUVEGARDE};
+use crate::sauvegarde::{derniere_notee, IdentiteSurLeDrive, LaMain, SAUVEGARDE};
 
 /// CE QU'EST UN DOSSIER SOUS LA RACINE DU DRIVE : le dossier d'une compagnie (sa marque dit son identite), l'ancien
 /// dossier commun (`sauvegarde`, ou toutes les compagnies d'un meme compte ecrivaient, homonymes compris), ou un autre
@@ -51,9 +50,16 @@ fn vu(d: envois::drive::SousDossier) -> DossierVu {
     // Sans marque, le dossier ne dit ni identite, ni date, ni volume, ni main.
     let mut illisible = Vec::new();
     let main = LaMain::de(d.marque.as_ref());
-    let (compagnie, derniere, octets) = match d.marque {
-        Some(MarqueDuDossier { compagnie, derniere, octets, .. }) => (compagnie, derniere, octets),
-        None => (None, None, None),
+    let derniere = match derniere_notee(d.marque.as_ref()) {
+        Ok(m) => m,
+        Err(_) => {
+            illisible.push("La date de sa dernière sauvegarde, notée sur le Drive, ne se lit pas.".to_string());
+            None
+        }
+    };
+    let (compagnie, octets) = match d.marque {
+        Some(MarqueDuDossier { compagnie, octets, .. }) => (compagnie, octets),
+        None => (None, None),
     };
     let genre = match compagnie.map(|c| IdentiteSurLeDrive::lire(&c)) {
         Some(Ok(i)) => GenreDuDossier::Compagnie(i),
@@ -64,16 +70,6 @@ fn vu(d: envois::drive::SousDossier) -> DossierVu {
         None if d.nom == SAUVEGARDE => GenreDuDossier::AncienneSauvegarde,
         None => GenreDuDossier::Ancien,
     };
-    let derniere = derniere.and_then(|t| {
-        let lu: Result<Moment, serde::de::value::Error> = socle::paris::ecrit::minute::deserialize(t.as_str().into_deserializer());
-        match lu {
-            Ok(m) => Some(m),
-            Err(_) => {
-                illisible.push("La date de sa dernière sauvegarde, notée sur le Drive, ne se lit pas.".to_string());
-                None
-            }
-        }
-    });
     let octets = octets.and_then(|t| match Octets::ecrite(&t) {
         Some(o) => Some(o),
         None => {

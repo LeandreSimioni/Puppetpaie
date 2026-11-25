@@ -157,7 +157,26 @@ pub fn sauvegarder(
             en_echec.extend(fichiers.iter().cloned());
             continue;
         }
-        let essai: Result<(envois::drive::IdDrive, envois::drive::FichiersDuDossier), ErreurGoogle> = (|| {
+        // LA MAIN SE RELIT A CHAQUE DOSSIER : un autre poste qui la prend pendant ce passage l'arrete la, et rien de ce
+        // passage n'entre a l'index (le passage suivant la trouve ailleurs, comme le dit `SansLaMain`).
+        let perdue = match client.en_place(cie) {
+            Ok(envois::drive::DossierEnPlace::EnPlace(marque)) => match LaMain::de(marque.as_ref()) {
+                Ok(Some(m)) if m.poste != *ce_poste => Ok(Some(SansLaMain::AutrePoste { depuis: m.depuis })),
+                Ok(_) => Ok(None),
+                Err(e) => {
+                    main_illisible = Some(e);
+                    Ok(Some(SansLaMain::Illisible))
+                }
+            },
+            // Mis a la corbeille en route : ses envois tombent, et se disent un par un.
+            Ok(envois::drive::DossierEnPlace::Retire) => Ok(None),
+            Err(e) => Err(e),
+        };
+        if let Ok(Some(sans)) = perdue {
+            resultat.sans_la_main = Some(sans);
+            break;
+        }
+        let essai: Result<(envois::drive::IdDrive, envois::drive::FichiersDuDossier), ErreurGoogle> = perdue.and_then(|_| {
             let parent = match dossiers.get(&cle) {
                 Some(p) => p.clone(),
                 None => client.chemin(cie, &segments)?,
@@ -167,7 +186,7 @@ pub fn sauvegarder(
             // recherche par fichier). `tout` ne sert qu'a ne pas comparer les empreintes.
             let deja = client.lister(&parent)?;
             Ok((parent, deja))
-        })();
+        });
         let (parent, deja) = match essai {
             Ok(x) => x,
             Err(e) => {
