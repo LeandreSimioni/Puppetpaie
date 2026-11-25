@@ -555,11 +555,13 @@ function peindreLesEtats(div) {
   if (!cible) return;
   const ligne = div._ligne;
   const imprevu = salarieDuBloc(div) ? `<button type="button" class="lien e-imprevu-btn">Imprévu…</button>` : "";
-  // LES GESTES DE LA CARTE, tels que sa ligne les rend (`gestes`) : une carte que la route ne connaît pas n'en a aucun.
-  const g = (ligne && ligne.gestes) || {};
+  // LES GESTES DE LA CARTE, tels que sa ligne les rend (`gestes`). Une carte écrite sans ligne : `etat-par-engagement`
+  // a refusé, et sa phrase se dit à la place des gestes ; pas encore lu, rien.
+  const g = ligne ? ligne.gestes : null;
   const bouton = (a, classe) => (a ? `<button class="${classeDuGeste(a)} ${classe}">${echapper(a.libelle)}</button>` : "");
-  const gestes = [bouton(g.retirer, "retirer-engagement"), bouton(g.annuler, "v-annuler"), bouton(g.modifier, "v-modifier"),
-    bouton(g.valider, "v-valider")].join("");
+  const gestes = g
+    ? [bouton(g.retirer, "retirer-engagement"), bouton(g.annuler, "v-annuler"), bouton(g.modifier, "v-modifier"), bouton(g.valider, "v-valider")].join("")
+    : div.dataset.engagement && ETATS_REFUS ? `<span class="encart erreur">${echapper(ETATS_REFUS)}</span>` : "";
   const valide = !!(ligne && ligne.valide);
   const pieces = valide ? ligne.carres.filter((c) => c.lien).map((c) =>
     `<button class="lien v-pieces" data-acte="${echapper(c.cle)}">${echapper(c.lien)}</button>`).join(" · ") : "";
@@ -571,7 +573,7 @@ function peindreLesEtats(div) {
   const sur = (s, f) => { const b = cible.querySelector(s); if (b) b.onclick = (ev) => { ev.preventDefault(); f(ev); }; };
   sur(".v-valider", () => validerLaCarte(g.valider));
   sur(".v-modifier", () => modifierLaCarte(div, g.modifier));
-  sur(".v-annuler", () => chargerMois(g.annuler.charge.mois, true));
+  sur(".v-annuler", () => annulerLaCarte(g.annuler));
   sur(".retirer-engagement", () => retirerLaCarte(g.retirer));
   sur(".e-imprevu-btn", (ev) => { ev.stopPropagation(); menuImprevu(ev.currentTarget, { div }); });
   sur(".carte-versions", (ev) => { ev.stopPropagation(); boiteFrise(ligne); });
@@ -600,21 +602,27 @@ function peindreEtats() {
  *  referme en sa ligne. */
 async function validerLaCarte(geste) {
   const mois = geste.charge.mois;
-  await enregistrerSaisie(true);
   try {
+    await enregistrerSaisie(true);
     const r = await aSonTour(() => api(geste.route, geste.charge));
     dire(r.phrase);
-  } catch (e) { dire(e.message, "erreur"); return; }
-  await chargerMois(mois, true);
+    await chargerMois(mois, true);
+  } catch (e) { dire(e.message, "erreur"); }
+}
+
+/** « Annuler » (`geste`) : ce qu'on a changé sur la carte ouverte ne s'écrit pas ; l'action rendue relit le mois (la
+ *  route `saisie` sur son mois), ce que fait la lecture du mois (`chargerMois`), et la carte se referme en sa ligne. */
+async function annulerLaCarte(geste) {
+  try { await chargerMois(geste.charge.mois, true); } catch (e) { dire(e.message, "erreur"); }
 }
 
 /** « Retirer cet engagement » (`geste`) : la route décide (rien de parti, il s'efface ; un envoi parti, elle avertit, et
  *  la page propose de le rendre non actif). */
 async function retirerLaCarte(geste) {
   const mois = geste.charge.mois;
-  await enregistrerSaisie(true);
   const charge = geste.charge;
   try {
+    await enregistrerSaisie(true);
     let r = await api(geste.route, charge);
     if (r.avertissement) {
       if (!await boiteNonActif(r.avertissement)) return;
@@ -642,9 +650,10 @@ function ouvrirCarte(div) {
  *  avertissement quand ce qui est parti le demande. */
 async function modifierLaCarte(div, geste) {
   const mois = geste.charge.mois;
-  if (!div._modif.length) { await chargerMois(mois, true); return; }
-  const charge = { ...geste.charge, changements: div._modif, jour: null };
   try {
+    // Une carte qui n'a pas été ouverte pour être modifiée (`_modif`), ou rien de changé : le mois se relit.
+    if (!div._modif || !div._modif.length) { await chargerMois(mois, true); return; }
+    const charge = { ...geste.charge, changements: div._modif, jour: null };
     let r = await api(geste.route, charge);
     while (r && r.avertissement) {
       const reponse = await boiteAvertissement(r.avertissement);

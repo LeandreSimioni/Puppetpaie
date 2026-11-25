@@ -630,7 +630,8 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
     let teste = |f: &Path| -> R<bool> { repetition(f).map(|r| r.conforme.is_some()) };
     let mut releve = false;
     let mut parties: Vec<String> = Vec::new();
-    let mut test_refuses: Vec<String> = Vec::new();
+    // Les demandes dont le reel attend son test, par ce qu'en dit le test : une phrase par raison.
+    let mut en_attente: Vec<(&str, Vec<String>)> = Vec::new();
     for (l, fichier) in retenues.iter().zip(&fichiers) {
         let repete = match mode {
             Mode::Reel => teste(fichier).and_then(|deja| if deja { Ok(()) } else { deposer_dsn(ctx, fichier, Mode::Test, preuve, qui, false, contournement).map(|_| ()) }),
@@ -641,7 +642,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
             releve = true;
             // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place ; ce qu'il a
             // a dire se dit avec la demande, sauf la conduite apres un signalement refuse : le refus de son test se dit
-            // ci-dessous en une phrase, et son detail se lit au releve des retours et au journal des depots.
+            // ci-dessous en une phrase, et la conduite se lit sous le bilan, dans l'Historique (`historique_mois`).
             fait = envois::releve_retours::PlageDuReleve::derniere_journee()
                 .and_then(|plage| crate::gestes::releve::relever_retours(ctx, plage, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
                 .and_then(|(_, a_dire)| {
@@ -653,25 +654,28 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         let qui_demande = ctx.nomme(&l.salarie);
         match fait {
             Ok(_) => parties.push(qui_demande),
-            // SON TEST A ETE REFUSE : la demande le dit en mots ; ce que le bilan a refuse se lit au journal des depots.
-            Err(e) => {
-                let refuse = match e.classe {
-                    Some(Classe::RepetitionManquante) => repetition(fichier).map(|r| r.conforme.is_none() && !r.ratees.is_empty()),
-                    _ => Ok(false),
-                };
-                match refuse {
-                    Ok(true) => test_refuses.push(qui_demande),
-                    Ok(false) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase)),
-                    // Le test qui ne se relit pas se dit, avec ce qui a retenu la demande.
-                    Err(m) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} {} Elle reste à demander.", qui_demande, en, e.phrase, m.phrase)),
+            // LE REEL QUI ATTEND SON TEST : la demande dit en mots ou en est son test ; ce que le bilan a refuse se lit
+            // au journal des depots et dans l'Historique.
+            Err(e) if e.classe == Some(Classe::RepetitionManquante) => match repetition(fichier) {
+                Ok(r) => {
+                    let raison = match (&r.conforme, r.ratees.is_empty()) {
+                        (None, false) => "son test a été refusé",
+                        (Some(_), _) => "son test n'a pas encore de réponse",
+                        (None, true) => "son test n'a pas été fait",
+                    };
+                    match en_attente.iter_mut().find(|(x, _)| *x == raison) {
+                        Some((_, v)) => v.push(qui_demande),
+                        None => en_attente.push((raison, vec![qui_demande])),
+                    }
                 }
-            }
+                // Le test qui ne se relit pas se dit, avec ce qui a retenu la demande.
+                Err(m) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {} Elle reste à faire.", qui_demande, m.phrase)),
+            },
+            Err(e) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase)),
         }
     }
-    if !test_refuses.is_empty() {
-        // Une seule demande : la phrase ne la nomme pas, le depot ne portait qu'elle.
-        let pour = if retenues.len() == 1 { String::new() } else { format!(" pour {}", noms(&test_refuses)) };
-        dit.push(format!("La demande de taux de prélèvement à la source{} n'a pas pu partir : son test a été refusé. Elle reste à faire.", pour));
+    for (raison, qui) in &en_attente {
+        dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {}. Elle reste à faire.", noms(qui), raison));
     }
     if !parties.is_empty() {
         dit.insert(0, format!("Taux de PAS demandé{} avec la DPAE pour {}.", en, noms(&parties)));
