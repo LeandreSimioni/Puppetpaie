@@ -456,17 +456,16 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::GoogleAutoriser => {
             let SeulLeMotDePasse {} = charge.lire()?;
-            // LA PREMIERE SAUVEGARDE envoie tout le dossier : aucun index ne dit encore ce qui est au Drive. Lu avant de
-            // lier : un index qui ne se lit pas refuse sans rien enregistrer.
-            let premiere = compagnie::sauvegarde::lire_index(&ctx.racine).map_err(|e| e.echec)?.is_none();
             let compte = google_autoriser(ctx, mdp)?;
-            let phrase = if premiere {
-                socle::phrase!(
+            // LA PREMIERE SAUVEGARDE envoie tout le dossier : aucun index ne dit encore ce qui est au Drive. Un index qui
+            // ne se lit pas n'empeche pas de lier : la sauvegarde le refusera (`sauvegarder`), et la phrase le dit.
+            let phrase = match compagnie::sauvegarde::lire_index(&ctx.racine) {
+                Ok(None) => socle::phrase!(
                     "Drive lié : {}. La sauvegarde du Drive commence ; la première est longue : gardez une connexion internet stable et laissez le logiciel ouvert jusqu'à la fin.",
                     compte
-                )
-            } else {
-                socle::phrase!("Drive lié : {}. La sauvegarde du Drive commence : seul ce qui a changé part.", compte)
+                ),
+                Ok(Some(_)) => socle::phrase!("Drive lié : {}. La sauvegarde du Drive commence : seul ce qui a changé part.", compte),
+                Err(e) => socle::phrase!("Drive lié : {}. La sauvegarde ne partira pas : {}", compte, e.echec.phrase),
             };
             en_json(GoogleLie { phrase, compte, ensuite: Route::Ouverture })
         }
