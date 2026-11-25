@@ -212,12 +212,11 @@ async function demanderFiche(bouton, inv, bloc) {
     // Partie en fond, la demande se dit « en cours d'envoi » dans le bandeau ; au bout, elle n'y est plus et se voit dans
     // les fiches en attente, que la veille relit quand l'envoi sort du bandeau (`envoisArrives`, `relireFichesAttendues`).
     const enFond = partiEnFond(r);
-    // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
-    await relireLaConfiguration();
     oublierLEcran(casesDeLaFicheOuverte());
     CLE_ACTIVE = null;
     FICHE_NEUVE = false;
-    dessinerConfig();
+    // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit, et la liste se redessine.
+    await relireLaConfiguration(true);
     if (enFond) return;
     dire(r.phrase, "envoye");
     fenetreCourrielsFictifs("fiche", repere);
@@ -246,8 +245,7 @@ function brancherFichesAttendues() {
     relever.disabled = true;
     try {
       const r = await api("fiches-relever", {});
-      await relireLaConfiguration();
-      dessinerConfig();
+      await relireLaConfiguration(true);
       dire(r.phrase, undefined);
     } catch (e) { relever.disabled = false; dire(e.message, "erreur"); }
   };
@@ -257,8 +255,7 @@ function brancherFichesAttendues() {
       try {
         const r = await api("fiche-oublier-demande", { adresse: b.dataset.oublierFiche });
         // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
-        await relireLaConfiguration();
-        dessinerConfig();
+        await relireLaConfiguration(true);
         dire(r.phrase, undefined);
       } catch (e) { b.disabled = false; dire(e.message, "erreur"); }
     };
@@ -278,15 +275,23 @@ async function relireFichesAttendues() {
 }
 
 /* LA CONFIGURATION RELUE (`configuration`), et peinte. Plusieurs lectures peuvent se croiser (un geste, le bout d'un
-   envoi que la veille voit) : seule la dernière demandée se pose, une réponse plus ancienne arrivée après elle ne
-   repeint rien par-dessus. Rend vrai si cette lecture s'est posée. */
+   envoi que la veille voit, le guet d'une fictive) : seule la dernière demandée se pose, une réponse plus ancienne
+   arrivée après elle ne repeint rien par-dessus. `redessiner` : la liste se redessine (`dessinerConfig`) quand la
+   lecture se pose ; demandé par une lecture dépassée, il passe à celle qui se pose, quel que soit son appelant : la
+   liste finit toujours dessinée depuis la dernière configuration. Rend vrai si cette lecture s'est posée. */
 let CONFIGURATION_DEMANDEE = 0;
-async function relireLaConfiguration() {
+let CONFIGURATION_A_REDESSINER = false;
+async function relireLaConfiguration(redessiner = false) {
   const n = ++CONFIGURATION_DEMANDEE;
+  if (redessiner) CONFIGURATION_A_REDESSINER = true;
   const c = await api("configuration", {});
   if (n !== CONFIGURATION_DEMANDEE) return false;
   ETAT.configuration = c;
   peindreEtatGlobal();
+  if (CONFIGURATION_A_REDESSINER) {
+    CONFIGURATION_A_REDESSINER = false;
+    dessinerConfig();
+  }
   return true;
 }
 

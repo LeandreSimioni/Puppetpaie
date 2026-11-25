@@ -2,9 +2,54 @@
 //! (`js/veille.js`) et que l'etat garde le rend au demarrage (`etat_garde::ACote`), et les phrases du bandeau
 //! (`DitDuBandeau`). La veille qui tourne (ses tours, sa boucle) : `interface::veille`.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use crate::catalogue::Route;
+use crate::enveloppe::{Charge, Refus, Reponse};
 use crate::gestes::ouverture::Trace;
+
+/// LA SAUVEGARDE QUI SUIT UN GESTE (le Drive lie : `google-autoriser`), que la reponse dit en `ensuite` : sa route et sa
+/// charge, les memes pour qui les lit. En ligne de commande, l'appelant l'appelle ; la fenetre la fait par sa veille, sur
+/// son fil (`interface::veille::Veille::faire_suivre`), et le bandeau en suit l'avancement. Une sauvegarde seule
+/// (`sauvegarde-maintenant`), sans relevé. Pas un geste qu'on clique : celui-la, une reponse le rend en `suite`
+/// (`etapes::Action`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SauvegardeQuiSuit {
+    route: Route,
+    charge: crate::SansCharge,
+}
+
+impl SauvegardeQuiSuit {
+    /// La sauvegarde du Drive, seule.
+    pub(crate) fn du_drive() -> SauvegardeQuiSuit {
+        SauvegardeQuiSuit { route: Route::SauvegardeMaintenant, charge: crate::SansCharge {} }
+    }
+
+    /// Celle que la reponse `r` dit suivre (`ensuite`) ; aucune quand elle n'en dit pas, ou qu'elle a refuse. Une cle
+    /// `ensuite` qui n'a pas sa forme est un defaut du logiciel : le refus le dit.
+    pub fn dite_par(r: &Reponse) -> Result<Option<SauvegardeQuiSuit>, Refus> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Ensuite {
+            ensuite: Option<SauvegardeQuiSuit>,
+        }
+        if !r.est_rendue() {
+            return Ok(None);
+        }
+        r.lire_cles::<Ensuite>(&["ensuite"]).map(|e| e.ensuite)
+    }
+
+    /// Sa route.
+    pub fn route(&self) -> Route {
+        self.route
+    }
+
+    /// Sa charge, telle que la route la lit.
+    pub fn charge(&self) -> socle::echec::R<Charge> {
+        Charge::de_forme(&self.charge)
+    }
+}
 
 /// L'ETAT DE LA VEILLE, tel que le bandeau le dessine (`js/veille.js`) : ce qu'il dit (`dit`), le passage en cours, la
 /// boucle (`minutes`), la trace du dernier passage (`dernier`), et ce qui l'a empeche (`erreur`).

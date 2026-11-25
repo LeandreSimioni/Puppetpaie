@@ -896,7 +896,8 @@ async function faireLeGeste(g, entete, apres, bouton) {
     dire(r.phrase, r.couleur);
     await apres(r);
     rallumer();
-    // Ce que la route dit partir ensuite de soi-même (`ensuite` : la sauvegarde du Drive lié), le bandeau le suit.
+    // La sauvegarde que la route dit suivre (`ensuite`, sa route et sa charge), la fenêtre la fait par sa veille : le
+    // bandeau la suit.
     if (r.ensuite) suivreVeille();
     // Ce que la route dit qui suit (`suite` : le dépôt d'un signalement écrit) s'ouvre ensuite.
     if (r.suite) ouvrirGeste(r.suite);

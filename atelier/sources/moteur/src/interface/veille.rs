@@ -13,7 +13,7 @@ use socle::memoire::tenu;
 
 use super::api::route;
 use routes::gestes::ouverture::ChargeOuverture;
-use routes::veille::{acces_a_poser, dit_du_bandeau, souci_de_la_sauvegarde, EtatDeLaVeille};
+use routes::veille::{acces_a_poser, dit_du_bandeau, souci_de_la_sauvegarde, EtatDeLaVeille, SauvegardeQuiSuit};
 use routes::envois_en_fond::EnvoisEnFond;
 use routes::etat_garde::FileDesEtats;
 use routes::catalogue::Route;
@@ -29,9 +29,10 @@ pub struct Veille {
     sauvegarde_en_cours: AtomicBool,
     tour_unique: Mutex<()>,
     arretee: AtomicBool,
-    /// Un tour reste a faire, et le bandeau le dit en cours : sans fil (`routes::SANS_FIL`), le premier, que fait qui suit
-    /// la veille (`suivie`) ; le Drive lie, celui qui sauvegarde (`sauvegarder_aussitot`).
+    /// Sans fil (`routes::SANS_FIL`), le premier tour reste a faire : qui suit la veille le fait (`suivie`).
     du: AtomicBool,
+    /// La sauvegarde qu'une reponse a dit suivre (`faire_suivre`), pas encore partie : le bandeau la dit en cours.
+    sauvegarde_due: Mutex<Option<SauvegardeQuiSuit>>,
     /// Quand partira le prochain tour de la boucle (« prochain relevé dans … minutes »).
     prochain: Mutex<Option<Instant>>,
     /// Les etats des mois, a verifier apres chaque tour : un retour releve, une signature notee changent un mois.
@@ -68,6 +69,7 @@ impl Veille {
             tour_unique: Mutex::new(()),
             arretee: AtomicBool::new(false),
             du: AtomicBool::new(false),
+            sauvegarde_due: Mutex::new(None),
             prochain: Mutex::new(None),
             etats,
             envois,
@@ -79,7 +81,7 @@ impl Veille {
     /// (`ouverture::etape_en_cours`) ; aucun passage en cours, aucune etape.
     pub fn etape(&self) -> EtapeDeLaVeille {
         let en_cours = self.en_cours.load(Ordering::SeqCst);
-        let sauvegarde_en_cours = self.sauvegarde_en_cours.load(Ordering::SeqCst);
+        let sauvegarde_en_cours = self.sauvegarde_en_cours();
         let (etape, progression) = if en_cours || sauvegarde_en_cours {
             match routes::gestes::ouverture::etape_en_cours(&self.racine) {
                 Ok(Some(e)) => (Some(e.etape), e.progression),
@@ -133,9 +135,9 @@ impl Veille {
     /// la page recoit l'etat d'apres ce tour.
     /// Le tour du attend la mise a jour (`tour`) : en cours ailleurs, il reste du, et la page qui suit la veille le
     /// redemande.
+    /// Sans fil encore, la sauvegarde qu'une reponse a dit suivre (`faire_suivre`) se fait ici, apres ce tour.
     pub fn suivie(&self) -> EtatDeLaVeille {
-        // Avec un fil, le tour du part sur le sien (`sauvegarder_aussitot`) : la page qui suit n'attend jamais un passage.
-        if routes::SANS_FIL && self.du.load(Ordering::SeqCst) {
+        if self.du.load(Ordering::SeqCst) {
             if let Some(f) = &self.etats {
                 if let Err(e) = f.attendre_la_version() {
                     *tenu(&self.erreur) = Some(e.phrase);
@@ -143,10 +145,18 @@ impl Veille {
                 }
             }
             if self.du.swap(false, Ordering::SeqCst) {
-                return self.tour(false, true);
+                self.tour(false, true);
             }
         }
+        if routes::SANS_FIL {
+            self.sauvegarder_ce_qui_est_du();
+        }
         self.etat()
+    }
+
+    /// La sauvegarde tourne-t-elle, ou une reponse l'a-t-elle dite suivre (`sauvegarde_due`) ?
+    fn sauvegarde_en_cours(&self) -> bool {
+        self.sauvegarde_en_cours.load(Ordering::SeqCst) || tenu(&self.sauvegarde_due).is_some()
     }
 
     /// Dans combien de temps part le prochain tour, une minute au moins ; aucun sans boucle.
@@ -243,33 +253,68 @@ impl Veille {
         });
     }
 
-    /// LE DRIVE VIENT D'ETRE LIE (`google-autoriser`, dont la reponse dit `ensuite` : `ouverture`) : un tour qui
-    /// sauvegarde part aussitot, sur un fil, sans faire attendre la page ; le bandeau le dit en cours des maintenant (`du`).
-    /// Un passage deja en cours partait sans le compte : celui-ci part a sa fin. Sans fil, la page qui suit la veille le
-    /// fait (`suivie`).
-    pub fn sauvegarder_aussitot(self: &Arc<Self>) {
-        self.du.store(true, Ordering::SeqCst);
+    /// CE QUE LA REPONSE `r` DIT SUIVRE (`ensuite`, `SauvegardeQuiSuit` : la sauvegarde du Drive lie), la fenetre le fait :
+    /// sa route et sa charge, telles que la reponse les dit, sur un fil, sans faire attendre la page ; le bandeau la dit en
+    /// cours des maintenant (`sauvegarde_due`). Elle attend la fin d'un passage en cours (le verrou des tours, attendu et
+    /// non essaye) et part une fois, quoi qu'il arrive au tour d'a cote. Sans fil, la page qui suit la veille la fait
+    /// (`suivie`). Une cle `ensuite` qui ne se relit pas est l'erreur de la veille, que le bandeau dit.
+    pub fn faire_suivre(self: &Arc<Self>, r: &routes::enveloppe::Reponse) {
+        let s = match SauvegardeQuiSuit::dite_par(r) {
+            Ok(Some(s)) => s,
+            Ok(None) => return,
+            Err(e) => {
+                *tenu(&self.erreur) = Some(e.phrase);
+                return;
+            }
+        };
+        *tenu(&self.sauvegarde_due) = Some(s);
         if routes::SANS_FIL {
             return;
         }
         let v = self.clone();
         routes::fil_de_routes(move || {
-            while v.occupee() && !v.arretee.load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_secs(1));
+            if let Some(f) = &v.etats {
+                if let Err(e) = f.attendre_la_version() {
+                    tenu(&v.sauvegarde_due).take();
+                    *tenu(&v.erreur) = Some(e.phrase);
+                    return;
+                }
             }
-            if v.du.swap(false, Ordering::SeqCst) {
-                v.tour(false, true);
-            }
+            v.sauvegarder_ce_qui_est_du();
         });
+    }
+
+    /// La sauvegarde due, s'il en reste une, faite une fois, le verrou des tours tenu : la route et la charge qu'elle dit
+    /// (`SauvegardeQuiSuit`). Le bandeau la dit en cours sans trou : `sauvegarde_en_cours` se pose avant qu'elle ne quitte
+    /// `sauvegarde_due`. Une veille arretee ne la fait pas.
+    fn sauvegarder_ce_qui_est_du(&self) {
+        let _un_seul = tenu(&self.tour_unique);
+        if self.arretee.load(Ordering::SeqCst) {
+            tenu(&self.sauvegarde_due).take();
+            return;
+        }
+        self.sauvegarde_en_cours.store(true, Ordering::SeqCst);
+        // Prise, et le verrou de `sauvegarde_due` lache aussitot : le bandeau le lit pendant toute la sauvegarde.
+        let due = tenu(&self.sauvegarde_due).take();
+        if let Some(s) = due {
+            let erreur = match s.charge() {
+                Ok(c) => route(&self.racine, s.route(), &c).en_refus().err().map(|r| r.phrase),
+                Err(e) => Some(e.phrase),
+            };
+            if let Some(e) = erreur {
+                *tenu(&self.erreur) = Some(e);
+            }
+        }
+        self.sauvegarde_en_cours.store(false, Ordering::SeqCst);
     }
 
     pub fn arreter(&self) {
         self.arretee.store(true, Ordering::SeqCst);
     }
 
-    /// Un passage tourne-t-il (la releve, ou la sauvegarde) ?
+    /// Un passage tourne-t-il (la releve, ou la sauvegarde), ou une sauvegarde est-elle due ?
     pub fn occupee(&self) -> bool {
-        self.en_cours.load(Ordering::SeqCst) || self.sauvegarde_en_cours.load(Ordering::SeqCst)
+        self.en_cours.load(Ordering::SeqCst) || self.sauvegarde_en_cours()
     }
 
     /// LA COMPAGNIE S'EN VA (`accueil::suppression`) : plus de tour, et celui qui aurait commence se finit avant qu'on

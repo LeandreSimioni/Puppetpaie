@@ -1028,11 +1028,9 @@ impl Fenetre {
                     }
                 } else {
                     let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref());
-                    // LE DRIVE LIE : la sauvegarde que la reponse dit suivre (`ensuite`) part aussitot, par la veille.
-                    if nom == Route::GoogleAutoriser && rendu.est_rendue() {
-                        if let Some(v) = &veille {
-                            v.sauvegarder_aussitot();
-                        }
+                    // CE QUE LA REPONSE DIT SUIVRE (`ensuite` : la sauvegarde du Drive lie), la veille le fait, sur son fil.
+                    if let Some(v) = &veille {
+                        v.faire_suivre(&rendu);
                     }
                     rendu
                 };

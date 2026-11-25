@@ -161,7 +161,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lier le compte Google de la sauvegarde : Google s'ouvre, la personne accepte.",
         charge: &SeulLeMotDePasse::CHARGE,
         exemple: r#"{}"#,
-        rend: "compte : l'adresse du compte Google lié ; ensuite : la route qui sauvegarde (ouverture), que la fenêtre fait aussitôt ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
+        rend: "compte : l'adresse du compte Google lié ; ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite, absente quand l'index de la sauvegarde ne se lit pas ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
         refus: &[PREUVE, Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -361,14 +361,14 @@ struct GoogleOublie {
     efface: bool,
 }
 
-/// Ce que rend `google-autoriser` : le compte lie, et la route qui fait la sauvegarde ensuite (`ensuite` : `ouverture`).
-/// La fenetre la fait aussitot par sa veille, sur son fil, et le bandeau en dit l'avancement (`interface::api`,
-/// `Veille::sauvegarder_aussitot`) ; en ligne de commande, l'appelant l'appelle.
+/// Ce que rend `google-autoriser` : le compte lie, et la sauvegarde qui suit (`ensuite`, `SauvegardeQuiSuit`), aucune
+/// quand la phrase dit qu'elle ne partira pas.
 #[derive(Debug, Serialize)]
 struct GoogleLie {
     phrase: Phrase,
     compte: String,
-    ensuite: Route,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ensuite: Option<crate::veille::SauvegardeQuiSuit>,
 }
 
 /// Ce que rend `administrateur-etat` : la phrase qui le dit, et l'etat.
@@ -457,17 +457,21 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::GoogleAutoriser => {
             let SeulLeMotDePasse {} = charge.lire()?;
             let compte = google_autoriser(ctx, mdp)?;
-            // LA PREMIERE SAUVEGARDE envoie tout le dossier : aucun index ne dit encore ce qui est au Drive. Un index qui
-            // ne se lit pas n'empeche pas de lier : la sauvegarde le refusera (`sauvegarder`), et la phrase le dit.
-            let phrase = match compagnie::sauvegarde::lire_index(&ctx.racine) {
-                Ok(None) => socle::phrase!(
-                    "Drive lié : {}. La sauvegarde du Drive commence ; la première est longue : gardez une connexion internet stable et laissez le logiciel ouvert jusqu'à la fin.",
-                    compte
+            // LA PREMIERE SAUVEGARDE SUR CE COMPTE envoie tout le dossier. L'index de la sauvegarde ne dit pas de quel
+            // compte il decrit le Drive (et `google-oublier` le garde) : relier un autre compte renvoie tout. La phrase
+            // dit donc toujours que la premiere est longue, ce qui n'est jamais faux. Un index qui ne se lit pas
+            // n'empeche pas de lier : la sauvegarde le refuserait (`sauvegarder`) ; la phrase le dit, et rien ne suit.
+            let (phrase, ensuite) = match compagnie::sauvegarde::lire_index(&ctx.racine) {
+                Ok(_) => (
+                    socle::phrase!(
+                        "Drive lié : {}. La sauvegarde du Drive suit ; la première est longue : gardez une connexion internet stable et laissez le logiciel ouvert jusqu'à la fin.",
+                        compte
+                    ),
+                    Some(crate::veille::SauvegardeQuiSuit::du_drive()),
                 ),
-                Ok(Some(_)) => socle::phrase!("Drive lié : {}. La sauvegarde du Drive commence : seul ce qui a changé part.", compte),
-                Err(e) => socle::phrase!("Drive lié : {}. La sauvegarde ne partira pas : {}", compte, e.echec.phrase),
+                Err(e) => (socle::phrase!("Drive lié : {}. La sauvegarde ne partira pas : {}", compte, e.echec.phrase), None),
             };
-            en_json(GoogleLie { phrase, compte, ensuite: Route::Ouverture })
+            en_json(GoogleLie { phrase, compte, ensuite })
         }
         Route::AdministrateurEtat => {
             let SansCharge {} = charge.lire()?;

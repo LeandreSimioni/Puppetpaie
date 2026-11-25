@@ -648,6 +648,9 @@ un libellé, chacun sa forme.
 | les envois partis en fond d'une compagnie, que la fenêtre garde | `EnvoisEnFond` | `routes/src/envois_en_fond.rs` |
 | numéro d'un envoi parti en fond | `NumeroDEnvoi` | `routes/src/envois_en_fond.rs` |
 | où en est le mois, le cadre sous lui : son dernier fait et sa prochaine étape | `OuEnEstLeMois` | `routes/src/etapes.rs` |
+| étape d'un passage de la veille, telle que l'ouverture l'écrit en y entrant (`config/.ouverture-etape.json` : ce qu'il fait, depuis quand, et la part faite quand elle se compte, la sauvegarde du Drive) | `routes::gestes::ouverture::Etape` | `routes/src/gestes/ouverture.rs` |
+| où en est le passage de la veille, que la page relit chaque seconde (`veille-etape` : la relève ou la sauvegarde qui tournent ou sont dues, l'étape et sa part faite, un envoi en cours, la fermeture qui l'attend) | `EtapeDeLaVeille` | `moteur/src/interface/veille.rs` |
+| sauvegarde qui suit un geste (le Drive lié) : sa route et sa charge, que la réponse dit en `ensuite` ; l'appelant en ligne de commande l'appelle, la fenêtre la fait par sa veille ; pas un geste qu'on clique, qu'une réponse rend en `suite` (`etapes::Action`) | `SauvegardeQuiSuit` | `routes/src/veille.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
