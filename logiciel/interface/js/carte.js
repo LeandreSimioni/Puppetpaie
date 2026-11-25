@@ -555,9 +555,10 @@ function peindreLesEtats(div) {
   if (!cible) return;
   const ligne = div._ligne;
   const imprevu = salarieDuBloc(div) ? `<button type="button" class="lien e-imprevu-btn">Imprévu…</button>` : "";
-  // LES GESTES DE LA CARTE, tels que sa ligne les rend (`gestes`). Une carte écrite sans ligne : `etat-par-engagement`
-  // a refusé, et sa phrase se dit à la place des gestes ; pas encore lu, rien.
-  const g = ligne ? ligne.gestes : null;
+  // LES GESTES DE LA CARTE, tels que sa ligne les rend (`gestes`) ; une carte neuve jamais écrite, ceux que la route
+  // saisie rend pour elle (`nouvelle_carte.gestes`). Une carte écrite sans ligne : `etat-par-engagement` a refusé, et
+  // sa phrase se dit à la place des gestes ; pas encore lu, rien.
+  const g = ligne ? ligne.gestes : !div.dataset.engagement ? NOUVELLE_CARTE.gestes : null;
   const bouton = (a, classe) => (a ? `<button class="${classeDuGeste(a)} ${classe}">${echapper(a.libelle)}</button>` : "");
   const gestes = g
     ? [bouton(g.retirer, "retirer-engagement"), bouton(g.annuler, "v-annuler"), bouton(g.modifier, "v-modifier"), bouton(g.valider, "v-valider")].join("")
@@ -610,8 +611,9 @@ async function validerLaCarte(geste) {
   } catch (e) { dire(e.message, "erreur"); }
 }
 
-/** « Annuler » (`geste`) : ce qu'on a changé sur la carte ouverte ne s'écrit pas ; l'action rendue relit le mois (la
- *  route `saisie` sur son mois), ce que fait la lecture du mois (`chargerMois`), et la carte se referme en sa ligne. */
+/** « Annuler » (`geste`), et « Retirer cet engagement » d'une carte neuve jamais écrite : rien ne s'écrit ; l'action
+ *  rendue relit le mois (la route `saisie` sur son mois), ce que fait la lecture du mois (`chargerMois`) : la carte
+ *  ouverte se referme en sa ligne, la carte neuve n'y est plus. */
 async function annulerLaCarte(geste) {
   try { await chargerMois(geste.charge.mois, true); } catch (e) { dire(e.message, "erreur"); }
 }

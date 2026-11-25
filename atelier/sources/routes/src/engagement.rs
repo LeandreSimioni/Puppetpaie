@@ -151,14 +151,22 @@ charge! {
 /// LES GESTES DE LA CARTE D'UN ENGAGEMENT, tels que la ligne de l'engagement les rend (`etat-par-engagement`) : en
 /// brouillon, le valider ou le retirer ; valide, ouvert pour etre modifie, le modifier (ses changements s'ajoutent a la
 /// charge rendue), relire le mois sans rien ecrire, ou le retirer. Un engagement valide n'a pas de geste qui le valide.
+/// Une carte neuve, que rien n'a encore ecrite (`nouvelle_carte` de la route `saisie`), n'a qu'un geste, « Retirer cet
+/// engagement » : comme « Annuler », il relit le mois, qui ne la montre pas, et rien ne s'ecrit (`annuler`).
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub(crate) enum GestesDeLaCarte {
     Brouillon { retirer: Action, valider: Action },
     Valide { retirer: Action, annuler: Action, modifier: Action },
+    Neuve { annuler: Action },
 }
 
 impl GestesDeLaCarte {
+    /// Les gestes d'une carte neuve de l'ecran de `mois`, jamais ecrite : la retirer de l'ecran, rien ne s'ecrit.
+    pub(crate) fn neuve(mois: Mois) -> GestesDeLaCarte {
+        GestesDeLaCarte::Neuve { annuler: action(Route::Saisie, ChargeMois { mois }, None, "Retirer cet engagement".into()) }
+    }
+
     /// Les gestes de la carte de l'engagement `engagement` de l'ecran de `mois`, valide ou non.
     pub(crate) fn de(mois: Mois, engagement: &Identite, valide: bool) -> GestesDeLaCarte {
         let retirer = action(Route::RetirerEngagement, ChargeRetirer { mois, engagement: engagement.clone(), confirme: false }, None, "Retirer cet engagement".into());
@@ -169,7 +177,7 @@ impl GestesDeLaCarte {
         let charge = ChargeModifier { mois, engagement: engagement.clone(), changements: Changements::aucun(), confirme: false };
         GestesDeLaCarte::Valide {
             retirer,
-            annuler: action(Route::Saisie, ChargeMois { mois }, None, "Annuler".into()),
+            annuler: action(Route::Saisie, ChargeMois { mois }, None, "Annuler".into()).secondaire(),
             modifier: action(Route::ModifierEngagement, charge, None, "Modifier l'engagement".into()).principale(),
         }
     }
