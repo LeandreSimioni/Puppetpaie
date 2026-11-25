@@ -408,7 +408,8 @@ impl FichierDuJournal {
 }
 
 /// LE FICHIER QU'UNE LIGNE DU JOURNAL DIT DEPOSE (une DSN, une DPAE, un signalement) au mois `mois`, sous la compagnie
-/// `racine` (`sorties/<mois>/`) : son acte le dit (`FichierDuJournal::Depose`), pas son nom.
+/// `racine` (`sorties/<mois>/`) : son acte le dit (`FichierDuJournal::Depose`), pas son nom. C'est ou il s'ecrit ; il
+/// se lit par les sorties du mois (`sorties_du_mois::SortiesDuMois`).
 pub fn fichier_depose(racine: &std::path::Path, mois: socle::mois::Mois, nom: &str) -> std::path::PathBuf {
     FichierDuJournal::Depose.dossier().dans(racine, mois).join(nom)
 }

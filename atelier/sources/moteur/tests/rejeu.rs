@@ -534,8 +534,10 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
     }
     let mut dsn = serde_json::Map::new();
     for mois in le_mois("2026-01").annee().les_mois() {
-        let f = racine.join("sorties").join(mois.to_string()).join(format!("DSN_{}.dsn", mois.etiquette()));
-        let texte: String = std::fs::read(&f).unwrap_or_else(|_| panic!("{} manque", f.display())).iter().map(|&o| o as char).collect();
+        // 2026 est close : sa DSN se lit dans l'archive de son exercice, par les sorties du mois.
+        let f = socle::fichiers::NomDeFichier::lire(&format!("DSN_{}.dsn", mois.etiquette())).unwrap();
+        let octets = documents::sorties_du_mois::SortiesDuMois::du_mois(&racine, mois).unwrap().octets(documents::DossierDuMois::Sorties, &f).unwrap();
+        let texte: String = octets.unwrap_or_else(|| panic!("{} : {} manque", mois, f)).iter().map(|&o| o as char).collect();
         let (mut individus, mut versements, mut types) = (Vec::new(), Vec::new(), Vec::new());
         let mut courant: Option<serde_json::Map<String, Value>> = None;
         for (k, v) in outils::paires(&texte) {

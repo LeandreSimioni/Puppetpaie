@@ -5,7 +5,8 @@
 //!   (`documents::ecritures_comptables`).
 //! - La cloture : fige l'annee (`config/exercices.json`) et reunit ce qu'il faut garder en un zip
 //!   (`sorties/exercices/Exercice_AAAA.zip`) : saisies, sorties, retours des organismes, journal des depots,
-//!   fiches, bareme, export compta, LISEZ-MOI. Le zip est ecrit par le zip de `routes::dossier_salarie` (deflate,
+//!   fiches, bareme, export compta, LISEZ-MOI ; les sorties des mois de l'annee n'y sont plus qu'une fois, dans le zip
+//!   (`documents::sorties_du_mois::SortiesDuMois` les y lit). Le zip est ecrit par le zip de `routes::dossier_salarie` (deflate,
 //!   CRC-32, entrees dans un ordre fixe) : la liste des fichiers et chacun d'eux sont fixes, octet pour octet ; les
 //!   octets COMPRESSES (donc l'empreinte et la taille de l'archive) dependent du compresseur, et l'empreinte rendue
 //!   est celle de l'archive que ce programme a reellement ecrite.
@@ -344,7 +345,7 @@ const DECEMBRE: u32 = 12;
 
 // Les exercices clos (`config/exercices.json`) se lisent et s'ecrivent avec la porte des sorties d'un mois, qu'ils
 // decident (`documents::sorties_du_mois`).
-use documents::sorties_du_mois::{ecrire_exercices, lire_exercices, ExerciceNote, ExerciceRouvertNote};
+use documents::sorties_du_mois::{ecrire_exercices, lire_exercices, ExerciceNote, ExerciceRouvertNote, SortiesDuMois};
 
 /// Les fichiers sous `d`, triés par chemin (les chemins se comparent composant par composant). Un dossier absent n'en a
 /// aucun ; un dossier qui ne se lit pas se refuse.
@@ -506,6 +507,16 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
         },
     );
     ecrire_exercices(&ctx.racine, &tous)?;
+    // L'ANNEE EST DANS SON ARCHIVE, et l'archive est notee : ses sorties en vrac s'en vont. Elles se lisent desormais
+    // dans l'archive (`SortiesDuMois`) ; une cloture qui echoue avant ce point n'a rien retire.
+    for &m in &mois {
+        let d = documents::DossierDuMois::Sorties.dans(&ctx.racine, m);
+        match std::fs::remove_dir_all(&d) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(en_os(&e, &d)),
+        }
+    }
     Ok(ExerciceClos { annee, le, archive, octets: Octets::de(&octets), empreinte, fichiers: n, manques })
 }
 
@@ -582,13 +593,19 @@ pub(crate) fn geste_de_cloture(annee: Annee) -> R<crate::imprevus::GesteDeRoute<
     Ok(crate::imprevus::GesteDeRoute::avec_cases(crate::catalogue::Route::Cloture, charge, CLOTURER, cases, crate::SansCharge {}, crate::SansCharge {}).disant(phrases))
 }
 
-/// Retire la cloture. L'archive reste sur le disque : elle dit ce
-/// qu'etait l'annee au moment ou on l'a fermee.
+/// Retire la cloture : les sorties de l'annee reviennent en vrac depuis son archive. L'archive reste sur le disque :
+/// elle dit ce qu'etait l'annee au moment ou on l'a fermee.
 fn rouvrir_exercice(ctx: &Contexte, annee: Annee, qui: &str) -> R<ExerciceRouvert> {
     let mut tous = lire_exercices(&ctx.racine)?;
     let Some(clos) = tous.clos.remove(&annee) else {
         return Err(refus(format!("L'exercice {} n'est pas clos.", annee)));
     };
+    // LES SORTIES DE L'ANNEE REVIENNENT EN VRAC, a l'octet pres, depuis son archive, avant que `exercices.json` ne la
+    // dise ouverte (il la dit encore close : `du_mois` les lit dans l'archive) ; une reouverture qui echoue en route la
+    // laisse close, ses pieces dans l'archive.
+    for m in annee.les_mois() {
+        SortiesDuMois::du_mois(&ctx.racine, m)?.remettre_en_vrac()?;
+    }
     let (etait_clos_depuis, archive) = (clos.le, clos.archive.clone());
     let ExerciceNote { le, qui: clos_par, archive: a, octets, empreinte, fichiers, forcee, sans_dsn } = clos;
     tous.rouverts.push(ExerciceRouvertNote {

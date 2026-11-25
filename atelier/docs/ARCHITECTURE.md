@@ -1591,8 +1591,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   dans les sorties du mois (`FichierDuJournal::Depose` : une pièce qu'un dépôt écrit, qui s'y range, ou un fichier
   que la compagnie a posé) ; une pièce d'un envoi, par sa sorte (`de_l_envoi`) ; son dossier, sans condition
   (`FichierDuJournal::dossier`). Le journal n'en garde que le nom : un fichier déposé hors des sorties de son mois ne
-  s'y retrouve pas. Que lisent le fichier déposé (`documents::fichier_depose`), une pièce partie
-  (`depart::piece_partie`) et l'Historique.
+  s'y retrouve pas. Que lisent le fichier déposé (par les sorties du mois), une pièce partie
+  (`depart::piece_partie`, qui refait le signalement d'une année ouverte là où le dit `documents::fichier_depose`) et
+  l'Historique.
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
 - **dossier hors d'un mois** : où se range une pièce produite d'aucun mois : les exercices (`sorties/exercices/`), les
@@ -4452,7 +4453,10 @@ les retours dont le nom commence par l'année ou par janvier suivant (le
 bilan de la DSN de décembre arrive en janvier), `journal/depots.jsonl`, les
 fiches de `config/` et le barème de l'année, `compta/`, un `LISEZ-MOI.txt`.
 Elle note dans `config/exercices.json` la date, l'archive, son empreinte
-SHA-256 et le nombre de fichiers. **Figer** vit dans le moteur
+SHA-256 et le nombre de fichiers, puis retire `sorties/<mois>/` de chaque mois de l'année : l'année close a ses pièces
+dans son archive, et seulement là ; tout ce qui les lit passe par les sorties du mois (`SortiesDuMois`, « Le
+glossaire »), et une pièce partie d'une année close ne se refait pas (`depart::piece_partie`). La réouverture remet
+ces fichiers en vrac depuis l'archive, à l'octet près, puis retire l'année de `exercices.json`. **Figer** vit dans le moteur
 (`routes::mois::refuser_si_clos`), appelé par l'écriture d'une saisie et par
 la fabrication de la DSN (`depart::fabriquer_dsn`) : un front qui l'esquiverait n'existe pas. `rouvrir_exercice`
 retire la note et garde l'archive (avec une trace `_rouverts`).
