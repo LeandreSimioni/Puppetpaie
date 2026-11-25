@@ -80,6 +80,8 @@ fn journal_de_la_premiere_passe(nom: &str) -> Vec<String> {
     let mut j = vec![format!("chemin {}", RD), format!("sous_dossiers {}", RD), format!("creer_dossier {}", dossier_de(nom))];
     for (dossier, noms) in DOSSIERS {
         let c = chemin_drive(nom, dossier);
+        // La main se relit avant chaque dossier : un autre poste qui la prend arrete le passage.
+        j.push(format!("en_place {}", dossier_de(nom)));
         j.push(format!("chemin {}", c));
         j.push(format!("lister {}", c));
         for n in noms {
@@ -146,7 +148,7 @@ fn rien_de_change_rien_ne_part_et_les_dossiers_connus_ne_sont_pas_recherches() {
     assert_eq!((s.identiques, s.exclus), (9, 9)); // l'index ecrit s'ajoute aux ecartes
     assert_eq!(d.appels("televerser"), 0);
     assert_eq!(d.appels("chemin"), 0, "les identifiants de dossiers viennent de l'index");
-    assert_eq!(d.appels("en_place"), 1, "le dossier de la compagnie se verifie une fois");
+    assert_eq!(d.appels("en_place"), 1 + 8, "le dossier de la compagnie se verifie, puis la main avant chacun des 8 dossiers");
     assert_eq!(d.appels("lister"), 8, "un listage par dossier");
     assert_eq!(d.appels("marquer"), 0, "rien d'envoye, la marque ne change pas");
     assert_eq!(s.resume(), "Sauvegarde a jour (9 fichiers).");
