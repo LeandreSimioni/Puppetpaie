@@ -761,9 +761,7 @@ async function dessinerMetiers(cible) {
     document.querySelectorAll("#metiers-liste input[data-code]").forEach((c) => {
       c.onchange = async () => {
         try {
-          const x = await api("metier-retenu", { code: c.dataset.code, retenu: c.checked });
-          ETAT.emplois = x.emplois;
-          ETAT.emplois_autres = x.emplois_autres;
+          await api("metier-retenu", { code: c.dataset.code, retenu: c.checked });
           const m = r.metiers.find((y) => y.code === c.dataset.code);
           if (m) m.retenu = c.checked;
           const garde = [...document.querySelectorAll("#metiers-liste details[open]")].map((d) => d.dataset.famille);
