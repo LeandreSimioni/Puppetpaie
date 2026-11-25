@@ -508,12 +508,18 @@ struct Etape {
 }
 
 /// Entre dans l'etape `etape` : l'etape en cours finit (`Ouverture::finir_l_etape`), celle-ci s'ecrit et se mesure
-/// jusqu'a la suivante, ou jusqu'a ce que le passage la finisse.
-fn dire_l_etape(ctx: &Contexte, r: &mut Ouverture, etape: &str) -> R<()> {
+/// jusqu'a la suivante, ou jusqu'a ce que le passage la finisse. Rend le moment ou elle commence.
+fn dire_l_etape(ctx: &Contexte, r: &mut Ouverture, etape: &str) -> R<Moment> {
     r.finir_l_etape();
-    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)?;
+    let depuis = socle::temps::secondes().a_la_minute();
+    redire_l_etape(&ctx.racine, etape, depuis)?;
     r.en_cours = Some((etape.to_string(), std::time::Instant::now()));
-    Ok(())
+    Ok(depuis)
+}
+
+/// L'etape en cours, commencee a `depuis`, dit ce qu'elle fait maintenant (`etape`) : le transfert du Drive qui avance.
+fn redire_l_etape(racine: &Path, etape: &str, depuis: Moment) -> R<()> {
+    socle::ecriture::ecrire_json(&chemin_etape(racine), &Etape { etape: etape.to_string(), depuis }, 1)
 }
 
 fn finir_les_etapes(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
@@ -737,7 +743,7 @@ static PASSAGES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 /// processus : la route refuse (`EN_COURS_AILLEURS`), sans rien relever, envoyer ni sauvegarder, et le tour suivant de
 /// la veille la reprend.
 fn prendre_en_compte_la_version(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
-    let prise = passer_la_version(ctx, || dire_l_etape(ctx, r, PRISE_EN_COMPTE));
+    let prise = passer_la_version(ctx, || dire_l_etape(ctx, r, PRISE_EN_COMPTE).map(|_| ()));
     r.finir_l_etape();
     match prise {
         Ok(PriseEnCompte::EnCoursAilleurs) => Err(socle::echec::refus(EN_COURS_AILLEURS)),
@@ -1263,12 +1269,14 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
             }
         }
     }
-    dire_l_etape(ctx, r, "Google Drive : sauvegarde…")?;
+    let depuis = dire_l_etape(ctx, r, "Google Drive : sauvegarde…")?;
     let drive: Option<&mut dyn Drive> = match clients.drive.as_mut() {
         Some(d) => Some(&mut **d),
         None => None,
     };
-    match crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive) {
+    // LE TRANSFERT QUI AVANCE, dans l'etape que le bandeau relit chaque seconde : la premiere sauvegarde envoie tout.
+    let mut avancer = |fait: usize, total: usize| redire_l_etape(&ctx.racine, &format!("Transfert Drive en cours : {} fichiers sur {}", fait, total), depuis);
+    match crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive, &mut avancer) {
         // CE QUI EST REPORTE N'EST PAS UN INCIDENT : un dossier que Google a refuse une fois (un 500,
         // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
         // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.

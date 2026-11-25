@@ -454,7 +454,13 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::GoogleAutoriser => {
             let SeulLeMotDePasse {} = charge.lire()?;
             let compte = google_autoriser(ctx, mdp)?;
-            en_json(GoogleLie { phrase: socle::phrase!("Drive lié : {}. La prochaine ouverture sauvegarde.", compte), compte })
+            // La sauvegarde part au passage suivant de la veille (`interface::veille`, `Veille::tour`), ou a l'ouverture
+            // suivante en ligne de commande : la premiere envoie tout le dossier.
+            let phrase = socle::phrase!(
+                "Drive lié : {}. La sauvegarde du Drive commence au prochain relevé. La première est longue : gardez une connexion internet stable et laissez le logiciel ouvert jusqu'à la fin.",
+                compte
+            );
+            en_json(GoogleLie { phrase, compte })
         }
         Route::AdministrateurEtat => {
             let SansCharge {} = charge.lire()?;

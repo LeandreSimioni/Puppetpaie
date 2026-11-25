@@ -20,7 +20,16 @@ const INDISPONIBLE_D_AFFILEE: usize = 3;
 ///
 /// `client` : le client Drive a utiliser. `None` : le vrai (`Client::nouveau`), construit AVANT
 /// l'inventaire ; il refuse une copie de developpement.
-pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option<&mut dyn Drive>) -> Result<Sauvegarde, ErreurGoogle> {
+///
+/// `avancer` : apres chaque fichier envoye, combien de fichiers sont passes et combien il y en a ; un passage ou rien
+/// n'est envoye ne l'appelle pas.
+pub fn sauvegarder(
+    racine: &Path,
+    racine_drive: &str,
+    tout: bool,
+    client: Option<&mut dyn Drive>,
+    avancer: &mut dyn FnMut(usize, usize) -> socle::echec::R<()>,
+) -> Result<Sauvegarde, ErreurGoogle> {
     let mut propre: Client;
     let client: &mut dyn Drive = match client {
         Some(c) => c,
@@ -64,6 +73,8 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     for (relatif, _) in &presents {
         par_dossier.entry(relatif.parent()).or_default().push(relatif.clone());
     }
+    // Les fichiers passes (envoyes, identiques, reportes, disparus), sur `presents.len()` : ce que `avancer` dit.
+    let mut passes = 0usize;
 
     // LE DOSSIER DE LA COMPAGNIE : celui que l'index garde s'il est encore en place, sinon celui que sa marque designe,
     // sinon un neuf. Qu'il ne se trouve pas, et rien ne part a ce passage : tout est reporte au suivant.
@@ -102,6 +113,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         if indisponibles_de_suite >= INDISPONIBLE_D_AFFILEE {
             resultat.reportes.push(Reporte { quoi: dossier.clone(), dossier: true, cause: GOOGLE_INDISPONIBLE.into() });
             en_echec.extend(fichiers.iter().cloned());
+            passes += fichiers.len();
             continue;
         }
         let essai: Result<(envois::drive::IdDrive, envois::drive::FichiersDuDossier), ErreurGoogle> = (|| {
@@ -136,6 +148,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 resultat.reportes.push(reporte);
                 dossiers.remove(&cle);
                 en_echec.extend(fichiers.iter().cloned());
+                passes += fichiers.len();
                 continue;
             }
         };
@@ -143,6 +156,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         let mut tries: Vec<&CheminRelatif> = fichiers.iter().collect();
         tries.sort();
         for relatif in tries {
+            passes += 1;
             if indisponibles_de_suite >= INDISPONIBLE_D_AFFILEE {
                 resultat.reportes.push(Reporte { quoi: relatif.to_string(), dossier: false, cause: GOOGLE_INDISPONIBLE.into() });
                 en_echec.insert(relatif.clone());
@@ -174,6 +188,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                     let octets = etat_de[relatif].octets;
                     resultat.deposes.push(Fichier { relatif: relatif.clone(), octets, etat });
                     resultat.octets_deposes += octets;
+                    avancer(passes, presents.len()).map_err(ErreurGoogle::from)?;
                 }
                 // LE FICHIER A DISPARU ENTRE L'INVENTAIRE ET L'ENVOI, et ce n'est pas un incident :
                 // `engagements/avant/` et `config/avant/` ne gardent que les dernieres copies, et
