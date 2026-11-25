@@ -1099,7 +1099,7 @@ pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: Mois) 
 /// puis s'ecrit entier (`ecrire_une_carte`). Rend l'identite de l'engagement ecrit, le brouillon tel qu'il est ecrit, et
 /// ce qui lui manque pour etre valide.
 /// LES METIERS QU'UNE CARTE CHOISIT : ceux de la compagnie (Configuration › Métiers, `metiers::metiers`), la liste que
-/// la route etat rend (`choix.metier`).
+/// la route saisie rend (`nouvelle_carte.choix.metier`).
 pub(crate) fn metiers_de_la_compagnie(ctx: &Contexte) -> R<Vec<emplois::CodeEmploi>> {
     Ok(crate::metiers::metiers(ctx)?.into_iter().map(|m| m.code).collect())
 }

@@ -438,7 +438,7 @@ pub enum Forme {
     /// de la liste.
     PlusieursChoix(ListeDeChoix),
     /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees, sous la cle de la case : les salaries,
-    /// les spectacles, les metiers et les etablissements d'une carte (`choix` de la route etat), le genre d'un avantage en
+    /// les spectacles, les metiers et les etablissements d'une carte (`nouvelle_carte.choix` de la route saisie), le genre d'un avantage en
     /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
     /// `propose`) ; l'ecran la fait choisir.
     ChoixRendu,

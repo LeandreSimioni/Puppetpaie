@@ -2180,9 +2180,10 @@ composée par `routes::mois::bornes_dites`). Avant tout aperçu, la
 page montre les cases de toute carte de sa nature (`ouverte` : « toujours », `natures[].carte`). Une case qu'aucun fait
 n'ouvre n'est pas rendue ; ce que rien ne lit pour une nature n'est pas une de ses cases. Un fait qui ne se lit pas
 pour un engagement fait la `faute` de sa carte rendue, et d'elle seule : l'aperçu des autres reste. Ce qu'offrent les
-cases qui se choisissent vient sous la clé de leur case : `choix` de la route etat (les fiches, les métiers sous leur
-famille, la transaction, le type d'un préavis), de la nature (`natures[].choix` : ses motifs de recours), d'une carte
-neuve (`nouvelle_carte.choix` de la route saisie : la nature, qui est alors une case de `nouvelle_carte.cases`) et de
+cases qui se choisissent vient sous la clé de leur case : `choix` de la route etat (la transaction, le type d'un
+préavis), de la nature (`natures[].choix` : ses motifs de recours), de l'écran du mois (`nouvelle_carte.choix` de la
+route saisie, relu quand on ouvre la case : les fiches, les métiers sous leur famille, les établissements ; la nature
+quand elle se choisit, qui est alors une case de `nouvelle_carte.cases`) et de
 la paie (`carte.choix` : le motif de la fin, le choix vide en tête ; les modèles de contrat). **Le seul pré-remplissage**
 est `carte.prerempli` (`routes::mois::Prerempli`) : ce que le moteur prend pour une case que la carte ne dit pas (le
 jour du versement, le début que la porte « Imprévu… » lit, le métier que la paie applique) et ce qu'une
