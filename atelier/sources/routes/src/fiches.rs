@@ -747,14 +747,27 @@ pub(crate) struct DejaDeclare {
 fn usages_declares(ctx: &Contexte, rubrique: Option<droit::natures::RubriqueDeLaNorme>, valeur: Option<&str>) -> R<DejaDeclare> {
     let (mut n, mut mois) = (0usize, Vec::<socle::mois::Mois>::new());
     if let (Some(rubrique), Some(valeur)) = (rubrique, valeur) {
-        for dossier in [pieces_importees(ctx), documents::DossierDuMois::des_mois(&ctx.racine)] {
-            for f in declarations::dsn_lue::fichiers(&dossier)? {
-                let Some(d) = declarations::dsn_lue::lire_une_dsn(&f)? else { continue };
-                if d.declare(rubrique, &valeur) {
-                    // Un signalement declare la valeur sans mois principal (S20.G00.05.005).
-                    n += 1;
-                    mois.extend(d.mois);
+        // Les DSN de l'import, puis celles des sorties de chaque mois, en vrac ou dans l'archive de son exercice.
+        let mut lues = Vec::new();
+        for f in declarations::dsn_lue::fichiers(&pieces_importees(ctx))? {
+            lues.extend(declarations::dsn_lue::lire_une_dsn(&f)?);
+        }
+        for m in documents::sorties_du_mois::mois_des_sorties(&ctx.racine)? {
+            let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, m)?;
+            for d in documents::DossierDuMois::TOUS {
+                for nom in sorties.noms(d)? {
+                    match sorties.octets(d, &nom)? {
+                        Some(o) if declarations::dsn_lue::est_une_dsn(&o) => lues.push(declarations::dsn_lue::lire(&o, Some(&nom))?),
+                        _ => {}
+                    }
                 }
+            }
+        }
+        for d in lues {
+            if d.declare(rubrique, &valeur) {
+                // Un signalement declare la valeur sans mois principal (S20.G00.05.005).
+                n += 1;
+                mois.extend(d.mois);
             }
         }
     }

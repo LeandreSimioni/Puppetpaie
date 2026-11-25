@@ -238,8 +238,9 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     }
     let mut avert: Vec<String> = Vec::new();
     let mut ecritures: Vec<Ecriture> = Vec::new();
+    let ecrits = documents::sorties_du_mois::mois_des_sorties(&ctx.racine)?;
     for &m in &mois {
-        if !documents::DossierDuMois::Sorties.dans(&ctx.racine, m).is_dir() {
+        if !ecrits.contains(&m) {
             avert.push(format!("{} : saisi mais jamais écrit (pas de bulletin) -- pris quand même, depuis la saisie.", m));
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));

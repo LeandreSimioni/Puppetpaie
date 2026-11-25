@@ -50,17 +50,11 @@ fn sortie_absente(dossier: &Path) -> ErreurGoogle {
 pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: &str, client: Option<&mut dyn Drive>) -> Result<Archivage, ErreurGoogle> {
     let mois = &le_mois.to_string();
     let dossier = documents::DossierDuMois::Sorties.dans(racine, le_mois);
-    if !dossier.exists() {
-        return Err(sortie_absente(&dossier));
-    }
+    let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, le_mois)?;
     let mut fichiers: Vec<std::path::PathBuf> = Vec::new();
-    for e in std::fs::read_dir(&dossier).map_err(|e| ErreurGoogle::fichier(&e, &dossier))? {
-        let p = e.map_err(|e| ErreurGoogle::fichier(&e, &dossier))?.path();
-        if p.is_file() {
-            fichiers.push(p);
-        }
+    for n in sorties.noms(documents::DossierDuMois::Sorties)? {
+        fichiers.extend(sorties.fichier(documents::DossierDuMois::Sorties, &n)?);
     }
-    fichiers.sort();
     if fichiers.is_empty() {
         return Err(sortie_absente(&dossier));
     }
