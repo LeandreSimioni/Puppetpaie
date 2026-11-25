@@ -73,7 +73,7 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
     let identite = compagnie::sauvegarde::identite(racine).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Illisible)))?;
     let nom = compagnie::installation::nom_de(racine).map_err(ErreurGoogle::from)?;
     let connu = compagnie::sauvegarde::lire_index(racine)?.and_then(|i| i.compagnie);
-    let (cie, _) = compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref())?;
+    let (cie, _) = compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref(), None)?;
     let cible = client.chemin(&cie, &[compagnie::sauvegarde::ARCHIVES, mois])?;
     // Un seul listage du dossier du mois : c'est lui qui dit quels fichiers se remplacent (et
     // non une recherche par fichier, par nom seul, qui prendrait les dossiers).

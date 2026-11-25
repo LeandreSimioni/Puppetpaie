@@ -253,8 +253,8 @@ fn prendre_la_main(ctx: &droit::contexte::Contexte, mdp: Option<&socle::secret::
     let identite = compagnie::sauvegarde::identite(&ctx.racine)?;
     let nom = compagnie::installation::nom_de(&ctx.racine)?;
     let connu = compagnie::sauvegarde::lire_index(&ctx.racine).map_err(|e| e.echec)?.and_then(|i| i.compagnie);
-    let (id, _) = compagnie::sauvegarde::dossier_de_la_compagnie(&mut client, compagnie::sauvegarde::RACINE_DRIVE, &identite, &nom, connu.as_ref()).map_err(|e| e.echec)?;
     let main = compagnie::sauvegarde::LaMain::de_ce_poste(&ctx.racine)?;
+    let (id, _) = compagnie::sauvegarde::dossier_de_la_compagnie(&mut client, compagnie::sauvegarde::RACINE_DRIVE, &identite, &nom, connu.as_ref(), Some(&main)).map_err(|e| e.echec)?;
     client.marquer(&id, &main.marque(&identite)).map_err(|e| e.echec)?;
     compagnie::sauvegarde::main_reprise(&ctx.racine).map_err(|e| e.echec)?;
     Ok(MainPrise {

@@ -632,9 +632,9 @@ pub fn marque(identite: &IdentiteSurLeDrive, quand: socle::paris::Moment, octets
 /// LE DOSSIER DE LA COMPAGNIE `identite` DANS LE DRIVE, sous la racine `racine_drive`, et sa marque telle que le Drive la
 /// rend : `connu` (celui que l'index garde) s'il est encore en place ; sinon celui que sa marque designe sous la racine
 /// (le premier, s'il y en a deux : la vue du Drive les montre tous) ; sinon un dossier neuf, nomme `nom` et marque de son
-/// identite seule (aucun poste n'en tient encore la main). Un dossier mis a la corbeille n'est plus en place : la
-/// sauvegarde suivante renvoie tout dans un dossier neuf.
-pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, identite: &IdentiteSurLeDrive, nom: &str, connu: Option<&IdDrive>) -> Result<(IdDrive, MarqueDuDossier), ErreurGoogle> {
+/// identite, et de `main` quand l'appelant la prend (la sauvegarde ; l'archivage n'en prend pas). Un dossier mis a la
+/// corbeille n'est plus en place : la sauvegarde suivante renvoie tout dans un dossier neuf.
+pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, identite: &IdentiteSurLeDrive, nom: &str, connu: Option<&IdDrive>, main: Option<&LaMain>) -> Result<(IdDrive, MarqueDuDossier), ErreurGoogle> {
     if let Some(id) = connu {
         if let Some(marque) = client.en_place(id)? {
             return Ok((id.clone(), marque));
@@ -644,7 +644,10 @@ pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, ident
     if let Some(d) = client.sous_dossiers(&racine)?.into_iter().find(|d| d.marque.as_ref().and_then(|m| m.compagnie.as_deref()) == Some(identite.texte())) {
         return Ok((d.id, d.marque.unwrap_or_default()));
     }
-    let marque = MarqueDuDossier { compagnie: Some(identite.texte().to_string()), ..MarqueDuDossier::default() };
+    let marque = match main {
+        Some(m) => m.marque(identite),
+        None => MarqueDuDossier { compagnie: Some(identite.texte().to_string()), ..MarqueDuDossier::default() },
+    };
     let id = client.creer_dossier(nom, &racine, &marque)?;
     Ok((id, marque))
 }

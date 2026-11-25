@@ -97,15 +97,14 @@ pub fn sauvegarder(
     // LA MAIN (`LaMain`) : ce poste sauvegarde s'il la tient ; personne ne la tenant, il la prend ; un autre poste la
     // tenant, ou une main qui ne se lit pas, rien ne part, et l'index le note (`SansLaMain`).
     let connu = index.as_ref().filter(|_| !tout).and_then(|i| i.compagnie.clone());
-    let trouve = match compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref()) {
+    // Un dossier neuf se cree avec la main de ce poste.
+    let la_sienne = LaMain { poste: ce_poste.clone(), depuis: socle::temps::secondes().a_la_minute() };
+    let trouve = match compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref(), Some(&la_sienne)) {
         Ok((id, marque)) => match LaMain::de(&marque) {
             Ok(Some(m)) if m.poste == ce_poste => Ok(Ok(id)),
             Ok(Some(m)) => Ok(Err(SansLaMain::AutrePoste { depuis: m.depuis })),
             Err(_) => Ok(Err(SansLaMain::Illisible)),
-            Ok(None) => {
-                let main = LaMain { poste: ce_poste.clone(), depuis: socle::temps::secondes().a_la_minute() };
-                client.marquer(&id, &main.marque(&identite)).map(|()| Ok(id))
-            }
+            Ok(None) => client.marquer(&id, &la_sienne.marque(&identite)).map(|()| Ok(id)),
         },
         Err(e) => Err(e),
     };
