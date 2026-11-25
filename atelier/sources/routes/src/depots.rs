@@ -880,7 +880,10 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<PathBuf>> {
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
-    Ok(ligne.and_then(Ligne::fichier).map(|f| documents::fichier_depose(&ctx.racine, mois, f.texte())))
+    match ligne.and_then(Ligne::fichier) {
+        Some(f) => documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.fichier(documents::FichierDuJournal::Depose.dossier(), f),
+        None => Ok(None),
+    }
 }
 
 /// `deposer` : `motdepasse` est celui DU LOGICIEL, et il ne sert qu'a prouver la presence. Il arrive par le

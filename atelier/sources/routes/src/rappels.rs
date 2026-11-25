@@ -1387,18 +1387,19 @@ pub(crate) fn mois_a_parcourir(ctx: &Contexte, aujourdhui: Jour) -> socle::echec
 fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, std::path::PathBuf)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
-    let dossier = documents::PieceDuMois::Dsn.dossier().dans(st.racine(), mois);
-    if !crate::gestes::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
+    if !crate::gestes::depart::mois_ecrit(st.racine(), mois)? {
         return Ok(None);
     }
-    let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::du_disque(&e));
+    let (sorties, dossier) = (documents::sorties_du_mois::SortiesDuMois::du_mois(st.racine(), mois)?, documents::PieceDuMois::Dsn.dossier());
     let mut fichiers = Vec::new();
-    for e in std::fs::read_dir(&dossier).map_err(disque)? {
-        let e = e.map_err(disque)?;
-        let (nom, c) = (e.file_name().to_string_lossy().into_owned(), e.path());
-        if !c.is_file() || !nom.to_lowercase().ends_with(".dsn") {
+    for n in sorties.noms(dossier)? {
+        let nom = n.texte().to_string();
+        if !nom.to_lowercase().ends_with(".dsn") {
             continue;
         }
+        let Some(c) = sorties.fichier(dossier, &n)? else {
+            continue;
+        };
         // LA MENSUELLE, PAS UN SIGNALEMENT : un signalement d'arret ou de fin ecrit apres la DSN du mois, dans le meme
         // dossier, n'est pas « la DSN a deposer » du rappel.
         let ordre = crate::etapes::ordre_de_depot(&nom, &c)?;

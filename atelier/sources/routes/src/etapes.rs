@@ -2059,17 +2059,15 @@ impl<'a> Moteur<'a> {
             return Ok(v.clone());
         }
         // Les declarations deposables (la DSN, la DPAE) se rangent dans les sorties du mois.
-        let dossier = documents::DossierDuMois::Sorties.dans(self.racine(), mois);
-        let rendu = if !dossier.is_dir() {
+        let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(self.racine(), mois)?;
+        let noms = sorties.noms(documents::DossierDuMois::Sorties)?;
+        let rendu = if noms.is_empty() {
             Deposables::default()
         } else {
             let mut tous: Vec<(String, PathBuf)> = Vec::new();
-            let rd = std::fs::read_dir(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-            for e in rd {
-                let e = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?;
-                let chemin = e.path();
-                if chemin.is_file() {
-                    tous.push((e.file_name().to_string_lossy().into_owned(), chemin));
+            for n in noms {
+                if let Some(chemin) = sorties.fichier(documents::DossierDuMois::Sorties, &n)? {
+                    tous.push((n.texte().to_string(), chemin));
                 }
             }
             // L'ORDRE NE DEPEND PAS DE L'HEURE D'UN FICHIER (deux rejeux, deux machines, le meme ordre) : il se lit

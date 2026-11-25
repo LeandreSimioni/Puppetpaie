@@ -1071,7 +1071,8 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
         // racine du mois ; elles se nomment avec les autres sortes.
         let aer = documents::PieceDuMois::Aer;
-        if crate::documents::un_nom_commence_et_finit(&aer.dossier().dans(&ctx.racine, le_mois), aer.sorte().prefixe(), ".pdf")? {
+        let noms_de_l_envoi = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, le_mois)?.noms(aer.dossier())?;
+        if noms_de_l_envoi.iter().any(|n| n.texte().starts_with(aer.sorte().prefixe()) && n.texte().ends_with(".pdf")) {
             // Avant les AEM, ou en dernier.
             let rang = match sortes.iter().position(|s| *s == mot_aem) {
                 Some(r) => r,

@@ -286,10 +286,6 @@ fn noms_du_dossier(dossier: &Path) -> R<Vec<String>> {
     }
 }
 
-/// Y a-t-il dans le dossier un nom qui commence par `prefixe` et finit par `suffixe` ? Un dossier absent n'en a pas.
-pub(crate) fn un_nom_commence_et_finit(dossier: &Path, prefixe: &str, suffixe: &str) -> R<bool> {
-    Ok(noms_du_dossier(dossier)?.iter().any(|n| n.len() >= prefixe.len() + suffixe.len() && n.starts_with(prefixe) && n.ends_with(suffixe)))
-}
 
 
 // ------------------------------------------------------------------ signature-apercu
@@ -368,12 +364,16 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
 /// `aer_manquantes` : les salaries dont France Travail a renvoye l'AER du mois, mais dont le PDF signe
 /// n'est pas dans `sorties/<mois>/envoi/`. Une archive qui ne se lit pas ne nomme personne : le releve la note.
 fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
-    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
-    let etiquette = mois.etiquette();
+    let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?;
+    let (etiquette, aer) = (mois.etiquette(), documents::PieceDuMois::Aer);
     let mut out: Vec<String> = Vec::new();
     for groupe in attestations_archivees(ctx, Some(mois), None)?.vues.values() {
         let Some(att) = groupe.first() else { continue };
-        if !att.cle.as_ref().is_some_and(|cle| envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, &sorties, cle, &etiquette).exists()) {
+        let rangee = match &att.cle {
+            Some(cle) => sorties.existe(aer.dossier(), &envoi::nom_de_la_piece(aer, cle, &etiquette)?)?,
+            None => false,
+        };
+        if !rangee {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
             let nom = match &att.cle {
                 Some(cle) => cle.to_string(),
@@ -613,9 +613,9 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, sort
         if certificats.iter().any(|(c, _, pc)| *c == cle && pc.is_some()) {
             pieces.push(envoi::chemin_de_la_piece(documents::PieceDuMois::CertificatCs, sorties, &cle, &etiq));
         }
-        let aer = envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, sorties, &cle, &etiq);
-        if aer.exists() {
-            pieces.push(aer);
+        let aer = documents::PieceDuMois::Aer;
+        if let Some(f) = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.fichier(aer.dossier(), &envoi::nom_de_la_piece(aer, &cle, &etiq)?)? {
+            pieces.push(f);
         }
         messages.push(Message {
             nom: ctx.nomme(&cle),
@@ -880,13 +880,17 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     }
     let choix = choisir(ctx, mois, &paies)?;
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, qui)?;
-    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
+    let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?;
     let etiq = c.mois.etiquette();
     let mut pieces: Vec<std::path::PathBuf> = Vec::new();
     let mut salaries: Vec<journal::Servi> = Vec::new();
     for cle in &cles {
-        let siennes: Vec<std::path::PathBuf> =
-            PIECES_A_IMPRIMER.iter().map(|sorte| envoi::chemin_de_la_piece(*sorte, &sorties, cle, &etiq)).filter(|f| f.is_file()).collect();
+        let mut siennes: Vec<std::path::PathBuf> = Vec::new();
+        for sorte in PIECES_A_IMPRIMER {
+            if let Some(f) = sorties.fichier(sorte.dossier(), &envoi::nom_de_la_piece(sorte, cle, &etiq)?)? {
+                siennes.push(f);
+            }
+        }
         salaries.push(journal::Servi {
             cle: cle.clone(),
             nom: noms.get(cle).cloned(),
@@ -900,7 +904,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
         return Err(refus(format!("Aucun document écrit pour {} : rien à imprimer.", mois.libelle(Graphie::Accentuee))));
     }
     let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.contains(cle))?;
-    let impression = crate::gestes::signature::reunir_pour_imprimer(&sorties, "documents", &etiq, &pieces)?;
+    let impression = crate::gestes::signature::reunir_pour_imprimer(&documents::DossierDuMois::Sorties.dans(&ctx.racine, mois), "documents", &etiq, &pieces)?;
     let nom_impression = NomDeFichier::du(&impression)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, mois)?;
@@ -1093,7 +1097,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
             format!("{} : aucun engagement validé, aucun document à envoyer. Rien ne part d'un engagement en saisie.", mois.libelle(Graphie::Accentuee)),
         ));
     }
-    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
+    let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?;
     let choix = choisir(ctx, mois, &paies)?;
     // LES DOCUMENTS SE FABRIQUENT ICI, pour ceux a qui ils partent : depuis les paies ecrites, a leurs numeros.
     let mut cles: Vec<IdSalarie> = Vec::new();

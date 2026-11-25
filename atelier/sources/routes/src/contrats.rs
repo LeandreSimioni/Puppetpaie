@@ -1678,15 +1678,19 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
 
 // ------------------------------------------------------------------ pieces-parties
 
-/// Le fichier d'une piece partie existe-t-il, dans `sorties/<mois>/` ou son `envoi/` ? Un NOM, jamais un chemin.
-fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &NomDeFichier) -> bool {
-    // Une piece sans mois n'est rangee dans aucun dossier de mois.
-    mois.is_some_and(|mois| etats::chemin_piece(racine, mois, fichier).is_some())
+/// Le fichier d'une piece partie est-il dans les sorties du mois ou leur envoi ? Un NOM, jamais un chemin.
+fn piece_existe(racine: &Path, mois: Mois, fichier: &NomDeFichier) -> R<bool> {
+    Ok(documents::sorties_du_mois::SortiesDuMois::du_mois(racine, mois)?.chercher(fichier)?.is_some())
 }
 
 fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &NomDeFichier) -> R<PiecePartie> {
+    // Une piece sans mois n'est rangee dans aucun dossier de mois.
+    let existe = match mois {
+        Some(m) => piece_existe(racine, m, fichier)?,
+        None => false,
+    };
     let ouvrir = match mois {
-        Some(mois) if piece_existe(racine, Some(mois), fichier) => {
+        Some(mois) if existe => {
             let charge = crate::documents::ChargePiecePartie { mois, fichier: fichier.clone() };
             Some(crate::etapes::action(Route::PiecePartie, charge, None, "Ouvrir".into()))
         }

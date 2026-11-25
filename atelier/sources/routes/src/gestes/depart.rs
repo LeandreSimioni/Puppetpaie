@@ -1032,8 +1032,29 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     let refus = |m: String| erreur(Classe::Refuse, m);
     let nom = fichier.texte();
     let mois = le_mois;
-    if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, fichier) {
+    // La piece, la ou les sorties du mois la gardent (son envoi, puis ses sorties) : en vrac, ou dans l'archive de
+    // l'exercice d'une annee close.
+    let sorties_du_mois = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, le_mois)?;
+    let trouvee = || -> R<Option<PathBuf>> {
+        match sorties_du_mois.chercher(fichier)? {
+            Some(d) => sorties_du_mois.fichier(d, fichier),
+            None => Ok(None),
+        }
+    };
+    let absente = || {
+        socle::echec::refus_avec(
+            "Ce document n'est plus dans les sorties de son mois : le journal dit qu'il est parti, le fichier a été déplacé ou effacé.",
+            socle::echec::Lieu { chemin: Some(documents::DossierDuMois::Sorties.chemin(mois).to_string()), fichier: Some(fichier.clone().into()), ..Default::default() },
+        )
+        .reclasser(Classe::Refuse)
+    };
+    if let Some(f) = trouvee()? {
         return Ok(f);
+    }
+    // RIEN NE SE REFAIT DANS UNE ANNEE CLOSE : ses pieces sont dans l'archive de son exercice ; une declaration deposee ne
+    // se regenere pas (regle 4).
+    if let documents::sorties_du_mois::SortiesDuMois::DansLExercice { .. } = sorties_du_mois {
+        return Err(absente());
     }
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
@@ -1133,7 +1154,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         for rang in envois.into_iter().rev() {
             refaire_les_documents(ctx, mois, &lignes, rang, true)?;
         }
-        return envois::etats::chemin_piece(&ctx.racine, le_mois, fichier)
+        return trouvee()?
             .ok_or_else(|| refus(format!("{} : aucun envoi de documents de {} ne l'a fait partir.", nom, mois.libelle(Graphie::Accentuee))));
     }
     // LE CONTRAT ET L'AVENANT : la derniere ligne qui les a fait partir.
@@ -1204,7 +1225,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             for p in &fait.illisibles {
                 compagnie::incidents::noter_retour_illisible(&ctx.racine, p)?;
             }
-            if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, fichier) {
+            if let Some(f) = trouvee()? {
                 return Ok(f);
             }
         }
@@ -1214,11 +1235,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         )
         .reclasser(Classe::Refuse));
     }
-    Err(socle::echec::refus_avec(
-        "Ce document n'est plus dans les sorties de son mois : le journal dit qu'il est parti, le fichier a été déplacé ou effacé.",
-        socle::echec::Lieu { chemin: Some(documents::DossierDuMois::Sorties.chemin(mois).to_string()), fichier: Some(fichier.clone().into()), ..Default::default() },
-    )
-    .reclasser(Classe::Refuse))
+    Err(absente())
 }
 
 /// Le contexte de la compagnie au jour `jour`, ce jour-la etant aujourd'hui : celui de la route qui a fabrique une piece.
