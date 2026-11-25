@@ -347,11 +347,6 @@ function toutEstEcrit() {
 
 /* ------------------------------------------- ce que d'autres écrans prennent ici */
 
-/** Le catalogue des métiers, tel que le moteur le rend (route « etat »), groupé par famille dans SON ordre. */
-function metierDe(code) {
-  return ETAT.emplois.find((m) => m.code === code) || null;
-}
-
 /** Une fiche neuve : le formulaire complet de Configuration, avec ses vérifications. Une seule façon de créer une
  *  fiche, et c'est là. Une fiche ouverte et modifiée demande d'abord, comme toute sortie d'un écran (`quitterLEcran`). */
 async function nouvelleFiche(nom) {

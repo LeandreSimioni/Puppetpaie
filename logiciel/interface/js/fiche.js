@@ -209,16 +209,14 @@ async function demanderFiche(bouton, inv, bloc) {
   try {
     // Un prénom non tapé part absent : le courriel dit alors « Bonjour, ».
     const r = await api(inv.geste.route, { ...charge, motdepasse: mdp });
-    // Partie en fond, la demande s'attend dans le bandeau ; la fiche d'un salarié neuf la dit « en cours d'envoi » à la
-    // place de son geste tant qu'elle n'est pas au bout (la route `fiche`), et la liste se relit à son bout
-    // (`relireFichesAttendues`).
+    // Partie en fond, la demande se dit « en cours d'envoi » dans le bandeau ; au bout, elle n'y est plus et se voit dans
+    // les fiches en attente, que la veille relit quand l'envoi sort du bandeau (`envoisArrives`, `relireFichesAttendues`).
     const enFond = partiEnFond(r);
-    // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
-    ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
     oublierLEcran(casesDeLaFicheOuverte());
     CLE_ACTIVE = null;
     FICHE_NEUVE = false;
-    dessinerConfig();
+    // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit, et la liste se redessine.
+    await relireLaConfiguration(true);
     if (enFond) return;
     dire(r.phrase, "envoye");
     fenetreCourrielsFictifs("fiche", repere);
@@ -247,8 +245,7 @@ function brancherFichesAttendues() {
     relever.disabled = true;
     try {
       const r = await api("fiches-relever", {});
-      ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
-      dessinerConfig();
+      await relireLaConfiguration(true);
       dire(r.phrase, undefined);
     } catch (e) { relever.disabled = false; dire(e.message, "erreur"); }
   };
@@ -258,8 +255,7 @@ function brancherFichesAttendues() {
       try {
         const r = await api("fiche-oublier-demande", { adresse: b.dataset.oublierFiche });
         // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
-        ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
-        dessinerConfig();
+        await relireLaConfiguration(true);
         dire(r.phrase, undefined);
       } catch (e) { b.disabled = false; dire(e.message, "erreur"); }
     };
@@ -270,11 +266,40 @@ function brancherFichesAttendues() {
    place, sans toucher à la fiche ouverte. */
 async function relireFichesAttendues() {
   if (!ETAT) return;
-  ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
-  const encart = document.querySelector("#config-liste .attente-fiches");
-  if (!encart) return;
-  encart.outerHTML = fichesAttenduesHtml();
+  if (!(await relireLaConfiguration())) return;
+  // Sa place est posée sous la liste des salariés même vide : la première demande partie y apparaît.
+  const place = document.getElementById("fiches-attendues");
+  if (!place) return;
+  place.innerHTML = fichesAttenduesHtml();
   brancherFichesAttendues();
+}
+
+/* LA CONFIGURATION RELUE (`configuration`), et peinte. Plusieurs lectures peuvent se croiser (un geste, le bout d'un
+   envoi que la veille voit, le guet d'une fictive) : seule la dernière demandée se pose, une réponse plus ancienne
+   arrivée après elle ne repeint rien par-dessus. `redessiner` : la liste se redessine (`dessinerConfig`) quand la
+   lecture se pose ; demandé par une lecture dépassée, il passe à celle qui se pose, quel que soit son appelant : la
+   liste finit toujours dessinée depuis la dernière configuration. Rend vrai si cette lecture s'est posée. */
+let CONFIGURATION_DEMANDEE = 0;
+let CONFIGURATION_A_REDESSINER = false;
+async function relireLaConfiguration(redessiner = false) {
+  const n = ++CONFIGURATION_DEMANDEE;
+  if (redessiner) CONFIGURATION_A_REDESSINER = true;
+  let c;
+  try {
+    c = await api("configuration", {});
+  } catch (e) {
+    // La dernière lecture a échoué : son redessin ne passe pas à une lecture suivante qui ne l'a pas demandé.
+    if (n === CONFIGURATION_DEMANDEE) CONFIGURATION_A_REDESSINER = false;
+    throw e;
+  }
+  if (n !== CONFIGURATION_DEMANDEE) return false;
+  ETAT.configuration = c;
+  peindreEtatGlobal();
+  if (CONFIGURATION_A_REDESSINER) {
+    CONFIGURATION_A_REDESSINER = false;
+    dessinerConfig();
+  }
+  return true;
 }
 
 /* UN MONTANT S'ECRIT D'UNE SEULE FACON : « 1 053,08 € ». Le
@@ -509,11 +534,6 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
         rang.scrollIntoView({ behavior: "smooth", block: "nearest" });
         setTimeout(() => rang.classList.remove("vient-d-etre-enregistree"), 2500);
       }
-    }
-    if (!fiche.cle) {
-      // Une fiche neuve : les listes des blocs de paie doivent la proposer
-      // sans qu'on recharge le mois.
-      rafraichirReferentiels();
     }
     return true;
   } catch (e) {

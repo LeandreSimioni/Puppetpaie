@@ -23,13 +23,12 @@ pub fn est_refus(classe: Option<Classe>) -> bool {
 
 // ------------------------------------------------------------------ le binaire de l'atelier
 
-/// Ce que la redirection de l'atelier tient : net-entreprises, l'Urssaf et Google (`envois::redirection`). Le reste -- la boite courriel --
-/// n'est jamais redirige.
+/// Ce que les commandes de l'atelier exigent redirige : net-entreprises et l'Urssaf (`envois::redirection`). Le reste --
+/// la boite courriel -- n'est jamais redirige.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Organisme {
     Dsn,
     Dpae,
-    Google,
 }
 
 /// Dans `moteur-atelier`, HORS COMPAGNIE FICTIVE : l'organisme n'est-il PAS redirige vers un faux serveur local ? Alors une commande qui lui
@@ -40,7 +39,6 @@ pub fn pas_redirige(cadre: &super::Cadre, organisme: Organisme) -> bool {
     let variable = match organisme {
         Organisme::Dsn => envois::redirection::VARIABLE_DSN,
         Organisme::Dpae => envois::redirection::VARIABLE_DPAE,
-        Organisme::Google => envois::redirection::VARIABLE_GOOGLE,
     };
     envois::redirection::base(variable).is_none() && !matches!(compagnie::bridage::branchement(&cadre.racine), Ok(b) if b.joue())
 }
@@ -59,7 +57,6 @@ pub fn refuser_si_pas_redirige(cadre: &super::Cadre, organisme: Organisme, quoi:
     let variable = match organisme {
         Organisme::Dsn => "PUPPETPAIE_ATELIER_DSN",
         Organisme::Dpae => "PUPPETPAIE_ATELIER_DPAE",
-        Organisme::Google => "PUPPETPAIE_ATELIER_GOOGLE",
     };
     Err(Echec {
         classe: Some(Classe::ActeReelRefuse),

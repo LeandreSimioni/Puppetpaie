@@ -5,7 +5,8 @@
  * écriture, route `enregistrer-saisie`). Les cases ouvertes et leur place, la route les dit pour chaque carte (`carte`
  * de sa paie dans l'aperçu : `cases`, chacune `base`, `avance`, `imprevu` ou `rendue`) ; avant tout aperçu, celles de
  * toute carte de sa nature (`ouverte` : « toujours »). Ce qu'offrent les cases qui se choisissent : `choix` de l'état, de
- * sa nature, d'une carte neuve et de sa paie, sous la clé de leur case ; ce que le moteur prend pour une case vide :
+ * sa nature, de l'écran du mois (`nouvelle_carte` de la route saisie, relu quand on ouvre la case) et de sa paie, sous la
+ * clé de leur case ; ce que le moteur prend pour une case vide :
  * `prerempli`. Sous les lignes, ce que l'aperçu dit du contrat ; puis sa paie, le montant qu'on vise (route `ajuster`),
  * son état (`etat-par-engagement`) et ses gestes.
  *
@@ -30,13 +31,25 @@ function rendueDe(div) {
 }
 
 /** CE QUE LES CASES DE LA CARTE QUI SE CHOISISSENT OFFRENT, sous la clé de leur case, tel que les routes le rendent :
- *  `choix` de l'état (les fiches, les métiers sous leur famille, les établissements, la transaction, le type d'un
- *  préavis), de sa nature (ses motifs de recours), d'une carte neuve (`nouvelle_carte` de la route saisie : la nature),
- *  et de sa paie (le motif de la fin, les modèles de contrat). */
+ *  `choix` de l'état (la transaction, le type d'un préavis), de sa nature (ses motifs de recours), de l'écran du mois
+ *  (`nouvelle_carte` de la route saisie : les salariés, les spectacles, les métiers sous leur famille, les
+ *  établissements ; la nature quand elle se choisit), et de sa paie (le motif de la fin, les modèles de contrat). */
 function choixDeLaCarte(div) {
   const n = natureDe(div._carte.nature);
   const r = rendueDe(div);
   return { ...ETAT.choix, ...(n ? n.choix : {}), ...NOUVELLE_CARTE.choix, ...(r ? r.choix : {}) };
+}
+
+/** UNE CASE QUI SE CHOISIT DANS CE QUE REND L'ÉCRAN DU MOIS (`nouvelle_carte.choix` de la route saisie) relit cette
+ *  route quand on l'ouvre, et montre la liste qu'elle rend : une fiche créée depuis s'y trouve. */
+async function relireLesChoix(div, x, cle) {
+  const mois = MOIS_AFFICHE;
+  let r;
+  try { r = await api("saisie", { mois }); } catch (e) { dire(e.message, "erreur"); return; }
+  if (mois !== MOIS_AFFICHE || !x.isConnected) return;
+  NOUVELLE_CARTE = r.nouvelle_carte;
+  const rendue = rendueDe(div);
+  x.innerHTML = optionsDuChoix(div._carte[cle], NOUVELLE_CARTE.choix[cle], rendue ? rendue.prerempli[cle] : null);
 }
 
 /** Ce que les choix d'une ligne de paie offrent à toutes les lignes de la carte : les rubriques que la carte propose
@@ -218,6 +231,10 @@ function dessinerLaCarte(div) {
     <div class="etats"></div>`;
   brancherLesCases(div, { passes: (mois, salarie) => api("contrats-passes", { mois, salarie }) });
   brancherLesBulles(div, bullesOuvertes(div));
+  div.querySelectorAll(".case[data-cle] > select[data-case]").forEach((x) => {
+    const cle = x.parentElement.dataset.cle;
+    if (cle in NOUVELLE_CARTE.choix && !(r && cle in r.choix)) x.onfocus = () => relireLesChoix(div, x, cle);
+  });
   const avance = div.querySelector(".e-avance");
   if (avance) avance.ontoggle = () => { div._avance = avance.open; };
   div.onchange = (ev) => caseChangee(div, ev.target);
@@ -720,13 +737,6 @@ function poserLesCartes(r) {
     const div = carteDEngagement(e, r.identites[i]);
     div._aCompleter = r.a_completer[i];
     cible.appendChild(div);
-  });
-}
-
-/** Les listes des cartes ouvertes, refaites sur l'ETAT relu (une fiche créée depuis la configuration). */
-function rafraichirReferentiels() {
-  document.querySelectorAll("#engagements .engagement").forEach((div) => {
-    if (!carteFermee(div) && !div.contains(document.activeElement)) dessinerCarte(div);
   });
 }
 

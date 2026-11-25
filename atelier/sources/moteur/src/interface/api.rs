@@ -12,7 +12,7 @@ use socle::echec::Classe;
 use super::veille::Veille;
 use routes::etat_garde::{ACote, FileDesEtats};
 use routes::catalogue::Route;
-use routes::enveloppe::{Charge, Reponse};
+use routes::enveloppe::{Charge, LacherLaCompagnie, Reponse};
 
 /// Les refus qui ne sont pas des defauts du logiciel : une saisie en cours, un mot de passe mal tape, un mois sans
 /// paie, et ceux que la page traite elle-meme (une fiche refusee, un depot deja fait...). On ne les compte pas en incidents.
@@ -43,10 +43,10 @@ pub fn route(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
     // LE FIL (`diagnostic`) : une route que la page n'a pas demandee (la veille, le filet, le fond) s'y note ici ; celle de
     // la page se note dans `repondre`, avec ce que la page a fait avant.
     if DANS_LA_PAGE.with(std::cell::Cell::get) {
-        return route_seule(racine, nom, charge);
+        return route_seule(racine, nom, charge, None);
     }
     let debut = std::time::Instant::now();
-    let r = route_seule(racine, nom, charge);
+    let r = route_seule(racine, nom, charge, None);
     compagnie::diagnostic::noter_route(racine, compagnie::diagnostic::OrigineDeLAppel::Fond, nom.nom(), routes::est_une_ecriture(nom), charge, debut.elapsed(), issue(&r));
     r
 }
@@ -64,8 +64,9 @@ thread_local! {
     static DANS_LA_PAGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-fn route_seule(racine: &Path, nom: Route, charge: &Charge) -> Reponse {
-    let o = routes::enveloppe::Options::de_la_compagnie(racine);
+/// `lacher` : ce par quoi la fenetre lache la compagnie, quand la route remplace son dossier (`LacherLaCompagnie`).
+fn route_seule(racine: &Path, nom: Route, charge: &Charge, lacher: Option<LacherLaCompagnie>) -> Reponse {
+    let o = routes::enveloppe::Options { lacher, ..routes::enveloppe::Options::de_la_compagnie(racine) };
     // LE BANC D'ESSAI (l'atelier seulement) : chaque route que la fenetre sert -- la page, la veille, le fil de fond --
     // passe par l'enregistreur, qui garde celles qu'il enregistre dans le scenario, avec leur charge et leur instant
     // (`scenario::Enregistreur::route`).
@@ -92,7 +93,7 @@ fn signalements_en_fond(racine: &Path) {
 /// mois (`mois` : le dernier etat connu, tout de suite, meme perime -- marque `perime`, et refait en fond ; `attendre` :
 /// l'etat frais) et ce que la page lit en s'ouvrant (`demarrage` : l'etat garde de l'ouverture, et, lus a cote, la veille
 /// de la fenetre, la mise a jour et les signalements). Sans la fenetre, la porte du moteur les sert (`etat_garde::route`).
-fn traiter(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, etats: Option<&FileDesEtats>) -> Reponse {
+fn traiter(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, etats: Option<&FileDesEtats>, lacher: Option<LacherLaCompagnie>) -> Reponse {
     if let Some(f) = etats {
         if nom == Route::Mois {
             return Reponse::de(nom, f.ecran(charge));
@@ -101,7 +102,8 @@ fn traiter(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, 
             return Reponse::de(nom, f.demarrage(charge, || ACote::de(racine, veille.map(Veille::etat))));
         }
     }
-    let r = route(racine, nom, charge);
+    // Dans la page, la route ne se note pas une a une dans le fil (`route`) : `repondre` la note.
+    let r = route_seule(racine, nom, charge, lacher);
     if nom == Route::SignalementEnvoyer && r.est_rendue() {
         signalements_en_fond(racine);
     }
@@ -124,12 +126,13 @@ struct RefusDeLaPage<'a> {
     refus: Option<&'a routes::enveloppe::APart>,
 }
 
-/// La reponse a `/api/<nom>`, dans l'enveloppe des routes.
-pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, etats: Option<&FileDesEtats>) -> Reponse {
+/// La reponse a `/api/<nom>`, dans l'enveloppe des routes. `lacher` : ce par quoi la fenetre lache la compagnie ouverte,
+/// passe a la route par ses options (`LacherLaCompagnie`).
+pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veille>, etats: Option<&FileDesEtats>, lacher: Option<LacherLaCompagnie>) -> Reponse {
     let debut = std::time::Instant::now();
     let debut_ms = socle::temps::maintenant_ms();
     let avant = DANS_LA_PAGE.with(|d| d.replace(true));
-    let rendu = traiter(racine, nom, charge, veille, etats);
+    let rendu = traiter(racine, nom, charge, veille, etats, lacher);
     DANS_LA_PAGE.with(|d| d.set(avant));
     let duree = debut.elapsed();
     // LE FIL : la route de la page, sa charge mise en forme, sa duree, son issue. Une erreur de la page (`incident-navigateur`)

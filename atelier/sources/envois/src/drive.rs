@@ -48,15 +48,18 @@ struct FichierDrive {
 }
 impl socle::forme::ReponseDUnTiers for FichierDrive {}
 
-/// CE QUE DRIVE REND D'UN DOSSIER QU'ON DEMANDE S'IL EST EN PLACE (`Drive::en_place`, `fields=trashed`) : s'il est a la
-/// corbeille, lui ou un dossier qui le porte (« Whether the file was trashed, either explicitly or from a trashed parent
-/// folder » : `atelier/reference/sources/google-drive-api/google-drive-api-corbeille-20261124.txt`, « Determine a trashed
-/// file's properties »). Le champ est demande : il est requis, et une reponse qui ne le dit pas ne se lit pas.
+/// CE QUE DRIVE REND D'UN DOSSIER QU'ON DEMANDE S'IL EST EN PLACE (`Drive::en_place`, `fields=trashed,appProperties`) :
+/// s'il est a la corbeille, lui ou un dossier qui le porte (« Whether the file was trashed, either explicitly or from a
+/// trashed parent folder » : `atelier/reference/sources/google-drive-api/google-drive-api-corbeille-20261124.txt`,
+/// « Determine a trashed file's properties »), et sa marque. `trashed` est demande : il est requis, et une reponse qui ne
+/// le dit pas ne se lit pas ; la marque absente : il n'en porte aucune.
 #[derive(Debug, Deserialize)]
-struct EtatALaCorbeille {
+struct EtatDuDossier {
     trashed: bool,
+    #[serde(rename = "appProperties", default)]
+    marque: Option<MarqueDuDossier>,
 }
-impl socle::forme::ReponseDUnTiers for EtatALaCorbeille {}
+impl socle::forme::ReponseDUnTiers for EtatDuDossier {}
 
 /// LA MARQUE QUE PUPPETPAIE POSE SUR LE DOSSIER D'UNE COMPAGNIE DANS LE DRIVE, ses proprietes privees a l'application
 /// (`appProperties` : « To add properties restricted to your app, use the appProperties field of the files resource »,
@@ -75,8 +78,22 @@ pub struct MarqueDuDossier {
     /// Ce que la compagnie sauvegarde pese, en octets, a cette sauvegarde.
     #[serde(rename = "puppetpaie_octets", default, skip_serializing_if = "Option::is_none")]
     pub octets: Option<String>,
+    /// Le poste qui tient la main sur ce dossier (`compagnie::sauvegarde::PosteSurLeDrive`, ecrit) : lui seul y sauvegarde.
+    #[serde(rename = "puppetpaie_poste", default, skip_serializing_if = "Option::is_none")]
+    pub poste: Option<String>,
+    /// Depuis quand ce poste la tient (`AAAA-MM-JJTHH:MM`, heure de Paris).
+    #[serde(rename = "puppetpaie_main", default, skip_serializing_if = "Option::is_none")]
+    pub main: Option<String>,
 }
 impl socle::forme::ReponseDUnTiers for MarqueDuDossier {}
+
+/// UN DOSSIER DEMANDE PAR SON IDENTIFIANT, tel que `Drive::en_place` le rend : en place, et sa marque (`None` : il n'en
+/// porte aucune) ; ou retire (a la corbeille, lui ou un dossier qui le porte, ou disparu).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DossierEnPlace {
+    EnPlace(Option<MarqueDuDossier>),
+    Retire,
+}
 
 /// UN SOUS-DOSSIER, tel que `Drive::sous_dossiers` le rend : son nom, son identifiant, sa marque (`None` : il n'en porte
 /// aucune).
@@ -483,8 +500,9 @@ pub trait Drive {
     fn creer_dossier(&mut self, nom: &str, parent: &IdDrive, marque: &MarqueDuDossier) -> Result<IdDrive, ErreurGoogle>;
     /// Pose sur le dossier `id` ce que `marque` dit ; une cle qu'elle ne dit pas reste telle quelle.
     fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle>;
-    /// Le dossier `id` est-il en place : il existe, et ni lui ni un dossier qui le porte n'est a la corbeille ?
-    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle>;
+    /// Le dossier `id` est-il en place : il existe, et ni lui ni un dossier qui le porte n'est a la corbeille ? En place,
+    /// avec sa marque ; sinon retire (`DossierEnPlace`).
+    fn en_place(&mut self, id: &IdDrive) -> Result<DossierEnPlace, ErreurGoogle>;
 }
 
 /// LA CORBEILLE DU DRIVE, A PART DU CLIENT : un `Client` (la sauvegarde, l'archivage, la restauration, la vue) n'a pas de
@@ -836,13 +854,14 @@ impl Drive for Client {
         self.changer(id, &DossierAChanger { marque: Some(marque), trashed: None })
     }
 
-    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle> {
+    fn en_place(&mut self, id: &IdDrive) -> Result<DossierEnPlace, ErreurGoogle> {
         // `trashed` : « Whether the file was trashed, either explicitly or from a trashed parent folder »
         // (`google-drive-api-corbeille-20261124.txt`, « Determine a trashed file's properties »). Un 404 : il n'existe plus.
-        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "trashed".into())])));
-        match self.appel::<EtatALaCorbeille>(&url, None, None, None) {
-            Ok(f) => Ok(!f.trashed),
-            Err(e) if e.statut == Some(ureq::http::StatusCode::NOT_FOUND) => Ok(false),
+        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "trashed,appProperties".into())])));
+        match self.appel::<EtatDuDossier>(&url, None, None, None) {
+            Ok(f) if f.trashed => Ok(DossierEnPlace::Retire),
+            Ok(f) => Ok(DossierEnPlace::EnPlace(f.marque)),
+            Err(e) if e.statut == Some(ureq::http::StatusCode::NOT_FOUND) => Ok(DossierEnPlace::Retire),
             Err(e) => Err(e),
         }
     }

@@ -42,13 +42,6 @@ let IMPREVUS = null;        // la dernière lecture `imprevus` du mois affiché
 let FINS = null;            // la dernière lecture `fins-de-contrat` du mois affiché
 let NOMENCLATURES_IMPREVUS = null;   // la porte (`porte`) : celle de la dernière lecture
 
-/** Le nom d'un salarié, tel que la saisie le montre ; sa clé à défaut. */
-function nomDuSalarie(cle) {
-  // La saisie écrit parfois le nom tel qu'on l'a tapé (« Audinot ») là où la fiche a sa clé (« AUDINOT ») : même personne.
-  const s = ETAT.salaries.find((x) => String(x.cle).toUpperCase() === String(cle).toUpperCase());
-  return s ? s.libelle : String(cle);
-}
-
 /* ------------------------------------------------------ lire, et peindre */
 
 /** Les imprévus et les fins du mois, lus ensemble : la colonne et les cartes en dépendent. */
@@ -104,8 +97,7 @@ function peindreDus() {
   dus.forEach((x, k) => {
     const r = cible.querySelector(`[data-du="${k}"]`);
     if (x.lecture === "a_corriger") return;
-    const titreDeLaBoite = x.lecture ? nomDuSalarie(x.salarie) : x.qui;
-    brancherLesGestes(r.querySelector(".du-gestes"), x.gestes, { titre: titreDeLaBoite }, async (rendu) => {
+    brancherLesGestes(r.querySelector(".du-gestes"), x.gestes, { titre: x.qui }, async (rendu) => {
       await rafraichirImprevus();
       // Des papiers écrits se remettent en main propre : leur dossier s'ouvre (`dossier`, que la route rend).
       if (rendu && rendu.dossier) await ouvrirEtDire(rendu.dossier, rendu.phrase);
@@ -348,7 +340,7 @@ function gestesImprevu(i) {
 
 function brancherGestesImprevu(r, i, apres) {
   brancherLesGestes(r.querySelector(".imprevu-gestes"), i.gestes,
-    { titre: nomDuSalarie(i.salarie), dit: [i.quoi, i.periode].filter(Boolean).join(", ") }, apres);
+    { titre: i.qui, dit: [i.quoi, i.periode].filter(Boolean).join(", ") }, apres);
 }
 
 /** D'où vient la boîte : la carte (`{div}`) ou le dossier (`{salarie}`). */

@@ -159,7 +159,7 @@ async function fenetreCourrielsFictifs(genre, repere) {
         retours = r.courriels.filter((m) => m.contresigne && m.a === premier.a);
       } else if (Date.now() - depuis > 21000) {
         const r = await api("fiches-relever", {});
-        ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
+        await relireLaConfiguration();
         if (r.recues.length) fiche = r.recues.map((x) => x.nom).join(", ");
         // Déjà relevée par la veille : plus rien n'attend, la fiche est là.
         else if (!r.attendues) fiche = premier.a;

@@ -950,7 +950,7 @@ impl Fenetre {
     }
 
     /// Une requete de la fenetre.
-    pub fn traiter(&self, r: Requete) -> Reponse {
+    pub fn traiter(self: &Arc<Self>, r: Requete) -> Reponse {
         let texte = |code: u16| Reponse::nouvelle(code, "text/plain; charset=utf-8", Vec::new());
         if r.methode == "POST" {
             // Un refus du serveur, avant toute route ou tout geste, se dit comme le refus d'une route (`refus`), que la page
@@ -1049,12 +1049,35 @@ impl Fenetre {
                     match routes::envois_en_fond::de_la_compagnie(&racine) {
                         Ok(envois) => {
                             let (r, c) = (racine.clone(), charge.clone());
-                            envois.servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref()))
+                            envois.servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref(), None))
                         }
                         Err(e) => RouteReponse::de(nom, Err(e)),
                     }
                 } else {
-                    api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref())
+                    // UNE ROUTE QUI REMPLACE LE DOSSIER DE LA COMPAGNIE OUVERTE (`drive-prendre-la-main`) la fait lacher
+                    // par la fenetre (sa veille, sa file des etats, ses envois, son journal), juste avant
+                    // (`LacherLaCompagnie`) ; la fenetre la rouvre ensuite, telle qu'elle est alors.
+                    let lachee = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let lacher = veille.is_some().then(|| {
+                        let (fenetre, l) = (Arc::clone(self), Arc::clone(&lachee));
+                        routes::enveloppe::LacherLaCompagnie::nouveau(move |r| fenetre.lacher(r).map(|()| l.store(true, std::sync::atomic::Ordering::SeqCst)))
+                    });
+                    let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref(), lacher);
+                    // CE QUE LA REPONSE DIT SUIVRE (`ensuite` : la sauvegarde du Drive lie), la veille le fait, sur son fil :
+                    // celle de la compagnie rouverte, si la route l'a fait lacher.
+                    if lachee.load(std::sync::atomic::Ordering::SeqCst) {
+                        // Le journal de la fenetre redevient celui de la compagnie (lacher l'avait laisse), sans le recommencer.
+                        *tenu(&self.journal) = Some(JOURNAL_INTERFACE.dans(&racine));
+                        if let Err(e) = self.ouvrir(racine.clone()) {
+                            self.ecrire(&format!("La compagnie ne se rouvre pas apres {} : {}\n", nom, e.en_lignes()));
+                        }
+                        if let Phase::Ouverte { veille, .. } = self.phase() {
+                            veille.faire_suivre(&rendu);
+                        }
+                    } else if let Some(v) = &veille {
+                        v.faire_suivre(&rendu);
+                    }
+                    rendu
                 };
                 self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
                 return Reponse::json(200, &rendu);

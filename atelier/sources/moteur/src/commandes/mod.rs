@@ -1,5 +1,5 @@
 //! La ligne de commande de ce qui n'est pas un geste de l'ecran, `moteur COMMANDE ...` : le coffre (la seance, et les
-//! secrets tapes sans echo, que l'entree standard ne porte jamais), la restauration d'un poste neuf depuis le Drive, et
+//! secrets tapes sans echo, que l'entree standard ne porte jamais), la reprise d'une compagnie du Drive (la route `drive-reprendre`, sous un nom de commande), et
 //! l'enquete des depots (`depots`). `ligne_de_commande` aiguille toute la ligne de commande du moteur ; le binaire de
 //! l'atelier (`moteur-atelier`, la crate `atelier`) la reprend et y donne ses commandes, qui passent par le meme cadre. Un geste de l'ecran se fait par sa route : `moteur routes` les dit, `moteur route` en sert une
 //! (`--texte` : ses phrases).
@@ -111,7 +111,7 @@ fn commandes(de_l_atelier: Vec<Commande>) -> Vec<Commande> {
         Commande { nom: "coffre", aide: "les mots de passe des organismes, scelles sur le disque (ce qui est pose)", cachee: false, spec: &coffre::SPEC, executer: coffre::executer },
         // L'enquete de l'editeur sur le poste d'une compagnie : elle marche, elle ne figure pas dans l'aide.
         Commande { nom: "depots", aide: "lister les depots vus par net-entreprises (enquete)", cachee: true, spec: &depots::SPEC, executer: depots::executer },
-        Commande { nom: "restaurer", aide: "redescendre le dossier prive du Drive (poste neuf, ordinateur perdu)", cachee: false, spec: &restaurer::SPEC, executer: restaurer::executer },
+        Commande { nom: "restaurer", aide: "reprendre une compagnie du Drive sur ce poste : la route drive-reprendre (poste neuf, ordinateur perdu)", cachee: false, spec: &restaurer::SPEC, executer: restaurer::executer },
     ];
     v.extend(de_l_atelier);
     v

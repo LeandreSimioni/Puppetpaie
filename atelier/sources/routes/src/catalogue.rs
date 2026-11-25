@@ -118,6 +118,7 @@ routes! {
         GoogleOublier = "google-oublier",
         DriveEtat = "drive-etat",
         DriveSupprimer = "drive-supprimer",
+        DrivePrendreLaMain = "drive-prendre-la-main",
         DriveCompagnies = "drive-compagnies",
         DriveLier = "drive-lier",
         DriveReprendre = "drive-reprendre",
@@ -440,7 +441,7 @@ pub enum Forme {
     /// de la liste.
     PlusieursChoix(ListeDeChoix),
     /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees, sous la cle de la case : les salaries,
-    /// les spectacles, les metiers et les etablissements d'une carte (`choix` de la route etat), le genre d'un avantage en
+    /// les spectacles, les metiers et les etablissements d'une carte (`nouvelle_carte.choix` de la route saisie), le genre d'un avantage en
     /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
     /// `propose`) ; l'ecran la fait choisir.
     ChoixRendu,
@@ -599,7 +600,7 @@ impl Forme {
 
     /// LA FORME D'UNE CASE DE LA CARTE, tiree du type de son champ (`engagement::saisie::Carte`) : un jour se choisit
     /// dans le calendrier, un nombre se tape, un oui-non se coche, une fiche (salarie, spectacle, metier, etablissement)
-    /// se choisit dans ce que la route etat rend (`choix`) ; les lignes sont des lignes (`rubriques[].cles` de la route
+    /// se choisit dans ce que la route saisie rend (`nouvelle_carte.choix`) ; les lignes sont des lignes (`rubriques[].cles` de la route
     /// etat) ; une autre valeur composee (les conges, le preavis) est un objet. Chaque champ y est classe : un
     /// champ neuf de la carte ne compile pas tant que sa forme n'est pas dite. C'est la seule declaration de la forme d'une
     /// case de la carte.

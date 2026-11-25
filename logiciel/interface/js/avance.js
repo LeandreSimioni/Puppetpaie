@@ -863,6 +863,8 @@ function partiEnFond(r) {
   if (!r || !r.en_fond) return false;
   fermerBoite();
   dire(r.phrase);
+  // Vu en cours dès sa réponse : s'il est au bout avant que le bandeau le lise, sa place se repeint quand même.
+  ENVOIS_VUS_EN_COURS.add(r.en_fond);
   suivreVeille();
   // Le cadre sous le mois (`etat-du-mois`) dit l'envoi en cours.
   rafraichirActions();
@@ -892,8 +894,14 @@ async function faireLeGeste(g, entete, apres, bouton) {
     if (partiEnFond(r)) { rallumer(); return ENREGISTRE_PUIS_SUITE; }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
+    // La compagnie s'est fermée le temps du geste et revient changée (`apres` : `rouvrir`, routes/src/ecran.rs) : la
+    // page la relit entière.
+    if (r.apres === "rouvrir") { location.reload(); return ENREGISTRE_PUIS_SUITE; }
     await apres(r);
     rallumer();
+    // La sauvegarde que la route dit suivre (`ensuite`, sa route et sa charge), la fenêtre la fait par sa veille : le
+    // bandeau la suit.
+    if (r.ensuite) suivreVeille();
     // Ce que la route dit qui suit (`suite` : le dépôt d'un signalement écrit) s'ouvre ensuite.
     if (r.suite) ouvrirGeste(r.suite);
     // Écrit, et la boîte déjà fermée par lui : quitter ne la referme pas (elle peut être la suite).

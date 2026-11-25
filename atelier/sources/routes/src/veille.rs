@@ -2,9 +2,54 @@
 //! (`js/veille.js`) et que l'etat garde le rend au demarrage (`etat_garde::ACote`), et les phrases du bandeau
 //! (`DitDuBandeau`). La veille qui tourne (ses tours, sa boucle) : `interface::veille`.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use crate::catalogue::Route;
+use crate::enveloppe::{Charge, Refus, Reponse};
 use crate::gestes::ouverture::Trace;
+
+/// LA SAUVEGARDE QUI SUIT UN GESTE (le Drive lie : `google-autoriser`), que la reponse dit en `ensuite` : sa route et sa
+/// charge, les memes pour qui les lit. En ligne de commande, l'appelant l'appelle ; la fenetre la fait par sa veille, sur
+/// son fil (`interface::veille::Veille::faire_suivre`), et le bandeau en suit l'avancement. Une sauvegarde seule
+/// (`sauvegarde-maintenant`), sans relevé. Pas un geste qu'on clique : celui-la, une reponse le rend en `suite`
+/// (`etapes::Action`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SauvegardeQuiSuit {
+    route: Route,
+    charge: crate::SansCharge,
+}
+
+impl SauvegardeQuiSuit {
+    /// La sauvegarde du Drive, seule.
+    pub(crate) fn du_drive() -> SauvegardeQuiSuit {
+        SauvegardeQuiSuit { route: Route::SauvegardeMaintenant, charge: crate::SansCharge {} }
+    }
+
+    /// Celle que la reponse `r` dit suivre (`ensuite`) ; aucune quand elle n'en dit pas, ou qu'elle a refuse. Une cle
+    /// `ensuite` qui n'a pas sa forme est un defaut du logiciel : le refus le dit.
+    pub fn dite_par(r: &Reponse) -> Result<Option<SauvegardeQuiSuit>, Refus> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Ensuite {
+            ensuite: Option<SauvegardeQuiSuit>,
+        }
+        if !r.est_rendue() {
+            return Ok(None);
+        }
+        r.lire_cles::<Ensuite>(&["ensuite"]).map(|e| e.ensuite)
+    }
+
+    /// Sa route.
+    pub fn route(&self) -> Route {
+        self.route
+    }
+
+    /// Sa charge, telle que la route la lit.
+    pub fn charge(&self) -> socle::echec::R<Charge> {
+        Charge::de_forme(&self.charge)
+    }
+}
 
 /// L'ETAT DE LA VEILLE, tel que le bandeau le dessine (`js/veille.js`) : ce qu'il dit (`dit`), le passage en cours, la
 /// boucle (`minutes`), la trace du dernier passage (`dernier`), et ce qui l'a empeche (`erreur`).
@@ -84,6 +129,23 @@ pub fn souci_de_la_sauvegarde(racine: &std::path::Path, d: Option<&Trace>) -> so
     })
 }
 
+/// LE GESTE « PRENDRE LA MAIN » QUE LE BANDEAU PROPOSE a cote de ce qui persiste de la sauvegarde, quand le dernier
+/// passage a trouve la main sur le Drive ailleurs (`compagnie::sauvegarde::SansLaMain`) : celui de l'ecran du Drive
+/// (`drive::geste_prendre_la_main`), dessine par la page comme tout geste rendu (`js/avance.js`, `faireLeGeste`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(transparent)]
+pub struct PrendreLaMain(crate::imprevus::GesteDeRoute<crate::SansCharge, crate::SansCharge, crate::SansCharge>);
+
+/// LE GESTE QUI PREND LA MAIN, MAINTENANT : quand l'index de la sauvegarde dit la main ailleurs, et que le Drive est
+/// encore lie (`ouverture::acces_pose`) ; aucun sinon. `Err` : le coffre ou l'index ne se lit pas.
+pub fn main_a_prendre(racine: &std::path::Path) -> socle::echec::R<Option<PrendreLaMain>> {
+    let ailleurs = compagnie::sauvegarde::lire_index(racine).map_err(|e| e.echec)?.is_some_and(|i| i.sans_la_main.is_some());
+    if !ailleurs || !crate::gestes::ouverture::acces_pose(racine, "google")? {
+        return Ok(None);
+    }
+    Ok(Some(PrendreLaMain(crate::drive::geste_prendre_la_main(crate::SansCharge {}, crate::drive::demande_de_la_main(racine)?, true))))
+}
+
 /// CE QUE LE BANDEAU DIT (`dit` de l'etat de la veille) : l'etat en une phrase, un service muet, ce qu'il y a a poser et
 /// ou, les retours nouveaux, ce que l'horloge d'une fictive a fait, et ce que dit un passage en cours ou fini. La page
 /// n'en ecrit rien.
@@ -95,6 +157,9 @@ pub struct DitDuBandeau {
     a_poser: Vec<APoser>,
     /// Ce qui persiste de la sauvegarde, vrai maintenant (`souci_de_la_sauvegarde`).
     sauvegarde_souci: Option<String>,
+    /// Le geste qui prend la main sur le Drive, quand la sauvegarde l'a trouvee ailleurs (`main_a_prendre`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prendre_la_main: Option<PrendreLaMain>,
     /// Les envois partis en fond (`envois_en_fond::EnvoisEnFond::dits`) : en cours, au bout, ou echoues avec le geste
     /// qui les refait.
     envois: Vec<crate::envois_en_fond::EnvoiDit>,
@@ -115,6 +180,7 @@ pub fn dit_du_bandeau(
     d: Option<&Trace>,
     a_poser: Vec<APoser>,
     sauvegarde_souci: Option<String>,
+    prendre_la_main: Option<PrendreLaMain>,
     envois: Vec<crate::envois_en_fond::EnvoiDit>,
     fermeture: bool,
     dans: Option<std::time::Duration>,
@@ -142,11 +208,15 @@ pub fn dit_du_bandeau(
     };
     let nouveaux = d.map(|t| t.nouveaux).filter(|n| *n > 0);
     let horloge = d.map(|t| t.horloge.len()).filter(|n| fictive && *n > 0);
+    // CE QUI PERSISTE DE LA SAUVEGARDE, ET LE GESTE QUI PREND LA MAIN, se disent ensemble, apres un passage qui a joint
+    // le reseau : sans passage, ou hors connexion, le bandeau dit la connexion, et ni l'un ni l'autre.
+    let joint = d.is_some() && !hors_ligne;
     DitDuBandeau {
         etat,
         muets,
         a_poser,
-        sauvegarde_souci,
+        sauvegarde_souci: sauvegarde_souci.filter(|_| joint),
+        prendre_la_main: prendre_la_main.filter(|_| joint),
         envois,
         fermeture: fermeture.then_some("PuppetPaie se fermera dès que l'envoi en cours sera parti."),
         retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),
