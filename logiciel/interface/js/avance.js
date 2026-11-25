@@ -446,17 +446,26 @@ const LARGEUR_DE_COLONNE = {
  *  résumé, ouverte une rangée par jour sous les colonnes de la ligne, chaque chose sous la colonne de sa clé (la date
  *  sous les jours, la quantité et le lieu en cases, l'unité sous la rubrique, le taux, le montant), puis son total.
  *  `ouverte` : la flèche l'était (le seul confort de la page : elle ne décide rien). `colonnes` : celles des lignes ;
- *  `bouts` : les cellules après elles (la croix, le « i »). */
-function joursDeLaLigne(p, colonnes, bouts, ouverte, unite) {
+ *  `bouts` : les cellules après elles (la croix, le « i »). Comme toute case de la ligne, une case d'un jour montre ce
+ *  que la ligne écrite dit de ce jour (`l`, sa quantité, son lieu) ; ce qu'elle n'en dit pas encore (une ligne écrite
+ *  avant), ce que la route propose (`valeur`). */
+function joursDeLaLigne(p, l, colonnes, bouts, ouverte, unite) {
   const vides = "<span></span>".repeat(bouts);
+  const ecrit = (iso) => [...(l.dates || []), ...(l.planning || [])].find((d) => jourDe(d) === iso);
+  const dit = (j, cle) => {
+    const e = ecrit(j.jour);
+    if (e === undefined) return j[cle].valeur;
+    const v = typeof e === "object" ? e[cle] : undefined;
+    return v != null ? v : cle === "quantite" ? j[cle].valeur : null;
+  };
   const sous = (col, j) => {
     if (col.forme === "jours") return `<span class="colonne">${echapper(j.dates)}</span>`;
     if (col.cle === "quantite" && j.quantite) {
-      return `<span class="colonne">${caseDeForme(j.quantite.forme, j.quantite.valeur, { unite })
+      return `<span class="colonne">${caseDeForme(j.quantite.forme, dit(j, "quantite"), { unite })
         .replace("data-case", `data-case data-jour="${echapper(j.jour)}" data-jour-cle="quantite"`)}</span>`;
     }
     if (col.cle === "lieu" && j.lieu) {
-      return `<span class="colonne">${caseDeForme(j.lieu.forme, j.lieu.valeur, { prerempli: j.lieu.prerempli })
+      return `<span class="colonne">${caseDeForme(j.lieu.forme, dit(j, "lieu"), { prerempli: j.lieu.prerempli })
         .replace("data-case", `data-case data-jour="${echapper(j.jour)}" data-jour-cle="lieu"`)}</span>`;
     }
     if (col.cle === "rubrique" && j.rubrique) return `<span class="colonne">${echapper(j.rubrique)}</span>`;
@@ -544,7 +553,7 @@ function lignesDePaie(lignes, choixDe, o) {
       ${colonnes.map(cellule).join("")}
       <button type="button" class="lien retirer-ligne" title="retirer cette ligne" aria-label="retirer cette ligne">&times;</button>
       ${porte}
-      ${rendue && rendue.par_jour ? joursDeLaLigne(rendue.par_jour, colonnes, avecBulles ? 2 : 1, !!(o.parJour && o.parJour.has(i)), r ? r.quantite : null) : ""}
+      ${rendue && rendue.par_jour ? joursDeLaLigne(rendue.par_jour, l, colonnes, avecBulles ? 2 : 1, !!(o.parJour && o.parJour.has(i)), r ? r.quantite : null) : ""}
       ${sous.length ? `<div class="ligne-sous">${sous.join("")}</div>` : ""}
       ${bulle ? bulleDeLaLigne(bulle, ouverte) : ""}
     </div>`;
