@@ -407,10 +407,9 @@ async function apresLImport(r) {
   const reprendre = document.getElementById("import-reprendre");
   if (reprendre) brancherLesGestes(reprendre, r.gestes, {}, apresLImport);
   if (!r.ecrit) return;
-  // Les fiches créées doivent apparaître dans Salariés et Spectacles, et
-  // dans les déroulants de la saisie, sans recharger la page.
+  // Les fiches créées apparaissent dans Salariés et Spectacles sans recharger la page ; une case de la saisie relit les
+  // siennes quand on l'ouvre (`relireLesChoix`).
   await relireEtat();
-  rafraichirReferentiels();
   // Rien de repris (un dossier vide, des pièces illisibles) : le guide reste, avec ce que le moteur en a dit.
   const etat = await rafraichirEtatImportation();
   if (!etat || !etat.repris) return;
@@ -467,7 +466,6 @@ function brancherIdentites(cible, e) {
     const q = e.identites.questions[+b.dataset.identite];
     brancherLesGestes(b, q.gestes, { titre: q.qui, dit: q.question }, async () => {
       await relireEtat();
-      rafraichirReferentiels();
       await rafraichirEtatImportation();
     });
   });
@@ -499,7 +497,6 @@ function brancherNatures(cible, e) {
     const x = e.a_dire[+b.dataset.nature];
     brancherLesGestes(b, [x.enregistrer], { titre: x.nom }, async () => {
       await relireEtat();
-      rafraichirReferentiels();
       await rafraichirEtatImportation();
     });
   });

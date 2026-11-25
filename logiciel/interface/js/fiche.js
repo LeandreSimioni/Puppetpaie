@@ -535,11 +535,6 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
         setTimeout(() => rang.classList.remove("vient-d-etre-enregistree"), 2500);
       }
     }
-    if (!fiche.cle) {
-      // Une fiche neuve : les listes des blocs de paie doivent la proposer
-      // sans qu'on recharge le mois.
-      rafraichirReferentiels();
-    }
     return true;
   } catch (e) {
     if (e.detail?.classe === "FicheRefusee") {

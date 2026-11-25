@@ -23,8 +23,11 @@ async function rafraichirApresVeille(v) {
   const avant = VEILLE?.dernier?.quand;
   const apres = v?.dernier?.quand;
   const envoisAuBout = envoisArrives(v);
-  if (!envoisAuBout && (!apres || apres === avant || v.en_cours)) return;
-  if (envoisAuBout) oublierLeMois();
+  const passageNeuf = !!apres && apres !== avant && !v.en_cours;
+  if (!envoisAuBout && !passageNeuf) return;
+  // Une fiche de salarié reçue (`dernier.fiches`) change ce que les cases d'une carte offrent : la lecture du mois
+  // s'oublie, comme après un envoi arrivé au bout.
+  if (envoisAuBout || (passageNeuf && v.dernier.fiches)) oublierLeMois();
   const mois = document.getElementById("mois").value;
   try {
     await dessinerEtatsDesEngagements(mois);
