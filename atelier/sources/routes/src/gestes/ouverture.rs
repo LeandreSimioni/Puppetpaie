@@ -1275,7 +1275,7 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
         None => None,
     };
     // LE TRANSFERT QUI AVANCE, dans l'etape que le bandeau relit chaque seconde : la premiere sauvegarde envoie tout.
-    let mut avancer = |fait: usize, total: usize| redire_l_etape(&ctx.racine, &format!("Transfert Drive en cours : {} fichiers sur {}", fait, total), depuis);
+    let mut avancer = |fait: usize, total: usize| redire_l_etape(&ctx.racine, &format!("Transfert Drive en cours : {} fichiers sur {}", socle::texte::compte(fait), socle::texte::compte(total)), depuis);
     match crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive, &mut avancer) {
         // CE QUI EST REPORTE N'EST PAS UN INCIDENT : un dossier que Google a refuse une fois (un 500,
         // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
