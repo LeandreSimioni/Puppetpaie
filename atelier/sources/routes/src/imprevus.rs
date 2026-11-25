@@ -90,10 +90,10 @@ const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 pub const ROUTES: &[Fiche] = &[
     fiche(Route::Imprevus, "Lire les imprévus d'un mois ou d'un salarié, et ce qu'on peut en saisir.",
         &ChargeImprevus::CHARGE,
-        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures, porte (ce qui s'ouvre pour un salarié : chaque choix, la route qui l'enregistre en code, son libellé et ce qu'il couvre) et porte_dit ; pour un salarié, le plus récent d'abord, sous titre ; pour un mois, chaque imprévu ne dit que les jours payés de ce mois (cachets) ; pour un mois, dus et dus_titre : ce qui est dû de ses arrêts, le plus pressé d'abord (rang), chaque obligation avec qui et ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
+        r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé avec le nom de son salarié, qui ; un arrêt avec ses obligations), nomenclatures, porte (ce qui s'ouvre pour un salarié : chaque choix, la route qui l'enregistre en code, son libellé et ce qu'il couvre) et porte_dit ; pour un salarié, le plus récent d'abord, sous titre ; pour un mois, chaque imprévu ne dit que les jours payés de ce mois (cachets) ; pour un mois, dus et dus_titre : ce qui est dû de ses arrêts, le plus pressé d'abord (rang), chaque obligation avec qui et ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
     fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &SansCharge::CHARGE, "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
     fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &ChargeMois::CHARGE,
-        r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où) ; dus et dus_titre : celles qui sont dues, dans leur rang (rang), une fin due avec ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
+        r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : le nom de son salarié, qui ; ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où) ; dus et dus_titre : celles qui sont dues, dans leur rang (rang), une fin due avec ses gestes (route, charge, libellé, cases)", Acte::Lit, ECRAN),
     fiche(Route::SuspensionSaisie, "Lire la boîte qui saisit une absence, pour ce qui est déjà dit.",
         &ChargeSuspensionSaisie::CHARGE,
         r#"{"salarie":"FULLER","debut":"2026-11-27"}"#, SAISIE_REND, Acte::Lit, ECRAN),
@@ -1207,14 +1207,15 @@ impl EtatDuSignalement {
     }
 }
 
-/// UN ARRET TEL QUE LA PAGE LE LIT : le resume de toujours (`ArretResume`), plus `genre`, `premier_jour`, `dernier_jour`,
-/// `jours_deja_indemnises`, les indemnites par jour (`ij_brute`, `ij_nette`, `ij_brute_majoree`, `ij_nette_majoree`),
-/// `origine`, `cachets`, ses `gestes` et `a_dire` (ce qu'il ouvre a la page), ses phrases (`Dit`), puis, dans les listes,
-/// ses `obligations` et ce qui en est `parti`.
+/// UN ARRET TEL QUE LA PAGE LE LIT : le resume de toujours (`ArretResume`), plus le nom de son salarie (`qui`), `genre`,
+/// `premier_jour`, `dernier_jour`, `jours_deja_indemnises`, les indemnites par jour (`ij_brute`, `ij_nette`,
+/// `ij_brute_majoree`, `ij_nette_majoree`), `origine`, `cachets`, ses `gestes` et `a_dire` (ce qu'il ouvre a la page), ses
+/// phrases (`Dit`), puis, dans les listes, ses `obligations` et ce qui en est `parti`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ResumeDArret {
     #[serde(flatten)]
     base: ArretResume,
+    qui: String,
     genre: GenreDImprevu,
     premier_jour: Jour,
     dernier_jour: Jour,
@@ -1268,13 +1269,14 @@ impl ResumeDArret {
     }
 }
 
-/// UNE ABSENCE TELLE QUE LA PAGE LA LIT : `genre`, `salarie`, `contrat`, `contrat_debut`, `motif`, `motif_libelle`,
-/// `remunere`, `debut`, `fin`, `premier_jour`, `dernier_jour`, `note`, `saisi_le`, `reporte_par`, `cachets`, ses phrases
-/// (`Dit`), puis, dans la liste, ce qui en est `parti`.
+/// UNE ABSENCE TELLE QUE LA PAGE LA LIT : `genre`, `salarie` et son nom (`qui`), `contrat`, `contrat_debut`, `motif`,
+/// `motif_libelle`, `remunere`, `debut`, `fin`, `premier_jour`, `dernier_jour`, `note`, `saisi_le`, `reporte_par`,
+/// `cachets`, ses phrases (`Dit`), puis, dans la liste, ce qui en est `parti`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ResumeDeSuspension {
     genre: GenreDImprevu,
     salarie: IdSalarie,
+    qui: String,
     contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
     motif: MotifDeSuspension,
@@ -1757,6 +1759,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
         signalements: &base.signalements,
     })?;
     Ok(ResumeDArret {
+        qui: ctx.nomme(&a.salarie),
         base,
         genre: GenreDImprevu::Arret,
         premier_jour: premier,
@@ -1795,6 +1798,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
     })?;
     Ok(ResumeDeSuspension {
         genre: GenreDImprevu::Suspension,
+        qui: ctx.nomme(&s.salarie),
         salarie: s.salarie.clone(),
         contrat: s.contrat_numero.clone(),
         contrat_debut: s.contrat_debut,
@@ -2900,10 +2904,12 @@ contredit le signalement.",
 /// `numero`, `motif_rupture`, `preavis`, tels que la saisie les ecrit, et la periode de son contrat, `contrat_fini`), sa
 /// nature, ce qui manque pour la signaler (`a_saisir`, et ce que l'ecran en dit : `avant_signaler`, `la_dire`), son
 /// obligation (`obligations::de_la_fin`), sa pastille, son contrat en clair (`contrat_dit`), son rang parmi ce qui est
-/// du (`rang`) et ses gestes ; la route `fins-de-contrat` y ajoute qui (`qui_dit`).
+/// du (`rang`) et ses gestes, le nom de son salarie (`qui`, le titre de la boite de ses gestes) ; la route
+/// `fins-de-contrat` y ajoute qui, quoi et quand (`qui_dit`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct FinLue {
     pub salarie: IdSalarie,
+    qui: String,
     pub mois: Mois,
     pub contrat: Periode,
     pub en_retard: bool,
@@ -3060,6 +3066,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         let contrat_dit = format!("contrat {}, fin le {}", numero_dit(e.numero.as_ref(), "", "", SANS_NUMERO), contrat.fin().jj_mm_aaaa());
         let (avant_signaler, la_dire) = if incomplet { (Some(crate::ouverture::aide("a_dire_avant_signaler")?), Some(LA_DIRE)) } else { (None, None) };
         let mut fin = FinLue {
+            qui: ctx.nomme(&salarie),
             salarie,
             mois,
             contrat,

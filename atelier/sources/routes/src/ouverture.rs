@@ -21,7 +21,6 @@ use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseEtablissement, CaseSalarie, 
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::{Contexte, IdSalarie};
-use droit::emplois::{self};
 use droit::natures::{self, MotifDeRupture};
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
@@ -138,7 +137,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois, chacun son titre, sa pastille, ses phrases et, s'il reste à faire, le geste qui le reprend : reprendre, comme une action des étapes), historique_dit (aucun mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
+        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois, chacun son titre, sa pastille, ses phrases et, s'il reste à faire, le geste qui le reprend : reprendre, comme une action des étapes), historique_dit (aucun mois), choix (les listes fixes d'une carte : transaction, preavis ; celles des fiches viennent avec la route saisie), les référentiels, auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
@@ -1299,20 +1298,52 @@ impl Choix {
     }
 }
 
-/// CE QUE LES CASES D'UNE CARTE QUI SE CHOISISSENT DANS LES DONNEES OFFRENT (`Forme::ChoixRendu`), sous la cle de leur
-/// case : les salaries et les spectacles courants, les metiers du deroulant (ceux de Configuration › Métiers, la seule
-/// liste : `metiers::metiers`), les etablissements autres que le siege (aucun choisi : le siege), la transaction d'une
-/// fin de contrat (S21.G00.62.008), le type d'un preavis (ceux qui se saisissent, S21.G00.62.006 ; chacun ouvre les dates
-/// quand il en a). Le motif de la fin et les modeles de contrat, propres au contrat, sont rendus avec la carte de chaque
-/// paie (`mois::CarteRendue`) ; les motifs de recours, avec la nature (`NatureDeLaPage::choix`).
+/// CE QUE LES CASES D'UNE CARTE QUI SE CHOISISSENT DANS LES LISTES FIXES OFFRENT (`Forme::ChoixRendu`), sous la cle de
+/// leur case : la transaction d'une fin de contrat (S21.G00.62.008), le type d'un preavis (ceux qui se saisissent,
+/// S21.G00.62.006 ; chacun ouvre les dates quand il en a). Ce qui se choisit dans les fiches (salarie, spectacle, metier,
+/// etablissement) est rendu avec l'ecran du mois, relu a chaque lecture (`choix_des_fiches`, `mois::NouvelleCarte`) ; le
+/// motif de la fin et les modeles de contrat, propres au contrat, avec la carte de chaque paie (`mois::CarteRendue`) ; les
+/// motifs de recours, avec la nature (`NatureDeLaPage::choix`).
 #[derive(Debug, Clone, serde::Serialize)]
 struct ChoixDesCases {
-    salarie: Vec<Choix>,
-    spectacle: Vec<Choix>,
-    metier: Vec<Choix>,
-    etablissement: Vec<Choix>,
     transaction: Vec<Choix>,
     preavis: Vec<Choix>,
+}
+
+/// CE QUE LES CASES D'UNE CARTE QUI SE CHOISISSENT DANS LES FICHES OFFRENT (`Forme::ChoixRendu`), sous la cle de leur
+/// case : les salaries et les spectacles courants (une archive reste dans la configuration, ou elle se relit et se
+/// reactive), les metiers du deroulant (ceux de Configuration › Métiers, la seule liste : `metiers::metiers`, chacun sous
+/// sa famille), les etablissements autres que le siege (aucun choisi : le siege ; un seul etablissement : rien). La route
+/// `saisie` les rend avec la carte neuve du mois (`mois::NouvelleCarte`).
+pub(crate) fn choix_des_fiches(ctx: &Contexte) -> R<BTreeMap<&'static str, Vec<Choix>>> {
+    use engagement::saisie::Champ;
+    let mut cles: Vec<&IdSalarie> = ctx.salaries_actifs();
+    cles.sort();
+    let salaries: Vec<Choix> = cles.into_iter().map(|k| Choix::de(k, ctx.nomme(k))).collect();
+    let spectacles = ctx
+        .spectacles_actifs()
+        .into_iter()
+        .map(|k| {
+            let titre = ctx.spectacles[k].titre.as_ref().ok_or_else(|| socle::fichiers::manque("titre"))?;
+            Ok(Choix::de(k, titre))
+        })
+        .collect::<R<Vec<_>>>()?;
+    // Les metiers, deja dans l'ordre de leurs familles (`metiers::metiers`), chacun sous la sienne.
+    let metiers = super::metiers::metiers(ctx)?.iter().map(|m| Choix::de(&m.code, &m.libelle).sous(Some(m.famille.to_string()))).collect();
+    let etablissements = choix_d_etablissement(ctx)?
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let libelle = [Some(e.nom.clone()), e.periode_dit.clone()].into_iter().flatten().collect::<Vec<_>>().join(" — ");
+            e.nic.map(|n| Choix::de(n, libelle))
+        })
+        .collect();
+    Ok(BTreeMap::from([
+        (Champ::Salarie.nom(), salaries),
+        (Champ::Spectacle.nom(), spectacles),
+        (Champ::Metier.nom(), metiers),
+        (Champ::Etablissement.nom(), etablissements),
+    ]))
 }
 
 /// LES PARTIES DES CASES D'UNE CARTE FAITES DE PARTIES, sous la cle de leur case, tirees de leur forme
@@ -1574,24 +1605,9 @@ pub(crate) fn niveaux_sante(ctx: &Contexte) -> R<Result<Vec<NiveauDeSante>, Stri
 
 // -------------------------------------------------------------------- l'etat
 
-/// Un salarie des listes ou l'on choisit : sa cle et son nom. Ce que sa carte propose, la carte le dit
-/// (`engagement::proposees`).
-#[derive(Debug, Clone, serde::Serialize)]
-struct SalarieDeLaListe {
-    cle: IdSalarie,
-    libelle: String,
-}
-
-/// Un spectacle des listes ou l'on choisit : sa cle, son titre et son numero d'objet, tels que sa fiche les porte.
-#[derive(Debug, Clone, serde::Serialize)]
-struct SpectacleDeLaListe {
-    cle: droit::contexte::IdSpectacle,
-    titre: String,
-    numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
-}
-
 /// CE QUE LA PAGE LIT EN S'OUVRANT (`etat`) : la configuration verifiee et sa phrase, l'auteur, ce qu'une compagnie
-/// fictive en dit, l'historique des mois, les listes ou l'on choisit et les referentiels livres avec le logiciel.
+/// fictive en dit, l'historique des mois, les listes fixes ou l'on choisit et les referentiels livres avec le logiciel.
+/// Ce qui se choisit dans les fiches vient avec l'ecran du mois (`choix_des_fiches`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct EtatDeLaPage {
     phrase: Phrase,
@@ -1609,13 +1625,8 @@ pub(crate) struct EtatDeLaPage {
     /// Ce que l'Historique dit quand aucun mois n'est connu ; rien s'il y en a.
     #[serde(skip_serializing_if = "Option::is_none")]
     historique_dit: Option<&'static str>,
-    salaries: Vec<SalarieDeLaListe>,
-    spectacles: Vec<SpectacleDeLaListe>,
     choix: ChoixDesCases,
     rubriques: Vec<RubriqueDeLaPage>,
-    emplois: Vec<emplois::MetierDuDeroulant>,
-    familles_emplois: Vec<emplois::FamilleDeMetier>,
-    emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
     /// Les parties de chaque case faite de parties (`catalogue::Forme::Parties`), sous la cle de sa case.
     parties: BTreeMap<&'static str, Vec<crate::catalogue::PartieEcrite>>,
@@ -1628,37 +1639,8 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let configuration = configuration(ctx)?;
     let historique = historique(&mut m, ctx)?;
 
-    // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive
-    // reste dans `configuration`, ou on peut la relire et la reactiver.
-    let mut cles: Vec<&IdSalarie> = ctx.salaries_actifs();
-    cles.sort();
-    let salaries: Vec<SalarieDeLaListe> = cles
-        .into_iter()
-        .map(|k| SalarieDeLaListe { cle: k.clone(), libelle: ctx.nomme(k) })
-        .collect();
-    let spectacles = ctx
-        .spectacles_actifs()
-        .into_iter()
-        .map(|k| {
-            let v = &ctx.spectacles[k];
-            let titre = v.titre.clone().ok_or_else(|| socle::fichiers::manque("titre"))?;
-            Ok(SpectacleDeLaListe { cle: k.clone(), titre, numero_objet: v.numero_objet.clone() })
-        })
-        .collect::<R<Vec<_>>>()?;
-    let emplois = super::metiers::metiers(ctx)?;
+    // Les listes fixes ou l'on choisit ; celles des fiches viennent avec l'ecran du mois (`choix_des_fiches`).
     let choix = ChoixDesCases {
-        salarie: salaries.iter().map(|s: &SalarieDeLaListe| Choix::de(&s.cle, &s.libelle)).collect(),
-        spectacle: spectacles.iter().map(|s: &SpectacleDeLaListe| Choix::de(&s.cle, &s.titre)).collect(),
-        // Les metiers, deja dans l'ordre de leurs familles (`metiers::metiers`), chacun sous la sienne.
-        metier: emplois.iter().map(|m| Choix::de(&m.code, &m.libelle).sous(Some(m.famille.to_string()))).collect(),
-        etablissement: choix_d_etablissement(ctx)?
-            .into_iter()
-            .flatten()
-            .filter_map(|e| {
-                let libelle = [Some(e.nom.clone()), e.periode_dit.clone()].into_iter().flatten().collect::<Vec<_>>().join(" — ");
-                e.nic.map(|n| Choix::de(n, libelle))
-            })
-            .collect(),
         transaction: droit::preavis::base()?.transaction.codes.iter().map(|c| Choix { defaut: c.defaut, ..Choix::de(c.code, &c.libelle) }).collect(),
         // Le type d'un preavis, parmi ceux qui se saisissent : un type qui a des dates ouvre les parties du preavis qui
         // ne sont pas de toujours (`catalogue::PARTIES_DU_PREAVIS`).
@@ -1706,16 +1688,8 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         commencer_par_l_import: import::guide::commencer_par_l_import(&ctx.racine)?,
         historique_dit: historique.is_empty().then_some(AUCUN_MOIS),
         historique,
-        salaries,
-        spectacles,
         choix,
         rubriques,
-        // Le catalogue des metiers, deja dans l'ordre des familles.
-        emplois,
-        familles_emplois: emplois::familles()?,
-        // Les metiers des autres conventions : on les AJOUTE a son deroulant,
-        // ils n'y sont pas d'office.
-        emplois_autres: super::metiers::metiers_autres_conventions(ctx)?,
         // LES NATURES DE CONTRAT : celles que la compagnie engage (une carte dit toujours la sienne).
         natures: natures()?,
         parties: parties_des_cases(),

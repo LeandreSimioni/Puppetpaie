@@ -597,7 +597,7 @@ impl Forme {
 
     /// LA FORME D'UNE CASE DE LA CARTE, tiree du type de son champ (`engagement::saisie::Carte`) : un jour se choisit
     /// dans le calendrier, un nombre se tape, un oui-non se coche, une fiche (salarie, spectacle, metier, etablissement)
-    /// se choisit dans ce que la route etat rend (`choix`) ; les lignes sont des lignes (`rubriques[].cles` de la route
+    /// se choisit dans ce que la route saisie rend (`nouvelle_carte.choix`) ; les lignes sont des lignes (`rubriques[].cles` de la route
     /// etat) ; une autre valeur composee (les conges, le preavis) est un objet. Chaque champ y est classe : un
     /// champ neuf de la carte ne compile pas tant que sa forme n'est pas dite. C'est la seule declaration de la forme d'une
     /// case de la carte.

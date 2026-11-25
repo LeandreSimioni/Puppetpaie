@@ -67,7 +67,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes (chaque paie importée telle qu'elle se lit : son résumé et ses pastilles, ce que l'import n'a pas lu, ses cases en lecture, les lignes de son bulletin), ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie), vide_dit (ce que dit le mois quand l'aperçu n'a aucune paie d'ici), demo (la mention d'un mois saisi en démo)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes (chaque paie importée telle qu'elle se lit : son résumé et ses pastilles, ce que l'import n'a pas lu, ses cases en lecture, les lignes de son bulletin), ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit, choix (ce que les cases qui se choisissent dans les fiches offrent : salarie, spectacle, metier, etablissement, relus à chaque lecture ; nature, quand elle se choisit), nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie), vide_dit (ce que dit le mois quand l'aperçu n'a aucune paie d'ici), demo (la mention d'un mois saisi en démo)",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -246,7 +246,9 @@ struct NouvelleCarte {
     natures: Vec<NatureDeContrat>,
     /// Les cases qu'une carte neuve montre en plus de celles de sa nature : la nature, quand plus d'une se choisit ce mois.
     cases: Vec<engagement::carte::CaseDecrite<crate::catalogue::Forme>>,
-    /// Ce qu'elles offrent, sous la cle de leur case : les natures qu'une carte neuve peut prendre ce mois.
+    /// Ce que les cases d'une carte du mois qui se choisissent dans les fiches offrent (`ouverture::choix_des_fiches` :
+    /// salarie, spectacle, metier, etablissement), relus a chaque lecture, et, quand elle se choisit, la nature : celles
+    /// qu'une carte neuve peut prendre ce mois. Sous la cle de leur case.
     choix: std::collections::BTreeMap<&'static str, Vec<crate::ouverture::Choix>>,
     /// L'aide d'un mois vide (`ouverture::AIDES`) : celle qui nomme le salaire mensuel d'un permanent quand le mois en
     /// propose ou en paie un.
@@ -635,6 +637,10 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     // La case de la nature, quand plus d'une se choisit ce mois : de base, en tete de la carte.
     let au_choix = neuves.len() > 1;
     let nature = engagement::saisie::Champ::Nature;
+    let mut choix = crate::ouverture::choix_des_fiches(ctx)?;
+    if au_choix {
+        choix.insert(nature.nom(), offertes);
+    }
     let nouvelle_carte = NouvelleCarte {
         nature: NatureDeContrat::CdduSpectacle,
         cases: if au_choix {
@@ -649,7 +655,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         } else {
             Vec::new()
         },
-        choix: if au_choix { std::collections::BTreeMap::from([(nature.nom(), offertes)]) } else { std::collections::BTreeMap::new() },
+        choix,
         natures: neuves,
         aide_vide: if p.ouverts() { "apercu_vide_permanents" } else { "apercu_vide" },
         propose,
