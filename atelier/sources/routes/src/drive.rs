@@ -206,12 +206,12 @@ fn avant_de_supprimer(vu: &DossierVu, le_sien: bool, maintenant: socle::paris::M
 }
 
 /// Qui tient la main sur le dossier de cette compagnie, en mots (`a_ce_poste` : ce poste).
-fn main_dite(main: &Result<Option<compagnie::sauvegarde::LaMain>, String>, a_ce_poste: bool) -> String {
+fn main_dite(main: &Result<Option<compagnie::sauvegarde::LaMain>, socle::echec::Echec>, a_ce_poste: bool) -> String {
     match main {
         Ok(Some(m)) if a_ce_poste => format!("Ce poste tient la main depuis le {} : lui seul y sauvegarde.", m.depuis.jour_de_paris().jj_mm()),
         Ok(Some(m)) => format!("Un autre poste tient la main depuis le {} : ce poste n'y sauvegarde pas.", m.depuis.jour_de_paris().jj_mm()),
         Ok(None) => "Aucun poste n'en tient la main : la prochaine sauvegarde de ce poste la prend.".to_string(),
-        Err(phrase) => format!("{} Ce poste n'y sauvegarde pas tant qu'il ne prend pas la main.", phrase),
+        Err(e) => format!("{} Ce poste n'y sauvegarde pas tant qu'il ne prend pas la main.", compagnie::sauvegarde::main_illisible_dite(e)),
     }
 }
 
@@ -234,8 +234,8 @@ pub(crate) fn geste_prendre_la_main<C>(charge: C, demande: Option<compagnie::dem
 /// sauvegarde qui suit fait du dossier.
 fn avant_de_prendre_la_main() -> Vec<String> {
     vec![
-        "Ce poste seul sauvegardera dans le dossier de cette compagnie ; le poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string(),
-        "La sauvegarde de ce poste part aussitôt : elle remplace dans le Drive ce que l'autre poste y avait mis.".to_string(),
+        "Ce poste seul sauvegardera dans le dossier de cette compagnie ; un poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string(),
+        "La sauvegarde de ce poste part aussitôt : elle remplace dans le Drive les fichiers que ce poste a aussi ; ceux que seul l'autre poste y avait mis y restent.".to_string(),
     ]
 }
 
@@ -255,13 +255,24 @@ fn prendre_la_main(ctx: &droit::contexte::Contexte, mdp: Option<&socle::secret::
     let nom = compagnie::installation::nom_de(&ctx.racine)?;
     let connu = compagnie::sauvegarde::lire_index(&ctx.racine).map_err(|e| e.echec)?.and_then(|i| i.compagnie);
     let main = compagnie::sauvegarde::LaMain::de_ce_poste(&ctx.racine)?;
-    let (id, _) = compagnie::sauvegarde::dossier_de_la_compagnie(&mut client, compagnie::sauvegarde::RACINE_DRIVE, &identite, &nom, connu.as_ref(), Some(&main)).map_err(|e| e.echec)?;
+    // Le dossier que remplit la sauvegarde qui suit (`ensuite` : `sauvegarde-maintenant`, un passage ordinaire), sous la
+    // racine du Drive de ses options.
+    let racine_drive = crate::gestes::ouverture::Options::entiere().racine_drive;
+    let (id, marque) = compagnie::sauvegarde::dossier_de_la_compagnie(&mut client, &racine_drive, &identite, &nom, connu.as_ref(), Some(&main)).map_err(|e| e.echec)?;
+    // Qui la tenait, avant ce geste : ce que la phrase en dit.
+    let avant = compagnie::sauvegarde::LaMain::de(marque.as_ref());
     client.marquer(&id, &main.marque(&identite)).map_err(|e| e.echec)?;
     compagnie::sauvegarde::main_reprise(&ctx.racine).map_err(|e| e.echec)?;
-    Ok(MainPrise {
-        phrase: Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie : sa sauvegarde suit, et l'autre poste n'y sauvegarde plus."),
-        ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()),
-    })
+    let phrase = match avant {
+        Ok(Some(m)) if m.poste == main.poste => Phrase::fixe("Ce poste tenait déjà la main sur le Drive de cette compagnie : sa sauvegarde suit."),
+        Ok(Some(m)) => socle::phrase!(
+            "Ce poste tient la main sur le Drive de cette compagnie : sa sauvegarde suit, et le poste qui la tenait depuis le {} n'y sauvegarde plus.",
+            m.depuis.jour_de_paris().jj_mm()
+        ),
+        Ok(None) => Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie, qu'aucun poste ne tenait : sa sauvegarde suit."),
+        Err(e) => socle::phrase!("Ce poste tient la main sur le Drive de cette compagnie : sa sauvegarde suit. Avant ce geste : {}", compagnie::sauvegarde::main_illisible_dite(&e)),
+    };
+    Ok(MainPrise { phrase, ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()) })
 }
 
 // ------------------------------------------------------------------ drive-etat
@@ -359,8 +370,8 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
             if let (false, Ok(d)) = (a_ce_poste, &demande_main) {
                 gestes.push(geste_prendre_la_main(GesteDuDrive::PrendreLaMain(SansCharge {}), d.clone()));
             }
-        } else if let Err(phrase) = &vu.main {
-            dit.push(phrase.clone());
+        } else if let Err(e) = &vu.main {
+            dit.push(compagnie::sauvegarde::main_illisible_dite(e));
         }
         if let Some(d) = &demande {
             gestes.push(

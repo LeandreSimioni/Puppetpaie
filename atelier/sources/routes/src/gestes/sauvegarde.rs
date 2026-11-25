@@ -254,11 +254,7 @@ pub fn sauvegarder(
     // note la main ailleurs. Une main illisible se dit avec son detail dans ce passage, et chez l'editeur la premiere fois.
     if let Some(sans) = &resultat.sans_la_main {
         if let Some(e) = &main_illisible {
-            let detail = e.a_part.as_ref().and_then(socle::echec::APart::lieu).and_then(|l| l.detail.clone());
-            resultat.incidents.push(match detail {
-                Some(d) => format!("{} ({})", e.phrase, d),
-                None => e.phrase.clone(),
-            });
+            resultat.incidents.push(compagnie::sauvegarde::main_illisible_dite(e));
             let deja_dit = index.as_ref().is_some_and(|i| i.sans_la_main == Some(SansLaMain::Illisible));
             if !deja_dit {
                 if let Err(n) = compagnie::incidents::depuis_exception(racine, e.classe, &e.phrase, None, "sauvegarde", e.a_part.as_ref(), None) {

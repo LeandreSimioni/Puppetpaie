@@ -705,3 +705,98 @@ pub fn a_faire(coffre: &Coffre, origine: OrigineDuCoffre) -> Vec<String> {
     }
     lignes
 }
+
+// ------------------------------------------------------------ la main, au bout d'une reprise
+
+/// LA MAIN SUR LE DOSSIER DU DRIVE QU'UNE REPRISE ALLEE AU BOUT GARDE (« Reprendre » la prend d'office, Leandre,
+/// 25/11/2026, #594) : ce que `prendre_la_main` en a fait. La reprise a l'accueil (`routes::accueil::drive`) et
+/// `moteur restaurer` passent par elle.
+#[derive(Debug)]
+pub enum MainDeLaReprise {
+    /// Rien a prendre : le dossier repris est l'ancienne sauvegarde commune (la premiere sauvegarde de la compagnie fera
+    /// son dossier, avec la main), ou la compagnie n'envoie rien au Drive (fictive, demo).
+    PasAPrendre,
+    /// Ce poste la tenait deja : rien n'a change sur le Drive.
+    DejaLaSienne,
+    /// Ce poste vient de la prendre.
+    Prise,
+    /// Elle n'est pas prise, et pourquoi.
+    PasPrise(ErreurGoogle),
+}
+
+/// PREND LA MAIN SUR LE DOSSIER `vu`, celui d'une compagnie revenue au bout dans `cible`, pour ce poste.
+pub fn prendre_la_main(cible: &Path, vu: &DossierVu, client: &mut dyn Drive) -> MainDeLaReprise {
+    let GenreDuDossier::Compagnie(identite) = &vu.genre else {
+        return MainDeLaReprise::PasAPrendre;
+    };
+    match crate::bridage::branchement(cible) {
+        Ok(envois::branchement::Branchement::Monde) => {}
+        Ok(_) => return MainDeLaReprise::PasAPrendre,
+        Err(e) => return MainDeLaReprise::PasPrise(ErreurGoogle::from(e)),
+    }
+    let main = match crate::sauvegarde::LaMain::de_ce_poste(cible) {
+        Ok(m) => m,
+        Err(e) => return MainDeLaReprise::PasPrise(ErreurGoogle::from(e)),
+    };
+    if matches!(&vu.main, Ok(Some(m)) if m.poste == main.poste) {
+        return MainDeLaReprise::DejaLaSienne;
+    }
+    match client.marquer(&vu.id, &main.marque(identite)) {
+        Ok(()) => MainDeLaReprise::Prise,
+        Err(e) => MainDeLaReprise::PasPrise(e),
+    }
+}
+
+impl MainDeLaReprise {
+    /// Ce que la fin de la reprise en dit (rien quand il n'y avait rien a prendre), selon la main que portait le dossier
+    /// repris `vu` avant elle.
+    pub fn phrase(&self, vu: &DossierVu) -> Option<String> {
+        use crate::sauvegarde::{main_illisible_dite, PRENDRE_LA_MAIN_OU};
+        const SEUL: &str = "Ce poste tient maintenant la main sur son Drive : lui seul y sauvegarde.";
+        Some(match self {
+            MainDeLaReprise::PasAPrendre => return None,
+            MainDeLaReprise::DejaLaSienne => "Ce poste tenait déjà la main sur son Drive : lui seul y sauvegarde.".to_string(),
+            MainDeLaReprise::Prise => match &vu.main {
+                Ok(Some(m)) => format!(
+                    "{} Le poste qui la tenait depuis le {} n'y sauvegarde plus, et le dit ; {} la lui rend.",
+                    SEUL,
+                    m.depuis.jour_de_paris().jj_mm(),
+                    PRENDRE_LA_MAIN_OU
+                ),
+                Ok(None) => format!("{} Aucun poste ne la tenait.", SEUL),
+                Err(e) => format!("{} Avant elle : {}", SEUL, main_illisible_dite(e)),
+            },
+            MainDeLaReprise::PasPrise(e) => match &vu.main {
+                Ok(Some(m)) => format!(
+                    "{} Le poste qui la tient depuis le {} la garde : ce poste ne sauvegarde pas tant qu'il ne la prend pas, par {}.",
+                    e.echec.phrase,
+                    m.depuis.jour_de_paris().jj_mm(),
+                    PRENDRE_LA_MAIN_OU
+                ),
+                Ok(None) => format!("{} Aucun poste ne la tenait : la première sauvegarde de ce poste la prend.", e.echec.phrase),
+                Err(illisible) => format!(
+                    "{} {} Ce poste ne sauvegarde pas tant qu'il ne la prend pas, par {}.",
+                    e.echec.phrase,
+                    main_illisible_dite(illisible),
+                    PRENDRE_LA_MAIN_OU
+                ),
+            },
+        })
+    }
+
+    /// LA MAIN PAS PRISE, DANS LES INCIDENTS DE LA REPRISE : la ligne qu'elle y met, et son detail chez l'editeur par le
+    /// journal des incidents de `cible`, comme la sauvegarde note les siens (une panne de Google ou du reseau ne s'y
+    /// note pas : elle ne dit rien du logiciel). Rien quand elle est prise, ou qu'il n'y avait rien a prendre.
+    pub fn noter(&self, cible: &Path) -> Vec<String> {
+        let MainDeLaReprise::PasPrise(e) = self else {
+            return Vec::new();
+        };
+        let mut lignes = vec![format!("La main sur le dossier du Drive ne s'est pas prise : {}", e.echec.phrase)];
+        if !(e.injoignable || envois::drive::passagere(e) || envois::suites::panne_de_passage(&e.echec)) {
+            if let Err(n) = crate::incidents::depuis_exception(cible, e.echec.classe, &e.echec.phrase, None, "reprise", e.echec.a_part.as_ref(), None) {
+                lignes.push(format!("La main pas prise : le journal des incidents ne l'a pas notée : {}", n.phrase));
+            }
+        }
+        lignes
+    }
+}

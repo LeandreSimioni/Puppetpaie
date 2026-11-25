@@ -594,7 +594,9 @@ un libellé, chacun sa forme.
 | main sur le Drive d'une compagnie : le seul poste qui sauvegarde dans son dossier, et depuis quand | `compagnie::sauvegarde::LaMain` | `compagnie/src/sauvegarde.rs` |
 | ce poste n'a pas la main (un autre poste la tient depuis une date, ou elle ne se lit pas), tel que le dernier passage l'a noté dans l'index | `compagnie::sauvegarde::SansLaMain` | `compagnie/src/sauvegarde.rs` |
 | geste « Prendre la main » que le bandeau propose à côté de ce qui persiste de la sauvegarde | `routes::veille::PrendreLaMain` | `routes/src/veille.rs` |
+| main sur le dossier du Drive qu'une reprise allée au bout garde (rien à prendre, déjà la sienne, prise, pas prise et pourquoi), à l'accueil comme par `moteur restaurer` | `compagnie::restauration::MainDeLaReprise` | `compagnie/src/restauration.rs` |
 | sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
+| dossier du Drive demandé par son identifiant : en place avec sa marque, ou retiré (corbeille, disparu) | `envois::drive::DossierEnPlace` | `envois/src/drive.rs` |
 | dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
 | fichiers d'un dossier du Drive, par nom, homonymes compris | `envois::drive::FichiersDuDossier` | `envois/src/drive.rs` |
 | corbeille du Drive, à part du client | `envois::drive::Corbeille` | `envois/src/drive.rs` |

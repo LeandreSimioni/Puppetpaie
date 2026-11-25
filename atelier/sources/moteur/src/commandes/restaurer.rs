@@ -7,8 +7,11 @@
 //! des donnees du poste. `DOSSIER` est ou ecrire ; par defaut, ce meme dossier des donnees (le cas d'un poste neuf : relier le
 //! Drive, puis restaurer). Dans `moteur-atelier`, hors compagnie fictive, la commande exige le faux Google, comme `sauvegarder`.
 //!
-//! Codes : 0 tout est revenu ; 1 des fichiers a retenter (relancer la commande) ou qui ne descendront pas ainsi ; 2 un
-//! refus, rien n'a ete ecrit.
+//! Tout revenu, ce poste prend la main sur le dossier de la compagnie, comme la reprise
+//! (`restauration::prendre_la_main`).
+//!
+//! Codes : 0 tout est revenu ; 1 des fichiers a retenter (relancer la commande), qui ne descendront pas ainsi, ou la main
+//! pas prise (« Prendre la main », Configuration > Le Drive) ; 2 un refus, rien n'a ete ecrit.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -39,11 +42,14 @@ struct ErreurDite<'a> {
     message: &'a str,
 }
 
-/// Ce que `moteur restaurer --json` ecrit d'une restauration : `ok` quand tout est revenu.
+/// Ce que `moteur restaurer --json` ecrit d'une restauration : `ok` quand tout est revenu et que la main est prise s'il
+/// y en avait une a prendre ; ce qu'il en est de la main (`MainDeLaReprise::phrase`), quand il y en avait une.
 #[derive(serde::Serialize)]
 struct Restauree {
     ok: bool,
     resultat: restauration::RestaurationDite,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    main: Option<String>,
 }
 
 pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
@@ -127,10 +133,17 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     // Le coffre ne se met de cote que s'il vient de descendre du Drive (`OrigineDuCoffre`) : jamais celui qui etait la.
     let coffre = compagnie::coffre::Coffre::du_poste(&cible);
     let reste = restauration::a_faire(&coffre, r.origine_du_coffre(&coffre));
-    let ok = r.complete() && r.incidents.is_empty();
+    // LA MAIN, comme au bout d'une reprise a l'accueil : tout revenu, ce poste la prend sur le dossier de la compagnie
+    // (`restauration::prendre_la_main`) ; pas prise, elle va dans les incidents et chez l'editeur.
+    let main = if r.complete() { restauration::prendre_la_main(&cible, &depuis, &mut client) } else { restauration::MainDeLaReprise::PasAPrendre };
+    let main_dite = main.phrase(&depuis);
+    let incidents_de_la_main = main.noter(&cible);
+    let ok = r.complete() && r.incidents.is_empty() && incidents_de_la_main.is_empty();
     let code = if ok { ExitCode::SUCCESS } else { ExitCode::FAILURE };
     if json {
-        dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok, resultat: r.dite(reste) }));
+        let mut resultat = r.dite(reste);
+        resultat.incidents.extend(incidents_de_la_main);
+        dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok, resultat, main: main_dite }));
         return code;
     }
     for f in &r.redescendus {
@@ -143,8 +156,11 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     for i in &r.a_retenter {
         dire!("  ! a retenter : {}", i);
     }
-    for i in &r.incidents {
+    for i in r.incidents.iter().chain(&incidents_de_la_main) {
         dire!("  ! {}", i);
+    }
+    if let Some(m) = &main_dite {
+        dire!("\n{}", m);
     }
     if !reste.is_empty() {
         dire!("\nCe qu'il reste a faire a la main :");

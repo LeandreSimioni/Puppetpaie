@@ -275,9 +275,10 @@ impl Drive for FauxDrive {
         Ok(())
     }
 
-    fn en_place(&mut self, id: &IdDrive) -> Result<Option<Option<MarqueDuDossier>>, ErreurGoogle> {
+    fn en_place(&mut self, id: &IdDrive) -> Result<envois::drive::DossierEnPlace, ErreurGoogle> {
+        use envois::drive::DossierEnPlace;
         self.journal.push(format!("en_place {}", self.chemin_de(id)));
-        Ok((!self.jete(id)).then(|| self.marques.get(id).cloned()))
+        Ok(if self.jete(id) { DossierEnPlace::Retire } else { DossierEnPlace::EnPlace(self.marques.get(id).cloned()) })
     }
 
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {

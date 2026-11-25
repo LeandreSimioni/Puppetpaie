@@ -639,8 +639,9 @@ pub fn marque(identite: &IdentiteSurLeDrive, quand: socle::paris::Moment, octets
 /// tout dans un dossier neuf.
 pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, identite: &IdentiteSurLeDrive, nom: &str, connu: Option<&IdDrive>, main: Option<&LaMain>) -> Result<(IdDrive, Option<MarqueDuDossier>), ErreurGoogle> {
     if let Some(id) = connu {
-        if let Some(marque) = client.en_place(id)? {
-            return Ok((id.clone(), marque));
+        match client.en_place(id)? {
+            envois::drive::DossierEnPlace::EnPlace(marque) => return Ok((id.clone(), marque)),
+            envois::drive::DossierEnPlace::Retire => {}
         }
     }
     let racine = client.chemin(&IdDrive::RACINE, &[racine_drive])?;
@@ -756,11 +757,24 @@ impl SansLaMain {
     pub fn phrase(&self) -> String {
         match self {
             SansLaMain::AutrePoste { depuis } => format!(
-                "Le Drive de cette compagnie est tenu par un autre poste depuis le {} : ce poste ne le sauvegarde plus. « Prendre la main » l'y remet.",
-                depuis.jour_de_paris().jj_mm()
+                "Le Drive de cette compagnie est tenu par un autre poste depuis le {} : ce poste ne le sauvegarde plus. {} l'y remet.",
+                depuis.jour_de_paris().jj_mm(),
+                PRENDRE_LA_MAIN_OU
             ),
-            SansLaMain::Illisible => "La main notée sur le Drive de cette compagnie ne se lit pas : ce poste ne le sauvegarde plus. « Prendre la main » l'y remet.".to_string(),
+            SansLaMain::Illisible => format!("La main notée sur le Drive de cette compagnie ne se lit pas : ce poste ne le sauvegarde plus. {} l'y remet.", PRENDRE_LA_MAIN_OU),
         }
+    }
+}
+
+/// « PRENDRE LA MAIN », ET OU LE TROUVER, tel que chaque phrase qui le propose le dit.
+pub const PRENDRE_LA_MAIN_OU: &str = "« Prendre la main » (Configuration › Le Drive)";
+
+/// UNE MAIN QUI NE SE LIT PAS (`LaMain::de`), dite avec son detail (ce qui est ecrit, et ce qui etait attendu) : la
+/// sauvegarde le dit ainsi dans ses incidents, la vue du Drive et la reprise de meme.
+pub fn main_illisible_dite(e: &socle::echec::Echec) -> String {
+    match e.a_part.as_ref().and_then(socle::echec::APart::lieu).and_then(|l| l.detail.as_ref()) {
+        Some(d) => format!("{} ({})", e.phrase, d),
+        None => e.phrase.clone(),
     }
 }
 

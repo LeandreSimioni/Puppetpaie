@@ -87,14 +87,15 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
                 return Err(ErreurGoogle::nouvelle(
                     Classe::Refuse,
                     format!(
-                        "Le Drive de cette compagnie est tenu par un autre poste depuis le {} : ce poste n'y archive pas. « Prendre la main » (Configuration › Le Drive) l'y remet.",
-                        m.depuis.jour_de_paris().jj_mm()
+                        "Le Drive de cette compagnie est tenu par un autre poste depuis le {} : ce poste n'y archive pas. {} l'y remet.",
+                        m.depuis.jour_de_paris().jj_mm(),
+                        compagnie::sauvegarde::PRENDRE_LA_MAIN_OU
                     ),
                 ))
             }
             Err(e) => {
                 return Err(ErreurGoogle::from(e.reformuler(|p| {
-                    format!("{} Ce poste n'archive pas dans le Drive de cette compagnie : « Prendre la main » (Configuration › Le Drive) l'y remet.", p)
+                    format!("{} Ce poste n'archive pas dans le Drive de cette compagnie : {} l'y remet.", p, compagnie::sauvegarde::PRENDRE_LA_MAIN_OU)
                 })))
             }
             Ok(None) => client.marquer(&cie, &la_sienne.marque(&identite))?,
@@ -145,7 +146,7 @@ impl Drive for DriveJoue {
     fn marquer(&mut self, _id: &IdDrive, _marque: &envois::drive::MarqueDuDossier) -> Result<(), ErreurGoogle> {
         Ok(())
     }
-    fn en_place(&mut self, _id: &IdDrive) -> Result<Option<Option<envois::drive::MarqueDuDossier>>, ErreurGoogle> {
-        Ok(Some(None))
+    fn en_place(&mut self, _id: &IdDrive) -> Result<envois::drive::DossierEnPlace, ErreurGoogle> {
+        Ok(envois::drive::DossierEnPlace::EnPlace(None))
     }
 }
