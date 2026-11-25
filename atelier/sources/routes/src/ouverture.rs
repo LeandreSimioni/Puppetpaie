@@ -1325,11 +1325,10 @@ pub(crate) fn choix_des_fiches(ctx: &Contexte) -> R<BTreeMap<&'static str, Vec<C
     let spectacles = ctx
         .spectacles_actifs()
         .into_iter()
-        .map(|k| {
-            let titre = ctx.spectacles[k].titre.as_ref().ok_or_else(|| socle::fichiers::manque("titre"))?;
-            Ok(Choix::de(k, titre))
-        })
-        .collect::<R<Vec<_>>>()?;
+        // Un spectacle sans titre se choisit sous sa cle, comme un salarie sans nom (`Contexte::nomme`) : une case vide
+        // de sa fiche ne ferme pas l'ecran du mois (AGENTS, « Le logiciel est doux »).
+        .map(|k| Choix::de(k, ctx.spectacles[k].titre.clone().unwrap_or_else(|| k.to_string())))
+        .collect();
     // Les metiers, deja dans l'ordre de leurs familles (`metiers::metiers`), chacun sous la sienne.
     let metiers = super::metiers::metiers(ctx)?.iter().map(|m| Choix::de(&m.code, &m.libelle).sous(Some(m.famille.to_string()))).collect();
     let etablissements = choix_d_etablissement(ctx)?
