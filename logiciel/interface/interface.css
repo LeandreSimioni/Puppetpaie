@@ -377,6 +377,17 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .ligne-bulle td { padding: 1px 0; vertical-align: baseline; }
 .ligne-bulle td.montant { font-weight: bold; text-align: right; padding-left: 16px; }
 .ligne-bulle .bulle-texte { font-style: italic; color: var(--discret); }
+/* Le montant d'une ligne, rendu par la route, au bout de sa ligne. */
+.ligne-paie .montant-rendu { justify-content: flex-end; color: var(--texte); font-variant-numeric: tabular-nums; }
+/* « ▸ par jour » sous une ligne : repliée, son résumé ; ouverte, une rangée par jour dans les colonnes de la ligne
+   (`--colonnes`), puis son total. */
+.ligne-par-jour { grid-column: 1 / -1; font-size: 12px; }
+.ligne-par-jour > summary { cursor: pointer; color: var(--action); }
+.ligne-par-jour .rangee-du-jour { display: grid; grid-template-columns: var(--colonnes); gap: 6px; align-items: center;
+  margin-top: 4px; }
+.ligne-par-jour .rangee-du-jour .colonne { color: var(--discret); }
+.ligne-par-jour .rangee-du-jour.total { border-top: 1px solid var(--bord); padding-top: 4px; font-weight: bold; }
+.ligne-par-jour .rangee-du-jour.total .colonne { color: var(--texte); }
 /* Au téléphone, la ligne se replie sans rien couper : chaque case porte son libellé, la croix reste au bout. */
 @media (max-width: 620px) {
   .ligne-paie { display: flex; flex-wrap: wrap; align-items: end; border-bottom: 1px solid var(--bord); padding-bottom: 6px; }
@@ -394,8 +405,6 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
   max-width: 100%; white-space: normal;
 }
 .jours-coches:hover { border-color: var(--action); }
-.lieu-du-jour { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--discret); }
-.lieu-du-jour input { width: 9rem; }
 /* Sous les lignes : ce que l'aperçu a compris du contrat, rendu, jamais saisi. */
 .e-montre { margin: 4px 0 0; font-size: 12px; }
 .e-montre:empty { display: none; }

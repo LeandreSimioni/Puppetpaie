@@ -115,7 +115,8 @@ function caseDeLaCarte(div, d, choix) {
   if (d.forme === "lignes") {
     return `<div class="case case-lignes" data-cle="${d.cle}"><span class="case-libelle">${echapper(d.libelle)}</span>
       ${lignesDePaie(v || [], lignesChoixDe(div), { choix: choixDesLignes(div, v || []), mois: MOIS_AFFICHE, salarie: salarieDuBloc(div) || null,
-        bulles: bullesDeLaCarte(div), ouvertes: bullesOuvertes(div) })}
+        bulles: bullesDeLaCarte(div), ouvertes: bullesOuvertes(div), rendues: rendueDe(div) ? rendueDe(div).lignes : [],
+        parJour: joursOuverts(div) })}
       <button type="button" class="lien ajouter-ligne">+ une ligne</button>
       <p class="e-montre discret"></p></div>`;
   }
@@ -145,6 +146,11 @@ function metierDeLaCarte(div) {
 /** Les rangs des lignes de la carte dont la bulle est ouverte. */
 function bullesOuvertes(div) {
   return div._bulles || (div._bulles = new Set());
+}
+
+/** Les rangs des lignes de la carte dont « par jour » est ouverte. */
+function joursOuverts(div) {
+  return div._parJour || (div._parJour = new Set());
 }
 
 /** CE QUE LA CONVENTION FIXE AU MÉTIER DE LA CARTE, sous le code de chaque rubrique (`rubriques` de la route), chacune
@@ -231,6 +237,7 @@ function dessinerLaCarte(div) {
     <div class="etats"></div>`;
   brancherLesCases(div, { passes: (mois, salarie) => api("contrats-passes", { mois, salarie }) });
   brancherLesBulles(div, bullesOuvertes(div));
+  brancherLesJoursDesLignes(div, joursOuverts(div));
   div.querySelectorAll(".case[data-cle] > select[data-case]").forEach((x) => {
     const cle = x.parentElement.dataset.cle;
     if (cle in NOUVELLE_CARTE.choix && !(r && cle in r.choix)) x.onfocus = () => relireLesChoix(div, x, cle);
@@ -251,11 +258,12 @@ function dessinerLaCarte(div) {
       const bloc = b.closest(".case-lignes");
       const retiree = +b.closest(".ligne-paie").dataset.ligne;
       const lignes = lireLesLignes(bloc).filter((_, i) => i !== retiree);
-      // Une bulle ouverte reste sur sa ligne : celles d'après remontent d'un rang.
-      const ouvertes = bullesOuvertes(div);
-      const restees = [...ouvertes].filter((i) => i !== retiree).map((i) => (i > retiree ? i - 1 : i));
-      ouvertes.clear();
-      restees.forEach((i) => ouvertes.add(i));
+      // Une bulle ou « par jour » ouverte reste sur sa ligne : celles d'après remontent d'un rang.
+      [bullesOuvertes(div), joursOuverts(div)].forEach((ouvertes) => {
+        const restees = [...ouvertes].filter((i) => i !== retiree).map((i) => (i > retiree ? i - 1 : i));
+        ouvertes.clear();
+        restees.forEach((i) => ouvertes.add(i));
+      });
       changer(div, [{ case: bloc.dataset.cle, valeur: lignes }]);
     };
   });
@@ -663,7 +671,7 @@ function ouvrirLaFin(div, champ) {
 
 /** RETIRER DES JOURS PAYÉS PENDANT UN IMPRÉVU (`jours` : `{rubrique, iso}`, ce que la route `imprevus` nomme) : chaque
  *  jour quitte la ligne de sa rubrique qui le porte, et les lignes partent à la route, comme décochées au calendrier ; la
- *  route fait suivre la quantité d'une ligne qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`), et la
+ *  route fait suivre la quantité de la ligne, qui ôte celle de chaque jour retiré (`LignePaie::par_jour_qui_suit`), et la
  *  carte se redessine de ce qu'elle rend. Rend le nombre de jours retirés : aucun quand la carte est validée et fermée,
  *  ou qu'aucune ligne ne les porte. */
 async function retirerDesJours(div, jours) {

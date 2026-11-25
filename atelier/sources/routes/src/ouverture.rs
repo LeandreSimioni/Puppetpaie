@@ -115,6 +115,8 @@ const AIDES: &[(&str, &str)] = &[
     ("net_attend", "Le net s'affiche dès que l'engagement est complet."),
     ("qui_d_abord", "Choisir d'abord qui est payé."),
     ("lieu_jours", "Le lieu et les jours se posent sur chaque ligne de paie."),
+    ("ligne_montant", "Montant"),
+    ("ligne_par_jour", "par jour"),
     ("a_completer", "Un engagement au moins reste à compléter avant de le valider : sa carte dit ce qui manque."),
     ("piece_absente", "N'est plus dans le dossier du mois."),
     ("qui_engage", "Choisir qui est engagé."),
