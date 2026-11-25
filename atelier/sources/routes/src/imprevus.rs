@@ -1365,12 +1365,14 @@ impl<C, V, X> GesteDeRoute<C, V, X> {
 }
 
 /// LE RANG D'UN GESTE DANS SON ECRAN : le geste principal (« Importer », « Reprendre »), que la page dessine en bouton
-/// principal, ou un geste second, en lien.
+/// principal ; un geste second, en lien ; ou un geste second dessine en bouton secondaire, a cote du principal
+/// (« Annuler » de la carte d'un engagement ouverte).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RangDuGeste {
     Principal,
     Second,
+    Secondaire,
 }
 
 impl RangDuGeste {

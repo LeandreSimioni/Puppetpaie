@@ -291,6 +291,11 @@ impl Action {
         Action { rang: RangDuGeste::Principal, ..self }
     }
 
+    /// La meme, en bouton secondaire, a cote du geste principal (`RangDuGeste::Secondaire`).
+    pub(crate) fn secondaire(self) -> Action {
+        Action { rang: RangDuGeste::Secondaire, ..self }
+    }
+
     /// Envoie-t-elle quelque chose ? Sa route, ou celle qu'elle ouvre ensuite, engage (`envois_en_fond::part_en_fond`) ;
     /// l'Historique, une boite qui ne fait que montrer, n'envoient rien.
     fn envoie(&self) -> bool {
