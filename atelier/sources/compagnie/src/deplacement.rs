@@ -5,9 +5,9 @@
 //! voit proposer « Ranger dans Documents ».
 //!
 //! LE GESTE. La route `logiciel-deplacer` verifie tout ce qui se verifie avant (`verifier`) et pose la demande
-//! (`maj/deplacer.json`, `demander`). La fenetre qui a servi la route la fait partir aussitot et se ferme
-//! (`lancer_s_il_est_demande`) ; posee en ligne de commande, elle part au prochain lancement de la fenetre
-//! (`au_lancement`). PARTIR, c'est : effacer la demande (un retrait qui echoue ne lance rien : la demande se rejouerait a
+//! (`maj/deplacer.json`, `demander`). La fenetre qui a servi la route la fait partir une fois ses envois en vol finis,
+//! et se ferme (`lancer_s_il_est_demande`) ; posee en ligne de commande, elle part au prochain lancement de la fenetre
+//! (`au_lancement`), et d'ici la l'accueil la dit (`demande_posee`). PARTIR, c'est : effacer la demande (un retrait qui echoue ne lance rien : la demande se rejouerait a
 //! chaque lancement), ecrire le DEPLACEMENT EN COURS (`DeplacementEnCours`), puis lancer le relais.
 //!
 //! LE DEPLACEMENT EN COURS vit hors de l'installation, dans le dossier de l'utilisateur
@@ -20,8 +20,9 @@
 //! nomme, ou il ne se lit pas et elle porte la marque) ne s'ouvre pas : la fenetre le dit dans une boite et s'arrete,
 //! avant meme de prendre son verrou (`en_cours_au_lancement`) ; la ligne de commande refuse (`refuser_s_il_se_deplace`).
 //! Toute autre installation du poste s'ouvre, quoi qu'il en soit du deplacement en cours. Le relais au travail : on
-//! attend. Le relais mort (le poste eteint en route) : le lancement suivant lance un relais qui REPREND, finit ce qui
-//! etait fini ou defait ce qui etait commence (`reprendre`).
+//! attend. Le relais mort (le poste eteint en route) : le lancement suivant lance un relais qui REPREND en regardant les
+//! deux dossiers, nom par nom (le journal peut retarder sur le disque) : il finit ce qui etait fini, defait ce qui etait
+//! commence, ou s'arrete sans rien toucher quand aucun des deux n'est surement entier (`reprendre`).
 //!
 //! LE RELAIS, HORS DU DOSSIER. Windows ne deplace pas un dossier qui porte un programme en marche, ni le dossier courant
 //! d'un processus. Le programme de la fenetre se copie donc dans le dossier temporaire du poste
@@ -663,6 +664,11 @@ pub fn au_lancement() -> bool {
 /// commande, il part au prochain lancement de la fenetre) ; la demande illisible : son refus.
 pub fn demande_posee(inst: &Path) -> R<Option<PathBuf>> {
     Ok(demande(inst)?.map(|d| d.vers))
+}
+
+/// Une demande de deplacement attend-elle dans l'installation `inst` (lisible ou non) ?
+pub fn une_demande_attend(inst: &Path) -> bool {
+    dossier_maj(inst).join(DEMANDE).is_file()
 }
 
 /// APRES LA ROUTE, DANS LA FENETRE, SES ENVOIS FINIS : une demande posee part (`partir`) ; a la fenetre de se fermer

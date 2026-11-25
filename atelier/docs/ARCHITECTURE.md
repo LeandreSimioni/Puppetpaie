@@ -598,11 +598,15 @@ un libellé, chacun sa forme.
 | geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
 | provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
 | ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
-| déplacement du logiciel en cours (d'où, où, l'étape écrite avant d'être faite ; tant qu'il est là, rien ne s'ouvre dans ces deux dossiers) | `compagnie::deplacement::EnCours` | `compagnie/src/deplacement.rs` |
+| déplacement du logiciel demandé, qui attend de partir (le dossier où il va ; posé en ligne de commande, il part au lancement suivant, et s'annule) | `compagnie::deplacement::Demande` | `compagnie/src/deplacement.rs` |
+| ce que la vérification d'un déplacement conclut (déjà là, ou possible vers ce dossier) | `compagnie::deplacement::Verdict` | `compagnie/src/deplacement.rs` |
+| déplacement du logiciel en cours (d'où, où, l'étape écrite avant d'être faite ; tant qu'il est là, rien ne s'ouvre dans ces deux dossiers ; sa reprise regarde les dossiers, pas seulement l'étape) | `compagnie::deplacement::DeplacementEnCours` | `compagnie/src/deplacement.rs` |
 | étape d'un déplacement en cours (attente, renommage, copie, effacement) | `compagnie::deplacement::Etape` | `compagnie/src/deplacement.rs` |
+| ce que porte un chemin d'une installation, pour comparer une copie à l'original (dossier, fichier et sa taille, lien) | `compagnie::deplacement::Trace` | `compagnie/src/deplacement.rs` |
+| charge du déplacement du logiciel (le dossier où il va, et, sous OneDrive, qu'on le sait) | `ChargeDeplacer` | `routes/src/accueil/deplacement.rs` |
 | ce qu'un déplacement en cours est pour une installation (rien, lu et la nommant, illisible et elle marquée) | `compagnie::deplacement::Ici` | `compagnie/src/deplacement.rs` |
 | issue d'un déplacement (déplacé, resté entier, coupé) | `compagnie::deplacement::Issue` | `compagnie/src/deplacement.rs` |
-| dernier déplacement du logiciel (sa date, d'où, où, son issue, sa phrase) | `compagnie::deplacement::Dernier` | `compagnie/src/deplacement.rs` |
+| dernier déplacement du logiciel, ou la fin de celui qui vient de se faire (sa date, d'où, où, son issue, sa phrase) | `compagnie::deplacement::Dernier` | `compagnie/src/deplacement.rs` |
 | geste de l'écran « où est le logiciel » (la charge de sa route : le dossier à saisir, ou celui des Documents) | `VersLeDossier` | `routes/src/accueil/deplacement.rs` |
 | sorte d'une erreur de Google pour un fichier demandé (du fichier, passagère, arrêt — autorisation ou non) : le seul classement de la restauration | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
 | pourquoi une restauration s'est arrêtée en route (hors ligne, autorisation perdue, refus de Google, verrou perdu) | `compagnie::restauration::ArretDeLaRestauration` | `compagnie/src/restauration.rs` |
@@ -4158,15 +4162,18 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   réelle des tuiles qui en a un (il n'y a pas de mot de passe de l'installation ; aucune n'en a : le geste n'est pas
   offert). La route vérifie tout ce qui se vérifie (un dossier neuf ou vide, dit en entier, hors de l'installation, où
   l'on écrit ; sur un autre disque, la place, et aucun lien à copier) et pose `maj/deplacer.json` ; la fenêtre qui l'a
-  servie la fait partir aussitôt et se ferme (posée en ligne de commande, elle part au lancement suivant de la
-  fenêtre). Partir, c'est effacer la demande, écrire le **déplacement en cours** (`EnCours`, dans le dossier de
-  l'utilisateur : d'où, où, l'étape écrite sur le disque avant d'être faite), poser une **marque** dans l'ancien
+  servie la fait partir une fois ses envois en vol finis, et se ferme (posée en ligne de commande, elle part au
+  lancement suivant de la fenêtre ; d'ici là, `logiciel-ou` la dit et offre de l'annuler : le même geste, vers le
+  dossier où il est). Partir, c'est effacer la demande, écrire le **déplacement en cours** (`DeplacementEnCours`, dans
+  le dossier de l'utilisateur : d'où, où, l'étape écrite sur le disque avant d'être faite), poser une **marque** dans l'ancien
   dossier et le neuf (`.deplacement-en-cours`) et lancer le **relais**, du dossier temporaire du poste (Windows ne
   déplace pas un dossier qui porte un programme en marche ni le dossier courant d'un processus). Le relais tient un
   verrou du système de bout en bout ; tant que le déplacement en cours concerne une installation (il la nomme, ou il ne
   se lit pas et elle porte la marque : `Ici`), rien ne s'y ouvre (la fenêtre le dit dans une boîte, avant même son
-  propre verrou ; la ligne de commande refuse) ; toute autre installation du poste s'ouvre ; un relais mort en route
-  est repris au lancement suivant, qui finit ce qui était fini ou défait ce qui était commencé. Le relais
+  propre verrou ; la ligne de commande refuse, sauf `logiciel-ou`, qui dit où il en est) ; toute autre installation du
+  poste s'ouvre ; un relais mort en route est repris au lancement suivant, qui **regarde les deux dossiers** nom par
+  nom (le journal peut retarder sur le disque) et finit ce qui était fini, défait ce qui était commencé, ou s'arrête
+  « coupé » sans rien toucher quand aucun des deux n'est sûrement entier. Le relais
   **renomme** chaque entrée de l'installation dans le nouveau dossier, `logiciel/` la dernière (elle revient la
   première), pour que le raccourci trouve le programme après une coupure (même disque : instantané, sans place en double)
   ou, sur un autre disque, la **copie** (chaque fichier écrit sur le disque, puis comparé à l'original par son

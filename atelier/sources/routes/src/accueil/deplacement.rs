@@ -4,12 +4,18 @@
 //! dossier de l'utilisateur, voit en plus ce qu'il en est et le geste « Ranger dans Documents ». Ce que le dernier
 //! deplacement est devenu (ou ce qui l'a empeche) se redit en encart ; illisible, l'encart le dit, et la lecture repond
 //! quand meme. Les dossiers se disent dans les lignes du rang, jamais dans une phrase (un nom de dossier n'est pas fait
-//! pour une phrase : `affiche::defaut`).
+//! pour une phrase : `affiche::defaut`). Un deplacement EN COURS : la lecture repond pendant qu'il dure (la porte des
+//! routes la laisse passer, `commande_et_route`) et dit ou il en est, sans offrir de geste. Un deplacement DEMANDE qui
+//! attend (pose en ligne de commande, il part au prochain lancement) se dit, et s'annule par le meme geste, vers le
+//! dossier ou le logiciel est deja (« deja la » efface la demande, sans rien exiger).
 //!
 //! DEPLACER SE PROUVE COMME UN ACTE REEL : le mot de passe du logiciel, tape par une personne au moment du geste (dans
 //! la page, la boite du mot de passe ; par `moteur route`, le moteur le demande lui-meme a un humain, ou refuse). Celui
 //! d'une compagnie reelle du poste, la premiere des tuiles qui en a un (`qui_prouve`) : il n'y a pas de mot de passe de
-//! l'installation. Aucune n'en a : rien ne le prouve, le geste n'est pas offert et la route refuse.
+//! l'installation ; un coffre illisible passe la main a la suivante. Aucune n'en a : rien ne le prouve, le geste n'est
+//! pas offert et la route refuse. LA DEMANDE DU MOT DE PASSE NOMME LE DOSSIER, en mots, et dit, sous OneDrive, ce qui
+//! partirait dans le nuage (`geste_vers`) : celle de « Ranger dans Documents », et celle que le moteur pose lui-meme
+//! (`moteur route`) ; celle de « Changer de dossier », rendue avant que le dossier soit saisi, renvoie a la boite.
 //!
 //! ONEDRIVE se dit AVANT de partir (la fenetre se ferme des que le deplacement part) : un dossier qu'il synchronise est
 //! refuse tant que la charge ne dit pas qu'on le sait (`onedrive`, une case que la boite ne montre que si OneDrive
@@ -20,7 +26,6 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use compagnie::coffre::Coffre;
-use compagnie::demande::DemandeDuMotDePasse;
 use compagnie::deplacement::{dernier_ici, dit, racines_onedrive, ranger_dans_les_documents, synchronise_par_onedrive, Issue, Verdict, AVERTIR_ONEDRIVE};
 use compagnie::installation::IdDeCompagnie;
 use socle::echec::{erreur, refus, Classe, R};
@@ -41,7 +46,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire où sont le logiciel et ses compagnies, et le geste qui les déplace.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "phrase, dossier, encarts (le dernier déplacement ; une ancienne installation, cachée), rangs : où il est, les dossiers que OneDrive synchronise, et les gestes qui le déplacent quand une compagnie a un mot de passe du logiciel",
+        rend: "phrase, dossier, encarts (un déplacement en cours ou demandé ; le dernier ; une ancienne installation, cachée), rangs : où il est, les dossiers que OneDrive synchronise, et les gestes qui le déplacent ou annulent la demande",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
@@ -67,8 +72,9 @@ pub const ROUTES: &[Fiche] = &[
 
 const CHANGER: Affiche = Affiche::new("Changer de dossier");
 const RANGER: Affiche = Affiche::new("Ranger dans Documents");
-/// Le geste, tel que la demande du mot de passe le dit.
-const GESTE_DEPLACER: &str = "déplacer le logiciel et ses compagnies dans un autre dossier";
+const ANNULER: Affiche = Affiche::new("Annuler le déplacement demandé");
+/// Le geste, tel que la demande du mot de passe le dit, quand le dossier se saisit dans la meme boite.
+const GESTE_DEPLACER: &str = "déplacer le logiciel et ses compagnies dans le dossier saisi dans la boîte";
 /// Aucune compagnie du poste n'a de mot de passe du logiciel.
 const SANS_MOT_DE_PASSE: &str = "Aucune compagnie de ce poste n'a de mot de passe du logiciel : rien ne prouve qu'une personne déplace le logiciel. Rien n'a changé.";
 
@@ -139,29 +145,52 @@ pub fn route(inst: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
 /// LA COMPAGNIE DONT LE MOT DE PASSE PROUVE qu'une personne deplace le logiciel : la premiere compagnie reelle de
 /// l'installation `inst`, dans l'ordre des tuiles, dont le coffre a un mot de passe du logiciel ; aucune : `None`.
 fn qui_prouve(inst: &Path) -> R<Option<PathBuf>> {
+    // Un coffre qui ne se lit pas ne fait pas disparaitre le geste : la compagnie suivante sert. Aucune ne sert, et un
+    // coffre ne se lisait pas : son refus.
+    let mut illisible = None;
     for (id, r) in compagnie::installation::compagnies(inst, |_| true)? {
         let reelle = match id {
             IdDeCompagnie::Fictive(_) => false,
             IdDeCompagnie::Reelle => r.join(socle::fichiers::CONFIG).is_dir(),
             IdDeCompagnie::Cie(_) => true,
         };
-        if reelle && Coffre::du_poste(&r).ouverture_exigee()? {
-            return Ok(Some(r));
+        if !reelle {
+            continue;
+        }
+        match Coffre::du_poste(&r).ouverture_exigee() {
+            Ok(true) => return Ok(Some(r)),
+            Ok(false) => {}
+            Err(e) => {
+                illisible.get_or_insert(e);
+            }
         }
     }
-    Ok(None)
+    match illisible {
+        Some(e) => Err(e),
+        None => Ok(None),
+    }
 }
 
-/// La demande du mot de passe que le geste exige ; `None` : aucune compagnie n'en a.
-fn demande(inst: &Path) -> R<Option<DemandeDuMotDePasse>> {
-    qui_prouve(inst)?.map(|r| crate::coffre::demande(&r, GESTE_DEPLACER)).transpose()
+/// LE GESTE, tel que la demande du mot de passe le dit : le dossier ou le logiciel va (en mots), et, sous OneDrive, ce
+/// qui partirait dans le nuage. Un dossier encore a saisir : le geste seul.
+fn geste_vers(vers: Option<&Path>) -> String {
+    match vers {
+        None => GESTE_DEPLACER.to_string(),
+        Some(v) => {
+            let mut g = format!("déplacer le logiciel et ses compagnies dans : {}", dit(v));
+            if synchronise_par_onedrive(v).is_some() {
+                g.push_str(". OneDrive synchronise ce dossier : le coffre du logiciel, les paies et les numéros de sécurité sociale partiront dans le nuage de Microsoft");
+            }
+            g
+        }
+    }
 }
 
-/// LA PREUVE : le mot de passe que la page a fait taper (`mdp`), sinon le moteur le demande lui-meme a un humain ;
-/// verifie sur le coffre de la compagnie qui prouve (`qui_prouve`).
-fn prouver(inst: &Path, mdp: Option<&Secret>) -> R<()> {
+/// LA PREUVE du deplacement vers `vers` : le mot de passe que la page a fait taper (`mdp`), sinon le moteur le demande
+/// lui-meme a un humain, en nommant le dossier ; verifie sur le coffre de la compagnie qui prouve (`qui_prouve`).
+fn prouver(inst: &Path, vers: &Path, mdp: Option<&Secret>) -> R<()> {
     let Some(racine) = qui_prouve(inst)? else { return Err(erreur(Classe::PreuveInsuffisante, SANS_MOT_DE_PASSE)) };
-    let demande = crate::coffre::demande(&racine, GESTE_DEPLACER)?;
+    let demande = crate::coffre::demande(&racine, &geste_vers(Some(vers)))?;
     let tape = match mdp.filter(|m| !m.devoiler().is_empty()) {
         Some(m) => m.clone(),
         None => compagnie::demande::mot_de_passe_de_l_acte(&racine, &demande)
@@ -192,11 +221,40 @@ fn ou_est(inst: &Path) -> OuEstLeLogiciel {
         Err(e) => encarts.push(Encart::de(EtatDEcran::Refuse, "Le dernier déplacement", e.phrase)),
     }
     let mut gestes = Vec::new();
-    if !cfg!(target_os = "wasi") {
+    // UN DEPLACEMENT EN COURS : la lecture repond, dit ou il en est et quoi faire ; aucun geste ne s'offre avant sa fin.
+    let en_cours = compagnie::deplacement::en_cours_dit(inst);
+    if let Some((phrase, lignes)) = &en_cours {
+        encarts.push(Encart::de(EtatDEcran::AFaire, "Un déplacement en cours", phrase.clone()));
+        dit_du_rang.extend(lignes.iter().cloned());
+    }
+    // UNE DEMANDE QUI ATTEND (posee en ligne de commande) : elle partira au prochain lancement ; elle s'annule (le meme
+    // geste, vers le dossier ou le logiciel est deja : rien n'est exige).
+    let attend = en_cours.is_none() && compagnie::deplacement::une_demande_attend(inst);
+    if attend {
+        let phrase = match compagnie::deplacement::demande_posee(inst) {
+            Ok(Some(vers)) => {
+                dit_du_rang.push(format!("Le déplacement demandé va dans : {}.", dit(&vers)));
+                "Un déplacement du logiciel est demandé : il partira au prochain lancement du logiciel, qui se fermera pour se déplacer. Il s'annule ici.".to_string()
+            }
+            Ok(None) => "Un déplacement du logiciel est demandé : il partira au prochain lancement du logiciel. Il s'annule ici.".to_string(),
+            Err(e) => format!("Un déplacement du logiciel est demandé, et sa demande ne se lit pas : {} Il s'annule ici.", e.phrase),
+        };
+        encarts.push(Encart::de(EtatDEcran::AFaire, "Un déplacement demandé", phrase));
+        let annuler = ChargeDeplacer { dossier: inst.to_path_buf(), onedrive: None };
+        gestes.push(GesteDeRoute::avec_cases(Route::LogicielDeplacer, VersLeDossier::Dit(annuler), ANNULER, Vec::new(), SansCharge {}, SansCharge {}).principal());
+    }
+    if !cfg!(target_os = "wasi") && en_cours.is_none() {
         let onedrive = racines_onedrive();
         dit_du_rang.extend(onedrive.iter().map(|r| format!("OneDrive synchronise : {}.", dit(r))));
-        match demande(inst) {
-            Ok(Some(demande)) => {
+        match qui_prouve(inst) {
+            Ok(Some(qui)) => {
+                let demande = match crate::coffre::demande(&qui, &geste_vers(None)) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        encarts.push(Encart::de(EtatDEcran::Refuse, "Le déplacer", e.phrase));
+                        return rendre(inst, encarts, dit_du_rang, gestes);
+                    }
+                };
                 // Ce que la boite dit avant de partir : ce qui se passe, et ce que OneDrive ferait du dossier.
                 let mut phrases = vec!["Le logiciel se ferme, s'y déplace avec ses compagnies, puis se rouvre là.".to_string()];
                 let mut cases = vec!["dossier"];
@@ -218,8 +276,20 @@ fn ou_est(inst: &Path) -> OuEstLeLogiciel {
                         if sous_onedrive {
                             phrases.push(format!("{} Le dossier Documents de ce poste en est un.", AVERTIR_ONEDRIVE));
                         }
+                        // La demande du mot de passe nomme les Documents, et ce que OneDrive en ferait.
+                        let demande = crate::coffre::demande(&qui, &geste_vers(Some(&documents)));
                         let charge = ChargeDeplacer { dossier: documents, onedrive: sous_onedrive.then_some(true) };
-                        gestes.insert(0, GesteDeRoute::avec_cases(Route::LogicielDeplacer, VersLeDossier::Dit(charge), RANGER, Vec::new(), SansCharge {}, SansCharge {}).disant(phrases).exigeant(Some(demande)).principal());
+                        match demande {
+                            Ok(demande) => {
+                                let ranger = GesteDeRoute::avec_cases(Route::LogicielDeplacer, VersLeDossier::Dit(charge), RANGER, Vec::new(), SansCharge {}, SansCharge {}).disant(phrases).exigeant(Some(demande));
+                                // Une demande qui attend garde le geste principal (l'annuler) ; sinon, ranger l'est.
+                                match attend {
+                                    true => gestes.push(ranger),
+                                    false => gestes.insert(0, ranger.principal()),
+                                }
+                            }
+                            Err(e) => encarts.push(Encart::de(EtatDEcran::Refuse, "Ranger dans Documents", e.phrase)),
+                        }
                     }
                     Ok(None) => {}
                     Err(e) => encarts.push(Encart::de(EtatDEcran::Refuse, "Un dossier caché", format!("Le logiciel est dans un dossier caché, et le dossier Documents ne se lit pas : {}", e.phrase))),
@@ -229,6 +299,11 @@ fn ou_est(inst: &Path) -> OuEstLeLogiciel {
             Err(e) => encarts.push(Encart::de(EtatDEcran::Refuse, "Le déplacer", e.phrase)),
         }
     }
+    rendre(inst, encarts, dit_du_rang, gestes)
+}
+
+/// La reponse de `logiciel-ou` : ses encarts, et un rang qui dit les dossiers et porte les gestes.
+fn rendre(inst: &Path, encarts: Vec<Encart>, dit_du_rang: Vec<String>, gestes: Vec<GesteDeRoute<VersLeDossier, SansCharge, SansCharge>>) -> OuEstLeLogiciel {
     let rang = RangDeLEcran { titre: "Le logiciel et ses compagnies".to_string(), dit: dit_du_rang, pastille: Pastille::de(EtatDEcran::Information, "sur ce poste"), etat: None, montre: None, gestes };
     OuEstLeLogiciel {
         phrase: Phrase::fixe("Le logiciel et ses compagnies : leur dossier sur ce poste, et le geste qui les déplace."),
@@ -245,14 +320,22 @@ fn deplacer(inst: &Path, c: ChargeDeplacer, mdp: Option<&Secret>) -> R<Rendu> {
         if synchronise_par_onedrive(vers).is_some() && c.onedrive != Some(true) {
             return Err(refus(format!("{} Pour l'y mettre quand même, dire « Je sais que OneDrive le synchronise ». Rien n'a changé.", AVERTIR_ONEDRIVE)));
         }
-        prouver(inst, mdp)
+        prouver(inst, vers, mdp)
     };
+    let demandee = compagnie::deplacement::une_demande_attend(inst);
     let verdict = compagnie::deplacement::demander(inst, &c.dossier, avant).map_err(|e| match e.classe {
         Some(Classe::PreuveInsuffisante) => e,
         _ => e.reclasser(Classe::Refuse),
     })?;
     match verdict {
-        Verdict::DejaLa => en_json(Deplacement { phrase: Phrase::fixe("Le logiciel est déjà dans ce dossier. Rien ne change."), dossier: inst.to_path_buf(), vers: None }),
+        Verdict::DejaLa => en_json(Deplacement {
+            phrase: Phrase::fixe(match demandee {
+                true => "Le déplacement demandé est annulé : le logiciel reste dans son dossier.",
+                false => "Le logiciel est déjà dans ce dossier. Rien ne change.",
+            }),
+            dossier: inst.to_path_buf(),
+            vers: None,
+        }),
         Verdict::Possible(v) => en_json(Deplacement {
             phrase: Phrase::fixe("Le logiciel va dans le dossier demandé. Il se ferme, s'y déplace avec ses compagnies, puis se rouvre là ; s'il n'est pas ouvert, ce sera à son prochain lancement."),
             dossier: inst.to_path_buf(),

@@ -834,21 +834,31 @@ impl Fenetre {
                 RouteReponse::de(nom, rendu)
             });
         }
-        // Un deplacement demande part au relais tout de suite, et le logiciel se ferme comme par sa croix : le relais
-        // attend sa fin, deplace, et rouvre la fenetre au nouvel endroit (`compagnie::deplacement`).
+        // Un deplacement demande part au relais, et le logiciel se ferme comme par sa croix : ses envois en vol vont
+        // d'abord au bout (le relais n'attend la fin de la fenetre qu'un temps borne), puis le relais se lance et la
+        // fenetre se ferme ; il attend sa fin, deplace, et rouvre la fenetre au nouvel endroit (`compagnie::deplacement`).
+        // Le relais qui ne se lance pas : la fenetre reste ouverte, et la route le refuse.
         if nom == Route::LogicielDeplacer {
             let rendu = api::route_de_l_installation(nom, charge);
-            if !rendu.est_rendue() {
+            if !rendu.est_rendue() || !compagnie::deplacement::une_demande_attend(&inst) {
                 return rendu;
             }
-            return match compagnie::deplacement::lancer_s_il_est_demande(&inst) {
+            self.ecrire("Le logiciel se fermera pour se deplacer, ses envois finis.\n");
+            let pas_parti = std::cell::RefCell::new(None);
+            routes::envois_en_fond::fermer_apres_les_envois(|| match compagnie::deplacement::lancer_s_il_est_demande(&inst) {
                 Ok(true) => {
-                    self.ecrire("Le logiciel se ferme pour se deplacer.\n");
-                    self.fermer_apres_les_envois(|| self.poser_phase(Phase::Accueil));
-                    rendu
+                    self.poser_phase(Phase::Accueil);
+                    tenu(&self.fermer).as_ref().is_some_and(|f| f())
                 }
-                Ok(false) => rendu,
-                Err(e) => RouteReponse::de(nom, Err(e.reclasser(Classe::Refuse))),
+                Ok(false) => false,
+                Err(e) => {
+                    *pas_parti.borrow_mut() = Some(e);
+                    false
+                }
+            });
+            return match pas_parti.into_inner() {
+                Some(e) => RouteReponse::de(nom, Err(e.reclasser(Classe::Refuse))),
+                None => rendu,
             };
         }
         if nom == Route::AdministrateurTableau {
