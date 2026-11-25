@@ -580,9 +580,14 @@ impl EnvoisEnFond {
         }
     }
 
-    /// L'envoi `numero` est au bout : la phrase de sa route, ou son refus.
+    /// L'envoi `numero` est au bout : la phrase de sa route, ou son refus. Une demande de fiche partie sans refus ne se
+    /// dit plus : elle a sa place dans les fiches en attente, ou elle attend sa reponse des jours durant.
     fn finir(&self, numero: NumeroDEnvoi, r: &Reponse, suivre: Option<crate::depots::ChargeSuivre>) {
-        if let Some(e) = tenu(&self.envois).iter_mut().find(|e| e.numero == numero) {
+        let mut envois = tenu(&self.envois);
+        if r.issue_dite().is_ok() {
+            envois.retain(|e| e.numero != numero || !matches!(e.place, PlaceDeLEnvoi::Fiche { .. }));
+        }
+        if let Some(e) = envois.iter_mut().find(|e| e.numero == numero) {
             e.etat = match r.issue_dite() {
                 Ok(p) => EtatDUnEnvoi::Parti(p.to_string()),
                 Err(x) => EtatDUnEnvoi::Echoue(format!("{} : l'envoi n'est pas allé au bout. {}", e.quoi, x.phrase)),

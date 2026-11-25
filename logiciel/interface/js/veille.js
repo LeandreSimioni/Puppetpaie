@@ -36,18 +36,25 @@ async function rafraichirApresVeille(v) {
 /* LES ENVOIS PARTIS EN FOND (`dit.envois`, routes/src/envois_en_fond.rs) : un envoi
    à la signature, des documents, un dépôt réel partent sur un fil du moteur une fois
    vérifiés ; la page reçoit « en cours d'envoi » (`en_fond`), et le bandeau dit la
-   suite. Les numéros déjà vus au bout, pour ne repeindre et ne suivre qu'une fois. */
+   suite. Les numéros déjà vus au bout, pour ne repeindre et ne suivre qu'une fois ; ceux
+   vus en cours, car un envoi au bout que le bandeau ne dit pas (une demande de fiche
+   partie) n'est plus dans la liste : sa place se repeint quand même. */
 const ENVOIS_VUS_AU_BOUT = new Set();
+let ENVOIS_VUS_EN_COURS = new Set();
 
 /** Des envois sont-ils arrivés au bout depuis le dernier regard ? Un dépôt réel parti
  *  se suit ensuite comme après l'avoir attendu (`suivre`, la charge de `suivre-depot`). */
 function envoisArrives(v) {
-  const neufs = (v?.dit?.envois || []).filter((e) => e.etat !== "en_cours" && !ENVOIS_VUS_AU_BOUT.has(e.numero));
+  const envois = v?.dit?.envois || [];
+  const neufs = envois.filter((e) => e.etat !== "en_cours" && !ENVOIS_VUS_AU_BOUT.has(e.numero));
   neufs.forEach((e) => {
     ENVOIS_VUS_AU_BOUT.add(e.numero);
     if (e.suivre) suivreDepot(e.suivre.quoi, e.suivre.flux, e.suivre.mois);
   });
-  return neufs.length > 0;
+  const enCours = new Set(envois.filter((e) => e.etat === "en_cours").map((e) => e.numero));
+  const sortis = [...ENVOIS_VUS_EN_COURS].some((n) => !enCours.has(n));
+  ENVOIS_VUS_EN_COURS = enCours;
+  return neufs.length > 0 || sortis;
 }
 
 /* LE BANDEAU. On y cherche trois choses, dans cet ordre : est-ce que tout

@@ -863,6 +863,8 @@ function partiEnFond(r) {
   if (!r || !r.en_fond) return false;
   fermerBoite();
   dire(r.phrase);
+  // Vu en cours dès sa réponse : s'il est au bout avant que le bandeau le lise, sa place se repeint quand même.
+  ENVOIS_VUS_EN_COURS.add(r.en_fond);
   suivreVeille();
   // Le cadre sous le mois (`etat-du-mois`) dit l'envoi en cours.
   rafraichirActions();
