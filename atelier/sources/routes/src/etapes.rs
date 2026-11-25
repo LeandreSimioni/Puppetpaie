@@ -231,6 +231,9 @@ pub(crate) enum ChargeDuGeste {
     Piece(crate::documents::ChargePiecePartie),
     Proposee(crate::mois::ChargeCarteProposee),
     Carte(crate::mois::ChargeCase),
+    Valider(crate::engagement::ChargeValider),
+    Modifier(crate::engagement::ChargeModifier),
+    Retirer(crate::engagement::ChargeRetirer),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -271,6 +274,9 @@ charge_du_geste! {
     crate::documents::ChargePiecePartie => Piece,
     crate::mois::ChargeCarteProposee => Proposee,
     crate::mois::ChargeCase => Carte,
+    crate::engagement::ChargeValider => Valider,
+    crate::engagement::ChargeModifier => Modifier,
+    crate::engagement::ChargeRetirer => Retirer,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
@@ -1448,6 +1454,8 @@ struct LigneDePage<'a> {
     numero_dit: Option<String>,
     /// Le geste qui copie l'engagement pour un autre salarie (`copier-engagement`, puis `enregistrer-saisie`).
     copier: Action,
+    /// Les gestes de sa carte ouverte (`GestesDeLaCarte`) : la page en dessine les boutons, et n'en decide aucun.
+    gestes: crate::engagement::GestesDeLaCarte,
 }
 
 #[derive(Debug, Serialize)]
@@ -1480,6 +1488,7 @@ impl<'a> LigneDePage<'a> {
                 (_, e) => e,
             },
             numero_dit: v.numero.as_ref().map(|n| format!("contrat n° {}", n)),
+            gestes: crate::engagement::GestesDeLaCarte::de(mois, &l.engagement, v.valide.is_some()),
             copier: action(
                 Route::CopierEngagement,
                 crate::mois::ChargeCarteProposee { mois, engagement: l.engagement.clone() },

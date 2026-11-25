@@ -555,10 +555,11 @@ function peindreLesEtats(div) {
   if (!cible) return;
   const ligne = div._ligne;
   const imprevu = salarieDuBloc(div) ? `<button type="button" class="lien e-imprevu-btn">Imprévu…</button>` : "";
-  const retirer = `<button class="lien retirer-engagement">Retirer cet engagement</button>`;
-  const gestes = div._modif
-    ? `${retirer}<button class="secondaire v-annuler">Annuler</button><button class="primaire v-modifier">Modifier l'engagement</button>`
-    : `${retirer}<button class="primaire v-valider">Valider l'engagement</button>`;
+  // LES GESTES DE LA CARTE, tels que sa ligne les rend (`gestes`) : une carte que la route ne connaît pas n'en a aucun.
+  const g = (ligne && ligne.gestes) || {};
+  const bouton = (a, classe) => (a ? `<button class="${classeDuGeste(a)} ${classe}">${echapper(a.libelle)}</button>` : "");
+  const gestes = [bouton(g.retirer, "retirer-engagement"), bouton(g.annuler, "v-annuler"), bouton(g.modifier, "v-modifier"),
+    bouton(g.valider, "v-valider")].join("");
   const valide = !!(ligne && ligne.valide);
   const pieces = valide ? ligne.carres.filter((c) => c.lien).map((c) =>
     `<button class="lien v-pieces" data-acte="${echapper(c.cle)}">${echapper(c.lien)}</button>`).join(" · ") : "";
@@ -568,10 +569,10 @@ function peindreLesEtats(div) {
     <div class="validation${valide ? " faite" : ""}">${fait ? `<span>${fait}</span>` : ""}<span class="boutons">${imprevu}${gestes}</span></div>`;
   brancherRecu(div);
   const sur = (s, f) => { const b = cible.querySelector(s); if (b) b.onclick = (ev) => { ev.preventDefault(); f(ev); }; };
-  sur(".v-valider", () => validerLaCarte(div));
-  sur(".v-modifier", () => modifierLaCarte(div));
-  sur(".v-annuler", () => chargerMois(MOIS_AFFICHE, true));
-  sur(".retirer-engagement", () => retirerLaCarte(div));
+  sur(".v-valider", () => validerLaCarte(g.valider));
+  sur(".v-modifier", () => modifierLaCarte(div, g.modifier));
+  sur(".v-annuler", () => chargerMois(g.annuler.charge.mois, true));
+  sur(".retirer-engagement", () => retirerLaCarte(g.retirer));
   sur(".e-imprevu-btn", (ev) => { ev.stopPropagation(); menuImprevu(ev.currentTarget, { div }); });
   sur(".carte-versions", (ev) => { ev.stopPropagation(); boiteFrise(ligne); });
   cible.querySelectorAll(".v-pieces").forEach((b) => { b.onclick = () => boitePieces(ligne, b.dataset.acte); });
@@ -594,31 +595,30 @@ function peindreEtats() {
   });
 }
 
-/** « Valider l'engagement » : ce qui s'écrit encore s'écrit d'abord ; puis la route valide le brouillon écrit, ou dit le
- *  fait qui lui manque sans rien écrire. */
-async function validerLaCarte(div) {
-  const mois = MOIS_AFFICHE;
+/** « Valider l'engagement » (`geste`, de la ligne de la carte) : ce qui s'écrit encore s'écrit d'abord ; puis la route
+ *  valide le brouillon écrit, ou dit le fait qui lui manque sans rien écrire. Validé, le mois se relit : la carte se
+ *  referme en sa ligne. */
+async function validerLaCarte(geste) {
+  const mois = geste.charge.mois;
   await enregistrerSaisie(true);
-  if (!div.dataset.engagement) { dire(ETAT.aides.qui_engage, "erreur"); return; }
   try {
-    const r = await aSonTour(() => api("valider-engagement", { mois, engagement: JSON.parse(div.dataset.engagement) }));
+    const r = await aSonTour(() => api(geste.route, geste.charge));
     dire(r.phrase);
   } catch (e) { dire(e.message, "erreur"); return; }
   await chargerMois(mois, true);
 }
 
-/** « Retirer cet engagement » : la route décide (rien de parti, il s'efface ; un envoi parti, elle avertit, et la page
- *  propose de le rendre non actif). Une carte jamais écrite s'efface de l'écran. */
-async function retirerLaCarte(div) {
-  const mois = MOIS_AFFICHE;
+/** « Retirer cet engagement » (`geste`) : la route décide (rien de parti, il s'efface ; un envoi parti, elle avertit, et
+ *  la page propose de le rendre non actif). */
+async function retirerLaCarte(geste) {
+  const mois = geste.charge.mois;
   await enregistrerSaisie(true);
-  if (!div.dataset.engagement) { div.remove(); calculerApercu(); dire(ETAT.aides.engagement_retire); return; }
-  const charge = { mois, engagement: JSON.parse(div.dataset.engagement), confirme: false };
+  const charge = geste.charge;
   try {
-    let r = await api("retirer-engagement", charge);
+    let r = await api(geste.route, charge);
     if (r.avertissement) {
       if (!await boiteNonActif(r.avertissement)) return;
-      r = await api("retirer-engagement", { ...charge, confirme: true });
+      r = await api(geste.route, { ...charge, confirme: true });
     }
     dire(r.phrase);
     await chargerMois(mois, true);
@@ -640,16 +640,16 @@ function ouvrirCarte(div) {
 
 /** « MODIFIER L'ENGAGEMENT » : ce qu'on a changé, case par case ; la route dit si rien n'a changé, écrit, ou rend son
  *  avertissement quand ce qui est parti le demande. */
-async function modifierLaCarte(div) {
-  const mois = MOIS_AFFICHE;
+async function modifierLaCarte(div, geste) {
+  const mois = geste.charge.mois;
   if (!div._modif.length) { await chargerMois(mois, true); return; }
-  const charge = { mois, engagement: JSON.parse(div.dataset.engagement), changements: div._modif, confirme: false, jour: null };
+  const charge = { ...geste.charge, changements: div._modif, jour: null };
   try {
-    let r = await api("modifier-engagement", charge);
+    let r = await api(geste.route, charge);
     while (r && r.avertissement) {
       const reponse = await boiteAvertissement(r.avertissement);
       if (!reponse) return;
-      r = await api("modifier-engagement", { ...charge, confirme: true, jour: reponse.jour });
+      r = await api(geste.route, { ...charge, confirme: true, jour: reponse.jour });
     }
     if (r && r.change) dire(r.phrase);
     await chargerMois(mois, true);

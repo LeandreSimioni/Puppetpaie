@@ -119,8 +119,6 @@ const AIDES: &[(&str, &str)] = &[
     ("ligne_par_jour", "par jour"),
     ("a_completer", "Un engagement au moins reste à compléter avant de le valider : sa carte dit ce qui manque."),
     ("piece_absente", "N'est plus dans le dossier du mois."),
-    ("qui_engage", "Choisir qui est engagé."),
-    ("engagement_retire", "Engagement retiré."),
     ("dpae_cochees", "Cochées d'avance : les embauches sans DPAE, ou dont la DPAE a été refusée. Une DPAE déjà passée ne se redéclare pas : l'Urssaf recevrait deux déclarations pour un seul contrat."),
     ("dpae_heure", "Heure d'embauche déclarée : 08h00. Toutes les embauches cochées partent ensemble, dans un seul dépôt. D'abord le test, qui ne déclare rien ; puis, une fois le test revenu conforme, l'envoi réel."),
     ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD ; la DSN déposée du même mois pourrait le dire. Sinon, dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
