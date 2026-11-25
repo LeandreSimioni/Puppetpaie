@@ -18,7 +18,8 @@
 //! reseau, un fichier a retenter), elle se continue dans ce dossier-la, et dans aucun autre. Allee au bout (chaque
 //! fichier descendu, sauf ceux qui ne descendront jamais par cette voie, et la fiche Entreprise revenue et lisible), la
 //! compagnie recoit une copie du jeton de l'accueil (elle est liee au meme compte, et sa sauvegarde repart dans le meme
-//! dossier du Drive, qui ne perd rien : elle n'y supprime jamais), sa marque s'efface, et l'ecran de fin de reprise
+//! dossier du Drive, qui ne perd rien : elle n'y supprime jamais), ce poste prend la main sur ce dossier
+//! (`compagnie::sauvegarde::LaMain` : l'ancien poste n'y sauvegarde plus), sa marque s'efface, et l'ecran de fin de reprise
 //! propose de l'ouvrir (`compagnie-ouvrir`) : rien ne l'ouvre avant ce geste.
 //!
 //! UNE REPRISE PAS FINIE SE VOIT TOUJOURS (`drive-compagnies`), que son dossier du Drive se voie ou non (supprime, a la
@@ -323,8 +324,9 @@ pub(crate) fn route(inst: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
 
 /// Ce que dit la boite d'« Oublier ce compte ».
 const OUBLIER_DIT: &str = "Ce poste oublie le compte Google de l'accueil. Les compagnies déjà reprises gardent le leur. L'accès accordé côté Google se retire sur myaccount.google.com.";
-/// Ce que dit l'ecran de fin d'une reprise allee au bout, du dossier du Drive qu'elle garde.
-const UN_SEUL_POSTE: &str = "Si l'ancien poste se sert encore de cette compagnie, n'en gardez qu'un : les deux sauvegardes iraient au même dossier.";
+/// Ce que dit l'ecran de fin d'une reprise allee au bout, du dossier du Drive qu'elle garde, quand ce poste en a pris la
+/// main (`LaMain`).
+const UN_SEUL_POSTE: &str = "Ce poste tient maintenant la main sur son Drive : lui seul y sauvegarde. L'ancien poste n'y sauvegarde plus, et le dit ; « Prendre la main » (Configuration › Le Drive) la lui rend.";
 
 /// Une reprise pas finie sur ce poste : la compagnie qu'elle remplit, sa racine, sa marque.
 type Commencee = (IdDeCompagnie, PathBuf, RepriseEnCours);
@@ -730,6 +732,8 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
     };
     let au_bout = r.complete() && fiche == FicheRevenue::Lisible;
     let mut a_faire = Vec::new();
+    // La main sur le dossier du Drive, prise ou non (et pourquoi) ; aucune quand la reprise n'en prend pas.
+    let mut main: Option<Result<(), String>> = None;
     if au_bout {
         if bride {
             let marqueur = Marqueur {
@@ -751,12 +755,21 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
             // marque est encore la : le coffre de ce dossier est descendu du Drive (`Restauration::origine_du_coffre`).
             let coffre = compagnie::coffre::Coffre::du_poste(&racine);
             a_faire = compagnie::restauration::a_faire(&coffre, r.origine_du_coffre(&coffre));
+            // « REPRENDRE » PREND LA MAIN D'OFFICE (Leandre, 25/11/2026, #594) sur le dossier d'une compagnie, qu'elle
+            // garde : l'ancien poste n'y sauvegarde plus. Reprise de l'ancienne sauvegarde commune, sa premiere sauvegarde
+            // fera son dossier, et en prendra la main.
+            if let GenreDuDossier::Compagnie(identite) = &vu.genre {
+                let prise = compagnie::sauvegarde::LaMain::de_ce_poste(&racine)
+                    .map_err(|e| e.phrase)
+                    .and_then(|m| envois::drive::Drive::marquer(&mut client, &vu.id, &m.marque(identite)).map_err(|e| e.echec.phrase));
+                main = Some(prise);
+            }
         }
         compagnie::restauration::finir_la_reprise(&racine)?;
     }
     let nom = if fiche == FicheRevenue::Lisible { compagnie::installation::nom_de(&racine)? } else { vu.nom.clone() };
     let revenus = r.redescendus.len();
-    let ecran = fin_de_reprise(&vu, &id, &nom, au_bout, bride, fiche, &r, a_faire);
+    let ecran = fin_de_reprise(&vu, &id, &nom, au_bout, fiche, &r, a_faire, main.as_ref());
     let phrase = if au_bout {
         socle::phrase!("« {} » est reprise de votre Drive : {} fichier(s) revenu(s).", nom, revenus)
     } else {
@@ -818,9 +831,10 @@ fn arretee(vu: &DossierVu, id: IdDeCompagnie, pourquoi: &str, dit: &str, retente
 /// mots, le detail dans `Reprise::incidents`) ; pourquoi elle n'est pas finie (la connexion tombee, des fichiers a
 /// retenter, la fiche Entreprise absente ou illisible) et ce qui se fait vraiment : la continuer quand une nouvelle
 /// tentative peut changer quelque chose, sinon l'abandonner ; allee au bout, ce qui reste a faire pour son coffre
-/// (`a_faire`, une compagnie reelle), le dossier du Drive qu'elle garde avec l'ancien poste, et le geste qui l'ouvre.
+/// (`a_faire`, une compagnie reelle), la main prise sur le dossier du Drive qu'elle garde (`main`), ou pourquoi elle ne
+/// l'est pas, et le geste qui l'ouvre.
 #[allow(clippy::too_many_arguments)]
-fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, bride: bool, fiche: FicheRevenue, r: &compagnie::restauration::Restauration, a_faire: Vec<String>) -> EcranDeLaReprise {
+fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, fiche: FicheRevenue, r: &compagnie::restauration::Restauration, a_faire: Vec<String>, main: Option<&Result<(), String>>) -> EcranDeLaReprise {
     let mut encarts = Vec::new();
     // Pas finie : une nouvelle tentative change-t-elle quelque chose (la connexion, des fichiers a retenter) ?
     let continuer = !au_bout && !r.complete();
@@ -858,8 +872,14 @@ fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, 
     if au_bout {
         // Reprise du dossier d'une compagnie, elle en garde l'identite : sa sauvegarde ira dans ce meme dossier. Reprise de
         // l'ancienne sauvegarde commune, sa premiere sauvegarde fera le sien.
-        if !bride && matches!(vu.genre, GenreDuDossier::Compagnie(_)) {
-            encarts.push(Encart::de(EtatDEcran::Information, "Un seul poste", UN_SEUL_POSTE));
+        match main {
+            Some(Ok(())) => encarts.push(Encart::de(EtatDEcran::Information, "Un seul poste", UN_SEUL_POSTE)),
+            Some(Err(pourquoi)) => encarts.push(Encart::de(
+                EtatDEcran::AFaire,
+                "La main n'est pas prise",
+                format!("{} Tant que l'ancien poste la tient, ce poste ne sauvegarde pas : « Prendre la main » (Configuration › Le Drive) la prend.", pourquoi),
+            )),
+            None => {}
         }
         if !a_faire.is_empty() {
             rangs.push(RangDeLEcran { titre: "Son coffre des mots de passe".to_string(), dit: a_faire, pastille: Pastille::de(EtatDEcran::AFaire, "à faire"), etat: None, montre: None, gestes: Vec::new() });
