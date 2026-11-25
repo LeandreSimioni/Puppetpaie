@@ -246,10 +246,31 @@ impl SortiesDuMois {
                     return Ok(None);
                 };
                 let p = self.chemin_de(d, nom).dans(&copies().join("lecture"));
-                poser(&p, &o)?;
+                // Une copie deja posee, identique, ne se reecrit pas : un lecteur PDF qui la garde ouverte (Windows) ne
+                // fait pas echouer celui qui la relit.
+                if std::fs::read(&p).ok().as_ref() != Some(&o) {
+                    poser(&p, &o)?;
+                }
                 Ok(Some(p))
             }
         }
+    }
+
+    /// LE FICHIER `nom` DU DOSSIER `d` QUE `noms` A LISTE, a ouvrir par son chemin (`fichier`) : une piece listee qui ne
+    /// se trouve pas est une erreur qui remonte, jamais un silence.
+    pub fn fichier_liste(&self, d: DossierDuMois, nom: &NomDeFichier) -> R<PathBuf> {
+        self.fichier(d, nom)?.ok_or_else(|| self.absent_de_la_liste(d, nom))
+    }
+
+    /// Les octets du fichier `nom` du dossier `d` que `noms` a liste (`octets`) : une piece listee qui ne se trouve pas
+    /// est une erreur qui remonte.
+    pub fn octets_listes(&self, d: DossierDuMois, nom: &NomDeFichier) -> R<Vec<u8>> {
+        self.octets(d, nom)?.ok_or_else(|| self.absent_de_la_liste(d, nom))
+    }
+
+    #[track_caller]
+    fn absent_de_la_liste(&self, d: DossierDuMois, nom: &NomDeFichier) -> socle::echec::Echec {
+        socle::refus!("{} est listé dans les sorties de {}, mais ne s'y trouve pas.", self.chemin_de(d, nom), self.mois()).reclasser(Classe::FichierAbsent)
     }
 
     /// LE DOSSIER DE CE MOIS QUI PORTE LE FICHIER `nom`, dont on ne sait que le nom : l'envoi, puis les sorties
@@ -276,16 +297,21 @@ impl SortiesDuMois {
         static ECRITURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = ECRITURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let copie = copies().join(format!("ecriture-{}", n));
+        // Le dossier d'une ecriture part vide : ce qu'un autre processus du meme numero y a laisse ne compte pas.
+        socle::fichiers::effacer(&copie).map_err(|m| m.reclasser(Classe::Disque))?;
         let prefixe = format!("{}/", DossierDuMois::Sorties.chemin(*mois));
         let mut avant: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-        let mut z = ouverte(archive)?;
-        let noms: Vec<String> = z.file_names().filter(|n| n.starts_with(&prefixe) && !n.ends_with('/')).map(str::to_string).collect();
-        for n in noms {
-            let Some(o) = entree(&mut z, archive, &n)? else {
-                continue;
-            };
-            poser(&CheminRelatif::lire(&n)?.dans(&copie), &o)?;
-            avant.insert(n, o);
+        {
+            // L'archive se referme ici : aucune ne reste ouverte pendant le geste ni quand `ranger` la remplace.
+            let mut z = ouverte(archive)?;
+            let noms: Vec<String> = z.file_names().filter(|n| n.starts_with(&prefixe) && !n.ends_with('/')).map(str::to_string).collect();
+            for n in noms {
+                let Some(o) = entree(&mut z, archive, &n)? else {
+                    return Err(illisible(archive, format!("l'entrée {} qu'elle liste ne se trouve pas", n)));
+                };
+                poser(&CheminRelatif::lire(&n)?.dans(&copie), &o)?;
+                avant.insert(n, o);
+            }
         }
         let dossier = DossierDuMois::Sorties.dans(&copie, *mois);
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
@@ -302,6 +328,21 @@ impl SortiesDuMois {
             ranger(racine, mois.annee(), archive, ecrits)?;
         }
         Ok(rendu)
+    }
+
+    /// LE CHEMIN A RENDRE A LA PAGE pour le fichier `p` qu'une lecture (`fichier`) ou une ecriture (`ecrire`) des
+    /// sorties d'un mois de la compagnie `racine` a donne : relatif a la compagnie (`sorties/<mois>/…`), il s'ouvre par
+    /// `a_ouvrir`, dans l'archive d'une annee close comme en vrac. Un chemin qui ne vient pas de cette porte est un
+    /// defaut du logiciel.
+    pub fn rendu(racine: &Path, p: &Path) -> R<CheminRelatif> {
+        let defaut = || socle::refus!("Défaut du logiciel : {} n'est pas une pièce des sorties d'un mois.", p.display()).reclasser(Classe::DefautDuLogiciel);
+        if p.starts_with(racine) {
+            return CheminRelatif::sous(racine, p).map_err(|_| defaut());
+        }
+        // Sous la copie d'une annee close : `lecture/` ou `ecriture-<n>/`, puis le chemin relatif a la compagnie.
+        let mut reste = p.strip_prefix(copies()).map_err(|_| defaut())?.components();
+        reste.next().ok_or_else(defaut)?;
+        CheminRelatif::du(reste.as_path()).map_err(|_| defaut())
     }
 
     /// La compagnie.
@@ -322,7 +363,7 @@ impl SortiesDuMois {
         let noms: Vec<String> = z.file_names().filter(|n| n.starts_with(&prefixe) && !n.ends_with('/')).map(str::to_string).collect();
         for n in noms {
             let Some(o) = entree(&mut z, archive, &n)? else {
-                continue;
+                return Err(illisible(archive, format!("l'entrée {} qu'elle liste ne se trouve pas", n)));
             };
             poser(&CheminRelatif::lire(&n)?.dans(racine), &o)?;
         }

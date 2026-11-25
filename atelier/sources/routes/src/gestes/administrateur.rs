@@ -618,7 +618,7 @@ fn fichiers_de(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDu
     let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, mois)?;
     let mut out = Vec::new();
     for n in sorties.noms(piece.dossier())? {
-        out.extend(sorties.fichier(piece.dossier(), &n)?);
+        out.push(sorties.fichier_liste(piece.dossier(), &n)?);
     }
     Ok(out)
 }

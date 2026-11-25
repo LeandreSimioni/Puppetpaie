@@ -164,7 +164,8 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: NatureDEvenementDeclench
 /// que leur porte donne, `SortiesDuMois::ecrire`), un fichier par individu
 /// (`Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`), constitue le jour `constitution`. UN NUMERO D'ORDRE PAR FICHIER, a la
 /// suite de tous les signalements deja partis : la sequence ne se remet jamais a zero (cahier technique DSN, p. 136), et
-/// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
+/// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent. Ils se notent au journal
+/// des pieces ecrites une fois ranges (`noter`), hors de l'ecriture des sorties du mois.
 pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, dossier: &std::path::Path, constitution: Jour, mode: Mode) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
     let premier = droit::natures::NumeroDOrdre::suivant(envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?)?;
@@ -189,10 +190,18 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureD
         let cible = dossier.join(format!("{}{}_{}_{}.dsn", documents::SorteDePieceProduite::Amorcage.prefixe(), motif, l.salarie, constitution.aaaammjj()));
         crate::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
         declarations::dsn::ecrire(&texte, &cible).map_err(|e| e.reclasser(Classe::Disque))?;
-        crate::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::pieces_ecrites::cle_de_piece(&cible), None, None)?;
         fichiers.push(cible);
     }
     Ok(fichiers)
+}
+
+/// NOTE AU JOURNAL DES PIECES ECRITES les signalements `fichiers` qu'`ecrire` a poses, une fois ranges dans les sorties
+/// de leur mois (en vrac, ou dans l'archive de l'exercice d'une annee close).
+pub fn noter(ctx: &Contexte, fichiers: &[PathBuf]) -> R<()> {
+    for f in fichiers {
+        crate::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::pieces_ecrites::cle_de_piece(f), None, None)?;
+    }
+    Ok(())
 }
 
 /// `produire` (l'outil de l'atelier) : ecrit un signalement par individu qui a un taux a demander, et son
@@ -227,7 +236,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
     let mois = d.mois;
     // Les signalements et leur note s'ecrivent dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de
     // l'exercice d'une annee close).
-    documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|sorties| {
+    let lot = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|sorties| {
     let dossier = documents::PieceDuMois::Amorcage.dossier().sous(sorties);
     let fichiers = ecrire(ctx, paies, &retenus, d.motif, &dossier, d.constitution, d.mode)?;
     ecrits.extend(fichiers.iter().cloned());
@@ -258,5 +267,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
     let recap = dossier.join(format!("{}{}_{}_recapitulatif.txt", documents::SorteDePieceProduite::Amorcage.prefixe(), d.motif, jour));
     std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| socle::echec::du_disque(&recap, &e).reclasser(Classe::Disque))?;
     Ok(Lot { motif: d.motif, dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
-    })
+    })?;
+    noter(ctx, &lot.fichiers)?;
+    Ok(lot)
 }

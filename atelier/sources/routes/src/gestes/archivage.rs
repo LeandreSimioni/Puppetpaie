@@ -53,7 +53,7 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
     let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, le_mois)?;
     let mut fichiers: Vec<std::path::PathBuf> = Vec::new();
     for n in sorties.noms(documents::DossierDuMois::Sorties)? {
-        fichiers.extend(sorties.fichier(documents::DossierDuMois::Sorties, &n)?);
+        fichiers.push(sorties.fichier_liste(documents::DossierDuMois::Sorties, &n)?);
     }
     if fichiers.is_empty() {
         return Err(sortie_absente(&dossier));

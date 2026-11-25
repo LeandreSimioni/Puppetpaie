@@ -2066,9 +2066,8 @@ impl<'a> Moteur<'a> {
         } else {
             let mut tous: Vec<(String, PathBuf)> = Vec::new();
             for n in noms {
-                if let Some(chemin) = sorties.fichier(documents::DossierDuMois::Sorties, &n)? {
-                    tous.push((n.texte().to_string(), chemin));
-                }
+                let chemin = sorties.fichier_liste(documents::DossierDuMois::Sorties, &n)?;
+                tous.push((n.texte().to_string(), chemin));
             }
             // L'ORDRE NE DEPEND PAS DE L'HEURE D'UN FICHIER (deux rejeux, deux machines, le meme ordre) : il se lit
             // dans ce que le moteur sait de chacun (`ordre_de_depot`).

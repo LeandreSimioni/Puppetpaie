@@ -611,7 +611,8 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
     // Dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
     let ecrits = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois).and_then(|s| {
         s.ecrire(|sorties| ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, &documents::PieceDuMois::Amorcage.dossier().sous(sorties), ctx.aujourdhui, Mode::Reel))
-    });
+    })
+    .and_then(|f| ad::noter(ctx, &f).map(|_| f));
     let fichiers = match ecrits {
         Ok(f) => f,
         Err(e) => {

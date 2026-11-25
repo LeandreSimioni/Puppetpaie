@@ -392,14 +392,13 @@ pub(crate) fn reunir_pour_imprimer(sorties: &std::path::Path, quoi: &str, etiq: 
 }
 
 /// Ce que rend `contrats_imprimer` : chaque piece partie (son chemin), le PDF a imprimer (son nom et son chemin), les
-/// contrats et les avenants partis tels que le journal les note.
+/// contrats et les avenants partis tels que le journal les note. Les chemins sont relatifs a la compagnie : ils s'ouvrent
+/// par la porte des sorties du mois.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct Impression {
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    pub fichiers: Vec<std::path::PathBuf>,
+    pub fichiers: Vec<socle::fichiers::CheminRelatif>,
     pub impression: String,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    pub chemin: std::path::PathBuf,
+    pub chemin: socle::fichiers::CheminRelatif,
     pub contrats: Vec<ContratParti>,
     pub avenants: Vec<ContratParti>,
 }
@@ -468,7 +467,8 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         );
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
-    Ok(Impression { fichiers, impression: nom_impression.into(), chemin: impression, contrats, avenants: lignes_avenants })
+    let rendu = |p: &std::path::Path| documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, p);
+    Ok(Impression { fichiers: fichiers.iter().map(|p| rendu(p)).collect::<R<_>>()?, impression: nom_impression.into(), chemin: rendu(&impression)?, contrats, avenants: lignes_avenants })
 }
 
 // ------------------------------------------------------------------ demander-signature

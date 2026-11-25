@@ -771,8 +771,8 @@ impl EncoreAppele {
 /// `arret-signaler` : le fichier ecrit, et son depot (`suite`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalement {
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    fichier: std::path::PathBuf,
+    /// Relatif a la compagnie : il s'ouvre et se depose par la porte des sorties du mois.
+    fichier: socle::fichiers::CheminRelatif,
     phrase: Phrase,
     nature: NatureSignalement,
     #[serde(rename = "type")]
@@ -785,16 +785,17 @@ pub(crate) struct ReponseSignalement {
 
 /// CE QUI SUIT L'ECRITURE D'UN SIGNALEMENT : son depot (l'apercu du depot du fichier ecrit, puis le depot), le geste que
 /// la reponse rend en `suite`. Ecrire un fichier n'engage rien ; le deposer engage tout : deux gestes.
-fn le_depot(fichier: &std::path::Path) -> crate::etapes::Action {
-    crate::etapes::vers(crate::etapes::VueDuGeste::Depot, crate::depots::Designation::du_fichier(fichier.to_path_buf()), Some(Route::Deposer), "Déposer".into())
+/// Le fichier est relatif a la compagnie : le depot le trouve par la porte des sorties du mois (`depots::resoudre`).
+fn le_depot(fichier: &socle::fichiers::CheminRelatif) -> crate::etapes::Action {
+    crate::etapes::vers(crate::etapes::VueDuGeste::Depot, crate::depots::Designation::du_fichier(std::path::PathBuf::from(fichier.texte())), Some(Route::Deposer), "Déposer".into())
 }
 
 /// `fin-contrat-signaler` : le fichier ecrit, et son depot (`suite`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalementFin {
     suite: crate::etapes::Action,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    fichier: std::path::PathBuf,
+    /// Relatif a la compagnie : il s'ouvre et se depose par la porte des sorties du mois.
+    fichier: socle::fichiers::CheminRelatif,
     phrase: Phrase,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
@@ -808,12 +809,10 @@ pub(crate) struct ReponseSignalementFin {
 #[derive(Debug, Serialize)]
 struct ReponsePapiers {
     phrase: Phrase,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    certificat: std::path::PathBuf,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    recu: std::path::PathBuf,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    dossier: std::path::PathBuf,
+    /// Les chemins sont relatifs a la compagnie : ils s'ouvrent par la porte des sorties du mois.
+    certificat: socle::fichiers::CheminRelatif,
+    recu: socle::fichiers::CheminRelatif,
+    dossier: socle::fichiers::CheminRelatif,
     avertissements: &'static [&'static str],
 }
 
@@ -2395,11 +2394,12 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     // Les sorties du mois, par leur porte : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
     let (dossier, [certificat, recu]) =
         documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|d| Ok((d.to_path_buf(), documents::fin_de_contrat::ecrire(ctx, &p, date, d)?)))?;
+    let rendu = |f: &std::path::Path| documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, f);
     Ok(ReponsePapiers {
         phrase: socle::phrase!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
-        certificat,
-        recu,
-        dossier,
+        certificat: rendu(&certificat)?,
+        recu: rendu(&recu)?,
+        dossier: rendu(&dossier)?,
         avertissements: documents::fin_de_contrat::AVIS,
     })
 }
@@ -2491,9 +2491,11 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
         .collect();
     let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible)?;
-    compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     Ok(cible)
     })?;
+    // Il se note au journal des pieces ecrites une fois range (en vrac, ou dans l'archive de l'exercice).
+    compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    let cible = documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, &cible)?;
     let preavis = declarations::fctu::libelle_preavis(fin.type_preavis)?;
     Ok(ReponseSignalementFin {
         suite: le_depot(&cible),
@@ -2638,9 +2640,11 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     };
     let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible)?;
-    compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     Ok(cible)
     })?;
+    // Il se note au journal des pieces ecrites une fois range (en vrac, ou dans l'archive de l'exercice).
+    compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    let cible = documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, &cible)?;
     let fait = match c.nature {
         NatureSignalement::Arret => "Signalement d'arrêt écrit. Rien n'est parti.",
         NatureSignalement::Reprise => "Signalement de reprise écrit. Rien n'est parti.",

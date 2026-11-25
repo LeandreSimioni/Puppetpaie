@@ -756,9 +756,9 @@ fn usages_declares(ctx: &Contexte, rubrique: Option<droit::natures::RubriqueDeLa
             let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, m)?;
             for d in documents::DossierDuMois::TOUS {
                 for nom in sorties.noms(d)? {
-                    match sorties.octets(d, &nom)? {
-                        Some(o) if declarations::dsn_lue::est_une_dsn(&o) => lues.push(declarations::dsn_lue::lire(&o, Some(&nom))?),
-                        _ => {}
+                    let o = sorties.octets_listes(d, &nom)?;
+                    if declarations::dsn_lue::est_une_dsn(&o) {
+                        lues.push(declarations::dsn_lue::lire(&o, Some(&nom))?);
                     }
                 }
             }

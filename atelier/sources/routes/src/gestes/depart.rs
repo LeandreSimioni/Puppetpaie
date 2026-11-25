@@ -1033,8 +1033,9 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, sortie: &Path, ent: &droit::contexte:
 /// bulletins, rectificatifs compris, et les certificats Conges Spectacles d'un envoi de documents, avec l'archive du mois.
 /// Ce qui vient d'un organisme (l'AER, un bilan, un compte rendu) ne se refait pas : il se lit dans `retours/`.
 /// Refus : un nom qui n'est pas celui d'une piece partie de `mois`, une piece qui ne se refait pas, une piece refaite
-/// qui ne dit pas ce qui est parti.
-pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier) -> R<PathBuf> {
+/// qui ne dit pas ce qui est parti. Rend le chemin de la piece relatif a la compagnie (`sorties/<mois>/[envoi/]<fichier>`),
+/// qui s'ouvre par la porte des sorties du mois (`SortiesDuMois::a_ouvrir`), dans l'archive d'une annee close comme en vrac.
+pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier) -> R<socle::fichiers::CheminRelatif> {
     let refus = |m: String| erreur(Classe::Refuse, m);
     let nom = fichier.texte();
     let mois = le_mois;
@@ -1054,8 +1055,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         )
         .reclasser(Classe::Refuse)
     };
-    if let Some(f) = trouvee()? {
-        return Ok(f);
+    if let Some(d) = sorties_du_mois.chercher(fichier)? {
+        return Ok(d.chemin(mois).joint(fichier));
     }
     // RIEN NE SE REFAIT DANS UNE ANNEE CLOSE : ses pieces sont dans l'archive de son exercice ; une declaration deposee ne
     // se regenere pas (regle 4).
@@ -1068,8 +1069,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     use envois::journal::Ligne;
     let du_mois = |l: &Ligne| l.mois() == Some(le_mois) && l.accepte();
     let etiq = le_mois.etiquette();
-    // Ce qui se refait s'ecrit dans les sorties du mois, par leur porte (l'annee est ouverte : en vrac).
-    sorties_du_mois.ecrire(|sortie| {
+    // Ce qui se refait s'ecrit dans les sorties du mois, par leur porte (l'annee est ouverte : en vrac, sous la compagnie).
+    let refaite = sorties_du_mois.ecrire(|sortie| {
 
     // LA DSN MENSUELLE : la derniere ligne qui l'a deposee, le reel devant son test.
     let deposee = |mode: Mode| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.mode() == mode);
@@ -1243,7 +1244,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         .reclasser(Classe::Refuse));
     }
     Err(absente())
-    })
+    })?;
+    socle::fichiers::CheminRelatif::sous(&ctx.racine, &refaite)
 }
 
 /// Le contexte de la compagnie au jour `jour`, ce jour-la etant aujourd'hui : celui de la route qui a fabrique une piece.

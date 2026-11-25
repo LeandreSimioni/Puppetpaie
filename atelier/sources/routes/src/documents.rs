@@ -157,8 +157,8 @@ charge! {
 pub(crate) struct DocumentsImprimes {
     phrase: Phrase,
     impression: String,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    chemin: std::path::PathBuf,
+    /// Relatif a la compagnie : il s'ouvre par la porte des sorties du mois.
+    chemin: CheminRelatif,
     salaries: Vec<IdSalarie>,
     avertissements: Vec<String>,
     phrases: Vec<String>,
@@ -267,11 +267,7 @@ struct ApercuEnvoi {
 /// `piece-partie` : le chemin de la piece partie, refaite si son fichier manque (`depart::piece_partie`), relatif a la
 /// compagnie (`sorties/<mois>/[envoi/]<fichier>`).
 fn piece_partie(ctx: &Contexte, c: ChargePiecePartie) -> R<PiecePartie> {
-    let f = crate::gestes::depart::piece_partie(ctx, c.mois, &c.fichier)?;
-    let chemin = CheminRelatif::sous(&ctx.racine, &f).map_err(|e| {
-        let lieu = socle::echec::Lieu { detail: Some(e.phrase), ..Default::default() };
-        Echec { a_part: Some(lieu.into()), ..erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la pièce partie n'est pas dans le dossier de la compagnie.") }
-    })?;
+    let chemin = crate::gestes::depart::piece_partie(ctx, c.mois, &c.fichier)?;
     Ok(PiecePartie { phrase: Phrase::fixe("La pièce partie, telle qu'elle est partie."), chemin })
 }
 
@@ -920,7 +916,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     Ok(DocumentsImprimes {
         phrase: socle::phrase!("Documents {} imprimés pour {}, à remettre en main propre.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), qui_les_recoit.join(", ")),
         impression: nom_impression.into(),
-        chemin: impression,
+        chemin: documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, &impression)?,
         salaries: cles,
         phrases: avertissements.clone(),
         avertissements,

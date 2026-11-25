@@ -1322,6 +1322,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | dossier hors d'un mois | `documents::DossierHorsDuMois` | `documents/src/lib.rs` |
 | dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
 | sorties d'un mois (en vrac, ou dans l'archive de son exercice clos) | `documents::sorties_du_mois::SortiesDuMois` | `documents/src/sorties_du_mois.rs` |
+| exercices clos de la compagnie (`config/exercices.json` : chaque année close et sa clôture, `ExerciceNote` ; les clôtures retirées, `ExerciceRouvertNote`) | `documents::sorties_du_mois::Exercices` | `documents/src/sorties_du_mois.rs` |
 | dossier de travail | `documents::DossierDeTravail` | `documents/src/lib.rs` |
 | rubrique de l'Historique | `RubriqueDeLHistorique` | `routes/src/historique_mois.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
@@ -1613,12 +1614,19 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   `lire_exercices`, `ecrire_exercices`). Elle rend la liste des pièces d'un dossier du mois (`noms`), leur présence
   (`existe`), leurs octets (`octets`), et, pour ce qui s'ouvre par un chemin (la fabrique PDF, le poste, la lecture
   d'une DSN), un fichier (`fichier` : la copie d'une pièce d'une année close va dans le dossier temporaire du
-  système) ; un nom seul se cherche dans l'envoi puis les sorties (`chercher`) ; un chemin rendu à la page s'ouvre par
-  `a_ouvrir` ; les mois qui ont des sorties, en vrac ou archivées : `mois_des_sorties`. Toute écriture d'une pièce
+  système, et une copie identique déjà posée ne se réécrit pas) ; une pièce que `noms` a listée et qui ne se trouve pas
+  est une erreur (`fichier_liste`, `octets_listes`) ; un nom seul se cherche dans l'envoi puis les sorties
+  (`chercher`) ; un chemin rendu à la page est relatif à la compagnie (`rendu`, pour un fichier que la porte a donné)
+  et s'ouvre par `a_ouvrir`, qui sert aussi au dépôt d'un fichier désigné par son chemin (`depots::resoudre`) ; les mois qui ont des sorties, en vrac ou archivées : `mois_des_sorties`. Toute écriture d'une pièce
   d'un mois passe aussi par elle (`ecrire`) : le geste reçoit le dossier des sorties du mois et y écrit comme dans un
-  dossier ; dans une année close, c'est une copie du mois tirée de l'archive (ce qui y est ne se refait pas), et ce
+  dossier ; dans une année close, c'est une copie du mois tirée de l'archive dans un dossier qui part vide, l'archive
+  refermée avant le geste (ce qui y est ne se refait pas), et ce
   qu'il y écrit de neuf ou de changé entre dans l'archive, dont la note de clôture (octets, empreinte, nombre de
   fichiers) suit. Aucun lecteur ni écrivain ne joint `sorties/<mois>/` lui-même ; seule la clôture le retire.
+- **exercices clos** : `config/exercices.json`, lu par sa forme (`lire_exercices`) et écrit par `ecrire_exercices` :
+  chaque année close et sa clôture (quand, par qui, l'archive, sa taille, son empreinte, son nombre de fichiers, si
+  elle a été forcée, les mois clos sans DSN acceptée), et les clôtures retirées par une réouverture. Il décide où sont
+  les sorties d'un mois.
 - **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
   attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
   type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les

@@ -744,9 +744,7 @@ fn mois_puppetpaie(
         }
         if categories.contains(&CategorieDeDocument::ContratsSignes) {
             for nom in contrats_signes_de(&sorties, cle)? {
-                let Some(f) = sorties.fichier(documents::PieceDuMois::Contrat.dossier(), &nom)? else {
-                    continue;
-                };
+                let f = sorties.fichier_liste(documents::PieceDuMois::Contrat.dossier(), &nom)?;
                 let nom = nom.texte();
                 // Le contrat signe est pris tel quel ; ses numeros, eux, se CONFRONTENT a ceux du
                 // mois ecrit.
@@ -785,9 +783,7 @@ fn mois_puppetpaie(
             for piece in [documents::PieceDuMois::CertificatDeTravail, documents::PieceDuMois::RecuSoldeToutCompte] {
                 let debut = format!("{}{}_", piece.sorte().prefixe(), cle);
                 for nom in noms_commencant_finissant(&sorties, piece.dossier(), &debut, ".pdf")? {
-                    let Some(f) = sorties.fichier(piece.dossier(), &nom)? else {
-                        continue;
-                    };
+                    let f = sorties.fichier_liste(piece.dossier(), &nom)?;
                     for i in 0..pages_pdf(&f)? {
                         pages.push(Page { categorie: CategorieDeDocument::DocumentsFin, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                     }
@@ -813,7 +809,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &PeriodeDemandee) -> R<Vec<Pat
         }
         let (sorties, d) = (SortiesDuMois::du_mois(&ctx.racine, mois)?, documents::PieceDuMois::Signature.dossier());
         for n in noms_commencant_finissant(&sorties, d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")? {
-            out.extend(sorties.fichier(d, &n)?);
+            out.push(sorties.fichier_liste(d, &n)?);
         }
     }
     Ok(out)

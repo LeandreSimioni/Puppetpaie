@@ -1397,9 +1397,7 @@ fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, std::path::PathBuf)
         if !nom.to_lowercase().ends_with(".dsn") {
             continue;
         }
-        let Some(c) = sorties.fichier(dossier, &n)? else {
-            continue;
-        };
+        let c = sorties.fichier_liste(dossier, &n)?;
         // LA MENSUELLE, PAS UN SIGNALEMENT : un signalement d'arret ou de fin ecrit apres la DSN du mois, dans le meme
         // dossier, n'est pas « la DSN a deposer » du rappel.
         let ordre = crate::etapes::ordre_de_depot(&nom, &c)?;
