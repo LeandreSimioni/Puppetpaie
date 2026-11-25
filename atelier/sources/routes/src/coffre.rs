@@ -161,7 +161,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lier le compte Google de la sauvegarde : Google s'ouvre, la personne accepte.",
         charge: &SeulLeMotDePasse::CHARGE,
         exemple: r#"{}"#,
-        rend: "compte : l'adresse du compte Google lié ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
+        rend: "compte : l'adresse du compte Google lié ; ensuite : la route qui sauvegarde (ouverture), que la fenêtre fait aussitôt ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
         refus: &[PREUVE, Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -361,11 +361,14 @@ struct GoogleOublie {
     efface: bool,
 }
 
-/// Ce que rend `google-autoriser` : le compte lie.
+/// Ce que rend `google-autoriser` : le compte lie, et la route qui fait la sauvegarde ensuite (`ensuite` : `ouverture`).
+/// La fenetre la fait aussitot par sa veille, sur son fil, et le bandeau en dit l'avancement (`interface::api`,
+/// `Veille::sauvegarder_aussitot`) ; en ligne de commande, l'appelant l'appelle.
 #[derive(Debug, Serialize)]
 struct GoogleLie {
     phrase: Phrase,
     compte: String,
+    ensuite: Route,
 }
 
 /// Ce que rend `administrateur-etat` : la phrase qui le dit, et l'etat.
@@ -453,14 +456,19 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::GoogleAutoriser => {
             let SeulLeMotDePasse {} = charge.lire()?;
+            // LA PREMIERE SAUVEGARDE envoie tout le dossier : aucun index ne dit encore ce qui est au Drive. Lu avant de
+            // lier : un index qui ne se lit pas refuse sans rien enregistrer.
+            let premiere = compagnie::sauvegarde::lire_index(&ctx.racine).map_err(|e| e.echec)?.is_none();
             let compte = google_autoriser(ctx, mdp)?;
-            // La sauvegarde part au passage suivant de la veille (`interface::veille`, `Veille::tour`), ou a l'ouverture
-            // suivante en ligne de commande : la premiere envoie tout le dossier.
-            let phrase = socle::phrase!(
-                "Drive lié : {}. La sauvegarde du Drive commence au prochain relevé. La première est longue : gardez une connexion internet stable et laissez le logiciel ouvert jusqu'à la fin.",
-                compte
-            );
-            en_json(GoogleLie { phrase, compte })
+            let phrase = if premiere {
+                socle::phrase!(
+                    "Drive lié : {}. La sauvegarde du Drive commence ; la première est longue : gardez une connexion internet stable et laissez le logiciel ouvert jusqu'à la fin.",
+                    compte
+                )
+            } else {
+                socle::phrase!("Drive lié : {}. La sauvegarde du Drive commence : seul ce qui a changé part.", compte)
+            };
+            en_json(GoogleLie { phrase, compte, ensuite: Route::Ouverture })
         }
         Route::AdministrateurEtat => {
             let SansCharge {} = charge.lire()?;

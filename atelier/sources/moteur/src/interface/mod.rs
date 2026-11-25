@@ -1027,7 +1027,14 @@ impl Fenetre {
                         Err(e) => RouteReponse::de(nom, Err(e)),
                     }
                 } else {
-                    api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref())
+                    let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref());
+                    // LE DRIVE LIE : la sauvegarde que la reponse dit suivre (`ensuite`) part aussitot, par la veille.
+                    if nom == Route::GoogleAutoriser && rendu.est_rendue() {
+                        if let Some(v) = &veille {
+                            v.sauvegarder_aussitot();
+                        }
+                    }
+                    rendu
                 };
                 self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
                 return Reponse::json(200, &rendu);

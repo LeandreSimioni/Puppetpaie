@@ -29,7 +29,8 @@ pub struct Veille {
     sauvegarde_en_cours: AtomicBool,
     tour_unique: Mutex<()>,
     arretee: AtomicBool,
-    /// Sans fil (`routes::SANS_FIL`), le premier tour reste a faire : qui suit la veille le fait (`suivie`).
+    /// Un tour reste a faire, et le bandeau le dit en cours : sans fil (`routes::SANS_FIL`), le premier, que fait qui suit
+    /// la veille (`suivie`) ; le Drive lie, celui qui sauvegarde (`sauvegarder_aussitot`).
     du: AtomicBool,
     /// Quand partira le prochain tour de la boucle (« prochain relevé dans … minutes »).
     prochain: Mutex<Option<Instant>>,
@@ -128,7 +129,8 @@ impl Veille {
     /// Le tour du attend la mise a jour (`tour`) : en cours ailleurs, il reste du, et la page qui suit la veille le
     /// redemande.
     pub fn suivie(&self) -> EtatDeLaVeille {
-        if self.du.load(Ordering::SeqCst) {
+        // Avec un fil, le tour du part sur le sien (`sauvegarder_aussitot`) : la page qui suit n'attend jamais un passage.
+        if routes::SANS_FIL && self.du.load(Ordering::SeqCst) {
             if let Some(f) = &self.etats {
                 if let Err(e) = f.attendre_la_version() {
                     *tenu(&self.erreur) = Some(e.phrase);
@@ -232,6 +234,26 @@ impl Veille {
                     std::thread::sleep(Duration::from_secs(1));
                 }
                 v.tour(true, true);
+            }
+        });
+    }
+
+    /// LE DRIVE VIENT D'ETRE LIE (`google-autoriser`, dont la reponse dit `ensuite` : `ouverture`) : un tour qui
+    /// sauvegarde part aussitot, sur un fil, sans faire attendre la page ; le bandeau le dit en cours des maintenant (`du`).
+    /// Un passage deja en cours partait sans le compte : celui-ci part a sa fin. Sans fil, la page qui suit la veille le
+    /// fait (`suivie`).
+    pub fn sauvegarder_aussitot(self: &Arc<Self>) {
+        self.du.store(true, Ordering::SeqCst);
+        if routes::SANS_FIL {
+            return;
+        }
+        let v = self.clone();
+        routes::fil_de_routes(move || {
+            while v.occupee() && !v.arretee.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            if v.du.swap(false, Ordering::SeqCst) {
+                v.tour(false, true);
             }
         });
     }
