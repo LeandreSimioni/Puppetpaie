@@ -101,11 +101,15 @@ impl Soir<'_> {
         self.bulletin(mois, salarie).into_iter().find(|l| l.contains(libelle))
     }
 
-    /// Le bloc de l'individu `nom` dans la DSN mensuelle de `mois` (`sorties/<mois>/DSN_<Mois><Annee>.dsn`) : (rubrique,
-    /// valeur), dans l'ordre ; vide si elle n'est pas encore fabriquee.
+    /// Le bloc de l'individu `nom` dans la DSN mensuelle de `mois` (`DSN_<Mois><Annee>.dsn`, lue par les sorties du mois :
+    /// en vrac, ou dans l'archive de l'exercice d'une annee close) : (rubrique, valeur), dans l'ordre ; vide si elle n'est
+    /// pas encore fabriquee.
     pub fn bloc_dsn(&self, mois: socle::mois::Mois, nom: &str) -> Vec<(String, String)> {
-        let f = self.racine.join("sorties").join(mois.to_string()).join(format!("DSN_{}.dsn", mois.etiquette()));
-        let Ok(octets) = std::fs::read(&f) else { return Vec::new() };
+        let f = socle::fichiers::NomDeFichier::lire(&format!("DSN_{}.dsn", mois.etiquette())).unwrap();
+        let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(self.racine, mois).unwrap_or_else(|m| panic!("{} : {}", mois, m.phrase));
+        let Some(octets) = sorties.octets(documents::PieceDuMois::Dsn.dossier(), &f).unwrap_or_else(|m| panic!("{} : {}", f, m.phrase)) else {
+            return Vec::new();
+        };
         super::individu(&octets.iter().map(|&o| o as char).collect::<String>(), nom)
     }
 

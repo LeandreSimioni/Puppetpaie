@@ -231,6 +231,9 @@ pub(crate) enum ChargeDuGeste {
     Piece(crate::documents::ChargePiecePartie),
     Proposee(crate::mois::ChargeCarteProposee),
     Carte(crate::mois::ChargeCase),
+    Valider(crate::engagement::ChargeValider),
+    Modifier(crate::engagement::ChargeModifier),
+    Retirer(crate::engagement::ChargeRetirer),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -271,6 +274,9 @@ charge_du_geste! {
     crate::documents::ChargePiecePartie => Piece,
     crate::mois::ChargeCarteProposee => Proposee,
     crate::mois::ChargeCase => Carte,
+    crate::engagement::ChargeValider => Valider,
+    crate::engagement::ChargeModifier => Modifier,
+    crate::engagement::ChargeRetirer => Retirer,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme. Une route a deux vues n'a pas sa charge ici
@@ -283,6 +289,11 @@ impl Action {
     /// La meme, le geste principal de son ecran (celui d'un rappel).
     pub(crate) fn principale(self) -> Action {
         Action { rang: RangDuGeste::Principal, ..self }
+    }
+
+    /// La meme, en bouton secondaire, a cote du geste principal (`RangDuGeste::Secondaire`).
+    pub(crate) fn secondaire(self) -> Action {
+        Action { rang: RangDuGeste::Secondaire, ..self }
     }
 
     /// Envoie-t-elle quelque chose ? Sa route, ou celle qu'elle ouvre ensuite, engage (`envois_en_fond::part_en_fond`) ;
@@ -1448,6 +1459,8 @@ struct LigneDePage<'a> {
     numero_dit: Option<String>,
     /// Le geste qui copie l'engagement pour un autre salarie (`copier-engagement`, puis `enregistrer-saisie`).
     copier: Action,
+    /// Les gestes de sa carte ouverte (`GestesDeLaCarte`) : la page en dessine les boutons, et n'en decide aucun.
+    gestes: crate::engagement::GestesDeLaCarte,
 }
 
 #[derive(Debug, Serialize)]
@@ -1480,6 +1493,7 @@ impl<'a> LigneDePage<'a> {
                 (_, e) => e,
             },
             numero_dit: v.numero.as_ref().map(|n| format!("contrat n° {}", n)),
+            gestes: crate::engagement::GestesDeLaCarte::de(mois, &l.engagement, v.valide.is_some()),
             copier: action(
                 Route::CopierEngagement,
                 crate::mois::ChargeCarteProposee { mois, engagement: l.engagement.clone() },
@@ -1847,7 +1861,11 @@ impl<'a> Moteur<'a> {
                 out.push(Ligne::de(vue, le_mois, None, id.clone(), signee)?);
                 continue;
             }
-            let Some(k) = s.identites.iter().position(|x| x == id) else { continue };
+            // Un engagement ecrit qui ne manque de rien a sa paie dans la saisie du mois (`saisie_chargee`, les memes
+            // engagements dans le meme ordre) : ne pas la trouver est un defaut du logiciel, qui se dit.
+            let Some(k) = s.identites.iter().position(|x| x == id) else {
+                return Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'engagement de {} n'a pas sa paie dans la saisie du mois.", engagement::etats::qui_de(self.ctx, e.objet()))));
+            };
             let p = &s.paies[k];
             let cle = p.salarie.id.clone();
             // CE QUI EST A REFAIRE : le present compare a la version sur laquelle chaque envoi est parti.
@@ -2059,18 +2077,15 @@ impl<'a> Moteur<'a> {
             return Ok(v.clone());
         }
         // Les declarations deposables (la DSN, la DPAE) se rangent dans les sorties du mois.
-        let dossier = documents::DossierDuMois::Sorties.dans(self.racine(), mois);
-        let rendu = if !dossier.is_dir() {
+        let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(self.racine(), mois)?;
+        let noms = sorties.noms(documents::DossierDuMois::Sorties)?;
+        let rendu = if noms.is_empty() {
             Deposables::default()
         } else {
             let mut tous: Vec<(String, PathBuf)> = Vec::new();
-            let rd = std::fs::read_dir(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-            for e in rd {
-                let e = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?;
-                let chemin = e.path();
-                if chemin.is_file() {
-                    tous.push((e.file_name().to_string_lossy().into_owned(), chemin));
-                }
+            for n in noms {
+                let chemin = sorties.fichier_liste(documents::DossierDuMois::Sorties, &n)?;
+                tous.push((n.texte().to_string(), chemin));
             }
             // L'ORDRE NE DEPEND PAS DE L'HEURE D'UN FICHIER (deux rejeux, deux machines, le meme ordre) : il se lit
             // dans ce que le moteur sait de chacun (`ordre_de_depot`).
@@ -2703,9 +2718,9 @@ impl<'a> Moteur<'a> {
 
     // ------------------------------------------------------- les autres routes
 
-    /// `exercice_clos` : l'annee `annee` est-elle close (`gestes::exercice_ecrit::lire_exercices`) ?
+    /// `exercice_clos` : l'annee `annee` est-elle close (`documents::sorties_du_mois::lire_exercices`) ?
     pub(crate) fn exercice_clos(&self, annee: socle::mois::Annee) -> R<bool> {
-        Ok(crate::gestes::exercice_ecrit::lire_exercices(self.racine())?.de(annee).is_some())
+        Ok(documents::sorties_du_mois::lire_exercices(self.racine())?.de(annee).is_some())
     }
 
     /// `mois_a_ouvrir` : le plus ancien mois passe dont une etape n'est pas

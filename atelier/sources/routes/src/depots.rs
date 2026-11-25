@@ -595,7 +595,10 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>()?
     };
     let etiq = le_mois.etiquette();
-    let sortie = documents::PieceDuMois::Dpae.dossier().dans(&ctx.racine, le_mois);
+    // Elle s'ecrit dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    let mut ecrite: Option<PathBuf> = None;
+    let rendue = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, le_mois)?.ecrire(|sorties| {
+    let sortie = documents::PieceDuMois::Dpae.dossier().sous(sorties);
     // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
     let cle_de = |p: &Paie| -> Option<(IdSalarie, NumeroContrat)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.clone(), n.clone())) };
 
@@ -725,7 +728,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         None => {
             let cible = sortie.join(format!("{}{}{}.txt", SorteDePieceProduite::Dpae.prefixe(), etiq, marque));
             ecrire_la_dpae(ctx, &retenues, &cible, &recap, socle::temps::secondes().a_la_seconde())?;
-            compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+            ecrite = Some(cible.clone());
             cible
         }
     };
@@ -735,6 +738,12 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         chemin: f,
         phrase: socle::phrase!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
     }))
+    })?;
+    // Elle se note au journal des pieces ecrites une fois rangee.
+    if let Some(cible) = ecrite {
+        compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    }
+    Ok(rendue)
 }
 
 /// CE QUE `dpae` REND : la DPAE ecrite, ou rien a declarer de ce que la charge designe (tout est parti, ou rien n'est
@@ -880,7 +889,10 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<PathBuf>> {
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
-    Ok(ligne.and_then(Ligne::fichier).map(|f| documents::fichier_depose(&ctx.racine, mois, f.texte())))
+    match ligne.and_then(Ligne::fichier) {
+        Some(f) => documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.fichier(documents::FichierDuJournal::Depose.dossier(), f),
+        None => Ok(None),
+    }
 }
 
 /// `deposer` : `motdepasse` est celui DU LOGICIEL, et il ne sert qu'a prouver la presence. Il arrive par le
@@ -913,7 +925,10 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     } else if fait.ligne.nombre_de_retours() > 0 {
         suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
     } else {
-        Phrase::fixe("Dépôt réel effectué — ses retours sont attendus.")
+        match quoi {
+            Quoi::Dpae => Phrase::fixe("La DPAE est partie."),
+            Quoi::Dsn => Phrase::fixe("La DSN est partie."),
+        }
     };
     let phrase = socle::phrase!("{}{}", tranche, fait.suites.iter().map(|s| format!(" {}", s)).collect::<String>());
     // Ce qui suit la DSN reelle (les documents des salaries) se lit dans le cadre du mois (`etat-du-mois`, `ou_en_est`).
@@ -1041,8 +1056,10 @@ fn existe(t: &str) -> bool {
     !t.contains('\0') && Path::new(t).exists()
 }
 
-/// Un chemin tape a la main, tel quel s'il existe, sinon sous les donnees. Rend le chemin, normalisé. La
-/// declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un chemin.
+/// Un chemin tape a la main, tel quel s'il existe, sinon sous la compagnie, par la porte des sorties d'un mois
+/// (`SortiesDuMois::a_ouvrir` : la piece d'un mois d'une annee close se lit dans l'archive de son exercice). Rend le
+/// chemin, normalisé. La declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un
+/// chemin.
 pub(crate) fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
     let t = chemin.to_string_lossy();
     if t.chars().all(socle::texte::blanc) {
@@ -1052,10 +1069,14 @@ pub(crate) fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
     if existe(&p) || p.starts_with('/') {
         return Ok(PathBuf::from(p));
     }
-    let base = normaliser(&racine.display().to_string());
-    let candidat = normaliser(&format!("{}/{}", base, p));
-    if existe(&candidat) {
-        return Ok(PathBuf::from(candidat));
+    // Un chemin qui n'est pas un chemin relatif a la compagnie (`..`, un lecteur) ne mene a aucune piece d'un mois : il
+    // se joint tel quel.
+    let candidat = match socle::fichiers::CheminRelatif::du(Path::new(&p)) {
+        Ok(rel) => documents::sorties_du_mois::SortiesDuMois::a_ouvrir(racine, &rel)?,
+        Err(_) => racine.join(&p),
+    };
+    if candidat.exists() {
+        return Ok(candidat);
     }
     Ok(PathBuf::from(p))
 }

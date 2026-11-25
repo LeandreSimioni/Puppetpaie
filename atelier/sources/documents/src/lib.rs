@@ -25,6 +25,7 @@ pub mod libelles_courts;
 pub mod plan_comptable;
 pub mod prelevement;
 pub mod tableaux_export;
+pub mod sorties_du_mois;
 pub mod taxe_sur_les_salaires;
 
 /// UNE IMAGE DE L'IDENTITE DE LA COMPAGNIE : sa signature, son cachet (le tampon), son logo. Une liste du logiciel,
@@ -406,11 +407,6 @@ impl FichierDuJournal {
     }
 }
 
-/// LE FICHIER QU'UNE LIGNE DU JOURNAL DIT DEPOSE (une DSN, une DPAE, un signalement) au mois `mois`, sous la compagnie
-/// `racine` (`sorties/<mois>/`) : son acte le dit (`FichierDuJournal::Depose`), pas son nom.
-pub fn fichier_depose(racine: &std::path::Path, mois: socle::mois::Mois, nom: &str) -> std::path::PathBuf {
-    FichierDuJournal::Depose.dossier().dans(racine, mois).join(nom)
-}
 
 /// OU SE RANGE UNE PIECE PRODUITE (`SorteDePieceProduite::rangement`) : dans un dossier d'un mois, ou hors d'un mois.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

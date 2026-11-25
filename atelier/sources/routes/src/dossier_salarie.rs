@@ -32,6 +32,7 @@ use socle::date::Jour;
 use engagement::numeros::{NumeroContrat, NumeroDeCertificat};
 use documents::fiche_recapitulative::Recapitulatifs;
 use documents::{CategorieDeDocument, SorteDePieceProduite};
+use documents::sorties_du_mois::SortiesDuMois;
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
 use socle::echec::{erreur, Classe, Echec, R};
 
@@ -305,34 +306,27 @@ pub(crate) struct Dossier {
 
 // ------------------------------------------------------------------ les noms de fichier
 
-/// Les noms d'un dossier qui commencent par `prefixe` et finissent par `suffixe`, dans
+/// Les noms du dossier `d` des sorties d'un mois qui commencent par `prefixe` et finissent par `suffixe`, dans
 /// l'ordre des noms.
-fn noms_commencant_finissant(dossier: &Path, prefixe: &str, suffixe: &str) -> R<Vec<String>> {
-    let disque = |e: &std::io::Error| socle::echec::du_disque(dossier, e).reclasser(Classe::du_disque(e));
-    let lecture = match std::fs::read_dir(dossier) {
-        Ok(l) => l,
-        // Un dossier absent n'a aucun nom.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(disque(&e)),
-    };
-    let mut out: Vec<String> = Vec::new();
-    for e in lecture {
-        let n = e.map_err(|x| disque(&x))?.file_name().to_string_lossy().into_owned();
-        if n.len() >= prefixe.len() + suffixe.len() && n.starts_with(prefixe) && n.ends_with(suffixe) {
-            out.push(n);
-        }
-    }
-    out.sort();
-    Ok(out)
+fn noms_commencant_finissant(sorties: &SortiesDuMois, d: documents::DossierDuMois, prefixe: &str, suffixe: &str) -> R<Vec<NomDeFichier>> {
+    Ok(sorties
+        .noms(d)?
+        .into_iter()
+        .filter(|n| {
+            let n = n.texte();
+            n.len() >= prefixe.len() + suffixe.len() && n.starts_with(prefixe) && n.ends_with(suffixe)
+        })
+        .collect())
 }
 
 /// `glob("Contrat*_<cle>_*_signe.pdf")` : les exemplaires contresignes (`envois::releve_signatures::souche_contresignee`)
 /// dont la souche porte `_<cle>_` apres `Contrat`.
-fn contrats_signes_de(dossier: &Path, cle: &IdSalarie) -> R<Vec<String>> {
+fn contrats_signes_de(sorties: &SortiesDuMois, cle: &IdSalarie) -> R<Vec<NomDeFichier>> {
     let marque = format!("_{}_", cle);
-    Ok(noms_commencant_finissant(dossier, SorteDePieceProduite::Contrat.prefixe(), "")?
+    Ok(noms_commencant_finissant(sorties, documents::PieceDuMois::Contrat.dossier(), SorteDePieceProduite::Contrat.prefixe(), "")?
         .into_iter()
         .filter(|n| {
+            let n = n.texte();
             let reste = match envois::releve_signatures::souche_contresignee(n).and_then(SorteDePieceProduite::du_nom) {
                 Some((SorteDePieceProduite::Contrat, reste)) => Some(reste),
                 _ => None,
@@ -541,9 +535,8 @@ fn mois_puppetpaie(
 ) -> R<Vec<Page>> {
     let mut pages = Vec::new();
     let mois = &le_mois.to_string();
-    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, le_mois);
+    let sorties = SortiesDuMois::du_mois(&ctx.racine, le_mois)?;
     let etiq = le_mois.etiquette();
-    let dossier_des_contrats = documents::PieceDuMois::Contrat.dossier().sous(&sortie);
     let (_, paies) = charger(ctx, le_mois)?;
     // Les documents du mois sont partis quand une paie porte le numero de son bulletin (ecrit a son depart).
     let numerote = |p: &Paie| p.numero_bulletin.is_some();
@@ -593,15 +586,15 @@ fn mois_puppetpaie(
             if !siennes.iter().any(|i| cle_de(&paies[*i]) == *cle && numerote(&paies[*i])) {
                 continue;
             }
-            let piece = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::Bulletin, &sortie, cle, &etiq);
-            if !piece.is_file() {
+            let bulletin = documents::PieceDuMois::Bulletin;
+            let Some(piece) = sorties.fichier(bulletin.dossier(), &envois::envoi::nom_de_la_piece(bulletin, cle, &etiq)?)? else {
                 // Le dossier ou il se range, tel que la compagnie le voit (`sorties/<mois>/envoi`).
                 let ou = documents::PieceDuMois::Bulletin.dossier().chemin(le_mois);
                 return Err(erreur_operation(format!(
                     "{}, {} : son bulletin n'est pas dans {}/. Un bulletin remis ne se réimprime pas : rien n'est envoyé à sa place.",
                     lib, cle, ou
                 )));
-            }
+            };
             for n in 0..pages_pdf(&piece)? {
                 pages.push(Page { categorie: CategorieDeDocument::Bulletins, cle: cle.clone(), tri: Some((le_mois, None)), source: piece.clone(), numero: n });
             }
@@ -676,9 +669,11 @@ fn mois_puppetpaie(
         // Les certificats remis sont dans `CertificatsCS_<Mois>.pdf`, un par page, dans l'ordre de leurs N CE
         // (`depart::fabriquer_documents`) ; la page porte le nom du salarie, sinon le fichier ne dit pas ce que les paies
         // disent, et rien ne se joint. Comme les bulletins : la page meme, jamais un certificat reimprime (regle 4).
-        let archive = documents::PieceDuMois::CertificatsCs.dossier().sous(&sortie).join(crate::gestes::depart::archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, ".pdf"));
-        let nom_archive = NomDeFichier::du(&archive)?;
-        let textes = if archive.exists() { Some(texte_pdf(&archive)?) } else { None };
+        let nom_archive = NomDeFichier::lire(&crate::gestes::depart::archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, ".pdf"))?;
+        let textes = match sorties.fichier(documents::PieceDuMois::CertificatsCs.dossier(), &nom_archive)? {
+            Some(archive) => Some((texte_pdf(&archive)?, archive)),
+            None => None,
+        };
         match textes {
             None if !paires.is_empty() => d.refus.push(format!(
                 "{} : certificats Congés Spectacles non joints — {} n'est pas dans {}/, et un certificat remis ne se réimprime pas.",
@@ -686,14 +681,14 @@ fn mois_puppetpaie(
                 nom_archive,
                 documents::PieceDuMois::CertificatsCs.dossier().chemin(le_mois)
             )),
-            Some(t) if !paires.is_empty() && t.len() != tous.len() => d.refus.push(format!(
+            Some((t, _)) if !paires.is_empty() && t.len() != tous.len() => d.refus.push(format!(
                 "{} : certificats Congés Spectacles non joints — {} a {} page(s), les paies en attendent {}. Le fichier ne dit pas ce que les paies disent : rien n'est joint à sa place.",
                 lib,
                 nom_archive,
                 t.len(),
                 tous.len()
             )),
-            Some(t) => {
+            Some((t, archive)) => {
                 for (cle, siens) in &paires {
                     let (pc, _) = siens.first().ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un salarié sans certificat dans la liste des certificats."))?;
                     let nom = pc.salarie.nom.ecrite("nom")?.to_string();
@@ -747,9 +742,10 @@ fn mois_puppetpaie(
                 }
             }
         }
-        if categories.contains(&CategorieDeDocument::ContratsSignes) && dossier_des_contrats.is_dir() {
-            for nom in contrats_signes_de(&dossier_des_contrats, cle)? {
-                let f = dossier_des_contrats.join(&nom);
+        if categories.contains(&CategorieDeDocument::ContratsSignes) {
+            for nom in contrats_signes_de(&sorties, cle)? {
+                let f = sorties.fichier_liste(documents::PieceDuMois::Contrat.dossier(), &nom)?;
+                let nom = nom.texte();
                 // Le contrat signe est pris tel quel ; ses numeros, eux, se CONFRONTENT a ceux du
                 // mois ecrit.
                 let portes: std::collections::BTreeSet<NumeroContrat> = numeros_de_contrat(&nom)?.into_iter().collect();
@@ -776,8 +772,8 @@ fn mois_puppetpaie(
             }
         }
         if categories.contains(&CategorieDeDocument::Attestations) {
-            let f = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, &sortie, cle, &etiq);
-            if f.exists() {
+            let aer = documents::PieceDuMois::Aer;
+            if let Some(f) = sorties.fichier(aer.dossier(), &envois::envoi::nom_de_la_piece(aer, cle, &etiq)?)? {
                 for i in 0..pages_pdf(&f)? {
                     pages.push(Page { categorie: CategorieDeDocument::Attestations, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                 }
@@ -786,9 +782,8 @@ fn mois_puppetpaie(
         if categories.contains(&CategorieDeDocument::DocumentsFin) {
             for piece in [documents::PieceDuMois::CertificatDeTravail, documents::PieceDuMois::RecuSoldeToutCompte] {
                 let debut = format!("{}{}_", piece.sorte().prefixe(), cle);
-                let dossier = piece.dossier().sous(&sortie);
-                for nom in noms_commencant_finissant(&dossier, &debut, ".pdf")? {
-                    let f = dossier.join(&nom);
+                for nom in noms_commencant_finissant(&sorties, piece.dossier(), &debut, ".pdf")? {
+                    let f = sorties.fichier_liste(piece.dossier(), &nom)?;
                     for i in 0..pages_pdf(&f)? {
                         pages.push(Page { categorie: CategorieDeDocument::DocumentsFin, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                     }
@@ -812,8 +807,10 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &PeriodeDemandee) -> R<Vec<Pat
         if !p.contient(mois) {
             continue;
         }
-        let d = documents::PieceDuMois::Signature.dossier().dans(&ctx.racine, mois);
-        out.extend(noms_commencant_finissant(&d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")?.into_iter().map(|n| d.join(n)));
+        let (sorties, d) = (SortiesDuMois::du_mois(&ctx.racine, mois)?, documents::PieceDuMois::Signature.dossier());
+        for n in noms_commencant_finissant(&sorties, d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")? {
+            out.push(sorties.fichier_liste(d, &n)?);
+        }
     }
     Ok(out)
 }

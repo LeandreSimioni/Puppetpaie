@@ -7,6 +7,7 @@
 "use strict";
 
 let ETATS_ENGAGEMENTS = null;      // les lignes d'`etat-par-engagement`, par identité d'engagement ; null = pas lu
+let ETATS_REFUS = null;            // la phrase de son refus, quand `etat-par-engagement` a refusé ; null sinon
 
 /* LES TROIS CARRÉS DE LA LIGNE VALIDÉE : DPAE, Contrat, Documents. Le moteur
    rend chacun (`etat-par-engagement`, `carres`) : son nom, sa couleur, ce qui
@@ -114,17 +115,19 @@ async function boitePieces(ligne, acte) {
   });
 }
 
-/** Lit `etat-par-engagement` et le pose sur les cartes (`peindreEtats`, `js/carte.js`). Un refus se dit, et les cartes
- *  restent comme elles sont. */
+/** Lit `etat-par-engagement` et le pose sur les cartes (`peindreEtats`, `js/carte.js`). Un refus se dit, et chaque
+ *  carte écrite le redit à la place de ses gestes. */
 async function dessinerEtatsDesEngagements(mois) {
-  if (!mois) { ETATS_ENGAGEMENTS = null; peindreEtats(); return; }
+  if (!mois) { ETATS_ENGAGEMENTS = null; ETATS_REFUS = null; peindreEtats(); return; }
   try {
     const r = await api("etat-par-engagement", { mois });
     ETATS_ENGAGEMENTS = new Map();
     r.engagements.forEach((l) => { ETATS_ENGAGEMENTS.set(JSON.stringify(l.engagement), l); });
+    ETATS_REFUS = null;
     peindreNonActifs(r.non_actifs);
   } catch (e) {
     ETATS_ENGAGEMENTS = null;
+    ETATS_REFUS = e.message;
     dire(e.message, "erreur");
   }
   peindreEtats();

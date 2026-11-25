@@ -65,10 +65,8 @@ fn le_nir_qui_arrive_vaut_de_tout_temps_et_le_signalement_porte_le_ntt_declare()
         "lieu": "Salle Jean-Moulin, 39100 Dole", "dates": ["2026-02-06", "2026-02-07", "2026-02-08"], "planning": []}]}), jour));
     reussi(&route(&c, "arret-enregistrer", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "debut": "2026-02-07", "fin": "2026-02-08",
         "motif": "01"}), jour));
-    let f = reussi(&route(&c, "arret-signaler", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "nature": "04"}), jour))["fichier"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Le fichier rendu est relatif a la compagnie.
+    let f = c.join(reussi(&route(&c, "arret-signaler", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "nature": "04"}), jour))["fichier"].as_str().unwrap());
     let texte = std::fs::read_to_string(&f).unwrap();
     assert!(texte.contains("S21.G00.30.001,'1900571123456'"), "le signalement porte le NIR :\n{}", texte);
     assert!(texte.contains("S21.G00.30.020,'1"), "le signalement porte le NTT declare en janvier a cote du NIR :\n{}", texte);

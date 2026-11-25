@@ -818,12 +818,9 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois(), l.fichier()) else { return Ok(None) };
-    let chemin = documents::fichier_depose(&ctx.racine, mois, fichier.texte());
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
-    let octets = match std::fs::read(&chemin) {
-        Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque)),
+    let Some(octets) = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.octets(documents::FichierDuJournal::Depose.dossier(), &fichier)? else {
+        return Ok(None);
     };
     crate::aer_fictive::archive(ctx, &octets, mois, ctx.aujourdhui)
 }
@@ -1022,7 +1019,7 @@ pub fn relever_retours(
             match crate::retours::declarations_du_bilan(&contenu) {
                 Ok(ds) => {
                     for d in ds {
-                        suites.dit.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
+                        suites.dit.conduites.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                     }
                 }
                 Err(e) => suites.illisibles.push(crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?),

@@ -649,7 +649,7 @@ un libellé, chacun sa forme.
 | jusqu'où le dernier relevé complet a lu | `ReleveComplet` | `envois/src/releve_retours.rs` |
 | étape d'une ouverture et ce qu'elle a duré (la trace de l'ouverture les porte, dans l'ordre) | `EtapeMesuree` | `routes/src/gestes/ouverture.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
-| ce qu'une relève a à dire (ses incidents, ce que ses retours laissent à faire ; chaque route qui relève le rend en entier) | `ADire` | `envois/src/suites.rs` |
+| ce qu'une relève a à dire (ses incidents, ce que ses retours laissent à faire, la conduite à tenir après un signalement refusé ; chaque route qui relève le rend en entier, la demande de taux partie avec une DPAE sans la conduite) | `ADire` | `envois/src/suites.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
 | compte rendu d'un test de dépôt | `CompteRenduDuTest` | `envois/src/retours.rs` |
 | statut d'un retour | `StatutDuRetour` | `envois/src/retours.rs` |
@@ -1321,6 +1321,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | rangement d'une pièce produite | `documents::Rangement` | `documents/src/lib.rs` |
 | dossier hors d'un mois | `documents::DossierHorsDuMois` | `documents/src/lib.rs` |
 | dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
+| sorties d'un mois (en vrac, ou dans l'archive de son exercice clos) | `documents::sorties_du_mois::SortiesDuMois` | `documents/src/sorties_du_mois.rs` |
+| exercices clos de la compagnie (`config/exercices.json` : chaque année close et sa clôture, `ExerciceNote` ; les clôtures retirées, `ExerciceRouvertNote`) | `documents::sorties_du_mois::Exercices` | `documents/src/sorties_du_mois.rs` |
 | dossier de travail | `documents::DossierDeTravail` | `documents/src/lib.rs` |
 | rubrique de l'Historique | `RubriqueDeLHistorique` | `routes/src/historique_mois.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
@@ -1400,7 +1402,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | titres du compte rendu de l'import (ses parties, les colonnes de ses tableaux) | `MotsDuCompteRenduDeLImport` | `routes/src/import.rs` |
 | ce qui clôt le compte rendu de l'import, que la route tranche : ce qui est repris (titre, fichiers écrits, notes), qu'il n'y a rien à reprendre, ou, avant d'écrire, ce que le geste reprendrait et les personnes mises de côté | `ClotureDuCompteRendu` | `routes/src/import.rs` |
 | geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases, ce qu'elles montrent d'abord et ce qu'elles offrent, ce que sa boîte dit, et la demande du mot de passe du logiciel quand il l'exige : la page le fait taper avant de partir ; un geste sans case qui dit des phrases ouvre sa boîte pour les dire, une confirmation ; un geste dont la route est avancée se range sous « Avancé » de son rang) : celui d'un imprévu, d'une question d'identité, de l'onglet Métiers (créer un métier, sa charge `AucunMetier` ; modifier un métier créé, `MetierDesigne` ; leurs cases montrent `ValeursDuMetier` et offrent `ChoixDuMetier`), de l'écran Signature & tampon (poser une image, ses cases montrent `ValeursDeLaPose` et offrent `ChoixDeLaPose`, l'allègement, « alléger » ouvrant le poids visé, et sa boîte montre l'aperçu que rend `identite-allegement` ; la retirer), de l'écran Mots de passe (sa charge `ServiceDuRang`, le service du rang ; poser un mot de passe d'organisme, ses cases montrent `CompteMontre`), de l'écran Modèles de contrat (`GesteDuModele` : sa charge `SurLeModele`, la nature, le modèle, sa partie, un paragraphe et son sens ; renommer un modèle, ses cases montrent `ValeursDuModele`), de l'Historique d'un mois (`GesteDuMois` : sa charge `ChargeMois` ; déposer ses documents dans le Drive), de l'import (`GesteDeLImport` : sa charge `SansCharge` ; importer, l'aperçu, reprendre ce que l'aperçu a lu ; enregistrer la nature à dire d'un salarié, `GesteDeLaNature`, sa charge `NatureDuSalarie`, ce qui désigne le salarié, ses cases montrent `ValeursDeLaNature` et offrent `ChoixDeLaNature`, les natures proposées, chacune ouvrant les cases de ce qu'elle demande ; ouvrir pour la compléter une fiche que l'import a créée, `GesteDeLaFiche`, sa charge celle de la route `fiche` (`FicheARendre`, la fiche telle qu'elle est enregistrée), porté par chaque fiche du compte rendu, `FicheDuCompteRendu`), de la tête de l'Historique (reprendre le journal, sa charge `ChargeReprise` ; clore une année ouverte, sa boîte fait cocher « Clore malgré tout », et rouvrir une année close, leur charge `ChargeCloture`), du dossier d'un salarié dans les Exports (`GesteDuDossier` : sa charge `DemandeDeDossier` ; l'aperçu, l'écrire, l'envoyer ; ses cases, saisies ensemble, montrent `ValeursDuDossier` et offrent `ChoixDuDossier`), de la régularisation CASC-SVP dans les Exports (noter une année régularisée, un geste par année : sa charge `ChargeAnnee`, ses cases montrent `ValeursDeLaCasc`), d'une échéance de l'échéancier et des rappels (`GesteDEcheance` : sa charge `ChargeDuGeste` ; « C'est fait » et « Pas encore fait », `ChargeFaite` ; choisir les spectacles qui continuent, `ChargeRevue`, ses cases montrent `ValeursDeLEcheance` et offrent `ChoixDeLEcheance`), d'une obligation due d'un arrêt ou d'une fin de contrat, dans ce qui est dû des imprévus et dans les rappels (les mêmes `GesteDEcheance` : signaler l'arrêt, sa reprise, la fin, dont la réponse rend le dépôt en `suite`, un `etapes::Action` ; noter faite une obligation hors DSN, sa charge `ChargeObligationDArret`, ses cases montrent ce qui en est dit et offrent ses lieux ; dire le jour où on l'a su, `ChargeConnaissance` ; les papiers de fin, `ChargeFinContratDocuments`), d'un dépôt (`GesteDuDepot` : sa charge `ChargeDeposer` ; le test, le réel une fois le test conforme, le réel sans test et son motif), des documents du mois (`GesteDesDocuments` : imprimer, envoyer par courriel ; leur case des salariés montre `ValeursDesDocuments`, tous, et offre `ChoixDesDocuments`, chaque message) et des contrats (`GesteDesContrats` : imprimer, envoyer à la signature ; leurs cases montrent `ValeursDesContrats`, ce qui part si l'on ne décoche rien ; poser le courriel qui manque au salarié d'un contrat à envoyer, `GesteDuCourriel`, sa charge `SalarieSansCourriel`), et de l'aperçu d'un avenant (`GesteDeLAvenant` : envoyer l'avenant, que complète la case que la route rend avec lui, des rangées qui ne s'ajoutent ni ne se retirent, l'avenant et sa date d'effet ; annule et remplace) | `GesteDeRoute` | `routes/src/imprevus.rs` |
-| rang d'un geste rendu dans son écran : le geste principal (« Importer », « Reprendre », « Envoyer le réel »), que le dessinateur seul dessine en bouton principal (`classeDuGeste`), ou un geste second, en lien ; aucune réponse ne porte un `principal` à côté ; le portent aussi le geste d'un clic (`etapes::Action`, principal dans un rappel), les gestes des pièces d'un engagement et le mot qui mène à la case qui manque à une fin (`VersLaCase`) | `RangDuGeste` | `routes/src/imprevus.rs` |
+| rang d'un geste rendu dans son écran : le geste principal (« Importer », « Reprendre », « Envoyer le réel »), que le dessinateur seul dessine en bouton principal (`classeDuGeste`), un geste second, en lien, ou un geste secondaire, en bouton secondaire à côté du principal (« Annuler » de la carte ouverte d'un engagement) ; aucune réponse ne porte un `principal` à côté ; le portent aussi le geste d'un clic (`etapes::Action`, principal dans un rappel), les gestes des pièces d'un engagement et le mot qui mène à la case qui manque à une fin (`VersLaCase`) | `RangDuGeste` | `routes/src/imprevus.rs` |
+| gestes de la carte ouverte d'un engagement, que sa ligne d'`etat-par-engagement` rend (`gestes`) et dont la page dessine les boutons sans en décider aucun : en brouillon, retirer et valider ; validé, retirer, annuler (relire le mois, rien ne s'écrit ; en bouton secondaire) et modifier, à la charge de qui la page ajoute les changements ; une carte neuve jamais écrite, celui que la route `saisie` rend pour elle (`nouvelle_carte.gestes`) : « Retirer cet engagement », qui relit le mois sans rien écrire ; un engagement validé n'a pas de geste qui le valide, chacun un `etapes::Action` | `routes::engagement::GestesDeLaCarte` | `routes/src/engagement.rs` |
 | mot qui mène, dans la carte de son contrat, à la case qui manque à une fin de contrat pour la signaler (son libellé, son rang) | `VersLaCase` | `routes/src/imprevus.rs` |
 | ce que la DSN reprise déclare autrement que le logiciel : une valeur d'un contrat repris, ou un matricule | `ValeurDeclaree` | `import/src/reponse.rs` |
 | valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDuContrat` | `import/src/reponse.rs` |
@@ -1590,7 +1593,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   dans les sorties du mois (`FichierDuJournal::Depose` : une pièce qu'un dépôt écrit, qui s'y range, ou un fichier
   que la compagnie a posé) ; une pièce d'un envoi, par sa sorte (`de_l_envoi`) ; son dossier, sans condition
   (`FichierDuJournal::dossier`). Le journal n'en garde que le nom : un fichier déposé hors des sorties de son mois ne
-  s'y retrouve pas. Que lisent le fichier déposé (`documents::fichier_depose`), une pièce partie
+  s'y retrouve pas. Que lisent le fichier déposé (par les sorties du mois), une pièce partie
   (`depart::piece_partie`) et l'Historique.
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
@@ -1605,7 +1608,29 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   salariés, leurs pièces, le PDF qui les réunit pour l'imprimer, la preuve d'une signature). L'écrivain et les
   lecteurs d'une pièce le prennent d'elle (`PieceDuMois::dossier`) et le joignent par `sous`, ou sous la compagnie par
   `dans` ; son chemin relatif à la compagnie, `chemin`, est le seul à écrire `sorties/<mois>` (`DES_MOIS` : `sorties`,
-  écrit une fois ; `des_mois` le joint) ; un nom seul se cherche dans les deux (`TOUS`, `envois::etats::chemin_piece`).
+  écrit une fois ; `des_mois` le joint). C'est le chemin qu'écrit une pièce ; elle s'y lit par les sorties du mois.
+- **sorties d'un mois** : la porte de toute lecture d'une pièce d'un mois : en vrac sous `sorties/<mois>/` tant que son
+  année est ouverte, dans l'archive de son exercice (`Exercice_AAAA.zip`, sous le même chemin relatif) dès qu'elle est
+  close ; `config/exercices.json` le décide, et rien d'autre (`SortiesDuMois::du_mois`, qui lit aussi ce fichier :
+  `lire_exercices`, `ecrire_exercices`). Elle rend la liste des pièces d'un dossier du mois (`noms`), leur présence
+  (`existe`), leurs octets (`octets`), et, pour ce qui s'ouvre par un chemin (la fabrique PDF, le poste, la lecture
+  d'une DSN), un fichier (`fichier` : la copie d'une pièce d'une année close va dans le dossier temporaire du
+  système, et une copie identique déjà posée ne se réécrit pas) ; une pièce que `noms` a listée et qui ne se trouve pas
+  est une erreur (`fichier_liste`, `octets_listes`) ; un nom seul se cherche dans l'envoi puis les sorties
+  (`chercher`) ; un chemin rendu à la page est relatif à la compagnie (`rendu`, pour un fichier que la porte a donné)
+  et s'ouvre par `a_ouvrir`, qui sert aussi au dépôt d'un fichier désigné par son chemin (`depots::resoudre`) ; les mois qui ont des sorties, en vrac ou archivées : `mois_des_sorties`. Toute écriture d'une pièce
+  d'un mois passe aussi par elle (`ecrire`) : le geste reçoit le dossier des sorties du mois et y écrit comme dans un
+  dossier ; dans une année close, c'est une copie du mois tirée de l'archive dans un dossier qui part vide, l'archive
+  refermée avant le geste (ce qui y est ne se refait pas), et ce
+  qu'il y écrit de neuf ou de changé entre dans l'archive, dont la note de clôture (octets, empreinte, nombre de
+  fichiers) suit. Aucun lecteur ni écrivain ne joint `sorties/<mois>/` lui-même ; seule la clôture le retire. Une
+  archive absente ne fait rien refuser : son année n'a plus de pièces. Une archive présente qui ne se lit pas ne ferme
+  aucun écran (la liste des pièces et des mois la voit vide, `noms`, `existe`, `mois_des_sorties`) ; seul le geste qui
+  prend une de ses pièces le dit (`octets`, `fichier`, `ecrire`).
+- **exercices clos** : `config/exercices.json`, lu par sa forme (`lire_exercices`) et écrit par `ecrire_exercices` :
+  chaque année close et sa clôture (quand, par qui, l'archive, sa taille, son empreinte, son nombre de fichiers, si
+  elle a été forcée, les mois clos sans DSN acceptée), et les clôtures retirées par une réouverture. Il décide où sont
+  les sorties d'un mois.
 - **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
   attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
   type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les
@@ -4442,7 +4467,11 @@ les retours dont le nom commence par l'année ou par janvier suivant (le
 bilan de la DSN de décembre arrive en janvier), `journal/depots.jsonl`, les
 fiches de `config/` et le barème de l'année, `compta/`, un `LISEZ-MOI.txt`.
 Elle note dans `config/exercices.json` la date, l'archive, son empreinte
-SHA-256 et le nombre de fichiers. **Figer** vit dans le moteur
+SHA-256 et le nombre de fichiers, puis retire `sorties/<mois>/` de chaque mois de l'année : l'année close a ses pièces
+dans son archive, et seulement là ; tout ce qui les lit passe par les sorties du mois (`SortiesDuMois`, « Le
+glossaire »), et une pièce partie d'une année close ne se refait pas (`depart::piece_partie`) ; une pièce neuve d'une
+année close (l'AER de décembre qui arrive en février) entre dans son archive, sans refus ni réouverture. La réouverture remet
+ces fichiers en vrac depuis l'archive, à l'octet près, puis retire l'année de `exercices.json`. **Figer** vit dans le moteur
 (`routes::mois::refuser_si_clos`), appelé par l'écriture d'une saisie et par
 la fabrication de la DSN (`depart::fabriquer_dsn`) : un front qui l'esquiverait n'existe pas. `rouvrir_exercice`
 retire la note et garde l'archive (avec une trace `_rouverts`).

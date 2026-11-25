@@ -607,30 +607,18 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
     }))
 }
 
-/// Le dossier du mois `mois` ou se range le signalement `piece` (`PieceDuMois::dossier`).
-fn dossier_du_signalement(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois) -> PathBuf {
-    piece.dossier().dans(racine, mois)
-}
-
 /// Le fichier d'un signalement ecrit, s'il y en a un, dans le dossier du mois ou il se range (le nom compare sans casse).
 fn fichier_ecrit(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois, nom: &str) -> R<Option<PathBuf>> {
-    let dossier = dossier_du_signalement(racine, mois, piece);
-    Ok(fichiers_de(&dossier)?.into_iter().find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(nom))))
+    Ok(fichiers_de(racine, mois, piece)?.into_iter().find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(nom))))
 }
 
-/// Les fichiers du dossier `dossier` : aucun s'il n'existe pas.
-fn fichiers_de(dossier: &Path) -> R<Vec<PathBuf>> {
-    let entrees = match std::fs::read_dir(dossier) {
-        Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(socle::echec::du_disque(dossier, &e).reclasser(Classe::du_disque(&e))),
-    };
+/// Les fichiers du dossier du mois `mois` ou se range le signalement `piece` (`PieceDuMois::dossier`), lus par les
+/// sorties du mois : aucun s'il n'en a pas.
+fn fichiers_de(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois) -> R<Vec<PathBuf>> {
+    let sorties = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, mois)?;
     let mut out = Vec::new();
-    for e in entrees {
-        let p = e.map_err(|e| socle::echec::du_disque(dossier, &e).reclasser(Classe::du_disque(&e)))?.path();
-        if p.is_file() {
-            out.push(p);
-        }
+    for n in sorties.noms(piece.dossier())? {
+        out.push(sorties.fichier_liste(piece.dossier(), &n)?);
     }
     Ok(out)
 }
@@ -657,8 +645,7 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) ->
                 // Un nom qui ne finit pas par un numero d'ordre n'est pas un annule-et-remplace.
                 droit::natures::NumeroDOrdre::lu(n.strip_prefix(&tete)?.strip_suffix(".dsn")?)
             };
-            let dossier = dossier_du_signalement(&ctx.racine, mois, piece);
-            return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
+            return Ok(fichiers_de(&ctx.racine, mois, piece)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
         }
         Q::Obligation(C::SignalementReprise) => P::SignalementReprise,
         Q::FinContrat => P::SignalementFinContrat,

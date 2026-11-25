@@ -302,7 +302,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
         (format!("{} revenu signé", piece), format!("Reçu signé le {}, noté à la main.", quand))
     };
     let signe = match (ligne.mois(), r.fichier_signe.as_ref()) {
-        (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f),
+        (Some(m), Some(f)) => documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, m)?.chercher(f)?.map(|d| d.chemin(m).joint(f)),
         _ => None,
     };
     Ok(RetourLu {
@@ -310,7 +310,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
         quand: Some(r.quand),
         phrases: vec![phrase],
         pastille: Some(Pastille::de(if !r.recu { socle::ecran::EtatDEcran::Information } else { socle::ecran::EtatDEcran::Fait }, "signé")),
-        piece: signe.map(|p| CheminRelatif::sous(&ctx.racine, &p)).transpose()?,
+        piece: signe,
         organisme: None,
     })
 }
@@ -1056,7 +1056,15 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             Ok(None) => PieceDuRetour::Aucune,
             Ok(Some(p)) => match std::fs::read(&p) {
                 Ok(o) => {
-                    let l = lire_piece(&o, canal, nature, format);
+                    let mut l = lire_piece(&o, canal, nature, format);
+                    // UN SIGNALEMENT REFUSE B1-208-10 : la conduite a tenir se lit sous son bilan, comme le releve la dit
+                    // (`envois::ordre_signalements::conduite_b1_208_10`).
+                    if canal == CanalDesRetours::Dsn && nature == NatureDuRetour::CertificatDeConformite {
+                        match retours::declarations_du_bilan(&o) {
+                            Ok(ds) => l.phrases.extend(ds.iter().filter_map(|d| envois::ordre_signalements::conduite_b1_208_10(d, flux))),
+                            Err(m) => l.phrases.push(format!("La conduite à tenir ne se lit pas de ce bilan : {}", m.phrase)),
+                        }
+                    }
                     PieceDuRetour::Lue(p, l)
                 }
                 Err(e) => PieceDuRetour::Illisible(format!("la pièce archivée ne se lit pas ({:?})", e.kind())),

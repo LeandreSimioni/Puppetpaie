@@ -4,7 +4,7 @@
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Serialize;
 
@@ -28,7 +28,7 @@ use envois::envoi::{self, Message};
 use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{Classe, R};
 use socle::fichiers::NomDeFichier;
 use socle::ecran::{ColonneRendue, RangeeRendue, SorteDeRangee};
 use socle::html::courriel_en_html;
@@ -172,28 +172,6 @@ macro_rules! dite {
 
 dite!(FormesDuDossier, ExportsPossibles, LogicielRetenu, CascNotee, EtatExporte, CascEnvoyee, Droits);
 
-/// Les noms des PDF d'un dossier (sensible à la casse, fichiers cachés compris),
-/// en ordre de points de code.
-fn pdf_de(d: &Path) -> R<Vec<String>> {
-    let mut noms = Vec::new();
-    // Ce qui n'est pas un dossier, ou un dossier interdit, n'a aucun PDF :
-    // rien ne se refuse.
-    let lecture = match std::fs::read_dir(d) {
-        Ok(l) => l,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(20) => return Ok(noms),
-        Err(e) => return Err(erreur_io(&e, d)),
-    };
-    for e in lecture {
-        let e = e.map_err(|e| erreur_io(&e, d))?;
-        let n = e.file_name().to_string_lossy().into_owned();
-        if n.ends_with(".pdf") {
-            noms.push(n);
-        }
-    }
-    noms.sort();
-    Ok(noms)
-}
-
 /// Une piece du mois dans `sorties/<mois>/envoi/` : son nom, et la cle du salarie qu'elle nomme, si elle en nomme un.
 pub(crate) struct PieceDeLEnvoi {
     pub(crate) nom: String,
@@ -203,12 +181,11 @@ pub(crate) struct PieceDeLEnvoi {
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
 /// a imprimer, qui reunit celles de plusieurs salaries : ce fichier n'est la piece de personne).
 pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnvoi>> {
-    let envoi = documents::DossierDuMois::Envoi.dans(&ctx.racine, mois);
-    if !envoi.exists() {
-        return Ok(Vec::new());
-    }
-    pdf_de(&envoi)?
+    documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?
+        .noms(documents::DossierDuMois::Envoi)?
         .into_iter()
+        .map(String::from)
+        .filter(|nom| nom.ends_with(".pdf"))
         .filter(|nom| !matches!(documents::SorteDePieceProduite::du_nom(nom), Some((documents::SorteDePieceProduite::Impression, _))))
         .map(|nom| {
             // `<Piece>_<cle>_<etiquette>.pdf` : la cle du salarie est le deuxieme morceau.
@@ -1297,10 +1274,6 @@ struct CascEnvoyee {
     dossier: PathBuf,
 }
 
-/// L'erreur du disque, sous sa classe (`FichierAbsent`, `Disque`).
-fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
-    erreur(Classe::du_disque(e), socle::fichiers::panne_fichier(e, p))
-}
 
 // ------------------------------------------------------------------ les droits des intermittents, l'archive d'un mois
 

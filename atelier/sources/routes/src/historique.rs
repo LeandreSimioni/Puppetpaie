@@ -357,7 +357,7 @@ struct ExerciceDit {
     annee: socle::mois::Annee,
     mois: Vec<socle::mois::Mois>,
     dsn_acceptees: Vec<socle::mois::Mois>,
-    clos: Option<crate::gestes::exercice_ecrit::ExerciceNote>,
+    clos: Option<documents::sorties_du_mois::ExerciceNote>,
     pastille: socle::ecran::Pastille,
     export: Option<ExportDeLAnnee>,
     actions: Vec<Action>,
@@ -395,7 +395,7 @@ fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
 
 /// `etat_exercices` : chaque annee connue du dossier, de la plus recente a la plus ancienne.
 fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
-    let lus = crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?;
+    let lus = documents::sorties_du_mois::lire_exercices(&ctx.racine)?;
     let clos = lus.clos();
     let mois_tous: Vec<socle::mois::Mois> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
     let mut annees: BTreeSet<socle::mois::Annee> = mois_tous.iter().map(|m| m.annee()).collect();

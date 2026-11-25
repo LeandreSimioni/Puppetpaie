@@ -608,7 +608,12 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         return dit;
     }
     // Le fichier s'ecrit reel ; son depot de test le bascule en memoire (`envois::depot::basculer_dsn`).
-    let fichiers = match ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, mois, ctx.aujourdhui, Mode::Reel) {
+    // Dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    let ecrits = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois).and_then(|s| {
+        s.ecrire(|sorties| ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, &documents::PieceDuMois::Amorcage.dossier().sous(sorties), ctx.aujourdhui, Mode::Reel))
+    })
+    .and_then(|f| ad::noter(ctx, &f).map(|_| f));
+    let fichiers = match ecrits {
         Ok(f) => f,
         Err(e) => {
             dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", en, e.phrase));
@@ -616,14 +621,17 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         }
     };
     // Le fichier a-t-il deja sa repetition conforme ? Un fichier ou un journal qui ne se lit pas se dit.
-    let teste = |f: &Path| -> R<bool> {
+    let repetition = |f: &Path| -> R<etats::Repetition> {
         let octets = std::fs::read(f).map_err(|e| socle::echec::du_disque(f, &e))?;
         let lignes = envois::journal::lu(&ctx.racine)?.lignes;
         let nom = NomDeFichier::du(f)?;
-        Ok(etats::repetition(&lignes, Acte::Dsn, &Empreinte::des_octets(&octets).courte(), &nom).conforme.is_some())
+        Ok(etats::repetition(&lignes, Acte::Dsn, &Empreinte::des_octets(&octets).courte(), &nom))
     };
+    let teste = |f: &Path| -> R<bool> { repetition(f).map(|r| r.conforme.is_some()) };
     let mut releve = false;
     let mut parties: Vec<String> = Vec::new();
+    // Les demandes dont le reel attend son test, par ce qu'en dit le test : une phrase par raison.
+    let mut en_attente: Vec<(&str, Vec<String>)> = Vec::new();
     for (l, fichier) in retenues.iter().zip(&fichiers) {
         let repete = match mode {
             Mode::Reel => teste(fichier).and_then(|deja| if deja { Ok(()) } else { deposer_dsn(ctx, fichier, Mode::Test, preuve, qui, false, contournement).map(|_| ()) }),
@@ -633,19 +641,41 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         if mode == Mode::Reel && !releve && matches!(&fait, Err(e) if e.classe == Some(Classe::RepetitionManquante)) {
             releve = true;
             // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place ; ce qu'il a
-            // a dire se dit avec la demande.
+            // a dire se dit avec la demande, sauf la conduite apres un signalement refuse : le refus de son test se dit
+            // ci-dessous en une phrase, et la conduite se lit sous le bilan, dans l'Historique (`historique_mois`).
             fait = envois::releve_retours::PlageDuReleve::derniere_journee()
                 .and_then(|plage| crate::gestes::releve::relever_retours(ctx, plage, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
                 .and_then(|(_, a_dire)| {
-                    dit.extend(a_dire.phrases());
+                    dit.extend(a_dire.incidents);
+                    dit.extend(a_dire.a_faire);
                     deposer_dsn(ctx, fichier, mode, preuve, qui, false, contournement).map(|_| ())
                 });
         }
         let qui_demande = ctx.nomme(&l.salarie);
         match fait {
             Ok(_) => parties.push(qui_demande),
+            // LE REEL QUI ATTEND SON TEST : la demande dit en mots ou en est son test ; ce que le bilan a refuse se lit
+            // au journal des depots et dans l'Historique.
+            Err(e) if e.classe == Some(Classe::RepetitionManquante) => match repetition(fichier) {
+                Ok(r) => {
+                    let raison = match (&r.conforme, r.ratees.is_empty()) {
+                        (None, false) => "son test a été refusé",
+                        (Some(_), _) => "son test n'a pas encore de réponse",
+                        (None, true) => "son test n'a pas été fait",
+                    };
+                    match en_attente.iter_mut().find(|(x, _)| *x == raison) {
+                        Some((_, v)) => v.push(qui_demande),
+                        None => en_attente.push((raison, vec![qui_demande])),
+                    }
+                }
+                // Le test qui ne se relit pas se dit, avec ce qui a retenu la demande.
+                Err(m) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {} Elle reste à faire.", qui_demande, m.phrase)),
+            },
             Err(e) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase)),
         }
+    }
+    for (raison, qui) in &en_attente {
+        dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {}. Elle reste à faire.", noms(qui), raison));
     }
     if !parties.is_empty() {
         dit.insert(0, format!("Taux de PAS demandé{} avec la DPAE pour {}.", en, noms(&parties)));

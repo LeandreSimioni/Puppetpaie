@@ -14,6 +14,7 @@ use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusDit, CASE_EXIGEE, FORME
 use crate::declaration::{charge, dit, legendes, ChampDuType, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
+use crate::etapes::{action, Action, ChargeMois};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 /// Dans une charge, l'identite d'une carte se dit d'un objet (`{salarie, debut, rang}`).
@@ -43,7 +44,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Valider l'engagement d'une carte, tel qu'il est écrit : calculer ses paies.",
         charge: &ChargeValider::CHARGE,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0}}"#,
-        rend: "engagement (l'identité de la carte), phrase",
+        rend: "engagement (l'identité de la carte), phrase ; un engagement déjà validé le reste, rien n'est écrit",
         refus: &[SAISIE_INCOMPLETE, OPERATION, CASE_EXIGEE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -117,9 +118,9 @@ impl Dite for Retrait {
 /// La charge de « Modifier l'engagement » : le mois de la carte, son identite, ce qu'on y change (`changements`, comme
 /// `enregistrer-saisie`) ; l'avertissement lu (`confirme`). Le jour du mois d'ou vaut un terme change (`jour`, `null` :
 /// le 1er) se lit a cote, dans le mois de la carte (`Charge::lire_avec_le_jour`).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ChargeModifier {
+pub(crate) struct ChargeModifier {
     mois: Mois,
     engagement: Identite,
     changements: Changements,
@@ -139,11 +140,46 @@ const CHARGE_MODIFIER: ChargeDuType = ChargeDuType {
 
 charge! {
     /// La charge de « Retirer cet engagement » : le mois de la carte, son identite, l'avertissement lu (`confirme`).
-    #[derive(Debug)]
-    struct ChargeRetirer {
+    #[derive(Debug, Clone, Serialize)]
+    pub(crate) struct ChargeRetirer {
         mois: Mois = legendes::MOIS,
         engagement: Identite = IDENTITE,
         confirme: bool = dit("Avertissement lu", "faux d'abord ; vrai : l'avertissement rendu a été lu, et l'engagement devient non actif"),
+    }
+}
+
+/// LES GESTES DE LA CARTE D'UN ENGAGEMENT, tels que la ligne de l'engagement les rend (`etat-par-engagement`) : en
+/// brouillon, le valider ou le retirer ; valide, ouvert pour etre modifie, le modifier (ses changements s'ajoutent a la
+/// charge rendue), relire le mois sans rien ecrire, ou le retirer. Un engagement valide n'a pas de geste qui le valide.
+/// Une carte neuve, que rien n'a encore ecrite (`nouvelle_carte` de la route `saisie`), n'a qu'un geste, « Retirer cet
+/// engagement » : comme « Annuler », il relit le mois, qui ne la montre pas, et rien ne s'ecrit (`annuler`).
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub(crate) enum GestesDeLaCarte {
+    Brouillon { retirer: Action, valider: Action },
+    Valide { retirer: Action, annuler: Action, modifier: Action },
+    Neuve { annuler: Action },
+}
+
+impl GestesDeLaCarte {
+    /// Les gestes d'une carte neuve de l'ecran de `mois`, jamais ecrite : la retirer de l'ecran, rien ne s'ecrit.
+    pub(crate) fn neuve(mois: Mois) -> GestesDeLaCarte {
+        GestesDeLaCarte::Neuve { annuler: action(Route::Saisie, ChargeMois { mois }, None, "Retirer cet engagement".into()) }
+    }
+
+    /// Les gestes de la carte de l'engagement `engagement` de l'ecran de `mois`, valide ou non.
+    pub(crate) fn de(mois: Mois, engagement: &Identite, valide: bool) -> GestesDeLaCarte {
+        let retirer = action(Route::RetirerEngagement, ChargeRetirer { mois, engagement: engagement.clone(), confirme: false }, None, "Retirer cet engagement".into());
+        if !valide {
+            let valider = action(Route::ValiderEngagement, ChargeValider { mois, engagement: engagement.clone() }, None, "Valider l'engagement".into()).principale();
+            return GestesDeLaCarte::Brouillon { retirer, valider };
+        }
+        let charge = ChargeModifier { mois, engagement: engagement.clone(), changements: Changements::aucun(), confirme: false };
+        GestesDeLaCarte::Valide {
+            retirer,
+            annuler: action(Route::Saisie, ChargeMois { mois }, None, "Annuler".into()).secondaire(),
+            modifier: action(Route::ModifierEngagement, charge, None, "Modifier l'engagement".into()).principale(),
+        }
     }
 }
 
@@ -243,7 +279,7 @@ fn designe(ctx: &Contexte, mois: Mois, id: &Identite) -> R<(RangDansLeMois, enga
 charge! {
     /// La charge de « Valider l'engagement » : le mois de la carte, et son identite (son brouillon est ecrit, case par
     /// case, par `enregistrer-saisie`).
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Serialize)]
     pub(crate) struct ChargeValider {
         pub(crate) mois: Mois = legendes::MOIS,
         pub(crate) engagement: Identite = IDENTITE,
@@ -263,8 +299,10 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
     // Ce qui se valide est le brouillon ecrit, lu en sa forme (`engagement::carte::Brouillon`).
     crate::mois::brouillon_ecrit(ctx, mois, &id)?;
     let (i, o) = engagement::stock::designe(&ctx.racine, mois, &id)?;
+    // VALIDER CE QUI L'EST DEJA ne change rien et n'est pas une faute : rien ne s'ecrit (AGENTS, « Enregistrer sans rien
+    // changer n'est jamais une faute »).
     if o.est_valide() {
-        return Err(refus(format!("{} : cet engagement est déjà validé ; il se modifie d'un geste. Rien n'est écrit.", engagement::etats::qui_de(ctx, &o))));
+        return Ok(Validation { engagement: id, phrase: Phrase::fixe("Engagement validé.") });
     }
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let data = engagement::stock::vue_du_mois(&ctx.racine, mois)

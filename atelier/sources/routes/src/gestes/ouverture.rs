@@ -282,6 +282,7 @@ impl Ouverture {
     fn dire(&mut self, dit: envois::suites::ADire) {
         self.incidents.extend(dit.incidents);
         self.manquants.extend(dit.a_faire);
+        self.manquants.extend(dit.conduites);
     }
 
     /// Un secret absent -- la phrase du terminal, gardee pour ne pas la redire dans la fenetre.

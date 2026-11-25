@@ -21,14 +21,16 @@ pub struct DepotRefuse {
     pub repetition: Option<crate::journal::Ouverture>,
 }
 
-/// CE QU'UNE RELEVE A A DIRE, en phrases : ce qui n'a pas pu se faire (`incidents`), et ce qu'un retour laisse a faire a
-/// la compagnie (`a_faire` : un taux a reporter, la conduite apres un signalement refuse). Le releve le remplit dans ses
-/// suites (`Suites::dit`), qui y ajoutent le leur (`routes::gestes::suites::faire`) ; chaque route qui releve le rend en
-/// entier.
+/// CE QU'UNE RELEVE A A DIRE, en phrases : ce qui n'a pas pu se faire (`incidents`), ce qu'un retour laisse a faire a
+/// la compagnie (`a_faire` : un taux a reporter) et la conduite a tenir apres un signalement refuse (`conduites`). Le
+/// releve le remplit dans ses suites (`Suites::dit`), qui y ajoutent le leur (`routes::gestes::suites::faire`) ; chaque
+/// route qui releve le rend en entier. La demande de taux qui part avec une DPAE dit son propre refus en une phrase, sans
+/// la conduite (`routes::gestes::depot_acte`).
 #[derive(Default, Debug, Clone, serde::Serialize)]
 pub struct ADire {
     pub incidents: Vec<String>,
     pub a_faire: Vec<String>,
+    pub conduites: Vec<String>,
 }
 
 impl ADire {
@@ -36,11 +38,12 @@ impl ADire {
     pub fn etendre(&mut self, autre: ADire) {
         self.incidents.extend(autre.incidents);
         self.a_faire.extend(autre.a_faire);
+        self.conduites.extend(autre.conduites);
     }
 
-    /// Toutes ses phrases : les incidents, puis ce qu'il reste a faire.
+    /// Toutes ses phrases : les incidents, puis ce qu'il reste a faire, puis les conduites a tenir.
     pub fn phrases(self) -> Vec<String> {
-        self.incidents.into_iter().chain(self.a_faire).collect()
+        self.incidents.into_iter().chain(self.a_faire).chain(self.conduites).collect()
     }
 }
 

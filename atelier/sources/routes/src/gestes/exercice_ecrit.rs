@@ -5,7 +5,8 @@
 //!   (`documents::ecritures_comptables`).
 //! - La cloture : fige l'annee (`config/exercices.json`) et reunit ce qu'il faut garder en un zip
 //!   (`sorties/exercices/Exercice_AAAA.zip`) : saisies, sorties, retours des organismes, journal des depots,
-//!   fiches, bareme, export compta, LISEZ-MOI. Le zip est ecrit par le zip de `routes::dossier_salarie` (deflate,
+//!   fiches, bareme, export compta, LISEZ-MOI ; les sorties des mois de l'annee n'y sont plus qu'une fois, dans le zip
+//!   (`documents::sorties_du_mois::SortiesDuMois` les y lit). Le zip est ecrit par le zip de `routes::dossier_salarie` (deflate,
 //!   CRC-32, entrees dans un ordre fixe) : la liste des fichiers et chacun d'eux sont fixes, octet pour octet ; les
 //!   octets COMPRESSES (donc l'empreinte et la taille de l'archive) dependent du compresseur, et l'empreinte rendue
 //!   est celle de l'archive que ce programme a reellement ecrite.
@@ -17,7 +18,7 @@ use std::collections::BTreeMap;
 use socle::echec::Classe;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use droit::contexte::Contexte;
 use socle::echec::erreur;
@@ -238,8 +239,9 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     }
     let mut avert: Vec<String> = Vec::new();
     let mut ecritures: Vec<Ecriture> = Vec::new();
+    let ecrits = documents::sorties_du_mois::mois_des_sorties(&ctx.racine)?;
     for &m in &mois {
-        if !documents::DossierDuMois::Sorties.dans(&ctx.racine, m).is_dir() {
+        if !ecrits.contains(&m) {
             avert.push(format!("{} : saisi mais jamais écrit (pas de bulletin) -- pris quand même, depuis la saisie.", m));
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
@@ -341,79 +343,9 @@ const DECEMBRE: u32 = 12;
 
 // ------------------------------------------------------------------ la cloture
 
-/// Les exercices clos de la compagnie, sous sa racine.
-pub(crate) const EXERCICES: CheminRelatif = CheminRelatif::du_moteur("config/exercices.json");
-
-/// `config/exercices.json` : chaque annee close (`clos`, sa cloture sous son annee) et les clotures retirees (`rouverts`),
-/// dans l'ordre ou elles l'ont ete. Lu par sa forme (`lire_exercices`), ecrit par `ecrire_exercices`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Exercices {
-    clos: BTreeMap<Annee, ExerciceNote>,
-    rouverts: Vec<ExerciceRouvertNote>,
-}
-
-/// La cloture d'une annee : quand, par qui, l'archive (son chemin sous la racine, sa taille, son empreinte, le nombre de
-/// fichiers qu'elle reunit), si elle a ete forcee, et les mois clos sans DSN acceptee.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ExerciceNote {
-    #[serde(with = "socle::paris::ecrit::seconde")]
-    pub(crate) le: Moment,
-    qui: String,
-    archive: CheminRelatif,
-    octets: Octets,
-    empreinte: Empreinte,
-    fichiers: u64,
-    forcee: bool,
-    sans_dsn: Vec<Mois>,
-}
-
-/// Une cloture retiree : la cloture telle qu'elle etait, son annee, quand et par qui elle l'a ete.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct ExerciceRouvertNote {
-    #[serde(with = "socle::paris::ecrit::seconde")]
-    le: Moment,
-    qui: String,
-    archive: CheminRelatif,
-    octets: Octets,
-    empreinte: Empreinte,
-    fichiers: u64,
-    forcee: bool,
-    sans_dsn: Vec<Mois>,
-    annee: Annee,
-    #[serde(with = "socle::paris::ecrit::seconde")]
-    rouvert_le: Moment,
-    rouvert_par: String,
-}
-
-impl Exercices {
-    /// La cloture de l'annee `annee`, ou `None`.
-    pub(crate) fn de(&self, annee: Annee) -> Option<&ExerciceNote> {
-        self.clos.get(&annee)
-    }
-
-    /// Les annees closes, et leur cloture.
-    pub(crate) fn clos(&self) -> &BTreeMap<Annee, ExerciceNote> {
-        &self.clos
-    }
-}
-
-/// `config/exercices.json`, lu par sa forme : aucune annee close s'il n'existe pas. Le texte est lu une fois tant qu'il
-/// ne change pas (l'etat d'un mois le demande pour chaque mois) ; le refus d'un fichier illisible ne se garde pas.
-pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
-    let p = EXERCICES.dans(racine);
-    match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))? {
-        Some(e) => Ok((*e).clone()),
-        None => Ok(Exercices { clos: BTreeMap::new(), rouverts: Vec::new() }),
-    }
-}
-
-fn ecrire_exercices(ctx: &Contexte, tous: &Exercices) -> R<()> {
-    let chemin = EXERCICES.dans(&ctx.racine);
-    socle::ecriture::ecrire_json(&chemin, tous, 1).map_err(|m| m.reclasser(Classe::Disque))
-}
+// Les exercices clos (`config/exercices.json`) se lisent et s'ecrivent avec la porte des sorties d'un mois, qu'ils
+// decident (`documents::sorties_du_mois`).
+use documents::sorties_du_mois::{ecrire_exercices, lire_exercices, ExerciceNote, ExerciceRouvertNote, SortiesDuMois};
 
 /// Les fichiers sous `d`, triés par chemin (les chemins se comparent composant par composant). Un dossier absent n'en a
 /// aucun ; un dossier qui ne se lit pas se refuse.
@@ -574,7 +506,17 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             sans_dsn: if forcer { sans_dsn } else { Vec::new() },
         },
     );
-    ecrire_exercices(ctx, &tous)?;
+    ecrire_exercices(&ctx.racine, &tous)?;
+    // L'ANNEE EST DANS SON ARCHIVE, et l'archive est notee : ses sorties en vrac s'en vont. Elles se lisent desormais
+    // dans l'archive (`SortiesDuMois`) ; une cloture qui echoue avant ce point n'a rien retire.
+    for &m in &mois {
+        let d = documents::DossierDuMois::Sorties.dans(&ctx.racine, m);
+        match std::fs::remove_dir_all(&d) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(en_os(&e, &d)),
+        }
+    }
     Ok(ExerciceClos { annee, le, archive, octets: Octets::de(&octets), empreinte, fichiers: n, manques })
 }
 
@@ -651,13 +593,19 @@ pub(crate) fn geste_de_cloture(annee: Annee) -> R<crate::imprevus::GesteDeRoute<
     Ok(crate::imprevus::GesteDeRoute::avec_cases(crate::catalogue::Route::Cloture, charge, CLOTURER, cases, crate::SansCharge {}, crate::SansCharge {}).disant(phrases))
 }
 
-/// Retire la cloture. L'archive reste sur le disque : elle dit ce
-/// qu'etait l'annee au moment ou on l'a fermee.
+/// Retire la cloture : les sorties de l'annee reviennent en vrac depuis son archive. L'archive reste sur le disque :
+/// elle dit ce qu'etait l'annee au moment ou on l'a fermee.
 fn rouvrir_exercice(ctx: &Contexte, annee: Annee, qui: &str) -> R<ExerciceRouvert> {
     let mut tous = lire_exercices(&ctx.racine)?;
     let Some(clos) = tous.clos.remove(&annee) else {
         return Err(refus(format!("L'exercice {} n'est pas clos.", annee)));
     };
+    // LES SORTIES DE L'ANNEE REVIENNENT EN VRAC, a l'octet pres, depuis son archive, avant que `exercices.json` ne la
+    // dise ouverte (il la dit encore close : `du_mois` les lit dans l'archive) ; une reouverture qui echoue en route la
+    // laisse close, ses pieces dans l'archive.
+    for m in annee.les_mois() {
+        SortiesDuMois::du_mois(&ctx.racine, m)?.remettre_en_vrac()?;
+    }
     let (etait_clos_depuis, archive) = (clos.le, clos.archive.clone());
     let ExerciceNote { le, qui: clos_par, archive: a, octets, empreinte, fichiers, forcee, sans_dsn } = clos;
     tous.rouverts.push(ExerciceRouvertNote {
@@ -673,7 +621,7 @@ fn rouvrir_exercice(ctx: &Contexte, annee: Annee, qui: &str) -> R<ExerciceRouver
         rouvert_le: maintenant(),
         rouvert_par: qui.to_string(),
     });
-    ecrire_exercices(ctx, &tous)?;
+    ecrire_exercices(&ctx.racine, &tous)?;
     Ok(ExerciceRouvert { annee, etait_clos_depuis, archive })
 }
 

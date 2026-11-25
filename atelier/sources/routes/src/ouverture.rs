@@ -119,8 +119,6 @@ const AIDES: &[(&str, &str)] = &[
     ("ligne_par_jour", "par jour"),
     ("a_completer", "Un engagement au moins reste à compléter avant de le valider : sa carte dit ce qui manque."),
     ("piece_absente", "N'est plus dans le dossier du mois."),
-    ("qui_engage", "Choisir qui est engagé."),
-    ("engagement_retire", "Engagement retiré."),
     ("dpae_cochees", "Cochées d'avance : les embauches sans DPAE, ou dont la DPAE a été refusée. Une DPAE déjà passée ne se redéclare pas : l'Urssaf recevrait deux déclarations pour un seul contrat."),
     ("dpae_heure", "Heure d'embauche déclarée : 08h00. Toutes les embauches cochées partent ensemble, dans un seul dépôt. D'abord le test, qui ne déclare rien ; puis, une fois le test revenu conforme, l'envoi réel."),
     ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD ; la DSN déposée du même mois pourrait le dire. Sinon, dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
@@ -908,31 +906,10 @@ const AEM_DE_L_ANCIEN_LOGICIEL: (&str, &str) = ("AEM_", "AEM");
 /// ancien -- `(mois, fichiers du dossier de sortie)`.
 pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<NomDeFichier>)>> {
     let mut vus: BTreeSet<Mois> = engagement::stock::mois_saisis(racine)?.into_iter().collect();
-    // Les entrees d'un dossier (aucune s'il n'existe pas) ; un dossier qui ne se lit pas se refuse.
-    let entrees = |d: &Path| -> R<Vec<std::fs::DirEntry>> {
-        match std::fs::read_dir(d) {
-            Ok(rd) => rd.map(|e| e.map_err(|x| socle::echec::du_disque(d, &x))).collect(),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(e) => Err(socle::echec::du_disque(d, &e)),
-        }
-    };
-    let mut dossiers: BTreeMap<Mois, PathBuf> = BTreeMap::new();
-    // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
-    for d in socle::fichiers::nommes_d_un_mois(&documents::DossierDuMois::des_mois(racine), None, false)? {
-        vus.insert(d.mois);
-        dossiers.insert(d.mois, d.chemin);
-    }
+    vus.extend(documents::sorties_du_mois::mois_des_sorties(racine)?);
     let mut out = Vec::new();
     for mois in vus.into_iter().rev() {
-        let mut fichiers: Vec<NomDeFichier> = Vec::new();
-        if let Some(d) = dossiers.get(&mois) {
-            for e in entrees(d)? {
-                if e.path().is_file() {
-                    fichiers.push(NomDeFichier::du(&e.path())?);
-                }
-            }
-            fichiers.sort();
-        }
+        let fichiers = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, mois)?.noms(documents::DossierDuMois::Sorties)?;
         out.push((mois, fichiers));
     }
     Ok(out)
@@ -1092,7 +1069,8 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
         // racine du mois ; elles se nomment avec les autres sortes.
         let aer = documents::PieceDuMois::Aer;
-        if crate::documents::un_nom_commence_et_finit(&aer.dossier().dans(&ctx.racine, le_mois), aer.sorte().prefixe(), ".pdf")? {
+        let noms_de_l_envoi = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, le_mois)?.noms(aer.dossier())?;
+        if noms_de_l_envoi.iter().any(|n| n.texte().starts_with(aer.sorte().prefixe()) && n.texte().ends_with(".pdf")) {
             // Avant les AEM, ou en dernier.
             let rang = match sortes.iter().position(|s| *s == mot_aem) {
                 Some(r) => r,

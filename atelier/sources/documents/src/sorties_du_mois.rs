@@ -1,0 +1,486 @@
+//! LES SORTIES D'UN MOIS, OU QU'ELLES SOIENT : en vrac sous `sorties/<mois>/` tant que son annee est ouverte, dans
+//! l'archive de son exercice (`sorties/exercices/Exercice_AAAA.zip`, sous le meme chemin relatif) des qu'elle est close.
+//! Tout ce qui lit une piece d'un mois passe par ici (`SortiesDuMois`) : la liste de ses pieces, leurs octets, et, pour ce
+//! qui s'ouvre par un chemin (la fabrique PDF, le poste, la lecture d'une DSN), un fichier. Une annee close a toujours
+//! ses pieces dans son archive, une annee ouverte toujours en vrac : il n'y a pas d'autre rangement a lire.
+//!
+//! Et les exercices clos (`config/exercices.json`), qui disent ou sont les sorties d'un mois : leur forme est lue ici,
+//! une fois, et ecrite ici.
+
+use std::collections::BTreeMap;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use socle::echec::{Classe, R};
+use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
+use socle::grandeurs::Octets;
+use socle::mois::{Annee, Mois};
+use socle::paris::Moment;
+
+use crate::DossierDuMois;
+
+// ------------------------------------------------------------------ les exercices clos
+
+/// Les exercices clos de la compagnie, sous sa racine.
+pub const EXERCICES: CheminRelatif = CheminRelatif::du_moteur("config/exercices.json");
+
+/// `config/exercices.json` : chaque annee close (`clos`, sa cloture sous son annee) et les clotures retirees (`rouverts`),
+/// dans l'ordre ou elles l'ont ete. Lu par sa forme (`lire_exercices`), ecrit par `ecrire_exercices`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Exercices {
+    pub clos: BTreeMap<Annee, ExerciceNote>,
+    pub rouverts: Vec<ExerciceRouvertNote>,
+}
+
+/// La cloture d'une annee : quand, par qui, l'archive (son chemin sous la racine, sa taille, son empreinte, le nombre de
+/// fichiers qu'elle reunit), si elle a ete forcee, et les mois clos sans DSN acceptee.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExerciceNote {
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub le: Moment,
+    pub qui: String,
+    pub archive: CheminRelatif,
+    pub octets: Octets,
+    pub empreinte: Empreinte,
+    pub fichiers: u64,
+    pub forcee: bool,
+    pub sans_dsn: Vec<Mois>,
+}
+
+/// Une cloture retiree : la cloture telle qu'elle etait, son annee, quand et par qui elle l'a ete.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExerciceRouvertNote {
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub le: Moment,
+    pub qui: String,
+    pub archive: CheminRelatif,
+    pub octets: Octets,
+    pub empreinte: Empreinte,
+    pub fichiers: u64,
+    pub forcee: bool,
+    pub sans_dsn: Vec<Mois>,
+    pub annee: Annee,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub rouvert_le: Moment,
+    pub rouvert_par: String,
+}
+
+impl Exercices {
+    /// La cloture de l'annee `annee`, ou `None`.
+    pub fn de(&self, annee: Annee) -> Option<&ExerciceNote> {
+        self.clos.get(&annee)
+    }
+
+    /// Les annees closes, et leur cloture.
+    pub fn clos(&self) -> &BTreeMap<Annee, ExerciceNote> {
+        &self.clos
+    }
+}
+
+/// `config/exercices.json`, lu par sa forme : aucune annee close s'il n'existe pas. Le texte est lu une fois tant qu'il
+/// ne change pas (l'etat d'un mois le demande pour chaque mois) ; le refus d'un fichier illisible ne se garde pas.
+pub fn lire_exercices(racine: &Path) -> R<Exercices> {
+    let p = EXERCICES.dans(racine);
+    match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))? {
+        Some(e) => Ok((*e).clone()),
+        None => Ok(Exercices { clos: BTreeMap::new(), rouverts: Vec::new() }),
+    }
+}
+
+/// Ecrit `config/exercices.json` sous la compagnie `racine`.
+pub fn ecrire_exercices(racine: &Path, tous: &Exercices) -> R<()> {
+    socle::ecriture::ecrire_json(&EXERCICES.dans(racine), tous, 1).map_err(|m| m.reclasser(Classe::Disque))
+}
+
+// ------------------------------------------------------------------ la porte
+
+/// LES SORTIES D'UN MOIS : en vrac sous `sorties/<mois>/` (son annee est ouverte), ou dans l'archive de son exercice
+/// (son annee est close), sous le meme chemin relatif a la compagnie. Ce que `config/exercices.json` dit decide, et rien
+/// d'autre. Chaque lecture d'une piece d'un mois passe par elle (`du_mois`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SortiesDuMois {
+    /// L'annee est ouverte : `sorties/<mois>/`, sous la compagnie `racine`.
+    EnVrac { racine: PathBuf, mois: Mois },
+    /// L'annee est close : l'archive de son exercice (`archive`, sous la compagnie `racine`).
+    DansLExercice { racine: PathBuf, mois: Mois, archive: PathBuf },
+}
+
+#[track_caller]
+fn illisible(archive: &Path, e: impl std::fmt::Display) -> socle::echec::Echec {
+    socle::refus!("L'archive de l'exercice {} ne se lit pas : {}", archive.display(), e).reclasser(Classe::Illisible)
+}
+
+/// L'archive `archive`, ouverte.
+fn ouverte(archive: &Path) -> R<zip::ZipArchive<std::fs::File>> {
+    let f = std::fs::File::open(archive).map_err(|e| socle::echec::du_disque(archive, &e).reclasser(Classe::Disque))?;
+    zip::ZipArchive::new(f).map_err(|e| illisible(archive, e))
+}
+
+/// L'archive `archive`, ouverte pour prendre une piece : aucune si elle n'existe plus (l'annee n'a plus de pieces) ;
+/// une archive presente qui ne se lit pas se dit, a ce geste.
+fn ouverte_si_la(archive: &Path) -> R<Option<zip::ZipArchive<std::fs::File>>> {
+    match std::fs::File::open(archive) {
+        Ok(f) => zip::ZipArchive::new(f).map(Some).map_err(|e| illisible(archive, e)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(socle::echec::du_disque(archive, &e).reclasser(Classe::Disque)),
+    }
+}
+
+/// LES NOMS DES ENTREES DE L'ARCHIVE `archive`, pour regarder (les pieces d'un mois, les mois qui en ont) : une archive
+/// absente ou qui ne se lit pas n'en a aucun, et ne ferme rien d'autre (Leandre, 25/11/2026 : « je comprends pas
+/// pourquoi le logiciel refuserait quoi que ce soit ») ; seul le geste qui prend une de ses pieces dit qu'elle ne se
+/// lit pas (`ouverte_si_la`).
+fn noms_pour_regarder(archive: &Path) -> Vec<String> {
+    match ouverte(archive) {
+        Ok(z) => z.file_names().map(str::to_string).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Les octets de l'entree `nom` de l'archive ouverte `z` ; aucun si elle n'y est pas.
+fn entree(z: &mut zip::ZipArchive<std::fs::File>, archive: &Path, nom: &str) -> R<Option<Vec<u8>>> {
+    let mut f = match z.by_name(nom) {
+        Ok(f) => f,
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(e) => return Err(illisible(archive, e)),
+    };
+    let mut o = Vec::new();
+    f.read_to_end(&mut o).map_err(|e| illisible(archive, e))?;
+    Ok(Some(o))
+}
+
+impl SortiesDuMois {
+    /// Les sorties du mois `mois` de la compagnie `racine` : dans l'archive de son exercice si son annee est close, en
+    /// vrac sinon.
+    pub fn du_mois(racine: &Path, mois: Mois) -> R<SortiesDuMois> {
+        Ok(match lire_exercices(racine)?.de(mois.annee()) {
+            Some(clos) => SortiesDuMois::DansLExercice { racine: racine.to_path_buf(), mois, archive: clos.archive.dans(racine) },
+            None => SortiesDuMois::EnVrac { racine: racine.to_path_buf(), mois },
+        })
+    }
+
+    /// LE FICHIER A OUVRIR POUR LE CHEMIN `chemin`, relatif a la compagnie, qu'une route a rendu a la page : la piece
+    /// d'un mois d'une annee close (`sorties/<mois>/…`, ou son `envoi/`) s'ouvre par sa copie (`fichier`), et se refuse
+    /// si son archive ne la porte pas ; le dossier d'un tel mois (ses sorties, son envoi) s'ouvre par la copie du mois,
+    /// et rien ne se recree en vrac ; tout autre chemin est sous la compagnie, tel quel.
+    pub fn a_ouvrir(racine: &Path, chemin: &CheminRelatif) -> R<PathBuf> {
+        let Some(dossier) = chemin.parent() else {
+            return Ok(chemin.dans(racine));
+        };
+        for annee in lire_exercices(racine)?.clos().keys() {
+            for m in annee.les_mois() {
+                // Le dossier du mois lui-meme (ses sorties, son envoi) s'ouvre par sa copie, tiree de l'archive.
+                if let Some(d) = DossierDuMois::TOUS.into_iter().find(|d| d.chemin(m) == *chemin) {
+                    return Ok(d.sous(&SortiesDuMois::du_mois(racine, m)?.ecrire(|s| Ok(s.to_path_buf()))?));
+                }
+                if let Some(d) = DossierDuMois::TOUS.into_iter().find(|d| d.chemin(m) == dossier) {
+                    return match SortiesDuMois::du_mois(racine, m)?.fichier(d, &chemin.nom())? {
+                        Some(p) => Ok(p),
+                        None => Err(socle::refus!("{} n'est pas dans l'archive de l'exercice {}.", chemin, annee)),
+                    };
+                }
+            }
+        }
+        Ok(chemin.dans(racine))
+    }
+
+    /// Son mois.
+    pub fn mois(&self) -> Mois {
+        match self {
+            SortiesDuMois::EnVrac { mois, .. } | SortiesDuMois::DansLExercice { mois, .. } => *mois,
+        }
+    }
+
+    /// Le chemin, relatif a la compagnie, du fichier `nom` du dossier `d` de ce mois : celui du vrac et de l'entree de
+    /// l'archive.
+    fn chemin_de(&self, d: DossierDuMois, nom: &NomDeFichier) -> CheminRelatif {
+        d.chemin(self.mois()).joint(nom)
+    }
+
+    /// Les noms des fichiers du dossier `d` de ce mois (pas ceux de ses sous-dossiers), tries ; aucun s'il n'en a pas.
+    pub fn noms(&self, d: DossierDuMois) -> R<Vec<NomDeFichier>> {
+        let mut out = Vec::new();
+        match self {
+            SortiesDuMois::EnVrac { racine, mois } => {
+                let dossier = d.dans(racine, *mois);
+                for p in socle::fichiers::entrees(&dossier)?.into_iter().flatten() {
+                    if p.is_file() {
+                        out.push(NomDeFichier::du(&p)?);
+                    }
+                }
+            }
+            SortiesDuMois::DansLExercice { mois, archive, .. } => {
+                let prefixe = format!("{}/", d.chemin(*mois));
+                for n in noms_pour_regarder(archive) {
+                    if let Some(nom) = n.strip_prefix(&prefixe).filter(|r| !r.is_empty() && !r.contains('/')) {
+                        out.push(NomDeFichier::lire(nom)?);
+                    }
+                }
+            }
+        }
+        out.sort();
+        Ok(out)
+    }
+
+    /// Le fichier `nom` du dossier `d` de ce mois est-il la ?
+    pub fn existe(&self, d: DossierDuMois, nom: &NomDeFichier) -> R<bool> {
+        match self {
+            SortiesDuMois::EnVrac { racine, .. } => Ok(self.chemin_de(d, nom).dans(racine).is_file()),
+            SortiesDuMois::DansLExercice { archive, .. } => {
+                let n = self.chemin_de(d, nom);
+                Ok(noms_pour_regarder(archive).iter().any(|x| x == n.texte()))
+            }
+        }
+    }
+
+    /// Les octets du fichier `nom` du dossier `d` de ce mois ; aucun s'il n'y est pas.
+    pub fn octets(&self, d: DossierDuMois, nom: &NomDeFichier) -> R<Option<Vec<u8>>> {
+        match self {
+            SortiesDuMois::EnVrac { racine, .. } => {
+                let p = self.chemin_de(d, nom).dans(racine);
+                match std::fs::read(&p) {
+                    Ok(o) => Ok(Some(o)),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(e) => Err(socle::echec::du_disque(&p, &e).reclasser(Classe::Disque)),
+                }
+            }
+            SortiesDuMois::DansLExercice { archive, .. } => match ouverte_si_la(archive)? {
+                Some(mut z) => entree(&mut z, archive, self.chemin_de(d, nom).texte()),
+                None => Ok(None),
+            },
+        }
+    }
+
+    /// LE FICHIER `nom` DU DOSSIER `d` DE CE MOIS, A OUVRIR PAR SON CHEMIN (la fabrique PDF, le poste, la lecture d'une
+    /// DSN) : en vrac, le fichier lui-meme ; dans l'archive, sa copie dans le dossier temporaire du systeme, sous le meme
+    /// chemin relatif. Aucun s'il n'y est pas.
+    pub fn fichier(&self, d: DossierDuMois, nom: &NomDeFichier) -> R<Option<PathBuf>> {
+        match self {
+            SortiesDuMois::EnVrac { racine, .. } => {
+                let p = self.chemin_de(d, nom).dans(racine);
+                Ok(p.is_file().then_some(p))
+            }
+            SortiesDuMois::DansLExercice { .. } => {
+                let Some(o) = self.octets(d, nom)? else {
+                    return Ok(None);
+                };
+                let p = self.chemin_de(d, nom).dans(&copies().join("lecture"));
+                // Une copie deja posee, identique, ne se reecrit pas : un lecteur PDF qui la garde ouverte (Windows) ne
+                // fait pas echouer celui qui la relit.
+                if std::fs::read(&p).ok().as_ref() != Some(&o) {
+                    poser(&p, &o)?;
+                }
+                Ok(Some(p))
+            }
+        }
+    }
+
+    /// LE FICHIER `nom` DU DOSSIER `d` QUE `noms` A LISTE, a ouvrir par son chemin (`fichier`) : une piece listee qui ne
+    /// se trouve pas est une erreur qui remonte, jamais un silence.
+    pub fn fichier_liste(&self, d: DossierDuMois, nom: &NomDeFichier) -> R<PathBuf> {
+        self.fichier(d, nom)?.ok_or_else(|| self.absent_de_la_liste(d, nom))
+    }
+
+    /// Les octets du fichier `nom` du dossier `d` que `noms` a liste (`octets`) : une piece listee qui ne se trouve pas
+    /// est une erreur qui remonte.
+    pub fn octets_listes(&self, d: DossierDuMois, nom: &NomDeFichier) -> R<Vec<u8>> {
+        self.octets(d, nom)?.ok_or_else(|| self.absent_de_la_liste(d, nom))
+    }
+
+    #[track_caller]
+    fn absent_de_la_liste(&self, d: DossierDuMois, nom: &NomDeFichier) -> socle::echec::Echec {
+        socle::refus!("{} est listé dans les sorties de {}, mais ne s'y trouve pas.", self.chemin_de(d, nom), self.mois()).reclasser(Classe::FichierAbsent)
+    }
+
+    /// LE DOSSIER DE CE MOIS QUI PORTE LE FICHIER `nom`, dont on ne sait que le nom : l'envoi, puis les sorties
+    /// (`DossierDuMois::TOUS`) ; aucun s'il n'est dans aucun.
+    pub fn chercher(&self, nom: &NomDeFichier) -> R<Option<DossierDuMois>> {
+        for d in DossierDuMois::TOUS {
+            if self.existe(d, nom)? {
+                return Ok(Some(d));
+            }
+        }
+        Ok(None)
+    }
+
+    /// ECRIT DANS LES SORTIES DE CE MOIS : `ecrire` recoit le dossier des sorties du mois (`sorties/<mois>/`, son
+    /// `envoi/` dessous) et y ecrit comme dans un dossier. En vrac, c'est le dossier lui-meme. Dans une annee close,
+    /// c'est une copie des sorties du mois tirees de l'archive, dans le dossier temporaire du systeme, sous le meme
+    /// chemin relatif : le geste y trouve ce qui existe deja (il ne le refait pas) ; ce qu'il y ecrit de neuf, ou de
+    /// change, entre dans l'archive (`ranger`), et la note de la cloture suit. Les chemins qu'il rend restent ceux de
+    /// la copie, qui reste.
+    pub fn ecrire<T>(&self, ecrire: impl FnOnce(&Path) -> R<T>) -> R<T> {
+        let SortiesDuMois::DansLExercice { racine, mois, archive } = self else {
+            return ecrire(&DossierDuMois::Sorties.dans(self.racine(), self.mois()));
+        };
+        static ECRITURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = ECRITURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let copie = copies().join(format!("ecriture-{}", n));
+        // Le dossier d'une ecriture part vide : ce qu'un autre processus du meme numero y a laisse ne compte pas.
+        socle::fichiers::effacer(&copie).map_err(|m| m.reclasser(Classe::Disque))?;
+        let prefixe = format!("{}/", DossierDuMois::Sorties.chemin(*mois));
+        let mut avant: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        {
+            // L'archive se referme ici : aucune ne reste ouverte pendant le geste ni quand `ranger` la remplace.
+            let mut z = ouverte(archive)?;
+            let noms: Vec<String> = z.file_names().filter(|n| n.starts_with(&prefixe) && !n.ends_with('/')).map(str::to_string).collect();
+            for n in noms {
+                let Some(o) = entree(&mut z, archive, &n)? else {
+                    return Err(illisible(archive, format!("l'entrée {} qu'elle liste ne se trouve pas", n)));
+                };
+                poser(&CheminRelatif::lire(&n)?.dans(&copie), &o)?;
+                avant.insert(n, o);
+            }
+        }
+        let dossier = DossierDuMois::Sorties.dans(&copie, *mois);
+        std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
+        let rendu = ecrire(&dossier)?;
+        let mut ecrits: Vec<(String, Vec<u8>)> = Vec::new();
+        for p in fichiers_sous(&dossier)? {
+            let rel = CheminRelatif::sous(&copie, &p)?;
+            let o = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
+            if avant.get(rel.texte()) != Some(&o) {
+                ecrits.push((rel.texte().to_string(), o));
+            }
+        }
+        if !ecrits.is_empty() {
+            ranger(racine, mois.annee(), archive, ecrits)?;
+        }
+        Ok(rendu)
+    }
+
+    /// LE CHEMIN A RENDRE A LA PAGE pour le fichier `p` qu'une lecture (`fichier`) ou une ecriture (`ecrire`) des
+    /// sorties d'un mois de la compagnie `racine` a donne : relatif a la compagnie (`sorties/<mois>/…`), il s'ouvre par
+    /// `a_ouvrir`, dans l'archive d'une annee close comme en vrac. Un chemin qui ne vient pas de cette porte est un
+    /// defaut du logiciel.
+    pub fn rendu(racine: &Path, p: &Path) -> R<CheminRelatif> {
+        let defaut = || socle::refus!("Défaut du logiciel : {} n'est pas une pièce des sorties d'un mois.", p.display()).reclasser(Classe::DefautDuLogiciel);
+        if p.starts_with(racine) {
+            return CheminRelatif::sous(racine, p).map_err(|_| defaut());
+        }
+        // Sous la copie d'une annee close : `lecture/` ou `ecriture-<n>/`, puis le chemin relatif a la compagnie.
+        let mut reste = p.strip_prefix(copies()).map_err(|_| defaut())?.components();
+        reste.next().ok_or_else(defaut)?;
+        CheminRelatif::du(reste.as_path()).map_err(|_| defaut())
+    }
+
+    /// La compagnie.
+    fn racine(&self) -> &Path {
+        match self {
+            SortiesDuMois::EnVrac { racine, .. } | SortiesDuMois::DansLExercice { racine, .. } => racine,
+        }
+    }
+
+    /// REMET EN VRAC LES SORTIES DE CE MOIS, a l'octet pres, depuis l'archive de son exercice (sous-dossiers compris) :
+    /// la reouverture de l'annee. Rien pour un mois en vrac.
+    pub fn remettre_en_vrac(&self) -> R<()> {
+        let SortiesDuMois::DansLExercice { racine, mois, archive } = self else {
+            return Ok(());
+        };
+        let prefixe = format!("{}/", DossierDuMois::Sorties.chemin(*mois));
+        let mut z = ouverte(archive)?;
+        let noms: Vec<String> = z.file_names().filter(|n| n.starts_with(&prefixe) && !n.ends_with('/')).map(str::to_string).collect();
+        for n in noms {
+            let Some(o) = entree(&mut z, archive, &n)? else {
+                return Err(illisible(archive, format!("l'entrée {} qu'elle liste ne se trouve pas", n)));
+            };
+            poser(&CheminRelatif::lire(&n)?.dans(racine), &o)?;
+        }
+        Ok(())
+    }
+}
+
+/// Le dossier, dans le dossier temporaire du systeme, des copies des pieces d'une annee close que ce processus a
+/// tirees de leur archive (pour les lire par un chemin, ou y ecrire).
+fn copies() -> PathBuf {
+    socle::fichiers::dossier_temporaire().join(format!("puppetpaie-exercices-{}", socle::processus::numero()))
+}
+
+/// Ecrit `octets` au fichier `p`, son dossier cree s'il manque.
+fn poser(p: &Path, octets: &[u8]) -> R<()> {
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| socle::echec::du_disque(parent, &e).reclasser(Classe::Disque))?;
+    }
+    std::fs::write(p, octets).map_err(|e| socle::echec::du_disque(p, &e).reclasser(Classe::Disque))
+}
+
+/// Les fichiers sous le dossier `d`, sous-dossiers compris, tries ; aucun s'il n'existe pas.
+fn fichiers_sous(d: &Path) -> R<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for p in socle::fichiers::entrees(d)?.into_iter().flatten() {
+        if p.is_dir() {
+            out.extend(fichiers_sous(&p)?);
+        } else if p.is_file() {
+            out.push(p);
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// RANGE DANS L'ARCHIVE `archive` DE L'EXERCICE `annee` les pieces `ecrits` (leur chemin relatif a la compagnie, leurs
+/// octets) : on ouvre l'archive, une piece du meme chemin y prend sa place, une piece neuve s'y ajoute a la fin, les
+/// autres entrees y restent telles quelles (copiees sans se recompresser), et on la referme. La note de la cloture
+/// (`config/exercices.json` : les octets, l'empreinte et le nombre de fichiers de l'archive) suit, et rien d'autre.
+fn ranger(racine: &Path, annee: Annee, archive: &Path, mut ecrits: Vec<(String, Vec<u8>)>) -> R<()> {
+    use std::io::Write;
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let ancienne = std::fs::read(archive).map_err(|e| socle::echec::du_disque(archive, &e).reclasser(Classe::Disque))?;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(ancienne)).map_err(|e| illisible(archive, e))?;
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..z.len() {
+        let f = z.by_index_raw(i).map_err(|e| illisible(archive, e))?;
+        match ecrits.iter().position(|(n, _)| n == f.name()) {
+            Some(k) => {
+                let (n, o) = ecrits.remove(k);
+                w.start_file(n, options).map_err(|e| illisible(archive, e))?;
+                w.write_all(&o).map_err(|e| illisible(archive, e))?;
+            }
+            None => w.raw_copy_file(f).map_err(|e| illisible(archive, e))?,
+        }
+    }
+    for (n, o) in ecrits {
+        w.start_file(n, options).map_err(|e| illisible(archive, e))?;
+        w.write_all(&o).map_err(|e| illisible(archive, e))?;
+    }
+    let octets = w.finish().map_err(|e| illisible(archive, e))?.into_inner();
+    let fichiers = zip::ZipArchive::new(std::io::Cursor::new(&octets)).map_err(|e| illisible(archive, e))?.len();
+    // L'archive neuve s'ecrit a cote, puis prend la place de l'ancienne : une ecriture qui echoue ne la perd pas.
+    let neuve = archive.with_extension("zip.tmp");
+    std::fs::write(&neuve, &octets).map_err(|e| socle::echec::du_disque(&neuve, &e).reclasser(Classe::Disque))?;
+    std::fs::rename(&neuve, archive).map_err(|e| socle::echec::du_disque(archive, &e).reclasser(Classe::Disque))?;
+    let mut tous = lire_exercices(racine)?;
+    let Some(note) = tous.clos.get_mut(&annee) else {
+        return Err(socle::refus!("L'exercice {} n'est plus clos : la pièce est dans son archive, que la clôture ne note plus.", annee));
+    };
+    note.octets = Octets::de(&octets);
+    note.empreinte = Empreinte::des_octets(&octets);
+    note.fichiers = fichiers as u64;
+    ecrire_exercices(racine, &tous)
+}
+
+/// LES MOIS QUI ONT DES SORTIES : les dossiers `sorties/<mois>/` en vrac, et les mois de chaque annee close dont
+/// l'archive porte des sorties. Tries, chacun une fois.
+pub fn mois_des_sorties(racine: &Path) -> R<Vec<Mois>> {
+    let mut vus: std::collections::BTreeSet<Mois> = std::collections::BTreeSet::new();
+    // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
+    for d in socle::fichiers::nommes_d_un_mois(&DossierDuMois::des_mois(racine), None, false)? {
+        vus.insert(d.mois);
+    }
+    for (annee, clos) in lire_exercices(racine)?.clos() {
+        let archive = clos.archive.dans(racine);
+        let noms = noms_pour_regarder(&archive);
+        for m in annee.les_mois() {
+            let prefixe = format!("{}/", DossierDuMois::Sorties.chemin(m));
+            if noms.iter().any(|n| n.starts_with(&prefixe)) {
+                vus.insert(m);
+            }
+        }
+    }
+    Ok(vus.into_iter().collect())
+}

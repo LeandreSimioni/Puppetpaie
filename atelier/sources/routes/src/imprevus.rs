@@ -771,8 +771,8 @@ impl EncoreAppele {
 /// `arret-signaler` : le fichier ecrit, et son depot (`suite`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalement {
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    fichier: std::path::PathBuf,
+    /// Relatif a la compagnie : il s'ouvre et se depose par la porte des sorties du mois.
+    fichier: socle::fichiers::CheminRelatif,
     phrase: Phrase,
     nature: NatureSignalement,
     #[serde(rename = "type")]
@@ -785,16 +785,17 @@ pub(crate) struct ReponseSignalement {
 
 /// CE QUI SUIT L'ECRITURE D'UN SIGNALEMENT : son depot (l'apercu du depot du fichier ecrit, puis le depot), le geste que
 /// la reponse rend en `suite`. Ecrire un fichier n'engage rien ; le deposer engage tout : deux gestes.
-fn le_depot(fichier: &std::path::Path) -> crate::etapes::Action {
-    crate::etapes::vers(crate::etapes::VueDuGeste::Depot, crate::depots::Designation::du_fichier(fichier.to_path_buf()), Some(Route::Deposer), "Déposer".into())
+/// Le fichier est relatif a la compagnie : le depot le trouve par la porte des sorties du mois (`depots::resoudre`).
+fn le_depot(fichier: &socle::fichiers::CheminRelatif) -> crate::etapes::Action {
+    crate::etapes::vers(crate::etapes::VueDuGeste::Depot, crate::depots::Designation::du_fichier(std::path::PathBuf::from(fichier.texte())), Some(Route::Deposer), "Déposer".into())
 }
 
 /// `fin-contrat-signaler` : le fichier ecrit, et son depot (`suite`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalementFin {
     suite: crate::etapes::Action,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    fichier: std::path::PathBuf,
+    /// Relatif a la compagnie : il s'ouvre et se depose par la porte des sorties du mois.
+    fichier: socle::fichiers::CheminRelatif,
     phrase: Phrase,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
@@ -808,12 +809,10 @@ pub(crate) struct ReponseSignalementFin {
 #[derive(Debug, Serialize)]
 struct ReponsePapiers {
     phrase: Phrase,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    certificat: std::path::PathBuf,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    recu: std::path::PathBuf,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    dossier: std::path::PathBuf,
+    /// Les chemins sont relatifs a la compagnie : ils s'ouvrent par la porte des sorties du mois.
+    certificat: socle::fichiers::CheminRelatif,
+    recu: socle::fichiers::CheminRelatif,
+    dossier: socle::fichiers::CheminRelatif,
     avertissements: &'static [&'static str],
 }
 
@@ -1365,12 +1364,14 @@ impl<C, V, X> GesteDeRoute<C, V, X> {
 }
 
 /// LE RANG D'UN GESTE DANS SON ECRAN : le geste principal (« Importer », « Reprendre »), que la page dessine en bouton
-/// principal, ou un geste second, en lien.
+/// principal ; un geste second, en lien ; ou un geste second dessine en bouton secondaire, a cote du principal
+/// (« Annuler » de la carte d'un engagement ouverte).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RangDuGeste {
     Principal,
     Second,
+    Secondaire,
 }
 
 impl RangDuGeste {
@@ -2392,14 +2393,15 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let (rang, _, _) = engagement_qui_finit(&saisie, &cle, c.salarie.as_str(), mois)?;
     let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
-    let dossier = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
-    // Les sorties du mois : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
-    let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
+    // Les sorties du mois, par leur porte : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
+    let (dossier, [certificat, recu]) =
+        documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|d| Ok((d.to_path_buf(), documents::fin_de_contrat::ecrire(ctx, &p, date, d)?)))?;
+    let rendu = |f: &std::path::Path| documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, f);
     Ok(ReponsePapiers {
         phrase: socle::phrase!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
-        certificat,
-        recu,
-        dossier,
+        certificat: rendu(&certificat)?,
+        recu: rendu(&recu)?,
+        dossier: rendu(&dossier)?,
         avertissements: documents::fin_de_contrat::AVIS,
     })
 }
@@ -2471,7 +2473,9 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
     let nom = nom_du_signalement(&format!("{}{}_{}", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
-    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().dans(&ctx.racine, mois).join(&nom);
+    // Il s'ecrit dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    let cible = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|sorties| {
+    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().sous(sorties).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration,
@@ -2489,7 +2493,11 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
         .collect();
     let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible)?;
+    Ok(cible)
+    })?;
+    // Il se note au journal des pieces ecrites une fois range (en vrac, ou dans l'archive de l'exercice).
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    let cible = documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, &cible)?;
     let preavis = declarations::fctu::libelle_preavis(fin.type_preavis)?;
     Ok(ReponseSignalementFin {
         suite: le_depot(&cible),
@@ -2619,8 +2627,10 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace,
         ordre,
     )?;
-    // Arret et reprise : deux pieces du mois, la sienne dit son dossier.
-    let cible = piece.dossier().dans(&ctx.racine, dernier.mois_civil()).join(&nom);
+    // Arret et reprise : deux pieces du mois, la sienne dit son dossier ; il s'ecrit dans les sorties du mois, par leur
+    // porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    let cible = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, dernier.mois_civil())?.ecrire(|sorties| {
+    let cible = piece.dossier().sous(sorties).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature_declaration: nature,
@@ -2632,7 +2642,11 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     };
     let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible)?;
+    Ok(cible)
+    })?;
+    // Il se note au journal des pieces ecrites une fois range (en vrac, ou dans l'archive de l'exercice).
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    let cible = documents::sorties_du_mois::SortiesDuMois::rendu(&ctx.racine, &cible)?;
     let fait = match c.nature {
         NatureSignalement::Arret => "Signalement d'arrêt écrit. Rien n'est parti.",
         NatureSignalement::Reprise => "Signalement de reprise écrit. Rien n'est parti.",

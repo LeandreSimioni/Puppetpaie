@@ -67,7 +67,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes (chaque paie importée telle qu'elle se lit : son résumé et ses pastilles, ce que l'import n'a pas lu, ses cases en lecture, les lignes de son bulletin), ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit, choix (ce que les cases qui se choisissent dans les fiches offrent : salarie, spectacle, metier, etablissement, relus à chaque lecture ; nature, quand elle se choisit), nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie), vide_dit (ce que dit le mois quand l'aperçu n'a aucune paie d'ici), demo (la mention d'un mois saisi en démo)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes (chaque paie importée telle qu'elle se lit : son résumé et ses pastilles, ce que l'import n'a pas lu, ses cases en lecture, les lignes de son bulletin), ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit, choix (ce que les cases qui se choisissent dans les fiches offrent : salarie, spectacle, metier, etablissement, relus à chaque lecture ; nature, quand elle se choisit), nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut ; gestes : celui d'une carte neuve jamais écrite, annuler, « Retirer cet engagement », qui relit le mois), phrase (ce que l'écran dit de la saisie), vide_dit (ce que dit le mois quand l'aperçu n'a aucune paie d'ici), demo (la mention d'un mois saisi en démo)",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -258,6 +258,8 @@ struct NouvelleCarte {
     propose: std::collections::BTreeMap<NatureDeContrat, engagement::proposees::Proposees>,
     /// Ce qu'une carte neuve pre-remplit avant sa premiere paie (`Prerempli`) : ses lignes neuves.
     prerempli: Prerempli,
+    /// Les gestes d'une carte neuve, tant que rien ne l'a ecrite (`GestesDeLaCarte::neuve`).
+    gestes: crate::engagement::GestesDeLaCarte,
 }
 
 /// LE MOIS TEL QUE L'ECRAN L'OUVRE (`saisie`).
@@ -661,6 +663,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         propose,
         // Une carte neuve n'a pas encore de paie ni de carte rendue : seules ses lignes neuves se pre-remplissent.
         prerempli: Prerempli { lignes: lignes_neuves, ..Prerempli::default() },
+        gestes: crate::engagement::GestesDeLaCarte::neuve(mois),
     };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
