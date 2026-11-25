@@ -69,7 +69,8 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::Refuse, corriger: "un envoi de cette compagnie en cours, quand la compagnie doit revenir du Drive : attendre qu'il soit parti ; rien ne change" },
             OPERATION,
         ],
-        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
+        // Une valeur a redire n'empeche pas de prendre la main : la compagnie qui revient du Drive la remplace.
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 400,
         ecran: Ecran::Geste(Place::Drive),
