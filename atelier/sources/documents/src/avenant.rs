@@ -10,6 +10,8 @@
 
 
 use droit::fiche::Lue as _;
+use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::marqueurs::{pour_la_fabrique, Valeurs};
 use droit::marqueurs::Marqueur;
@@ -170,14 +172,43 @@ fn periode_remuneration(e: &Engagement) -> R<Option<String>> {
     Ok(Some(format!("le mois {}{} {}", de, nom, mois.annee())))
 }
 
-/// Les jours joues, et OU chacun se joue quand ils different.
-fn dates_travail(e: &Engagement) -> R<String> {
+/// CE QUE LES LIGNES DE L'ENGAGEMENT `e` COMPTENT CHAQUE JOUR, dans l'ordre des lignes (« 4 heures », « 1 cachet ») : la
+/// quantite de chacun de leurs jours (`engagement::LignePaie::quantites_des_jours`), dans l'unite de sa rubrique, lue
+/// au jour ou la carte l'ecrit (son premier jour, sinon le dernier jour du mois). Un jour qu'aucune ligne ne compte (vide,
+/// ou nul) n'y est pas.
+fn quantites_par_jour(racine: &Path, e: &Engagement) -> R<BTreeMap<Jour, Vec<String>>> {
+    let mut out: BTreeMap<Jour, Vec<String>> = BTreeMap::new();
+    for l in &e.lignes {
+        let jour = match l.premier_jour() {
+            Some(j) => j,
+            None => e.mois.dernier_jour(),
+        };
+        let r = droit::catalogue::rubrique(racine, l.rubrique(), &jour)?;
+        let Some(quantites) = l.quantites_des_jours(r.unite) else { continue };
+        for (d, q) in l.dates().iter().zip(quantites) {
+            if let Some(q) = q.filter(|q| !q.est_nul()) {
+                out.entry(d.jour()).or_default().push(format!("{} {}", q.dit(), q.unite_dite()));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Les jours joues, chacun avec ce que les lignes y comptent (« 26/11/2026 (1 cachet et 4 heures) »,
+/// `quantites_par_jour`), et OU chacun se joue quand ils different (Leandre, 25/11/2026 : « Le contrat j'aimerais que ça
+/// apparaisse »).
+fn dates_travail(racine: &Path, e: &Engagement) -> R<String> {
+    let par_jour = quantites_par_jour(racine, e)?;
+    let dite = |j: &Jour| match par_jour.get(j) {
+        Some(q) => format!("{} ({})", j.jj_mm_aaaa(), et(q)),
+        None => j.jj_mm_aaaa(),
+    };
     let mut texte = if e.lieux_joues().len() < 2 {
-        e.dates_du_contrat().iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", ")
+        e.dates_du_contrat().iter().map(dite).collect::<Vec<_>>().join(", ")
     } else {
         let mut groupes = Vec::new();
         for (ou, jours) in e.dates_par_lieu(true) {
-            let dates = et(&jours.iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>());
+            let dates = et(&jours.iter().map(dite).collect::<Vec<_>>());
             groupes.push(if ou.is_empty() { dates } else { format!("{} à {}", dates, ou) });
         }
         groupes.join(", ")
@@ -202,7 +233,7 @@ fn lieu_du_contrat(e: &Engagement) -> String {
 /// Les valeurs offertes au modele. `remuneration`, `brut` et `net` sont ceux
 /// de la paie calculee ; `fiche` celle du salarie telle qu'elle vaut pour cet engagement ; `numero`, celui que la paie
 /// porte vraiment.
-fn marqueurs(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &droit::fiche::Spectacle, paie: &Paie, numero: Option<&NumeroContrat>) -> R<Valeurs> {
+fn marqueurs(racine: &Path, ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &droit::fiche::Spectacle, paie: &Paie, numero: Option<&NumeroContrat>) -> R<Valeurs> {
     let e = &paie.engagement;
     let remuneration = &paie.remuneration;
     let licence = ent.licence_spectacle.ecrite("licence_spectacle")?.to_string();
@@ -214,7 +245,7 @@ fn marqueurs(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &d
     // Le numero sous lequel la compagnie est affiliee a la Caisse : son numero d'adherent (`conges_spectacles::adherent`).
     poser(Marqueur::EmployeurCongesspectacles, crate::conges_spectacles::adherent(ent)?);
     poser(Marqueur::ContratFin, e.contrat().fin().ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
-    poser(Marqueur::ContratDatesTravail, dates_travail(e)?);
+    poser(Marqueur::ContratDatesTravail, dates_travail(racine, e)?);
     poser(Marqueur::ContratLieu, lieu_du_contrat(e));
     // Le jour du versement que la paie dit (`engagement::Engagement::versement_dit`, que sa forme ecrite porte).
     let paiement = e.versement_dit()?.ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
@@ -392,7 +423,7 @@ pub fn valeurs_de_la_paie(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Paie, n
     let mut m = match &eng.spectacle {
         Some(s) => {
             let sp = ctx.spectacle(s.as_str())?;
-            marqueurs(ent, &lue, &sp, paie, numero)?
+            marqueurs(&ctx.racine, ent, &lue, &sp, paie, numero)?
         }
         None => {
             let mut m = parties(ent, &lue, None, eng, numero)?;
