@@ -446,26 +446,20 @@ const LARGEUR_DE_COLONNE = {
  *  résumé, ouverte une rangée par jour sous les colonnes de la ligne, chaque chose sous la colonne de sa clé (la date
  *  sous les jours, la quantité et le lieu en cases, l'unité sous la rubrique, le taux, le montant), puis son total.
  *  `ouverte` : la flèche l'était (le seul confort de la page : elle ne décide rien). `colonnes` : celles des lignes ;
- *  `bouts` : les cellules après elles (la croix, le « i »). Comme toute case de la ligne, une case d'un jour montre ce
- *  que la ligne écrite dit de ce jour (`l`, sa quantité, son lieu) ; ce qu'elle n'en dit pas encore (une ligne écrite
- *  avant), ce que la route propose (`valeur`). */
-function joursDeLaLigne(p, l, colonnes, bouts, ouverte, unite) {
+ *  `bouts` : les cellules après elles (la croix, le « i ») ; sous la croix de la ligne, celle du jour (`retirer`, son
+ *  libellé), qui le retire de la ligne. Une case d'un jour montre ce que la route rend de ce jour (`valeur`). */
+function joursDeLaLigne(p, colonnes, bouts, ouverte, unite) {
+  const croix = (j) => `<button type="button" class="lien retirer-jour" data-retirer-jour="${echapper(j.jour)}" title="${
+    echapper(j.retirer)}" aria-label="${echapper(j.retirer)}">&times;</button>${"<span></span>".repeat(bouts - 1)}`;
   const vides = "<span></span>".repeat(bouts);
-  const ecrit = (iso) => [...(l.dates || []), ...(l.planning || [])].find((d) => jourDe(d) === iso);
-  const dit = (j, cle) => {
-    const e = ecrit(j.jour);
-    if (e === undefined) return j[cle].valeur;
-    const v = typeof e === "object" ? e[cle] : undefined;
-    return v != null ? v : cle === "quantite" ? j[cle].valeur : null;
-  };
   const sous = (col, j) => {
     if (col.forme === "jours") return `<span class="colonne">${echapper(j.dates)}</span>`;
     if (col.cle === "quantite" && j.quantite) {
-      return `<span class="colonne">${caseDeForme(j.quantite.forme, dit(j, "quantite"), { unite })
+      return `<span class="colonne">${caseDeForme(j.quantite.forme, j.quantite.valeur, { unite })
         .replace("data-case", `data-case data-jour="${echapper(j.jour)}" data-jour-cle="quantite"`)}</span>`;
     }
     if (col.cle === "lieu" && j.lieu) {
-      return `<span class="colonne">${caseDeForme(j.lieu.forme, dit(j, "lieu"), { prerempli: j.lieu.prerempli })
+      return `<span class="colonne">${caseDeForme(j.lieu.forme, j.lieu.valeur, { prerempli: j.lieu.prerempli })
         .replace("data-case", `data-case data-jour="${echapper(j.jour)}" data-jour-cle="lieu"`)}</span>`;
     }
     if (col.cle === "rubrique" && j.rubrique) return `<span class="colonne">${echapper(j.rubrique)}</span>`;
@@ -481,7 +475,7 @@ function joursDeLaLigne(p, l, colonnes, bouts, ouverte, unite) {
     return `<span class="colonne vide"></span>`;
   };
   return `<details class="ligne-par-jour"${ouverte ? " open" : ""}><summary>${p.resume ? `${echapper(p.resume)} ` : ""}${echapper(ETAT.aides.ligne_par_jour)}</summary>
-    ${p.jours.map((j) => `<div class="rangee-du-jour">${colonnes.map((c) => sous(c, j)).join("")}${vides}</div>`).join("")}
+    ${p.jours.map((j) => `<div class="rangee-du-jour">${colonnes.map((c) => sous(c, j)).join("")}${croix(j)}</div>`).join("")}
     ${p.total ? `<div class="rangee-du-jour total">${colonnes.map((c) => total(c, p.total)).join("")}${vides}</div>` : ""}</details>`;
 }
 
@@ -553,7 +547,7 @@ function lignesDePaie(lignes, choixDe, o) {
       ${colonnes.map(cellule).join("")}
       <button type="button" class="lien retirer-ligne" title="retirer cette ligne" aria-label="retirer cette ligne">&times;</button>
       ${porte}
-      ${rendue && rendue.par_jour ? joursDeLaLigne(rendue.par_jour, l, colonnes, avecBulles ? 2 : 1, !!(o.parJour && o.parJour.has(i)), r ? r.quantite : null) : ""}
+      ${rendue && rendue.par_jour ? joursDeLaLigne(rendue.par_jour, colonnes, avecBulles ? 2 : 1, !!(o.parJour && o.parJour.has(i)), r ? r.quantite : null) : ""}
       ${sous.length ? `<div class="ligne-sous">${sous.join("")}</div>` : ""}
       ${bulle ? bulleDeLaLigne(bulle, ouverte) : ""}
     </div>`;
@@ -600,7 +594,9 @@ function brancherLesBulles(bloc, ouvertes) {
  *  ligne telle qu'elle était écrite (une clé qui ne se dessine pas garde sa valeur). Les jours d'une colonne partent tous
  *  dans sa première clé, les autres vides : la route les range par mois (`ligne::ranger`). Une ligne dont on vient de
  *  changer la rubrique garde les clés que la nouvelle dit aussi. Un jour qui a sa rangée sous la ligne (« par jour »)
- *  dit ce que ses cases disent (sa quantité, son lieu : `{jour, quantite, lieu}`), un jour qui n'en dit rien est nu. */
+ *  dit ce que ses cases disent (sa quantité, son lieu : `{jour, quantite, lieu}`), un jour qui n'en dit rien est nu. Une
+ *  ligne dont les jours ont leur quantité ne dit la sienne que si l'on a touché à sa case (le seul confort de la saisie :
+ *  quelle case a bougé) : la route la répartit alors, sinon elle est la somme des jours. */
 function lireLesLignes(bloc) {
   return [...bloc.querySelectorAll(".ligne-paie[data-ligne]")].map((rangee) => {
     const lu = JSON.parse(rangee.dataset.valeur);
@@ -627,8 +623,29 @@ function lireLesLignes(bloc) {
         });
       });
     }
-    return r ? ligneDonnee(lu, r) : lu;
+    if (!r) return lu;
+    const donnee = ligneDonnee(lu, r);
+    const q = rangee.querySelector('[data-case][data-cle="quantite"]');
+    if (q && q.value === q.defaultValue && rangee.querySelector('[data-jour-cle="quantite"]')) delete donnee.quantite;
+    return donnee;
   });
+}
+
+/** UNE LIGNE ÉCRITE QUI REPART SANS QU'ON AIT TAPÉ SA QUANTITÉ (`p` : `par_jour` de ce que la route rend d'elle) :
+ *  chacun de ses jours dit la quantité que la route lui rend (`valeur`), et la ligne ne dit pas la sienne, qui est leur
+ *  somme. Une ligne dont la route ne rend pas la quantité de ses jours repart telle quelle. */
+function sansQuantiteTapee(l, p) {
+  if (!p || !p.jours.some((j) => j.quantite)) return l;
+  const rendus = new Map(p.jours.map((j) => [j.jour, j]));
+  const jour = (d) => {
+    const j = rendus.get(jourDe(d));
+    if (!j || !j.quantite) return d;
+    const e = typeof d === "object" ? { ...d } : { jour: jourDe(d) };
+    if (j.quantite.valeur == null) delete e.quantite; else e.quantite = j.quantite.valeur;
+    return Object.keys(e).length > 1 ? e : e.jour;
+  };
+  const { quantite, ...reste } = l;
+  return { ...reste, dates: (l.dates || []).map(jour) };
 }
 
 /* ------------------------------------------------ une case qu'une route décrit */

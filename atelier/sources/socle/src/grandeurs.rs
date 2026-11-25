@@ -842,9 +842,6 @@ impl Heures {
     /// Une heure (le singulier d'une phrase).
     pub const UNE: Heures = Heures(Decimal::ONE);
 
-    /// Un milliardieme d'heure (`0.000000001`) : l'ecart qu'une moyenne d'heures sur plusieurs jours laisse.
-    pub const UN_MILLIARDIEME: Heures = Heures(Decimal::from_parts(1, 0, 0, false, 9));
-
     /// Des heures qu'un texte fixe, entieres (`10` : la duree quotidienne maximale de travail effectif, L. 3121-18).
     pub const fn fixes(n: u32) -> Heures {
         Heures(Decimal::from_parts(n, 0, 0, false, 0))

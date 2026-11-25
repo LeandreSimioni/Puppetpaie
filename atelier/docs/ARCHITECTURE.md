@@ -391,7 +391,7 @@ un libellé, chacun sa forme.
 | jours par semaine (un rythme : « 1 jour par semaine calendaire » d'ancienneté, un préavis d'une convention, `clauses::TranchePreavis.jours_par_semaine`) | `JoursParSemaine` (semaines × jours par semaine = `Jours`) | `socle/src/grandeurs.rs` |
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
-| jour d'une ligne de paie qui dit ce qu'il porte (sa quantité, dans l'unité de la ligne, et son lieu : 4 des 10 heures, à Lyon ; la quantité de la ligne est la somme de ses jours, `LignePaie::par_jour_qui_suit`, qui répartit une quantité dite sur les jours, le reste sur les premiers, `QuantiteDeLigne::repartie`) | `JourDeLigne` (la date détaillée d'une `DateDeLigne`) | `engagement/src/ligne.rs` |
+| jour d'une ligne de paie qui dit ce qu'il porte (sa quantité, dans l'unité de la ligne, et son lieu : 4 des 10 heures, à Lyon ; une quantité tapée sur la ligne se répartit sur ses jours, le reste sur les premiers, `QuantiteDeLigne::repartie`, sinon la quantité de la ligne est la somme de ses jours, `LignePaie::jours_tenus` ; une date nue d'une ligne dont aucun jour ne dit sa quantité porte sa part, `LignePaie::quantites_des_jours`) | `JourDeLigne` (la date détaillée d'une `DateDeLigne`) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
 | effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif × coefficient = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; une moyenne, `reparti_sur` ; écrit en 13.003 et dans le 118 que le banc rend par `norme::quantite` ; R. 130-1 le compte par `droit::effectif`, des DSN déposées pour le banc, `envois::organismes_simules`, des paies reprises pour « Pour démarrer », `engagement::effectif_repris`, chaque jour d'une personne une part, un `Coefficient`) | `socle/src/grandeurs.rs` |
 | mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets, des heures ou des unités — la pige, la vacation, la tâche —, chacun sa grandeur, comme le dit la mesure de la nature ; lue d'une DSN dans la grandeur de son unité, `MesureDActivite::lue` ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
@@ -469,7 +469,7 @@ un libellé, chacun sa forme.
 - Une grandeur qu'un texte fixe s'écrit par son écriture constante, au socle, jamais par `du_decimal` : `Montant::euros`,
   `Taux::points`, `Taux::centiemes_de_point`, `Taux::milliemes_de_point`, `Coefficient::entier_fixe`,
   `Coefficient::dixiemes`, `Coefficient::centiemes`, `Coefficient::dix_milliemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
-  `UN`, `Heures::UN_MILLIARDIEME`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
+  `UN`, `Heures::UNE`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
   (`socle::grandeurs::lu::en_texte`).
 - Chaque grandeur porte un décimal exact, son échelle gardée ; il n'en sort qu'au socle, par ses écritures et ses
   lectures (`grandeurs::decimal`, interne au socle) : hors du socle, il ne se nomme pas.
@@ -1258,7 +1258,12 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
 | fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, préavis non effectué, paie importée, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
-| carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
+| carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, ses lignes, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
+| ligne de paie d'une carte telle que la route la rend (sa place, son montant, ses jours un par un) | `routes::mois::LigneRendue` | `routes/src/mois.rs` |
+| jours du mois d'une ligne, un par un, sous « par jour » (le résumé replié, « 4 · 3 · 3 · vide », une rangée par jour, le total) | `routes::mois::ParJour` | `routes/src/mois.rs` |
+| rangée d'un jour d'une ligne (sa date, sa quantité et son lieu en cases, l'unité, le taux, le montant, la croix qui retire le jour) | `routes::mois::JourRendu` | `routes/src/mois.rs` |
+| case d'un jour d'une ligne (sa quantité, son lieu : libellé, forme, valeur, pré-rempli ; une case qui porte sa valeur, quand `engagement::carte::CaseOuverte` ne dit que quelle case de la carte s'ouvre et sa place, la valeur restant sur la carte) | `routes::mois::CaseDuJour` | `routes/src/mois.rs` |
+| total des jours d'une ligne (sa quantité, son unité, son montant) | `routes::mois::TotalRendu` | `routes/src/mois.rs` |
 | carte proposée à un autre salarié (la copie d'un engagement du mois sans son salarié ni ce qui est au salarié ou à un acte, `Brouillon::proposee_a_un_autre_salarie` : les changements qui la font d'une carte neuve ; la route `copier-engagement` la rend avec le geste qui l'écrit, `enregistrer-saisie` sur une carte neuve. Ni la copie d'une paie versée, `Copie` d'une pièce importée, ni une copie de compagnie, `SorteDeCopie`) | `routes::mois::CarteProposee` | `routes/src/mois.rs` |
 | fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, si « Avancé » s'ouvre, les cases dont la route a récrit la saisie, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
 | case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix et s'ils se cochent en boutons, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir, et la case d'un écran rendu, sous sa propre clé : un contrat de la DSN) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
@@ -2226,7 +2231,7 @@ d'un geste ouvre de même les cases du geste qui ne valent que pour lui (`ouvre`
 nature d'un contrat repris, `importation-nature`) : la boîte ne montre que les cases du choix fait, se redessine quand il
 change, et ce qu'elle cache ne part pas. Les jours d'une ligne partent tous
 dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et tient ensemble la quantité d'une ligne
-et celle de chacun de ses jours (`LignePaie::par_jour_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
+et celle de chacun de ses jours (`LignePaie::jours_tenus`). Une grandeur s'écrit elle-même dans la réponse (des
 cachets en entier) ; la page montre ce qu'elle reçoit. **Une fiche se rend comme une carte** : la route `fiche`
 (`routes::fiches::rendue`) rend une fiche telle qu'on la saisit (`{nom, cle, changements}` : ce qui est saisi, posé sur
 la fiche enregistrée comme à l'écriture et comme sur la carte, une case qu'on ne nomme pas gardant sa valeur ; sans
@@ -2455,13 +2460,16 @@ Ce que ça impose au moteur :
   `{"jour": …, "quantite": …, "lieu": …}` (`JourDeLigne`, chacun ne s'écrivant que s'il est dit) ; une date détaillée
   est une date, tout ce qui parcourt des jours continue de marcher sans le savoir.
 - **Une quantité par jour** (Léandre, 25/11/2026) : une ligne qui se compte jour par jour (des heures, des cachets, des
-  journées, des services, un forfait) porte la quantité de chacun de ses jours du mois, et sa quantité est leur somme ;
-  une quantité saisie sur la ligne se répartit sur ses jours, le reste sur les premiers (10 h sur 3 jours : 4 · 3 · 3),
-  et un jour modifié compte (`LignePaie::par_jour_qui_suit`, au seul endroit où une carte change). Le contrôle des
-  10 heures par jour lit la quantité de chaque jour (`engagement::duree`). Une ligne écrite avant, dont les jours ne
-  disent pas leur quantité, se lit et se calcule telle quelle (le contrôle y prend la moyenne, et le dit) ; elle prend
-  la forme neuve quand ses lignes s'enregistrent. Ce qui lit la quantité d'une ligne (bulletin, DSN, AEM, Congés
-  Spectacles, contrat) lit son total.
+  journées, des services, un forfait) a une quantité par jour du mois. Sans comparer à rien : quand on tape sa
+  quantité, elle se répartit sur ses jours, le reste sur les premiers (12 h sur 3 jours : 4 · 4 · 4 ; 10 h : 4 · 3 · 3),
+  et ce que disaient ses jours ne compte plus ; sinon, sa quantité est la somme des jours qui en disent une, un jour qui
+  n'en dit pas restant vide (4 · 3 · 3 puis un jour ajouté : 4 · 3 · 3 · vide, 10 ; retirer une ligne ne change pas
+  les autres) (`LignePaie::jours_tenus`, à la porte des lignes, `ligne::ranger`). **Une seule forme écrite** : des
+  dates nues et un total veulent dire « le total réparti ainsi » ; une ligne ne porte la quantité de ses jours que
+  quand ils en diffèrent (un jour modifié, un jour vide), et dès qu'un jour dit la sienne, un jour qui n'en dit pas est
+  vide (`LignePaie::quantites_des_jours`, que lisent la route et le contrôle des 10 heures par jour,
+  `engagement::duree`). Une carte renvoyée telle quelle ne change donc rien. Ce qui lit la quantité d'une ligne
+  (bulletin, DSN, AEM, Congés Spectacles, contrat) lit son total.
 - La construction d'un `Engagement` (`engagement/src/lib.rs`) réunit les deux écritures et n'en
   laisse qu'une : `dates_travail` reste une liste de dates triées, le lieu part
   dans `lieux` (`lieu_de()`, `lieux_joues()`). Le contrat groupe les dates par

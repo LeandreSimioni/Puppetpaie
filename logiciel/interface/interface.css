@@ -388,6 +388,8 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .ligne-par-jour .rangee-du-jour .colonne { color: var(--discret); }
 .ligne-par-jour .rangee-du-jour.total { border-top: 1px solid var(--bord); padding-top: 4px; font-weight: bold; }
 .ligne-par-jour .rangee-du-jour.total .colonne { color: var(--texte); }
+.ligne-par-jour .retirer-jour { border: 0; background: transparent; color: var(--erreur); font-size: 16px; padding: 0;
+  cursor: pointer; justify-self: center; }
 /* Au téléphone, la ligne se replie sans rien couper : chaque case porte son libellé, la croix reste au bout. */
 @media (max-width: 620px) {
   .ligne-paie { display: flex; flex-wrap: wrap; align-items: end; border-bottom: 1px solid var(--bord); padding-bottom: 6px; }
