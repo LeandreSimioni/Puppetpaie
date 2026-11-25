@@ -46,6 +46,10 @@ pub struct EtapeDeLaVeille {
     pub en_cours: bool,
     pub sauvegarde_en_cours: bool,
     pub etape: Option<String>,
+    /// La part faite de l'etape, de 0 a 1, quand elle se compte (la sauvegarde du Drive) : la page la montre en barre,
+    /// celle de la mise a jour (`maj::EtatDeLaRecherche`) ; aucune, pas de barre.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub progression: Option<socle::grandeurs::Coefficient>,
     /// Un envoi parti en fond n'est pas au bout : la page suit le bandeau jusqu'a ce qu'il le soit.
     pub envoi_en_cours: bool,
     /// Le logiciel attend cet envoi pour se fermer : la page relit le bandeau, qui le dit.
@@ -76,15 +80,16 @@ impl Veille {
     pub fn etape(&self) -> EtapeDeLaVeille {
         let en_cours = self.en_cours.load(Ordering::SeqCst);
         let sauvegarde_en_cours = self.sauvegarde_en_cours.load(Ordering::SeqCst);
-        let etape = if en_cours || sauvegarde_en_cours {
+        let (etape, progression) = if en_cours || sauvegarde_en_cours {
             match routes::gestes::ouverture::etape_en_cours(&self.racine) {
-                Ok(e) => e,
-                Err(e) => Some(e.phrase),
+                Ok(Some(e)) => (Some(e.etape), e.progression),
+                Ok(None) => (None, None),
+                Err(e) => (Some(e.phrase), None),
             }
         } else {
-            None
+            (None, None)
         };
-        EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, envoi_en_cours: self.envois.en_cours(), fermeture: self.envois.fermeture_attend() }
+        EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape, progression, envoi_en_cours: self.envois.en_cours(), fermeture: self.envois.fermeture_attend() }
     }
 
     /// L'etat de la veille : la trace du dernier passage relue (une trace qui ne se lit pas se dit dans `erreur`).

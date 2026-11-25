@@ -21,14 +21,15 @@ const INDISPONIBLE_D_AFFILEE: usize = 3;
 /// `client` : le client Drive a utiliser. `None` : le vrai (`Client::nouveau`), construit AVANT
 /// l'inventaire ; il refuse une copie de developpement.
 ///
-/// `avancer` : apres chaque fichier envoye, combien de fichiers sont passes et combien il y en a ; un passage ou rien
-/// n'est envoye ne l'appelle pas.
+/// `avancer(verifies, envoyes, total)` : en entrant dans chaque dossier et apres chaque fichier envoye, combien de
+/// fichiers sont verifies (identiques au Drive, ou envoyes), combien sont envoyes, sur combien a sauvegarder. Son erreur
+/// (l'ecriture de l'etape) arrete la sauvegarde.
 pub fn sauvegarder(
     racine: &Path,
     racine_drive: &str,
     tout: bool,
     client: Option<&mut dyn Drive>,
-    avancer: &mut dyn FnMut(usize, usize) -> socle::echec::R<()>,
+    avancer: &mut dyn FnMut(usize, usize, usize) -> socle::echec::R<()>,
 ) -> Result<Sauvegarde, ErreurGoogle> {
     let mut propre: Client;
     let client: &mut dyn Drive = match client {
@@ -73,8 +74,8 @@ pub fn sauvegarder(
     for (relatif, _) in &presents {
         par_dossier.entry(relatif.parent()).or_default().push(relatif.clone());
     }
-    // Les fichiers passes (envoyes, identiques, reportes, disparus), sur `presents.len()` : ce que `avancer` dit.
-    let mut passes = 0usize;
+    // Ce que `avancer` dit, depuis ce que le passage a fait jusqu'ici.
+    let avancement = |r: &Sauvegarde| (r.identiques + r.deposes.len(), r.deposes.len(), presents.len());
 
     // LE DOSSIER DE LA COMPAGNIE : celui que l'index garde s'il est encore en place, sinon celui que sa marque designe,
     // sinon un neuf. Qu'il ne se trouve pas, et rien ne part a ce passage : tout est reporte au suivant.
@@ -103,6 +104,8 @@ pub fn sauvegarder(
 
     for (dossier, fichiers) in par_dossier.iter().filter(|_| compagnie_id.is_some()) {
         let Some(cie) = compagnie_id.as_ref() else { break };
+        let (verifies, envoyes, total) = avancement(&resultat);
+        avancer(verifies, envoyes, total).map_err(ErreurGoogle::from)?;
         let segments = compagnie::sauvegarde::DossierDuDrive::segments(dossier.as_ref());
         let cle = compagnie::sauvegarde::DossierDuDrive::de(dossier.as_ref());
         // Le dossier, tel qu'un dossier reporte le dit (`.` pour la racine).
@@ -113,7 +116,6 @@ pub fn sauvegarder(
         if indisponibles_de_suite >= INDISPONIBLE_D_AFFILEE {
             resultat.reportes.push(Reporte { quoi: dossier.clone(), dossier: true, cause: GOOGLE_INDISPONIBLE.into() });
             en_echec.extend(fichiers.iter().cloned());
-            passes += fichiers.len();
             continue;
         }
         let essai: Result<(envois::drive::IdDrive, envois::drive::FichiersDuDossier), ErreurGoogle> = (|| {
@@ -148,7 +150,6 @@ pub fn sauvegarder(
                 resultat.reportes.push(reporte);
                 dossiers.remove(&cle);
                 en_echec.extend(fichiers.iter().cloned());
-                passes += fichiers.len();
                 continue;
             }
         };
@@ -156,7 +157,6 @@ pub fn sauvegarder(
         let mut tries: Vec<&CheminRelatif> = fichiers.iter().collect();
         tries.sort();
         for relatif in tries {
-            passes += 1;
             if indisponibles_de_suite >= INDISPONIBLE_D_AFFILEE {
                 resultat.reportes.push(Reporte { quoi: relatif.to_string(), dossier: false, cause: GOOGLE_INDISPONIBLE.into() });
                 en_echec.insert(relatif.clone());
@@ -188,7 +188,8 @@ pub fn sauvegarder(
                     let octets = etat_de[relatif].octets;
                     resultat.deposes.push(Fichier { relatif: relatif.clone(), octets, etat });
                     resultat.octets_deposes += octets;
-                    avancer(passes, presents.len()).map_err(ErreurGoogle::from)?;
+                    let (verifies, envoyes, total) = avancement(&resultat);
+                    avancer(verifies, envoyes, total).map_err(ErreurGoogle::from)?;
                 }
                 // LE FICHIER A DISPARU ENTRE L'INVENTAIRE ET L'ENVOI, et ce n'est pas un incident :
                 // `engagements/avant/` et `config/avant/` ne gardent que les dernieres copies, et

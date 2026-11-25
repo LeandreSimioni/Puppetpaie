@@ -199,11 +199,26 @@ function suivreLesEtapes() {
     if (e.en_cours || e.sauvegarde_en_cours || e.envoi_en_cours || RELEVE_DEMANDE) {
       const el = document.querySelector("#veille-texte .veille-etape");
       if (el && e.etape) el.textContent = e.etape;
+      if (el) poserLaBarre(el, e.progression);
       suivreLesEtapes();
     } else {
       suivreVeille();
     }
   }, 1000);
+}
+
+/** LA PART FAITE DE L'ÉTAPE (`progression`, de 0 à 1, dite par le moteur : la sauvegarde du Drive), en barre juste
+ *  après l'étape : la barre de la mise à jour (`.maj-barre`, mise-a-jour.css). Aucune part dite, pas de barre. */
+function poserLaBarre(etape, progression) {
+  let barre = etape.nextElementSibling?.classList.contains("veille-barre") ? etape.nextElementSibling : null;
+  if (progression == null) { if (barre) barre.remove(); return; }
+  if (!barre) {
+    barre = document.createElement("span");
+    barre.className = "maj-barre veille-barre";
+    barre.appendChild(document.createElement("span"));
+    etape.after(barre);
+  }
+  barre.firstElementChild.style.width = (progression * 100).toFixed(1) + "%";
 }
 
 async function suivreVeille() {

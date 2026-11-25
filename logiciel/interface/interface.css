@@ -147,6 +147,8 @@ body.fenetre .fenetre-boutons { display: flex; gap: 2px; margin-left: 8px; align
 /* L'étape du passage en cours, dite par le moteur. */
 .veille-etape { font-style: italic; }
 .veille-etape::before { content: "⟳ "; font-style: normal; }
+/* La barre de la mise à jour (mise-a-jour.css), posée après l'étape qui se compte. */
+.veille-barre { display: inline-block; vertical-align: middle; margin-left: 8px; }
 /* Ce qui dure dans la sauvegarde : lisible, sans l'alarme des choses à faire. */
 .veille-sauvegarde { color: var(--texte); }
 .veille-texte b { color: var(--texte); }
