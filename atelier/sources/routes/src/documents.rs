@@ -518,10 +518,15 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             }
         }
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &socle::fichiers::dossier_temporaire())? };
-        let cible = documents::PieceDuMois::Aer.dossier().dans(&ctx.racine, periode);
-        std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
-        let chemin = cible.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &periode.etiquette()));
-        std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
+        // Elle se range dans les sorties de son mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une
+        // annee close : l'attestation de decembre qui arrive en fevrier entre dans l'archive de l'annee).
+        let chemin = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, periode)?.ecrire(|sorties| {
+            let cible = documents::PieceDuMois::Aer.dossier().sous(sorties);
+            std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
+            let chemin = cible.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &periode.etiquette()));
+            std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
+            Ok(chemin)
+        })?;
         fait.ecrits.push((periode, cle, chemin));
     }
     Ok(fait)
@@ -904,7 +909,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
         return Err(refus(format!("Aucun document écrit pour {} : rien à imprimer.", mois.libelle(Graphie::Accentuee))));
     }
     let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.contains(cle))?;
-    let impression = crate::gestes::signature::reunir_pour_imprimer(&documents::DossierDuMois::Sorties.dans(&ctx.racine, mois), "documents", &etiq, &pieces)?;
+    let impression = sorties.ecrire(|s| crate::gestes::signature::reunir_pour_imprimer(s, "documents", &etiq, &pieces))?;
     let nom_impression = NomDeFichier::du(&impression)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, mois)?;

@@ -151,11 +151,15 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         };
         let Some(Reponse { identifiant: ident, brut, de, quand }) = retenue else { continue };
 
-        // La preuve archivee : le message tel qu'il est arrive.
-        let dossier = documents::PieceDuMois::Signature.dossier().dans(&ctx.racine, a_mois);
-        std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
-        let preuve = dossier.join(format!("{}{}_{}.eml", documents::SorteDePieceProduite::Signature.prefixe(), a_salarie, code));
-        std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
+        // La preuve archivee : le message tel qu'il est arrive, dans les sorties de son mois, par leur porte (en vrac, ou
+        // dans l'archive de l'exercice d'une annee close).
+        let preuve = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, a_mois)?.ecrire(|s| {
+            let dossier = documents::PieceDuMois::Signature.dossier().sous(s);
+            std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
+            let preuve = dossier.join(format!("{}{}_{}.eml", documents::SorteDePieceProduite::Signature.prefixe(), a_salarie, code));
+            std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
+            Ok(preuve)
+        })?;
         let nom_preuve = NomDeFichier::du(&preuve)?.to_string();
 
         // UN PDF PAR FICHIER DISTINCT : des contrats groupes n'en ont qu'un (un par page) ; des avenants groupes en ont un
@@ -178,20 +182,27 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             Some(envois::journal::ActeDuContrat::Remplace) | None => documents::PieceDuMois::Contrat,
         };
         for (mois_f, nom_f) in &fichiers {
-            let envoye = parti.dossier().dans(&ctx.racine, *mois_f).join(nom_f);
-            // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
-            let souche = match envoye.file_stem() {
-                Some(s) => s.to_string_lossy().into_owned(),
-                None => nom_f.to_string(),
-            };
-            let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
-            // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste dans sa case.
-            let fait = match &mention {
-                Some(m) => crate::gestes::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map_err(|e| e.phrase),
-                None => Err("la fiche du salarié ne dit pas son nom".to_string()),
-            };
-            match fait {
-                Ok(()) => match signes.iter_mut().find(|(n, _)| n == nom_f) {
+            // Le contrat parti se lit, et son exemplaire contresigne s'ecrit, dans les sorties de son mois, par leur porte
+            // (en vrac, ou dans l'archive de l'exercice d'une annee close).
+            let fait = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, *mois_f).and_then(|sorties| {
+                sorties.ecrire(|s| {
+                    let envoye = parti.dossier().sous(s).join(nom_f);
+                    // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
+                    let souche = match envoye.file_stem() {
+                        Some(s) => s.to_string_lossy().into_owned(),
+                        None => nom_f.to_string(),
+                    };
+                    let signe = envoye.with_file_name(envois::releve_signatures::nom_contresigne(&souche));
+                    // L'EXEMPLAIRE CONTRESIGNE : le PDF parti avec ce code, octet pour octet, plus la mention de l'artiste
+                    // dans sa case.
+                    match &mention {
+                        Some(m) => crate::gestes::depart::contresigner(ctx, &lignes, &code, &envoye, &signe, m).map(|()| signe),
+                        None => Err(socle::refus!("la fiche du salarié ne dit pas son nom")),
+                    }
+                })
+            });
+            match fait.map_err(|e| e.phrase) {
+                Ok(signe) => match signes.iter_mut().find(|(n, _)| n == nom_f) {
                     Some(deja) => deja.1 = signe,
                     None => signes.push((nom_f.clone(), signe)),
                 },

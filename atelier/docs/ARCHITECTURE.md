@@ -1614,8 +1614,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (`existe`), leurs octets (`octets`), et, pour ce qui s'ouvre par un chemin (la fabrique PDF, le poste, la lecture
   d'une DSN), un fichier (`fichier` : la copie d'une pièce d'une année close va dans le dossier temporaire du
   système) ; un nom seul se cherche dans l'envoi puis les sorties (`chercher`) ; un chemin rendu à la page s'ouvre par
-  `a_ouvrir` ; les mois qui ont des sorties, en vrac ou archivées : `mois_des_sorties`. Aucun lecteur ne joint
-  `sorties/<mois>/` lui-même.
+  `a_ouvrir` ; les mois qui ont des sorties, en vrac ou archivées : `mois_des_sorties`. Toute écriture d'une pièce
+  d'un mois passe aussi par elle (`ecrire`) : le geste reçoit le dossier des sorties du mois et y écrit comme dans un
+  dossier ; dans une année close, c'est une copie du mois tirée de l'archive (ce qui y est ne se refait pas), et ce
+  qu'il y écrit de neuf ou de changé entre dans l'archive, dont la note de clôture (octets, empreinte, nombre de
+  fichiers) suit. Aucun lecteur ni écrivain ne joint `sorties/<mois>/` lui-même ; seule la clôture le retire.
 - **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
   attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
   type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les
@@ -4454,7 +4457,8 @@ fiches de `config/` et le barème de l'année, `compta/`, un `LISEZ-MOI.txt`.
 Elle note dans `config/exercices.json` la date, l'archive, son empreinte
 SHA-256 et le nombre de fichiers, puis retire `sorties/<mois>/` de chaque mois de l'année : l'année close a ses pièces
 dans son archive, et seulement là ; tout ce qui les lit passe par les sorties du mois (`SortiesDuMois`, « Le
-glossaire »), et une pièce partie d'une année close ne se refait pas (`depart::piece_partie`). La réouverture remet
+glossaire »), et une pièce partie d'une année close ne se refait pas (`depart::piece_partie`) ; une pièce neuve d'une
+année close (l'AER de décembre qui arrive en février) entre dans son archive, sans refus ni réouverture. La réouverture remet
 ces fichiers en vrac depuis l'archive, à l'octet près, puis retire l'année de `exercices.json`. **Figer** vit dans le moteur
 (`routes::mois::refuser_si_clos`), appelé par l'écriture d'une saisie et par
 la fabrication de la DSN (`depart::fabriquer_dsn`) : un front qui l'esquiverait n'existe pas. `rouvrir_exercice`

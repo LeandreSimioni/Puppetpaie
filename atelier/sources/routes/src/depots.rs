@@ -595,7 +595,9 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>()?
     };
     let etiq = le_mois.etiquette();
-    let sortie = documents::PieceDuMois::Dpae.dossier().dans(&ctx.racine, le_mois);
+    // Elle s'ecrit dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, le_mois)?.ecrire(|sorties| {
+    let sortie = documents::PieceDuMois::Dpae.dossier().sous(sorties);
     // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
     let cle_de = |p: &Paie| -> Option<(IdSalarie, NumeroContrat)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.clone(), n.clone())) };
 
@@ -735,6 +737,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         chemin: f,
         phrase: socle::phrase!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
     }))
+    })
 }
 
 /// CE QUE `dpae` REND : la DPAE ecrite, ou rien a declarer de ce que la charge designe (tout est parti, ou rien n'est

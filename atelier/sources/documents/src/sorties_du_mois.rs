@@ -145,13 +145,18 @@ impl SortiesDuMois {
 
     /// LE FICHIER A OUVRIR POUR LE CHEMIN `chemin`, relatif a la compagnie, qu'une route a rendu a la page : la piece
     /// d'un mois d'une annee close (`sorties/<mois>/…`, ou son `envoi/`) s'ouvre par sa copie (`fichier`), et se refuse
-    /// si son archive ne la porte pas ; tout autre chemin est sous la compagnie, tel quel.
+    /// si son archive ne la porte pas ; le dossier d'un tel mois (ses sorties, son envoi) s'ouvre par la copie du mois,
+    /// et rien ne se recree en vrac ; tout autre chemin est sous la compagnie, tel quel.
     pub fn a_ouvrir(racine: &Path, chemin: &CheminRelatif) -> R<PathBuf> {
         let Some(dossier) = chemin.parent() else {
             return Ok(chemin.dans(racine));
         };
         for annee in lire_exercices(racine)?.clos().keys() {
             for m in annee.les_mois() {
+                // Le dossier du mois lui-meme (ses sorties, son envoi) s'ouvre par sa copie, tiree de l'archive.
+                if let Some(d) = DossierDuMois::TOUS.into_iter().find(|d| d.chemin(m) == *chemin) {
+                    return Ok(d.sous(&SortiesDuMois::du_mois(racine, m)?.ecrire(|s| Ok(s.to_path_buf()))?));
+                }
                 if let Some(d) = DossierDuMois::TOUS.into_iter().find(|d| d.chemin(m) == dossier) {
                     return match SortiesDuMois::du_mois(racine, m)?.fichier(d, &chemin.nom())? {
                         Some(p) => Ok(p),
