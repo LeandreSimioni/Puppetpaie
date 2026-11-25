@@ -1856,7 +1856,11 @@ impl<'a> Moteur<'a> {
                 out.push(Ligne::de(vue, le_mois, None, id.clone(), signee)?);
                 continue;
             }
-            let Some(k) = s.identites.iter().position(|x| x == id) else { continue };
+            // Un engagement ecrit qui ne manque de rien a sa paie dans la saisie du mois (`saisie_chargee`, les memes
+            // engagements dans le meme ordre) : ne pas la trouver est un defaut du logiciel, qui se dit.
+            let Some(k) = s.identites.iter().position(|x| x == id) else {
+                return Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'engagement de {} n'a pas sa paie dans la saisie du mois.", engagement::etats::qui_de(self.ctx, e.objet()))));
+            };
             let p = &s.paies[k];
             let cle = p.salarie.id.clone();
             // CE QUI EST A REFAIRE : le present compare a la version sur laquelle chaque envoi est parti.

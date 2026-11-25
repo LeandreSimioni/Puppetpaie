@@ -1056,7 +1056,15 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             Ok(None) => PieceDuRetour::Aucune,
             Ok(Some(p)) => match std::fs::read(&p) {
                 Ok(o) => {
-                    let l = lire_piece(&o, canal, nature, format);
+                    let mut l = lire_piece(&o, canal, nature, format);
+                    // UN SIGNALEMENT REFUSE B1-208-10 : la conduite a tenir se lit sous son bilan, comme le releve la dit
+                    // (`envois::ordre_signalements::conduite_b1_208_10`).
+                    if canal == CanalDesRetours::Dsn && nature == NatureDuRetour::CertificatDeConformite {
+                        match retours::declarations_du_bilan(&o) {
+                            Ok(ds) => l.phrases.extend(ds.iter().filter_map(|d| envois::ordre_signalements::conduite_b1_208_10(d, flux))),
+                            Err(m) => l.phrases.push(format!("La conduite à tenir ne se lit pas de ce bilan : {}", m.phrase)),
+                        }
+                    }
                     PieceDuRetour::Lue(p, l)
                 }
                 Err(e) => PieceDuRetour::Illisible(format!("la pièce archivée ne se lit pas ({:?})", e.kind())),

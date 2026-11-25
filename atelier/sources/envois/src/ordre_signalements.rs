@@ -240,8 +240,10 @@ pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, f
     };
     let ordre = declaration.ordre.map(|o| o.to_string());
     let (flux, ordre) = (dit(flux.map(IdDeFlux::texte)), dit(ordre.as_deref()));
+    // Un seul normal par SIRET et par numero d'ordre : cahier technique DSN 2026.1, §1.4.3.2, p. 14 ; l'annule-et-remplace
+    // a un ordre superieur : §1.4.3.4, p. 15.
     Some(format!(
-        "Signalement {} de nature {} (flux {}, ordre {}) refusé B1-208-10, « il existe déjà une déclaration normale » : pour un signalement, la plate-forme n'en accepte qu'un normal par SIRET et par numéro d'ordre (cahier technique DSN 2026.1, §1.4.3.2, p. 14), et l'ordre {} était déjà pris, par un dépôt que ce dossier ne connaissait peut-être pas (un autre poste, une copie, un essai ; la base d'essai a sa propre mémoire). Le bilan ne dit pas lequel. Si l'événement n'est pas encore déclaré : refaire le signalement, il prend l'ordre qui suit le plus grand que la plate-forme et le journal connaissent. S'il l'est déjà (un signalement accepté pour le même salarié et le même contrat) : il n'y a rien à renvoyer ; pour le corriger, c'est un annule-et-remplace du signalement accepté, à un ordre supérieur (§1.4.3.4, p. 15).",
+        "Signalement {} de nature {} (flux {}, ordre {}) refusé B1-208-10, « il existe déjà une déclaration normale » : pour un signalement, la plate-forme n'en accepte qu'un normal par SIRET et par numéro d'ordre, et l'ordre {} était déjà pris, par un dépôt que ce dossier ne connaissait peut-être pas (un autre poste, une copie, un essai ; la base d'essai a sa propre mémoire). Le bilan ne dit pas lequel. Si l'événement n'est pas encore déclaré : refaire le signalement, il prend l'ordre qui suit le plus grand que la plate-forme et le journal connaissent. S'il l'est déjà (un signalement accepté pour le même salarié et le même contrat) : il n'y a rien à renvoyer ; pour le corriger, c'est un annule-et-remplace du signalement accepté, à un ordre supérieur.",
         essai, nature, flux, ordre, ordre
     ))
 }
