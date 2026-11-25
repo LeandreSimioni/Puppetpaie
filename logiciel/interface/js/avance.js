@@ -622,7 +622,13 @@ function lireLesLignes(bloc) {
         });
       });
     }
-    return r ? ligneDonnee(lu, r) : lu;
+    if (!r) return lu;
+    const donnee = ligneDonnee(lu, r);
+    // La quantité de la ligne ne part que si l'on a touché à sa case (le seul confort de la saisie : quelle case a
+    // bougé) ; sinon la route prend la somme des jours (`LignePaie::jours_tenus`), et un jour changé ou retiré compte.
+    const q = rangee.querySelector('[data-case][data-cle="quantite"]');
+    if (q && q.value === q.defaultValue && rangee.querySelector('[data-jour-cle="quantite"]')) delete donnee.quantite;
+    return donnee;
   });
 }
 

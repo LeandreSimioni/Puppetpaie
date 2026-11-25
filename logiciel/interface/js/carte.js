@@ -689,7 +689,10 @@ function ouvrirLaFin(div, champ) {
  *  les porte. */
 async function retirerDesJours(div, jours) {
   if (carteFermee(div)) return 0;
-  const lignes = (div._carte[caseDesLignes(div).cle] || []).map((l) => ({ ...l }));
+  // Les lignes telles que la carte les montre, chaque jour avec la quantité que la route lui rend : le jour retiré part
+  // avec la sienne (`lireLesLignes`, comme la croix d'un jour).
+  const bloc = div.querySelector(".case-lignes");
+  const lignes = bloc ? lireLesLignes(bloc) : (div._carte[caseDesLignes(div).cle] || []).map((l) => ({ ...l }));
   let retires = 0;
   // Les clés de jours d'une ligne : celles que sa rubrique dit de forme `jours`.
   const clesDeJours = (l) => (rubriqueDe(l.rubrique) ? rubriqueDe(l.rubrique).cles.filter((c) => c.forme === "jours").map((c) => c.cle) : []);
