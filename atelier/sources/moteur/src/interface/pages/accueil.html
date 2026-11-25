@@ -142,6 +142,10 @@
   .ecrire textarea { width:100%; padding:9px 10px; font:inherit; border:1px solid var(--bord); border-radius:4px; resize:vertical; }
   .ecrire button { width:auto; padding:8px 18px; }
   .ecrire .dit { margin-top:8px; }
+  /* Ou est le logiciel, sous les tuiles : l'ecran que la route rend. */
+  .logiciel-ou { margin-top:26px; border-top:1px solid var(--bord); padding-top:14px; }
+  .logiciel-ou .dit { min-height:1.2em; margin:0 0 8px; font-size:12.5px; }
+  .logiciel-ou .dit.erreur { color:var(--accent); }
 </style>
 <style>
   /* LE TABLEAU DE BORD DE L'ADMINISTRATEUR : les declarations de ses compagnies, la plus pressee d'abord. */
@@ -185,6 +189,12 @@
   <section class="tableau" id="tableau" data-place="L'accueil des compagnies" hidden></section>
   {{TUILES}}
   <div class="erreur" id="erreur"></div>
+  <!-- OU EST LE LOGICIEL : l'ecran que rend la route de cette place (sa fiche, `routeQuiRend`), pose par le dessinateur
+       du logiciel (`dessinerLEcranRendu`), ses gestes et leurs boites compris. -->
+  <section class="logiciel-ou" id="logiciel-ou">
+    <p class="dit" id="logiciel-ou-dit"></p>
+    <div id="logiciel-ou-ecran" data-place="L'accueil des compagnies"></div>
+  </section>
   <!-- ECRIRE AU DEVELOPPEUR sans ouvrir de compagnie : la meme route que dans une compagnie (`routes::filet::sans_compagnie`). -->
   <details class="ecrire">
     <summary>Un problème, une idée ?</summary>
@@ -463,9 +473,16 @@
      `routeQuiRend`), posé par le dessinateur du logiciel (`poserLEcranRendu`), ses gestes et leurs boîtes compris. Après
      un geste, la page fait ce que sa réponse dit (`apres`) : poser l'écran qu'elle rend (la fin d'une reprise), relire
      l'écran, ou ouvrir la compagnie qu'elle nomme (le geste « Ouvrir la compagnie »), comme une tuile. `dire` : la
-     ligne où la page montre la phrase d'une route. */
+     ligne où la page montre la phrase d'une route : celle de l'écran où l'on a cliqué en dernier (le Drive, ou où est
+     le logiciel). */
+  let ouDire = "venue-drive-dit";
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#venue-drive")) ouDire = "venue-drive-dit";
+    else if (e.target.closest("#logiciel-ou")) ouDire = "logiciel-ou-dit";
+  }, true);
   function dire(texte, type) {
-    const el = document.getElementById("venue-drive-dit");
+    const el = document.getElementById(ouDire);
+    if (!el) return;
     el.textContent = texte || "";
     el.className = type === "erreur" ? "dit erreur" : "dit";
   }
@@ -503,6 +520,17 @@
     bouton.onclick = () => { dire(""); montrerLesVenues(false); dessiner(); };
     // Le « + » rouvre toujours sur les chemins.
     document.querySelector(".ajouter").addEventListener("click", () => montrerLesVenues(true));
+  })();
+  /* OÙ EST LE LOGICIEL : l'écran que rend la route de sa place, d'emblée ; après un geste, il se relit (le geste qui
+     déplace ferme la fenêtre, qui se rouvre au nouvel endroit). */
+  (function () {
+    const zone = document.getElementById("logiciel-ou");
+    const ecran = document.getElementById("logiciel-ou-ecran");
+    zone.addEventListener("mousedown", (e) => e.stopPropagation());
+    CATALOGUE_LU.then(() => {
+      const f = routeQuiRend(ecran.dataset.place);
+      if (f) dessinerLEcranRendu(ecran, f);
+    });
   })();
 </script>
 <!-- Le pied : l'indicateur de la mise a jour a gauche ; l'auteur a droite (de la route `compagnies`). -->

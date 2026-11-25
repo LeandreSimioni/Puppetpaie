@@ -213,6 +213,7 @@ routes! {
         AdministrateurDeposer = "administrateur-deposer",
         AdministrateurSuivre = "administrateur-suivre",
         PortableCompleter = "portable-completer",
+        LogicielOu = "logiciel-ou",
         LogicielDeplacer = "logiciel-deplacer",
         Basculer = "basculer",
         Routes = "routes",
@@ -924,7 +925,7 @@ fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
-pub const FICHES: [&[Fiche]; 33] = [
+pub const FICHES: [&[Fiche]; 34] = [
     crate::engagement::ROUTES,
     crate::etat_garde::ROUTES,
     crate::mois::ROUTES,
@@ -958,6 +959,7 @@ pub const FICHES: [&[Fiche]; 33] = [
     // Reprendre une compagnie de son Drive, a l'accueil : avant les autres routes de l'accueil, dont la derniere
     // (`basculer`) debride l'installation des exemples, ou la compagnie reprise est une fictive.
     crate::accueil::drive::ROUTES,
+    crate::accueil::deplacement::ROUTES,
     crate::accueil::ROUTES,
     ROUTES,
 ];

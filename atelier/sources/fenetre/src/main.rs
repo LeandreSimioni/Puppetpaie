@@ -97,6 +97,11 @@ fn main() -> std::process::ExitCode {
         eprintln!("La fenetre ne demarre pas : {}", e.en_lignes());
         return std::process::ExitCode::FAILURE;
     }
+    // Le logiciel qui se deplace (`compagnie::deplacement`) : rien ne s'y ouvre, pas meme le verrou (il ecrit dans
+    // l'installation) ; une boite dit pourquoi, et un deplacement arrete en route se reprend.
+    if compagnie::deplacement::en_cours_au_lancement() {
+        return std::process::ExitCode::SUCCESS;
+    }
     // UNE FENETRE PAR INSTALLATION (`compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
     // (son verrou et le port de sa page), et elles s'ouvrent cote a cote.
@@ -108,8 +113,8 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
-    // Un deplacement demande (ou celui d'une ancienne installation, une fois) part ICI, avant toute fenetre : le relais
-    // attend notre fin, deplace l'installation et rouvre la fenetre la ou elle est.
+    // Un deplacement demande en ligne de commande part ICI, avant toute fenetre : le relais attend notre fin, deplace
+    // l'installation et rouvre la fenetre la ou elle est.
     if compagnie::deplacement::au_lancement() {
         return std::process::ExitCode::SUCCESS;
     }

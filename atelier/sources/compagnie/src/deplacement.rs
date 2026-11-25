@@ -1,44 +1,49 @@
 //! DEPLACER LE LOGICIEL : le dossier de l'installation (celui qui porte `logiciel/`, et a cote les compagnies, `maj/`,
 //! les fictives) va ailleurs, entier, LOGICIEL FERME (Leandre, 25/11/2026 : « on propose Documents de base et les gens
-//! peuvent changer », « a l'installation et dans un reglage dans le logiciel »).
+//! peuvent changer », « a l'installation et dans un reglage dans le logiciel »). RIEN NE SE DEPLACE D'OFFICE : l'accueil
+//! dit ou est le logiciel et propose le geste (`routes::accueil::deplacement`) ; une ancienne installation, cachee, se
+//! voit proposer « Ranger dans Documents ».
 //!
-//! LE GESTE. La route `logiciel-deplacer` (`routes::accueil`) dit ou est le logiciel ; un dossier dans sa charge, elle
-//! verifie tout ce qui se verifie avant (`verifier`) et pose la demande (`maj/deplacer.json`, `demander`). Le
-//! deplacement se fait au lancement, comme une mise a jour (`au_lancement`, avant toute fenetre) ; la fenetre qui a servi
-//! la route le lance aussitot et se ferme (`lancer_s_il_est_demande`).
+//! LE GESTE. La route `logiciel-deplacer` verifie tout ce qui se verifie avant (`verifier`) et pose la demande
+//! (`maj/deplacer.json`, `demander`). La fenetre qui a servi la route la fait partir aussitot et se ferme
+//! (`lancer_s_il_est_demande`) ; posee en ligne de commande, elle part au prochain lancement de la fenetre
+//! (`au_lancement`). PARTIR, c'est : effacer la demande (un retrait qui echoue ne lance rien : la demande se rejouerait a
+//! chaque lancement), ecrire le DEPLACEMENT EN COURS (`EnCours`), puis lancer le relais.
+//!
+//! LE DEPLACEMENT EN COURS vit hors de l'installation, dans le dossier de l'utilisateur
+//! (`installation::dossier_de_l_utilisateur`, `EN_COURS`) : on l'y retrouve d'ou que l'on lance, l'ancien dossier ou le
+//! nouveau. Le relais le tient de bout en bout par un VERROU du systeme sur un fichier voisin (`VERROU`), que le systeme
+//! rend quand le relais meurt. Tant qu'un deplacement en cours nomme l'installation, rien ne s'y ouvre : la fenetre le dit
+//! dans une boite et s'arrete, avant meme de prendre son verrou (`en_cours_au_lancement`) ; la ligne de commande refuse
+//! (`en_cours_ici`). Le relais au travail : on attend. Le relais
+//! mort (le poste eteint en route) : le lancement suivant lance un relais qui REPREND, finit ce qui etait fini ou defait
+//! ce qui etait commence (`reprendre`). Chaque etape s'ecrit avant d'etre faite (`Etape`).
 //!
 //! LE RELAIS, HORS DU DOSSIER. Windows ne deplace pas un dossier qui porte un programme en marche, ni le dossier courant
 //! d'un processus. Le programme de la fenetre se copie donc dans le dossier temporaire du poste
 //! (`PuppetPaie-deplacement-<numero>/`, avec le chargeur de WebView2 qu'il charge au demarrage), s'y lance avec
-//! `deplacer-relais`, son dossier courant la-bas, et le lanceur s'arrete sans rien ouvrir. Le relais attend sa fin
-//! (`maj::attendre_fin`), deplace, et rouvre la fenetre au nouvel endroit -- ou a l'ancien, si rien n'a bouge. Le
-//! relais de la mise a jour, lui, reste dans `maj/` : il ne deplace pas l'installation.
+//! `deplacer-relais`, son dossier courant la-bas, et le lanceur s'arrete sans rien ouvrir. Le relais prend le verrou,
+//! attend la fin du lanceur (`maj::attendre_fin`), deplace, puis rouvre la fenetre la ou est le logiciel. Le relais de la
+//! mise a jour, lui, reste dans `maj/` : il ne deplace pas l'installation.
 //!
-//! LE DEPLACEMENT (`deplacer`). Chaque entree de l'installation se RENOMME dans le nouveau dossier quand c'est le meme
-//! disque : instantane, sans place en double. Un autre disque (le systeme refuse le renommage, `CrossesDevices`) : tout se
-//! COPIE, la copie se compare a l'original (chaque fichier, sa taille, chaque dossier), puis l'original s'efface. Ce qui
-//! pointe vers l'ancien dossier se reecrit ensuite (sous Windows, la cle de desinstallation et le raccourci du menu
-//! Demarrer que l'installeur a poses, `repointer`). AU MOINDRE ECHEC, TOUT REVIENT (les renommes repartent, la copie
-//! s'efface, les pointeurs reviennent) et la fenetre se rouvre a l'ancien endroit : une mise a jour ne ferme jamais une
-//! compagnie. Un renommage refuse (un programme qui tient encore un fichier : le relais de la mise a jour qui vient de
-//! lancer la fenetre, un processus du navigateur) se retente tant que le dossier ne se laisse pas deplacer, une minute au
-//! plus ; une copie ne se retente pas.
+//! LE DEPLACEMENT. Chaque entree de l'installation se RENOMME dans le nouveau dossier quand c'est le meme disque :
+//! instantane, sans place en double. Un autre disque (le systeme refuse le renommage, `CrossesDevices`) : tout se COPIE,
+//! chaque fichier copie s'ecrit sur le disque (`sync_all`) et son contenu se compare a l'original (une empreinte
+//! SHA-256), puis l'original s'efface ; un lien ne se copie pas (le deplacement est refuse). Ce qui pointe vers l'ancien
+//! dossier se reecrit (sous Windows, la cle de desinstallation et le raccourci du menu Demarrer que l'installeur a poses,
+//! `repointer`). AU MOINDRE ECHEC, TOUT REVIENT (les renommes repartent, la copie s'efface, les pointeurs reviennent) et la
+//! fenetre se rouvre a l'ancien endroit. Un renommage refuse (un programme qui tient encore un fichier) se retente, tout
+//! revenu, une seconde plus tard, une minute au plus ; une copie ne se retente pas.
 //!
-//! L'ANCIENNE INSTALLATION (`vers_les_documents`). Les postes installes avant l'installeur qui propose les Documents
-//! vivent dans le dossier de l'utilisateur lui-meme (`installation::dossier_de_l_utilisateur`, `AppData\Local\PuppetPaie`
-//! sous Windows), cache. Une installation qui EST ce dossier, et n'est pas portable, va UNE FOIS, d'office, au lancement,
-//! dans `Documents\PuppetPaie` (le dossier Documents tel que Windows le dit, comme l'installeur, `$DOCUMENTS`) ; le
-//! dossier des fenetres (`installation::DOSSIER_DES_FENETRES`), qui est a l'utilisateur, reste ou il est. Ce qui empeche
-//! le deplacement (un `Documents\PuppetPaie` qui n'est pas vide, la place) se retient (`maj/deplacement.json`) et la route
-//! le dit ; rien ne se retente d'office ensuite. Une installation portable ne bouge jamais d'office.
-//!
-//! CE QUI S'EST PASSE se retient dans `maj/deplacement.json` (`Dernier`), la ou l'installation est au bout, et dans le
-//! journal de la mise a jour (`maj::noter`).
+//! CE QUI S'EST PASSE se dit en verite (`Dernier`, `Issue`) : deplace, reste entier a l'ancien endroit, ou COUPE (des
+//! renommes ne sont pas revenus : ce qui est ou se dit, nom par nom). Il se retient dans le dossier de l'utilisateur
+//! (`DERNIER`), d'ou l'accueil le redit. Coupe, la fenetre ne se rouvre pas (le logiciel n'est entier nulle part) : une
+//! boite le dit, et le deplacement en cours reste ecrit ; le lancement suivant retente de tout ramener.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::io::{ErrorKind, Read};
+use std::path::{Component, Path, PathBuf, Prefix};
 
 use serde::{Deserialize, Serialize};
 use socle::echec::{refus, R};
@@ -47,21 +52,27 @@ use socle::paris::Moment;
 
 use crate::maj::{dossier_maj, noter};
 
-/// La demande, dans `maj/` : le dossier ou le logiciel va.
+/// La demande, dans `maj/` de l'installation : le dossier ou le logiciel va.
 const DEMANDE: &str = "deplacer.json";
-/// Ce qui s'est passe la derniere fois, dans `maj/` : `Dernier`.
+/// Le deplacement en cours, dans le dossier de l'utilisateur : `EnCours`.
+const EN_COURS: &str = "deplacement-en-cours.json";
+/// Le fichier que le relais verrouille tant qu'il travaille, dans le dossier de l'utilisateur.
+const VERROU: &str = "deplacement-en-cours.verrou";
+/// Ce qui s'est passe la derniere fois, dans le dossier de l'utilisateur : `Dernier`.
 const DERNIER: &str = "deplacement.json";
 /// La sous-commande du relais (`fenetre/src/main.rs`).
 pub const RELAIS: &str = "deplacer-relais";
-/// Le dossier, dans les Documents, ou une ancienne installation va : celui que l'installeur propose
+/// Le dossier, dans les Documents, ou une ancienne installation se range : celui que l'installeur propose
 /// (`atelier/installeur/puppetpaie.nsi`, `$DOCUMENTS\PuppetPaie`).
 const DANS_LES_DOCUMENTS: &str = "PuppetPaie";
 /// Le fichier d'essai qui dit, avant le deplacement, si le nouveau dossier est sur le meme disque et s'il s'y ecrit.
 const ESSAI: &str = ".essai-deplacement";
 /// Combien de fois un renommage refuse se retente (une seconde entre deux) : le temps qu'un programme lache le dossier.
 const ESSAIS_DU_RENOMMAGE: u32 = 60;
+/// Les variables que Windows pose pour chaque dossier que OneDrive synchronise (personnel, professionnel).
+const VARIABLES_ONEDRIVE: [&str; 3] = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
 
-/// `maj/deplacer.json` : le dossier ou le logiciel va, au lancement.
+/// `maj/deplacer.json` : le dossier ou le logiciel va.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Demande {
@@ -69,17 +80,52 @@ struct Demande {
     quoi: String,
 }
 
+/// Ou en est un deplacement en cours : chaque etape s'ecrit AVANT d'etre faite, et dit a qui reprend quoi finir ou
+/// defaire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Etape {
+    /// Rien n'a bouge : le relais attend la fin du lanceur.
+    Attente,
+    /// Les entrees se renomment : ou est chacune se lit sur le disque (dans l'ancien dossier ou dans le nouveau).
+    Renommage,
+    /// Les entrees se copient : l'original est entier.
+    Copie,
+    /// La copie est sur le disque, comparee, et les pointeurs reecrits : l'original s'efface.
+    Effacement,
+}
+
+/// `deplacement-en-cours.json` : le deplacement que le relais fait, ou qu'un relais reprendra.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnCours {
+    /// L'installation, resolue.
+    de: PathBuf,
+    /// Le nouveau dossier, resolu.
+    vers: PathBuf,
+    /// Le programme qui a lance le relais, dont la fin s'attend avant de rien toucher.
+    attendre: u32,
+    /// Le nouveau dossier a ete cree par le deplacement : il part avec ce qui revient.
+    cree: bool,
+    /// Les entrees de l'installation qui partent.
+    noms: Vec<PathBuf>,
+    etape: Etape,
+    quoi: String,
+}
+
 /// Ce qu'est devenu un deplacement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Issue {
-    /// Le logiciel est au nouvel endroit.
+    /// Le logiciel est au nouvel endroit, entier.
     Deplace,
-    /// Le logiciel est reste ou il etait, entier.
+    /// Le logiciel est reste a l'ancien endroit, entier.
     Reste,
+    /// Le logiciel n'est entier nulle part : des entrees ne sont pas revenues (la phrase dit ce qui est ou).
+    Coupe,
 }
 
-/// `maj/deplacement.json` : le dernier deplacement, ou ce qui l'a empeche.
+/// `deplacement.json` du dossier de l'utilisateur : le dernier deplacement, ou ce qui l'a empeche.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Dernier {
@@ -88,7 +134,7 @@ pub struct Dernier {
     pub de: PathBuf,
     pub vers: PathBuf,
     pub issue: Issue,
-    /// Ce qu'on en dit, a l'ecran (la route `logiciel-deplacer` la redit).
+    /// Ce qu'on en dit, a l'ecran (l'accueil la redit).
     pub phrase: String,
 }
 
@@ -102,30 +148,50 @@ pub enum Verdict {
 }
 
 /// UN DOSSIER DIT A L'ECRAN, comme l'explorateur le montre : ses noms separes de « › » (un chemin ecrit n'est pas fait
-/// pour l'ecran, `routes::affiche`).
+/// pour l'ecran, `routes::affiche`) ; un lecteur reseau dit son serveur et son partage.
 pub fn dit(p: &Path) -> String {
     p.components()
-        .filter(|c| !matches!(c, std::path::Component::RootDir))
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .filter_map(|c| match c {
+            Component::RootDir => None,
+            Component::Prefix(x) => Some(match x.kind() {
+                Prefix::Disk(d) | Prefix::VerbatimDisk(d) => format!("{}:", d as char),
+                Prefix::UNC(s, h) | Prefix::VerbatimUNC(s, h) => format!("{} › {}", s.to_string_lossy(), h.to_string_lossy()),
+                _ => x.as_os_str().to_string_lossy().into_owned(),
+            }),
+            autre => Some(autre.as_os_str().to_string_lossy().into_owned()),
+        })
         .collect::<Vec<_>>()
         .join(" › ")
 }
 
-/// Le chemin resolu d'un dossier, sans le prefixe `\\?\` de Windows.
+/// Le chemin resolu d'un dossier, sans le prefixe `\\?\` de Windows ; un lecteur reseau (`\\?\UNC\serveur\partage`)
+/// redevient `\\serveur\partage`.
 fn resolu(p: &Path) -> R<PathBuf> {
     let r = socle::fichiers::resolu(p).map_err(|e| socle::echec::du_disque(p, &e))?;
-    Ok(match r.to_string_lossy().strip_prefix(r"\\?\") {
-        Some(sans) => PathBuf::from(sans),
-        None => r.clone(),
+    let t = r.to_string_lossy();
+    Ok(match (t.strip_prefix(r"\\?\UNC\"), t.strip_prefix(r"\\?\")) {
+        (Some(reseau), _) => PathBuf::from(format!(r"\\{}", reseau)),
+        (None, Some(sans)) => PathBuf::from(sans),
+        (None, None) => r.clone(),
     })
 }
 
-/// Ce qui, dans l'installation `inst`, reste ou il est : le dossier des fenetres quand l'installation est le dossier de
-/// l'utilisateur lui-meme (il est a l'utilisateur, pas a l'installation).
-fn ce_qui_reste(inst: &Path) -> R<Vec<OsString>> {
+/// Un fichier du deplacement, dans le dossier de l'utilisateur.
+fn chez_l_utilisateur(nom: &str) -> PathBuf {
+    crate::installation::dossier_de_l_utilisateur().join(nom)
+}
+
+/// L'installation `inst` est-elle le dossier de l'utilisateur lui-meme (une ancienne installation de Windows) ?
+fn est_le_dossier_de_l_utilisateur(inst: &Path) -> R<bool> {
     let utilisateur = crate::installation::dossier_de_l_utilisateur();
-    if utilisateur.is_dir() && resolu(&utilisateur)? == resolu(inst)? {
-        return Ok(vec![OsString::from(crate::installation::DOSSIER_DES_FENETRES)]);
+    Ok(utilisateur.is_dir() && resolu(&utilisateur)? == resolu(inst)?)
+}
+
+/// Ce qui, dans l'installation `inst`, reste ou il est quand elle est le dossier de l'utilisateur : ce qui est a
+/// l'utilisateur, pas a l'installation (le dossier des fenetres, et les fichiers du deplacement lui-meme).
+fn ce_qui_reste(inst: &Path) -> R<Vec<OsString>> {
+    if est_le_dossier_de_l_utilisateur(inst)? {
+        return Ok([crate::installation::DOSSIER_DES_FENETRES, EN_COURS, VERROU, DERNIER].into_iter().map(OsString::from).collect());
     }
     Ok(Vec::new())
 }
@@ -142,18 +208,21 @@ fn entrees(inst: &Path, reste: &[OsString]) -> R<Vec<OsString>> {
     Ok(v)
 }
 
-/// Ce que porte un chemin d'un arbre, pour comparer une copie a l'original.
+/// Ce que porte un chemin d'un arbre, pour comparer une copie a l'original. Un lien ne se suit pas.
 #[derive(Debug, PartialEq, Eq)]
 enum Trace {
     Dossier,
     Fichier(Octets),
+    Lien,
 }
 
-/// L'arbre des `noms` sous `racine` : chaque chemin relatif, et ce qu'il porte.
+/// L'arbre des `noms` sous `racine` : chaque chemin relatif, et ce qu'il porte, sans suivre les liens.
 fn arbre(racine: &Path, noms: &[OsString]) -> std::io::Result<BTreeMap<PathBuf, Trace>> {
     fn sous(racine: &Path, rel: &Path, t: &mut BTreeMap<PathBuf, Trace>) -> std::io::Result<()> {
-        let m = std::fs::metadata(racine.join(rel))?;
-        if m.is_dir() {
+        let m = std::fs::symlink_metadata(racine.join(rel))?;
+        if m.file_type().is_symlink() {
+            t.insert(rel.to_path_buf(), Trace::Lien);
+        } else if m.is_dir() {
             t.insert(rel.to_path_buf(), Trace::Dossier);
             for e in std::fs::read_dir(racine.join(rel))? {
                 sous(racine, &rel.join(e?.file_name()), t)?;
@@ -170,18 +239,10 @@ fn arbre(racine: &Path, noms: &[OsString]) -> std::io::Result<BTreeMap<PathBuf, 
     Ok(t)
 }
 
-/// La place que prennent les `noms` de `racine`.
-fn taille(racine: &Path, noms: &[OsString]) -> R<Octets> {
-    let t = arbre(racine, noms).map_err(|e| socle::echec::du_disque(racine, &e))?;
-    Ok(t.values().fold(Octets::ZERO, |s, x| match x {
-        Trace::Fichier(o) => s + *o,
-        Trace::Dossier => s,
-    }))
-}
-
 /// TOUT CE QUI SE VERIFIE AVANT LE DEPLACEMENT de l'installation `inst` vers `vers` : un dossier dit en entier, qui n'est
 /// ni elle ni dedans, qui n'existe pas (le dossier qui le portera, si) ou est vide ; qu'on peut y ecrire ; et, sur un
-/// autre disque, que la place suffit. Un depot de travail (qui porte `.git`) ne se deplace pas.
+/// autre disque, que la place suffit et qu'aucun lien n'est a copier. Un depot de travail (qui porte `.git`) ne se
+/// deplace pas.
 pub fn verifier(inst: &Path, vers: &Path) -> R<Verdict> {
     if cfg!(target_os = "wasi") {
         return Err(refus("Dans le navigateur, le logiciel ne se déplace pas. Rien n'a changé."));
@@ -219,14 +280,13 @@ pub fn verifier(inst: &Path, vers: &Path) -> R<Verdict> {
             }
             vers.clone()
         }
-        false => dessus(&vers),
+        false => crate::installation::dessus(&vers),
     };
     // L'essai : un fichier de l'installation renomme dans le nouveau lieu dit le meme disque et qu'on y ecrit.
     let essai = inst.join(ESSAI);
     let la_bas = lieu.join(ESSAI);
     std::fs::write(&essai, b"").map_err(|e| socle::echec::du_disque(&essai, &e))?;
-    let renomme = std::fs::rename(&essai, &la_bas);
-    match renomme {
+    match std::fs::rename(&essai, &la_bas) {
         Ok(()) => socle::fichiers::effacer(&la_bas)?,
         Err(e) if e.kind() == ErrorKind::CrossesDevices => {
             socle::fichiers::effacer(&essai)?;
@@ -234,7 +294,14 @@ pub fn verifier(inst: &Path, vers: &Path) -> R<Verdict> {
                 return Err(refus(format!("On ne peut pas écrire dans {} ({}). Rien n'a changé.", dit(&lieu), e)));
             }
             socle::fichiers::effacer(&la_bas)?;
-            let faut = taille(&inst, &entrees(&inst, &ce_qui_reste(&inst)?)?)?;
+            let t = arbre(&inst, &entrees(&inst, &ce_qui_reste(&inst)?)?).map_err(|e| socle::echec::du_disque(&inst, &e))?;
+            if let Some(lien) = t.iter().find(|(_, x)| **x == Trace::Lien).map(|(p, _)| p) {
+                return Err(refus(format!("{} est un lien : il ne se copie pas sur un autre disque. Rien n'a changé.", dit(lien))));
+            }
+            let faut = t.values().fold(Octets::ZERO, |s, x| match x {
+                Trace::Fichier(o) => s + *o,
+                Trace::Dossier | Trace::Lien => s,
+            });
             let libre = crate::diagnostic::octets_libres(&lieu)
                 .map_err(|e| refus(format!("La place libre de ce disque ne se lit pas ({}). Rien n'a changé.", e)))?;
             if Octets::lue(libre) < faut {
@@ -247,11 +314,6 @@ pub fn verifier(inst: &Path, vers: &Path) -> R<Verdict> {
         }
     }
     Ok(Verdict::Possible(vers))
-}
-
-/// Le dossier qui porte `p`.
-fn dessus(p: &Path) -> PathBuf {
-    crate::installation::dessus(p)
 }
 
 /// LE DEPLACEMENT DEMANDE (la route `logiciel-deplacer`) : verifie, puis pose `maj/deplacer.json`. Rend le verdict.
@@ -273,93 +335,230 @@ fn demande(inst: &Path) -> R<Option<Demande>> {
     if !p.is_file() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "La demande de déplacement du logiciel (maj/deplacer.json) ne se lit pas : l'effacer, et redemander.").map(Some)
+    socle::forme::lire_fichier(&p, "La demande de déplacement du logiciel ne se lit pas.").map(Some)
 }
 
-/// Le dernier deplacement de l'installation, ou ce qui l'a empeche ; `None` s'il n'y en a jamais eu.
-pub fn dernier(inst: &Path) -> R<Option<Dernier>> {
-    let p = dossier_maj(inst).join(DERNIER);
+/// Le deplacement en cours, s'il y en a un (pour n'importe quelle installation du poste).
+fn en_cours() -> R<Option<EnCours>> {
+    let p = chez_l_utilisateur(EN_COURS);
     if !p.is_file() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Le dernier déplacement du logiciel (maj/deplacement.json) ne se lit pas.").map(Some)
+    let lu: R<EnCours> = socle::forme::lire_fichier(&p, "Le déplacement en cours du logiciel ne se lit pas.");
+    lu.map(Some).map_err(|e| {
+        e.reformuler(|m| {
+            format!("{} Le logiciel ne s'ouvre pas tant qu'on ne sait pas où sont ses dossiers : les regarder, puis effacer {}.", m, p.to_string_lossy())
+        })
+    })
 }
 
-/// Retient ce qui s'est passe, la ou l'installation est (`ou`), et le note au journal de la mise a jour.
-fn retenir(ou: &Path, de: &Path, vers: &Path, issue: Issue, phrase: String) {
-    noter(ou, &format!("Deplacement : {}", phrase));
-    let d = Dernier { quand: socle::temps::secondes().a_la_minute(), de: de.to_path_buf(), vers: vers.to_path_buf(), issue, phrase };
-    if let Err(e) = crate::maj::ecrire_json(&dossier_maj(ou).join(DERNIER), &d) {
-        noter(ou, &format!("Deplacement : ce qui s'est passe ne se retient pas ({}).", e.phrase));
+/// Ecrit le deplacement en cours.
+fn ecrire_en_cours(ec: &EnCours) -> R<()> {
+    crate::maj::ecrire_json(&chez_l_utilisateur(EN_COURS), ec)
+}
+
+/// `de` ou `vers` est-il l'installation `inst` ?
+fn concerne(de: &Path, vers: &Path, inst: &Path) -> bool {
+    match resolu(inst) {
+        Ok(i) => i == de || i == vers,
+        Err(_) => false,
     }
 }
 
-/// La phrase d'un deplacement qui n'a pas eu lieu.
-fn pas_alle(vers: &Path, pourquoi: &str) -> String {
-    format!("Le logiciel n'est pas allé dans {} : {} Il est resté ici, entier.", dit(vers), pourquoi)
+/// Le fichier du verrou du relais, ouvert (cree s'il manque).
+fn fichier_du_verrou() -> R<std::fs::File> {
+    let p = chez_l_utilisateur(VERROU);
+    if let Some(d) = p.parent() {
+        std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(d, &e))?;
+    }
+    std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&p).map_err(|e| socle::echec::du_disque(&p, &e))
 }
 
-/// L'ANCIENNE INSTALLATION (voir l'en-tete) : le dossier des Documents ou elle va, une fois ; `None` pour toute autre
-/// installation, une portable, ou une qui a deja un deplacement retenu.
-fn vers_les_documents(inst: &Path) -> R<Option<PathBuf>> {
-    if inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() || dernier(inst)?.is_some() || ce_qui_reste(inst)?.is_empty() {
+/// Un relais tient-il le verrou (il travaille) ?
+fn relais_au_travail() -> R<bool> {
+    let f = fichier_du_verrou()?;
+    match f.try_lock() {
+        Ok(()) => Ok(false),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(true),
+        Err(std::fs::TryLockError::Error(e)) => Err(socle::refus!("Le verrou du déplacement ne se lit pas : {}", e)),
+    }
+}
+
+/// La phrase d'un deplacement en cours de `de` vers `vers`, selon qu'un relais y travaille.
+fn phrase_en_cours(de: &Path, vers: &Path, au_travail: bool) -> String {
+    match au_travail {
+        true => format!("Le logiciel se déplace de {} vers {} : rien ne s'y ouvre avant la fin, et sa fenêtre se rouvre d'elle-même.", dit(de), dit(vers)),
+        false => format!("Le déplacement du logiciel de {} vers {} s'est arrêté avant la fin : ouvrir le logiciel le finit, ou remet tout à l'ancien endroit.", dit(de), dit(vers)),
+    }
+}
+
+/// POUR LA LIGNE DE COMMANDE : un deplacement en cours de l'installation `inst` (ou de celle de la compagnie `racine`)
+/// se dit (rien ne s'y lit ni ne s'y ecrit tant qu'il dure) ; `None` sinon.
+pub fn en_cours_ici(inst: &Path, racine: Option<&Path>) -> R<Option<String>> {
+    let Some(ec) = en_cours()? else { return Ok(None) };
+    let dedans = |p: &Path| resolu(p).is_ok_and(|r| socle::fichiers::sous(&r, &ec.de).is_some() || socle::fichiers::sous(&r, &ec.vers).is_some());
+    if !concerne(&ec.de, &ec.vers, inst) && !racine.is_some_and(dedans) {
         return Ok(None);
     }
-    Ok(documents()?.map(|d| d.join(DANS_LES_DOCUMENTS)))
+    Ok(Some(phrase_en_cours(&ec.de, &ec.vers, relais_au_travail()?)))
 }
 
-/// AU LANCEMENT, avant toute fenetre : un deplacement demande, ou celui d'une ancienne installation, part au relais.
-/// Rend `true` si le relais est parti (le programme doit alors s'arreter sans rien ouvrir). Ce qui l'empeche se retient,
-/// et le logiciel s'ouvre ou il est.
+/// Le dernier deplacement de l'installation `inst` (vers elle ou depuis elle), ou ce qui l'a empeche ; `None` s'il n'y
+/// en a pas.
+pub fn dernier_ici(inst: &Path) -> R<Option<Dernier>> {
+    let p = chez_l_utilisateur(DERNIER);
+    if !p.is_file() {
+        return Ok(None);
+    }
+    let d: Dernier = socle::forme::lire_fichier(&p, "Le dernier déplacement du logiciel ne se lit pas.")?;
+    Ok(concerne(&d.de, &d.vers, inst).then_some(d))
+}
+
+/// Ce qui est dit a la personne quand le programme ne s'ouvre pas : une boite sous Windows (la fenetre n'a pas de
+/// console), la sortie d'erreur ailleurs.
+fn dire(texte: &str) {
+    #[cfg(windows)]
+    socle::systeme::dire_dans_une_boite("PuppetPaie", texte);
+    #[cfg(not(windows))]
+    eprintln!("{}", texte);
+}
+
+/// Retient ce qui s'est passe (`DERNIER`), et le note au journal de la mise a jour la ou le logiciel est entier.
+fn retenir(fin: &Fin) {
+    let d = Dernier { quand: socle::temps::secondes().a_la_minute(), de: fin.de.clone(), vers: fin.vers.clone(), issue: fin.issue, phrase: fin.phrase.clone() };
+    let ecrit = crate::maj::ecrire_json(&chez_l_utilisateur(DERNIER), &d);
+    if let Some(ou) = fin.ou() {
+        noter(ou, &format!("Deplacement : {}", fin.phrase));
+        if let Err(e) = ecrit {
+            noter(ou, &format!("Deplacement : ce qui s'est passe ne se retient pas ({}).", e.phrase));
+        }
+    }
+}
+
+/// La fin d'un deplacement : ou est le logiciel, et ce qu'on en dit.
+struct Fin {
+    de: PathBuf,
+    vers: PathBuf,
+    issue: Issue,
+    phrase: String,
+}
+
+impl Fin {
+    /// Le logiciel est arrive dans `vers`.
+    fn deplace(de: &Path, vers: &Path, restes: Vec<String>) -> Fin {
+        let phrase = match restes.is_empty() {
+            true => format!("Le logiciel est arrivé ici, depuis {}.", dit(de)),
+            false => format!("Le logiciel est arrivé ici, depuis {}. L'ancien dossier ne s'est pas effacé entier : {}", dit(de), restes.join(" ; ")),
+        };
+        Fin { de: de.to_path_buf(), vers: vers.to_path_buf(), issue: Issue::Deplace, phrase }
+    }
+
+    /// Le logiciel est reste dans `de`, entier, pour la raison `pourquoi`.
+    fn reste(de: &Path, vers: &Path, pourquoi: &str) -> Fin {
+        let phrase = format!("Le logiciel n'est pas allé dans {} : {} Il est resté dans {}, entier.", dit(vers), pourquoi, dit(de));
+        Fin { de: de.to_path_buf(), vers: vers.to_path_buf(), issue: Issue::Reste, phrase }
+    }
+
+    /// Le logiciel n'est entier nulle part : `pourquoi`, puis ce qui est ou (`ou_est`).
+    fn coupe(de: &Path, vers: &Path, pourquoi: &str, ou_est: &str) -> Fin {
+        let phrase = format!(
+            "Le déplacement du logiciel de {} vers {} s'est arrêté en route ({}) et tout n'est pas revenu : {}. Le relancer réessaie de tout remettre dans {}.",
+            dit(de),
+            dit(vers),
+            pourquoi.trim_end_matches('.'),
+            ou_est,
+            dit(de)
+        );
+        Fin { de: de.to_path_buf(), vers: vers.to_path_buf(), issue: Issue::Coupe, phrase }
+    }
+
+    /// Ou le logiciel est entier ; `None` s'il est coupe.
+    fn ou(&self) -> Option<&Path> {
+        match self.issue {
+            Issue::Deplace => Some(&self.vers),
+            Issue::Reste => Some(&self.de),
+            Issue::Coupe => None,
+        }
+    }
+}
+
+/// PARTIR : la demande s'efface (sinon rien ne part : elle se rejouerait a chaque lancement), le deplacement en cours
+/// s'ecrit, et le relais se lance ; s'il ne se lance pas, le deplacement en cours s'efface.
+fn partir(inst: &Path, vers: &Path) -> R<()> {
+    socle::fichiers::effacer(&dossier_maj(inst).join(DEMANDE))
+        .map_err(|e| e.reformuler(|m| format!("la demande ne s'efface pas ({}) ; rien ne part, pour ne pas la rejouer à chaque lancement.", m)))?;
+    let ec = EnCours {
+        de: resolu(inst)?,
+        vers: vers.to_path_buf(),
+        attendre: socle::processus::numero(),
+        cree: false,
+        noms: Vec::new(),
+        etape: Etape::Attente,
+        quoi: "Le déplacement du logiciel en cours (compagnie::deplacement) : rien ne s'ouvre dans ces deux dossiers tant qu'il est là.".to_string(),
+    };
+    ecrire_en_cours(&ec)?;
+    lancer_relais(inst).map_err(|e| socle::fichiers::effacer_apres(e, &chez_l_utilisateur(EN_COURS)))
+}
+
+/// AU LANCEMENT DE LA FENETRE, AVANT LE VERROU DE SON INSTALLATION (qui ecrit son creneau dans l'installation) : un
+/// deplacement en cours nomme l'installation. Rend `true` si le programme doit s'arreter sans rien ouvrir : un relais y
+/// travaille, on le dit ; aucun relais, un relais le reprend ; illisible, on le dit (on ne sait pas ou sont les
+/// dossiers).
+pub fn en_cours_au_lancement() -> bool {
+    let inst = crate::installation::base();
+    match en_cours() {
+        Err(e) => dire(&e.phrase),
+        Ok(Some(ec)) if concerne(&ec.de, &ec.vers, &inst) => match relais_au_travail() {
+            Ok(true) => dire(&phrase_en_cours(&ec.de, &ec.vers, true)),
+            Ok(false) => {
+                if let Err(e) = lancer_relais(&inst) {
+                    dire(&format!("{} Le relais qui le reprend ne se lance pas : {}", phrase_en_cours(&ec.de, &ec.vers, false), e.phrase));
+                }
+            }
+            Err(e) => dire(&format!("{} {}", phrase_en_cours(&ec.de, &ec.vers, true), e.phrase)),
+        },
+        Ok(_) => return false,
+    }
+    true
+}
+
+/// AU LANCEMENT DE LA FENETRE, le verrou de son installation pris (aucune autre fenetre ne l'a ouverte) : une demande
+/// posee part (`partir`) ; rend `true`, le programme s'arrete sans rien ouvrir. Ce qui l'empeche se retient, et le
+/// logiciel s'ouvre ou il est.
 pub fn au_lancement() -> bool {
     let inst = crate::installation::base();
-    let vers = match demande(&inst) {
-        Ok(Some(d)) => d.vers,
-        Ok(None) => match vers_les_documents(&inst) {
-            Ok(Some(v)) => match verifier(&inst, &v) {
-                Ok(Verdict::Possible(v)) => v,
-                Ok(Verdict::DejaLa) => return false,
-                Err(e) => {
-                    retenir(&inst, &inst, &v, Issue::Reste, pas_alle(&v, &e.phrase));
-                    return false;
-                }
-            },
-            Ok(None) => return false,
-            Err(e) => {
-                noter(&inst, &format!("Deplacement : l'ancienne installation ne se reconnait pas ({}).", e.phrase));
-                return false;
-            }
-        },
+    let d = match demande(&inst) {
+        Ok(None) => return false,
+        Ok(Some(d)) => d,
         Err(e) => {
-            noter(&inst, &format!("Deplacement : {}", e.phrase));
-            socle::fichiers::effacer_apres_coup(&dossier_maj(&inst).join(DEMANDE));
+            let pourquoi = match socle::fichiers::effacer(&dossier_maj(&inst).join(DEMANDE)) {
+                Ok(()) => format!("{} Elle est effacée : redemander.", e.phrase),
+                Err(x) => format!("{} Elle ne s'efface pas non plus ({}).", e.phrase, x.phrase),
+            };
+            retenir(&Fin { de: inst.clone(), vers: inst.clone(), issue: Issue::Reste, phrase: pourquoi });
             return false;
         }
     };
-    match lancer_relais(&inst, &vers) {
+    match partir(&inst, &d.vers) {
         Ok(()) => true,
         Err(e) => {
-            socle::fichiers::effacer_apres_coup(&dossier_maj(&inst).join(DEMANDE));
-            retenir(&inst, &inst, &vers, Issue::Reste, pas_alle(&vers, &format!("le relais ne se lance pas ({}).", e.phrase)));
+            retenir(&Fin::reste(&inst, &d.vers, &e.phrase));
             false
         }
     }
 }
 
-/// APRES LA ROUTE, DANS LA FENETRE : une demande posee part au relais tout de suite ; a la fenetre de se fermer aussitot
-/// (`true`). Le relais ne se lance pas : la demande s'efface, et le refus le dit.
+/// APRES LA ROUTE, DANS LA FENETRE : une demande posee part tout de suite (`partir`) ; a la fenetre de se fermer
+/// aussitot (`true`). Elle ne part pas : le refus le dit.
 pub fn lancer_s_il_est_demande(inst: &Path) -> R<bool> {
     let Some(d) = demande(inst)? else { return Ok(false) };
-    lancer_relais(inst, &d.vers).map_err(|e| {
-        socle::fichiers::effacer_apres_coup(&dossier_maj(inst).join(DEMANDE));
-        e.reformuler(|m| format!("Le logiciel ne se déplace pas : {} Rien n'a changé.", m))
-    })?;
+    partir(inst, &d.vers).map_err(|e| e.reformuler(|m| format!("Le logiciel ne se déplace pas : {} Rien n'a changé.", m)))?;
     Ok(true)
 }
 
 /// Le programme de la fenetre, copie dans le dossier temporaire du poste, prend le relais ; il attendra la fin de CE
 /// processus.
-fn lancer_relais(inst: &Path, vers: &Path) -> R<()> {
+fn lancer_relais(inst: &Path) -> R<()> {
     let logiciel = inst.join(crate::maj::LOGICIEL);
     let source = crate::maj::programme(&logiciel, "puppetpaie");
     if !source.is_file() {
@@ -382,7 +581,7 @@ fn lancer_relais(inst: &Path, vers: &Path) -> R<()> {
         std::fs::set_permissions(&relais, std::fs::Permissions::from_mode(0o755)).map_err(|e| socle::echec::du_disque(&relais, &e))?;
     }
     let mut c = std::process::Command::new(&relais);
-    c.arg(RELAIS).arg("--installation").arg(inst).arg("--vers").arg(vers).arg("--attendre").arg(numero.to_string());
+    c.arg(RELAIS).arg("--attendre").arg(numero.to_string());
     c.current_dir(&ici);
     c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     #[cfg(windows)]
@@ -394,206 +593,337 @@ fn lancer_relais(inst: &Path, vers: &Path) -> R<()> {
     Ok(())
 }
 
-/// Le code de sortie du relais mal appele : il n'a rien a deplacer.
-fn relais_mal_appele() -> std::process::ExitCode {
-    std::process::ExitCode::from(2)
-}
-
-/// LE RELAIS (`puppetpaie deplacer-relais --installation I --vers V --attendre PID`), lance du dossier temporaire du
-/// poste : attend la fin du programme qui l'a lance, deplace (`deplacer`), retient ce qui s'est passe, et rouvre la
-/// fenetre la ou est l'installation au bout.
+/// LE RELAIS (`puppetpaie deplacer-relais --attendre PID`), lance du dossier temporaire du poste : prend le verrou (un
+/// autre relais au travail, il attend sa fin), relit le deplacement en cours (parti : un autre relais l'a fini, rien a
+/// faire), attend la fin du programme qui l'a lance, deplace ou reprend, retient ce qui s'est passe, efface le
+/// deplacement en cours, rend le verrou, et rouvre la fenetre la ou le logiciel est entier. Coupe, ou le deplacement en
+/// cours qui ne s'efface pas : une boite le dit, et la fenetre ne se rouvre pas (elle relancerait le relais sans fin).
 pub fn relais(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     let args = socle::ligne::textes(args);
-    let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).cloned();
-    let (Some(inst), Some(vers)) = (valeur("--installation").map(PathBuf::from), valeur("--vers").map(PathBuf::from)) else {
-        return relais_mal_appele();
+    let Some(Ok(lanceur)) = args.iter().position(|a| a == "--attendre").and_then(|i| args.get(i + 1)).map(|p| p.parse::<u32>()) else {
+        return std::process::ExitCode::from(2);
     };
-    // La demande part, quoi qu'il arrive : un deplacement qui echoue ne se rejoue pas a chaque lancement.
-    let attendu = match valeur("--attendre").map(|p| p.parse::<u32>()) {
-        Some(Ok(p)) => match crate::maj::attendre_fin(p, &inst) {
+    let verrou = match fichier_du_verrou().and_then(|f| f.lock().map(|()| f).map_err(|e| socle::refus!("Le verrou du déplacement ne se prend pas : {}", e))) {
+        Ok(f) => f,
+        Err(e) => {
+            dire(&format!("Le logiciel ne se déplace pas : {}", e.phrase));
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let ec = match en_cours() {
+        Ok(Some(ec)) => ec,
+        Ok(None) => return std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            dire(&e.phrase);
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let (de, vers) = (ec.de.clone(), ec.vers.clone());
+    // Le lanceur, et, si rien n'a encore bouge, le programme qui a demande le deplacement.
+    let a_attendre = match ec.etape {
+        Etape::Attente => vec![lanceur, ec.attendre],
+        Etape::Renommage | Etape::Copie | Etape::Effacement => vec![lanceur],
+    };
+    let mut arrete = Ok(());
+    for p in a_attendre {
+        arrete = arrete.and_then(|()| match crate::maj::attendre_fin(p, &de) {
             Ok(true) => Ok(()),
             Ok(false) => Err("le programme qui l'a demandé ne s'est pas arrêté.".to_string()),
             Err(e) => Err(format!("on ne sait pas si le programme qui l'a demandé s'est arrêté ({}).", e.phrase)),
-        },
-        Some(Err(e)) => Err(format!("le numéro du programme à attendre ne se lit pas ({}).", e)),
-        None => Err("le relais ne dit pas quel programme attendre.".to_string()),
+        });
+    }
+    let fin = match (arrete, ec.etape) {
+        (Err(pourquoi), Etape::Attente) => Fin::reste(&de, &vers, &pourquoi),
+        (Err(pourquoi), _) => Fin::coupe(&de, &vers, &pourquoi, "rien n'a été repris"),
+        (Ok(()), Etape::Attente) => commencer(ec),
+        (Ok(()), _) => reprendre(ec),
     };
-    socle::fichiers::effacer_apres_coup(&dossier_maj(&inst).join(DEMANDE));
-    let ou = match attendu.and_then(|()| deplacer(&inst, &vers).map_err(|e| e.phrase)) {
-        Ok(restes) => {
-            let phrase = match restes.is_empty() {
-                true => format!("Le logiciel est arrivé ici, depuis {}.", dit(&inst)),
-                false => format!("Le logiciel est arrivé ici, depuis {}. L'ancien dossier ne s'est pas effacé entier : {}", dit(&inst), restes.join(" ; ")),
-            };
-            retenir(&vers, &inst, &vers, Issue::Deplace, phrase);
-            vers
+    retenir(&fin);
+    let ou = match (fin.ou(), socle::fichiers::effacer(&chez_l_utilisateur(EN_COURS))) {
+        (None, _) => {
+            dire(&fin.phrase);
+            return std::process::ExitCode::FAILURE;
         }
-        Err(pourquoi) => {
-            retenir(&inst, &inst, &vers, Issue::Reste, pas_alle(&vers, &pourquoi));
-            inst
+        (Some(_), Err(e)) => {
+            dire(&format!("{} Le déplacement en cours ne s'efface pas ({}) : effacer {}, puis ouvrir le logiciel.", fin.phrase, e.phrase, chez_l_utilisateur(EN_COURS).to_string_lossy()));
+            return std::process::ExitCode::FAILURE;
         }
+        (Some(ou), Ok(())) => ou.to_path_buf(),
     };
+    drop(verrou);
     let logiciel = ou.join(crate::maj::LOGICIEL);
     if let Err(e) = std::process::Command::new(crate::maj::programme(&logiciel, "puppetpaie")).current_dir(&logiciel).spawn() {
-        noter(&ou, &format!("La fenetre ne se relance pas apres le deplacement ({}) : la rouvrir a la main.", e));
+        dire(&format!("{} La fenêtre ne se rouvre pas ({}) : ouvrir le logiciel dans {}.", fin.phrase, e, dit(&ou)));
     }
     std::process::ExitCode::SUCCESS
 }
 
-/// LE DEPLACEMENT DE L'INSTALLATION `de` VERS `vers` (voir l'en-tete), logiciel ferme. Rend ce qui, sur un autre disque,
-/// n'a pas pu s'effacer de l'ancien dossier (le logiciel est au nouveau, entier). Une erreur : tout est revenu.
-fn deplacer(de: &Path, vers: &Path) -> R<Vec<String>> {
+/// LE DEPLACEMENT, du debut : verifie de nouveau, cree le nouveau dossier s'il le faut, ecrit l'etape, renomme ; sur un
+/// autre disque, copie. Un renommage refuse : tout revient, et l'on retente, une minute au plus.
+fn commencer(mut ec: EnCours) -> Fin {
+    let de = ec.de.clone();
     let mut essai = 1;
     loop {
-        match deplacer_une_fois(de, vers) {
-            Err((e, Retenter::Oui)) if essai < ESSAIS_DU_RENOMMAGE => {
-                essai += 1;
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                noter(de, &format!("Deplacement : le dossier ne se laisse pas encore deplacer ({}) ; nouvel essai.", e.phrase));
-            }
-            Err((e, _)) => return Err(e),
-            Ok(restes) => return Ok(restes),
-        }
-    }
-}
-
-/// Un echec du deplacement, tout revenu : se retente-t-il ?
-enum Retenter {
-    Oui,
-    Non,
-}
-
-fn deplacer_une_fois(de: &Path, vers: &Path) -> Result<Vec<String>, (socle::echec::Echec, Retenter)> {
-    let non = |e: socle::echec::Echec| (e, Retenter::Non);
-    let reste = ce_qui_reste(de).map_err(non)?;
-    let vers = match verifier(de, vers).map_err(non)? {
-        Verdict::DejaLa => return Ok(Vec::new()),
-        Verdict::Possible(v) => v,
-    };
-    let cree = !socle::fichiers::existe_lu(&vers).map_err(non)?;
-    if cree {
-        std::fs::create_dir(&vers).map_err(|e| non(socle::echec::du_disque(&vers, &e)))?;
-    }
-    // Le dossier neuf que le deplacement a cree part avec ce qui revient.
-    let sans_le_neuf = |e: socle::echec::Echec| -> socle::echec::Echec {
-        match cree {
-            true => match std::fs::remove_dir(&vers) {
-                Ok(()) => e,
-                Err(x) => e.reformuler(|m| format!("{} (le dossier {} est resté, vide : {})", m, dit(&vers), x)),
-            },
-            false => e,
-        }
-    };
-    let noms = entrees(de, &reste).map_err(|e| non(sans_le_neuf(e)))?;
-    let mut renommes: Vec<OsString> = Vec::new();
-    let mut en_copie = false;
-    for nom in &noms {
-        match std::fs::rename(de.join(nom), vers.join(nom)) {
-            Ok(()) => renommes.push(nom.clone()),
-            Err(e) if e.kind() == ErrorKind::CrossesDevices && renommes.is_empty() => {
-                en_copie = true;
-                break;
-            }
-            Err(e) => {
-                let e = socle::echec::du_disque(&de.join(nom), &e);
-                return Err(match defaire_les_renommes(de, &vers, &renommes) {
-                    Ok(()) => (sans_le_neuf(e), Retenter::Oui),
-                    Err(x) => (e.reformuler(|m| format!("{} ; et tout n'est pas revenu : {}", m, x)), Retenter::Non),
-                });
-            }
-        }
-    }
-    if en_copie {
-        if let Err(e) = copier_et_comparer(de, &vers, &noms) {
-            return Err(non(sans_le_neuf(defaire_la_copie(&vers, &noms, e))));
-        }
-    }
-    if let Err(e) = repointer(de, &vers) {
-        let e = match repointer(&vers, de) {
-            Ok(()) => e,
-            Err(x) => e.reformuler(|m| format!("{} ; et ce qui pointait vers l'ancien dossier n'y pointe plus entier : {}", m, x.phrase)),
+        let vers = match verifier(&de, &ec.vers) {
+            Ok(Verdict::Possible(v)) => v,
+            Ok(Verdict::DejaLa) => return Fin::reste(&de, &ec.vers, "c'est déjà là qu'il est."),
+            Err(e) => return Fin::reste(&de, &ec.vers, &e.phrase),
         };
-        return Err(match en_copie {
-            true => non(sans_le_neuf(defaire_la_copie(&vers, &noms, e))),
-            false => match defaire_les_renommes(de, &vers, &renommes) {
-                Ok(()) => non(sans_le_neuf(e)),
-                Err(x) => non(e.reformuler(|m| format!("{} ; et tout n'est pas revenu : {}", m, x))),
-            },
-        });
+        ec.vers = vers.clone();
+        let preparer = || -> R<(bool, Vec<PathBuf>)> {
+            let noms = entrees(&de, &ce_qui_reste(&de)?)?.into_iter().map(PathBuf::from).collect();
+            let cree = !socle::fichiers::existe_lu(&vers)?;
+            if cree {
+                std::fs::create_dir(&vers).map_err(|e| socle::echec::du_disque(&vers, &e))?;
+            }
+            Ok((cree, noms))
+        };
+        match preparer() {
+            Ok((cree, noms)) => {
+                ec.cree = cree;
+                ec.noms = noms;
+            }
+            Err(e) => return Fin::reste(&de, &vers, &e.phrase),
+        }
+        ec.etape = Etape::Renommage;
+        if let Err(e) = ecrire_en_cours(&ec) {
+            return match revenir(&ec, false) {
+                Ok(()) => Fin::reste(&de, &vers, &e.phrase),
+                Err(ou) => Fin::coupe(&de, &vers, &e.phrase, &ou),
+            };
+        }
+        let mut renommes = 0;
+        let mut refuse = None;
+        for nom in &ec.noms {
+            match std::fs::rename(de.join(nom), vers.join(nom)) {
+                Ok(()) => renommes += 1,
+                Err(e) if e.kind() == ErrorKind::CrossesDevices && renommes == 0 => {
+                    ec.etape = Etape::Copie;
+                    return copier(ec);
+                }
+                Err(e) => {
+                    refuse = Some(socle::echec::du_disque(&de.join(nom), &e).phrase);
+                    break;
+                }
+            }
+        }
+        let Some(pourquoi) = refuse else { return finir_les_renommages(ec) };
+        if let Err(ou) = revenir(&ec, false) {
+            return Fin::coupe(&de, &vers, &pourquoi, &ou);
+        }
+        ec.etape = Etape::Attente;
+        if essai >= ESSAIS_DU_RENOMMAGE || ecrire_en_cours(&ec).is_err() {
+            return Fin::reste(&de, &vers, &pourquoi);
+        }
+        noter(&de, &format!("Deplacement : le dossier ne se laisse pas encore deplacer ({}) ; nouvel essai.", pourquoi));
+        essai += 1;
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
-    // Le logiciel est au nouvel endroit, entier : ce qui reste de l'ancien s'efface, et ce qui ne s'efface pas se dit.
-    let mut restes = Vec::new();
-    if en_copie {
-        for nom in &noms {
-            if let Err(e) = socle::fichiers::effacer(&de.join(nom)) {
+}
+
+/// UN DEPLACEMENT REPRIS (le relais d'avant est mort en route) : des renommages, finis s'ils sont tous faits, defaits
+/// sinon ; une copie, defaite ; un effacement, fini.
+fn reprendre(ec: EnCours) -> Fin {
+    let (de, vers) = (ec.de.clone(), ec.vers.clone());
+    let arrete = "le déplacement s'était arrêté en route, le poste éteint ou le relais arrêté.";
+    match ec.etape {
+        Etape::Attente => commencer(ec),
+        Etape::Renommage if ec.noms.iter().all(|n| !de.join(n).exists() && vers.join(n).exists()) => finir_les_renommages(ec),
+        Etape::Renommage => match revenir(&ec, true) {
+            Ok(()) => Fin::reste(&de, &vers, arrete),
+            Err(ou) => Fin::coupe(&de, &vers, arrete, &ou),
+        },
+        Etape::Copie => Fin::reste(&de, &vers, &defaire_la_copie(&ec, arrete)),
+        Etape::Effacement => {
+            let mut restes = Vec::new();
+            if let Err(e) = repointer(&de, &vers) {
+                restes.push(format!("ce qui pointait vers l'ancien dossier ne s'est pas réécrit ({})", e.phrase));
+            }
+            effacer_l_ancien(&ec, restes)
+        }
+    }
+}
+
+/// Tout est renomme : ce qui pointe vers l'ancien dossier se reecrit (sinon tout revient), puis l'ancien dossier
+/// s'efface s'il est vide.
+fn finir_les_renommages(ec: EnCours) -> Fin {
+    if let Err(e) = repointer(&ec.de, &ec.vers) {
+        return match revenir(&ec, true) {
+            Ok(()) => Fin::reste(&ec.de, &ec.vers, &e.phrase),
+            Err(ou) => Fin::coupe(&ec.de, &ec.vers, &e.phrase, &ou),
+        };
+    }
+    effacer_l_ancien(&ec, Vec::new())
+}
+
+/// Le logiciel est au nouvel endroit, entier : ce qui reste de l'ancien s'efface, et ce qui ne s'efface pas se dit.
+fn effacer_l_ancien(ec: &EnCours, mut restes: Vec<String>) -> Fin {
+    for nom in &ec.noms {
+        let p = ec.de.join(nom);
+        if std::fs::symlink_metadata(&p).is_ok() {
+            if let Err(e) = socle::fichiers::effacer(&p) {
                 restes.push(e.phrase);
             }
         }
     }
-    if reste.is_empty() {
-        if let Err(e) = std::fs::remove_dir(de) {
-            restes.push(format!("{} ({})", dit(de), e));
+    match est_le_dossier_de_l_utilisateur(&ec.de) {
+        Ok(true) => {}
+        Ok(false) | Err(_) => {
+            if let Err(e) = std::fs::remove_dir(&ec.de) {
+                restes.push(format!("{} ({})", dit(&ec.de), e));
+            }
         }
     }
-    Ok(restes)
+    Fin::deplace(&ec.de, &ec.vers, restes)
 }
 
-/// Les `renommes` reviennent de `vers` dans `de` ; ce qui ne revient pas se dit.
-fn defaire_les_renommes(de: &Path, vers: &Path, renommes: &[OsString]) -> Result<(), String> {
-    let pas_revenus: Vec<String> = renommes
-        .iter()
-        .filter_map(|nom| std::fs::rename(vers.join(nom), de.join(nom)).err().map(|e| format!("{} ({})", nom.to_string_lossy(), e)))
-        .collect();
-    match pas_revenus.is_empty() {
+/// TOUT REVIENT apres des renommages : (si `pointeurs`) ce qui pointe vers le nouveau dossier revient a l'ancien ;
+/// chaque entree qui est dans le nouveau dossier, et pas dans l'ancien, y revient ; le nouveau dossier, cree par le
+/// deplacement, s'efface s'il est vide. Ce qui ne revient pas : ce qui est ou, en mots.
+fn revenir(ec: &EnCours, pointeurs: bool) -> Result<(), String> {
+    let (de, vers) = (&ec.de, &ec.vers);
+    let mut fautes = Vec::new();
+    if pointeurs {
+        if let Err(e) = repointer(vers, de) {
+            fautes.push(format!("ce qui pointait vers {} n'y pointe plus entier ({})", dit(de), e.phrase));
+        }
+    }
+    let mut la_bas = Vec::new();
+    for nom in &ec.noms {
+        let (ici, ailleurs) = (de.join(nom), vers.join(nom));
+        if std::fs::symlink_metadata(&ailleurs).is_err() || std::fs::symlink_metadata(&ici).is_ok() {
+            continue;
+        }
+        if let Err(e) = std::fs::rename(&ailleurs, &ici) {
+            la_bas.push(format!("{} ({})", nom.to_string_lossy(), e));
+        }
+    }
+    if !la_bas.is_empty() {
+        fautes.push(format!("dans {} : {} ; le reste dans {}", dit(vers), la_bas.join(", "), dit(de)));
+    }
+    if ec.cree {
+        if let Err(e) = std::fs::remove_dir(vers) {
+            if fautes.is_empty() {
+                // Le logiciel est revenu entier : le dossier vide qui reste n'est qu'un reste.
+                noter(de, &format!("Deplacement : le dossier {} est reste, vide ({}).", dit(vers), e));
+            }
+        }
+    }
+    match fautes.is_empty() {
         true => Ok(()),
-        false => Err(pas_revenus.join(", ")),
+        false => Err(fautes.join(" ; ")),
     }
 }
 
-/// La copie dans `vers` s'efface ; l'echec `e` le dit si elle ne s'efface pas entiere.
-fn defaire_la_copie(vers: &Path, noms: &[OsString], e: socle::echec::Echec) -> socle::echec::Echec {
-    noms.iter().fold(e, |e, nom| socle::fichiers::effacer_apres(e, &vers.join(nom)))
+/// LA COPIE SUR UN AUTRE DISQUE : chaque entree se copie (chaque fichier ecrit sur le disque), la copie se compare a
+/// l'original (chaque dossier, chaque fichier, sa taille et son empreinte), ce qui pointe vers l'ancien dossier se
+/// reecrit, l'etape d'effacement s'ecrit, puis l'original s'efface. Au moindre echec, la copie s'efface et les
+/// pointeurs reviennent : l'original est entier.
+fn copier(mut ec: EnCours) -> Fin {
+    let (de, vers) = (ec.de.clone(), ec.vers.clone());
+    let noms: Vec<OsString> = ec.noms.iter().map(|n| n.clone().into_os_string()).collect();
+    let fait = ecrire_en_cours(&ec).and_then(|()| copier_et_comparer(&de, &vers, &noms)).and_then(|()| {
+        repointer(&de, &vers)?;
+        ec.etape = Etape::Effacement;
+        ecrire_en_cours(&ec)
+    });
+    match fait {
+        Ok(()) => effacer_l_ancien(&ec, Vec::new()),
+        Err(e) => Fin::reste(&de, &vers, &defaire_la_copie(&ec, &e.phrase)),
+    }
 }
 
-/// Copie les `noms` de `de` dans `vers`, puis compare : chaque dossier, chaque fichier et sa taille.
+/// La copie s'efface, les pointeurs reviennent a l'ancien dossier, le nouveau dossier cree s'efface : l'original est
+/// entier. Rend `pourquoi`, suivi de ce qui ne s'est pas defait.
+fn defaire_la_copie(ec: &EnCours, pourquoi: &str) -> String {
+    let mut restes = Vec::new();
+    if let Err(e) = repointer(&ec.vers, &ec.de) {
+        restes.push(format!("ce qui pointait vers {} n'y pointe plus entier ({})", dit(&ec.de), e.phrase));
+    }
+    for nom in &ec.noms {
+        let p = ec.vers.join(nom);
+        if std::fs::symlink_metadata(&p).is_ok() {
+            if let Err(e) = socle::fichiers::effacer(&p) {
+                restes.push(format!("la copie ne s'efface pas entière ({})", e.phrase));
+            }
+        }
+    }
+    if ec.cree && restes.is_empty() {
+        if let Err(e) = std::fs::remove_dir(&ec.vers) {
+            restes.push(format!("le dossier {} est resté ({})", dit(&ec.vers), e));
+        }
+    }
+    match restes.is_empty() {
+        true => pourquoi.to_string(),
+        false => format!("{} ({}).", pourquoi.trim_end_matches('.'), restes.join(" ; ")),
+    }
+}
+
+/// L'empreinte SHA-256 du contenu d'un fichier.
+fn empreinte(p: &Path) -> std::io::Result<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let mut f = std::fs::File::open(p)?;
+    let mut h = Sha256::new();
+    let mut tampon = vec![0u8; 1 << 16];
+    loop {
+        let n = f.read(&mut tampon)?;
+        if n == 0 {
+            return Ok(h.finalize().into());
+        }
+        h.update(&tampon[..n]);
+    }
+}
+
+/// Copie les `noms` de `de` dans `vers`, chaque fichier ecrit sur le disque, sans suivre ni copier un lien ; puis
+/// compare : chaque dossier, chaque fichier, sa taille et son empreinte.
 fn copier_et_comparer(de: &Path, vers: &Path, noms: &[OsString]) -> R<()> {
-    fn copier(de: &Path, vers: &Path) -> std::io::Result<()> {
-        if std::fs::metadata(de)?.is_dir() {
-            std::fs::create_dir(vers)?;
-            for e in std::fs::read_dir(de)? {
-                let nom = e?.file_name();
+    fn copier(de: &Path, vers: &Path) -> R<()> {
+        let m = std::fs::symlink_metadata(de).map_err(|e| socle::echec::du_disque(de, &e))?;
+        if m.file_type().is_symlink() {
+            return Err(refus(format!("{} est un lien : il ne se copie pas sur un autre disque.", dit(de))));
+        }
+        if m.is_dir() {
+            std::fs::create_dir(vers).map_err(|e| socle::echec::du_disque(vers, &e))?;
+            for e in std::fs::read_dir(de).map_err(|e| socle::echec::du_disque(de, &e))? {
+                let nom = e.map_err(|e| socle::echec::du_disque(de, &e))?.file_name();
                 copier(&de.join(&nom), &vers.join(&nom))?;
             }
             return Ok(());
         }
-        std::fs::copy(de, vers).map(|_| ())
+        std::fs::copy(de, vers).map_err(|e| socle::echec::du_disque(de, &e))?;
+        std::fs::OpenOptions::new().write(true).open(vers).and_then(|f| f.sync_all()).map_err(|e| socle::echec::du_disque(vers, &e))
     }
     for nom in noms {
-        copier(&de.join(nom), &vers.join(nom)).map_err(|e| socle::echec::du_disque(&de.join(nom), &e))?;
+        copier(&de.join(nom), &vers.join(nom))?;
     }
     let avant = arbre(de, noms).map_err(|e| socle::echec::du_disque(de, &e))?;
     let apres = arbre(vers, noms).map_err(|e| socle::echec::du_disque(vers, &e))?;
-    if avant != apres {
-        let differents = avant.iter().filter(|(p, t)| apres.get(*p) != Some(*t)).count() + apres.keys().filter(|p| !avant.contains_key(*p)).count();
+    let mut differents = avant.iter().filter(|(p, t)| apres.get(*p) != Some(*t)).count() + apres.keys().filter(|p| !avant.contains_key(*p)).count();
+    for (rel, _) in avant.iter().filter(|(_, t)| matches!(t, Trace::Fichier(_))) {
+        let (a, b) = (de.join(rel), vers.join(rel));
+        if empreinte(&a).map_err(|e| socle::echec::du_disque(&a, &e))? != empreinte(&b).map_err(|e| socle::echec::du_disque(&b, &e))? {
+            differents += 1;
+        }
+    }
+    if differents > 0 {
         return Err(refus(format!("La copie n'est pas arrivée entière : {} fichier(s) ou dossier(s) manquent ou diffèrent.", differents)));
     }
     Ok(())
 }
 
-/// Un chemin entre apostrophes, pour PowerShell (une apostrophe s'y double).
-#[cfg(windows)]
-fn entre_apostrophes(p: &Path) -> String {
-    format!("'{}'", p.to_string_lossy().replace('\'', "''"))
-}
-
 /// Un script PowerShell (`powershell.exe -NoProfile -NonInteractive -Command`), sa sortie en UTF-8 ; son refus sinon.
+/// Les chemins passent par l'environnement du processus (`variables`), jamais par le texte du script : aucune apostrophe
+/// d'un nom de dossier (droite ou typographique) ne peut le casser.
 #[cfg(windows)]
-fn powershell(script: &str) -> R<String> {
+fn powershell(script: &str, variables: &[(&str, &Path)]) -> R<String> {
     use std::os::windows::process::CommandExt;
     let tete = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; ";
-    let o = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command"])
-        .arg(format!("{}{}", tete, script))
+    let mut c = std::process::Command::new("powershell.exe");
+    c.args(["-NoProfile", "-NonInteractive", "-Command"]).arg(format!("{}{}", tete, script));
+    for (n, v) in variables {
+        c.env(n, v);
+    }
+    let o = c
         .stdin(std::process::Stdio::null())
         .creation_flags(0x0800_0000)
         .output()
@@ -605,10 +935,10 @@ fn powershell(script: &str) -> R<String> {
 }
 
 /// Le dossier Documents de l'utilisateur, tel que Windows le dit (`MyDocuments`, celui de `$DOCUMENTS` de l'installeur) ;
-/// `None` hors de Windows, ou une ancienne installation ne se deplace pas d'office.
+/// `None` hors de Windows.
 #[cfg(windows)]
 fn documents() -> R<Option<PathBuf>> {
-    let d = powershell("[Environment]::GetFolderPath('MyDocuments')")?;
+    let d = powershell("[Environment]::GetFolderPath('MyDocuments')", &[])?;
     match d.is_empty() {
         true => Err(refus("Windows ne dit pas où est le dossier Documents.")),
         false => Ok(Some(PathBuf::from(d))),
@@ -620,32 +950,68 @@ fn documents() -> R<Option<PathBuf>> {
     Ok(None)
 }
 
+/// L'ANCIENNE INSTALLATION : celle qui EST le dossier de l'utilisateur (`installation::dossier_de_l_utilisateur`,
+/// `AppData\Local\PuppetPaie` sous Windows, un dossier cache), et n'est pas portable. Rend le dossier des Documents ou
+/// la ranger (`Documents\PuppetPaie`) ; `None` pour toute autre installation, ou hors de Windows.
+pub fn ranger_dans_les_documents(inst: &Path) -> R<Option<PathBuf>> {
+    if inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() || !est_le_dossier_de_l_utilisateur(inst)? {
+        return Ok(None);
+    }
+    Ok(documents()?.map(|d| d.join(DANS_LES_DOCUMENTS)))
+}
+
+/// Le dossier que OneDrive synchronise et qui porte `p`, s'il y en a un : Windows nomme chacun dans une variable
+/// (`VARIABLES_ONEDRIVE`) ; un chemin dessous est synchronise.
+pub fn synchronise_par_onedrive(p: &Path) -> Option<PathBuf> {
+    let bas = |x: &Path| x.to_string_lossy().to_lowercase().trim_end_matches(['\\', '/']).to_string();
+    let p = bas(p);
+    racines_onedrive().into_iter().find(|r| {
+        let r = bas(r);
+        p == r || p.starts_with(&format!("{}\\", r)) || p.starts_with(&format!("{}/", r))
+    })
+}
+
+/// Les dossiers que OneDrive synchronise sur ce poste (`VARIABLES_ONEDRIVE`), chacun une fois.
+pub fn racines_onedrive() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = Vec::new();
+    for r in VARIABLES_ONEDRIVE.iter().filter_map(|n| crate::coffre::env_du_poste(n)).map(PathBuf::from) {
+        if !v.contains(&r) {
+            v.push(r);
+        }
+    }
+    v
+}
+
+/// Ce qu'il faut savoir avant de mettre le logiciel dans `racine`, que OneDrive synchronise.
+pub fn avertir_onedrive(racine: &Path) -> String {
+    format!(
+        "OneDrive synchronise {} : le logiciel placé dedans enverrait son coffre, les paies et les numéros de sécurité sociale dans le nuage de Microsoft, et OneDrive peut bloquer un fichier pendant qu'il s'écrit.",
+        dit(racine)
+    )
+}
+
 /// CE QUI POINTE VERS L'INSTALLATION se reecrit de `de` a `vers` : ce que l'installeur a pose
 /// (`atelier/installeur/puppetpaie.nsi`), la cle de desinstallation sous `HKCU` (`InstallLocation`, `DisplayIcon`,
 /// `UninstallString`, `QuietUninstallString`), si elle est celle de cette installation, et le raccourci du menu Demarrer
-/// (`PuppetPaie.lnk` des programmes de l'utilisateur), s'il lance le programme de cette installation. Hors de Windows,
-/// rien.
+/// (`PuppetPaie.lnk` des programmes de l'utilisateur), s'il lance le programme de cette installation. Deja reecrit, rien
+/// ne change. Hors de Windows, rien.
 #[cfg(windows)]
 fn repointer(de: &Path, vers: &Path) -> R<()> {
-    let script = format!(
-        "$de = {de}; $vers = {vers}; \
-         function Remplace([string]$v) {{ if (-not $v) {{ return $v }}; [regex]::Replace($v, [regex]::Escape($de), $vers.Replace('$', '$$'), 'IgnoreCase') }}; \
+    let script = "$de = $env:PUPPETPAIE_DEPLACEMENT_DE; $vers = $env:PUPPETPAIE_DEPLACEMENT_VERS; \
+         function Remplace([string]$v) { if (-not $v) { return $v }; [regex]::Replace($v, [regex]::Escape($de), $vers.Replace('$', '$$'), 'IgnoreCase') }; \
          $cle = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PuppetPaie'; \
-         if (Test-Path -LiteralPath $cle) {{ \
+         if (Test-Path -LiteralPath $cle) { \
            $p = Get-ItemProperty -LiteralPath $cle; \
-           if ($p.InstallLocation -and ($p.InstallLocation.TrimEnd('\\') -eq $de)) {{ \
-             foreach ($n in 'InstallLocation', 'DisplayIcon', 'UninstallString', 'QuietUninstallString') {{ \
-               if ($p.$n) {{ Set-ItemProperty -LiteralPath $cle -Name $n -Value (Remplace $p.$n) }} }} }} }}; \
+           if ($p.InstallLocation -and ($p.InstallLocation.TrimEnd('\\') -eq $de)) { \
+             foreach ($n in 'InstallLocation', 'DisplayIcon', 'UninstallString', 'QuietUninstallString') { \
+               if ($p.$n) { Set-ItemProperty -LiteralPath $cle -Name $n -Value (Remplace $p.$n) } } } }; \
          $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'PuppetPaie.lnk'; \
-         if (Test-Path -LiteralPath $lnk) {{ \
+         if (Test-Path -LiteralPath $lnk) { \
            $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk); \
-           if ($s.TargetPath.StartsWith($de + '\\', [StringComparison]::OrdinalIgnoreCase)) {{ \
+           if ($s.TargetPath.StartsWith($de + '\\', [StringComparison]::OrdinalIgnoreCase)) { \
              $s.TargetPath = Remplace $s.TargetPath; $s.WorkingDirectory = Remplace $s.WorkingDirectory; \
-             $s.IconLocation = Remplace $s.IconLocation; $s.Save() }} }}",
-        de = entre_apostrophes(de),
-        vers = entre_apostrophes(vers),
-    );
-    powershell(&script).map(|_| ())
+             $s.IconLocation = Remplace $s.IconLocation; $s.Save() } }";
+    powershell(script, &[("PUPPETPAIE_DEPLACEMENT_DE", de), ("PUPPETPAIE_DEPLACEMENT_VERS", vers)]).map(|_| ())
 }
 
 #[cfg(not(windows))]

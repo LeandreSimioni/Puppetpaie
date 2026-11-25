@@ -598,6 +598,11 @@ un libellé, chacun sa forme.
 | geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
 | provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
 | ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
+| déplacement du logiciel en cours (d'où, où, l'étape écrite avant d'être faite ; tant qu'il est là, rien ne s'ouvre dans ces deux dossiers) | `compagnie::deplacement::EnCours` | `compagnie/src/deplacement.rs` |
+| étape d'un déplacement en cours (attente, renommage, copie, effacement) | `compagnie::deplacement::Etape` | `compagnie/src/deplacement.rs` |
+| issue d'un déplacement (déplacé, resté entier, coupé) | `compagnie::deplacement::Issue` | `compagnie/src/deplacement.rs` |
+| dernier déplacement du logiciel (sa date, d'où, où, son issue, sa phrase) | `compagnie::deplacement::Dernier` | `compagnie/src/deplacement.rs` |
+| geste de l'écran « où est le logiciel » (la charge de sa route : le dossier à saisir, ou celui des Documents) | `VersLeDossier` | `routes/src/accueil/deplacement.rs` |
 | sorte d'une erreur de Google pour un fichier demandé (du fichier, passagère, arrêt — autorisation ou non) : le seul classement de la restauration | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
 | pourquoi une restauration s'est arrêtée en route (hors ligne, autorisation perdue, refus de Google, verrou perdu) | `compagnie::restauration::ArretDeLaRestauration` | `compagnie/src/restauration.rs` |
 | verrou d'une restauration du Drive sur un dossier (une à la fois, d'un processus à l'autre) | `compagnie::restauration::VerrouDeRestauration` | `compagnie/src/restauration.rs` |
@@ -4140,22 +4145,29 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   (`O_EXCL`) ; la séance gardée est **une par coffre** (`ouverture-gardee-<empreinte>.bin`). La mise à jour est déjà
   par installation (`maj/`) ; son relais attend la fin de **sa** fenêtre (le processus sous Windows, le créneau de son
   installation ailleurs), et `moteur maj --appliquer` ne refuse que si **cette** installation est ouverte.
-- **Le logiciel se déplace entier, logiciel fermé** (`compagnie/src/deplacement.rs`, route `logiciel-deplacer`, sous
-  « Avancé » de l'accueil). L'installeur propose les Documents (`Documents\PuppetPaie`) ou un autre dossier ; la route
-  dit où est le logiciel, et, un dossier dit, vérifie tout ce qui se vérifie (un dossier neuf ou vide, dit en entier,
-  hors de l'installation, où l'on écrit ; sur un autre disque, la place) et pose `maj/deplacer.json`. Le déplacement se
-  fait au lancement, avant toute fenêtre, comme une mise à jour ; la fenêtre qui a servi la route le lance aussitôt et
-  se ferme. Son **relais** part du dossier temporaire du poste (Windows ne déplace pas un dossier qui porte un programme
-  en marche ni le dossier courant d'un processus) : il attend la fin de la fenêtre, **renomme** chaque entrée de
-  l'installation dans le nouveau dossier (même disque : instantané, sans place en double) ou, sur un autre disque, la
-  **copie**, la compare (chaque dossier, chaque fichier et sa taille) puis efface l'original ; il réécrit ce que
-  l'installeur a posé (la clé de désinstallation sous `HKCU`, le raccourci du menu Démarrer), puis rouvre la fenêtre.
-  Au moindre échec tout revient et la fenêtre se rouvre à l'ancien endroit. Le créneau retenu (`.fenetre.json`) voyage
-  avec l'installation : le port de la page, donc ce que le navigateur retient, ne change pas. Une **ancienne
-  installation** — celle qui est le dossier de l'utilisateur lui-même (`installation::dossier_de_l_utilisateur`,
-  `AppData\Local\PuppetPaie`), cachée — va **une fois, d'office**, au lancement, dans `Documents\PuppetPaie` ; son
-  dossier des fenêtres, qui est à l'utilisateur, reste. Une installation portable ne bouge jamais d'office. Ce qui
-  s'est passé, ou ce qui l'a empêché, se retient dans `maj/deplacement.json` et la route le redit.
+- **Le logiciel se déplace entier, logiciel fermé, et rien ne se déplace d'office** (`compagnie/src/deplacement.rs`,
+  `routes/src/accueil/deplacement.rs`). L'installeur propose les Documents (`Documents\PuppetPaie`) ou un autre dossier.
+  L'accueil dit d'emblée où est le logiciel (la route `logiciel-ou`, l'écran rendu de sa place) avec le geste qui le
+  déplace (`logiciel-deplacer`, sa charge : le dossier) ; une **ancienne installation** — celle qui est le dossier de
+  l'utilisateur lui-même (`installation::dossier_de_l_utilisateur`, `AppData\Local\PuppetPaie`), cachée — y voit en
+  plus pourquoi la ranger, et « Ranger dans Documents ». Un dossier que OneDrive synchronise (sous un dossier que
+  Windows nomme dans `OneDrive`, `OneDriveConsumer` ou `OneDriveCommercial`) se dit dans la boîte du geste, avant de
+  partir. La route vérifie tout ce qui se vérifie (un dossier neuf ou vide, dit en entier, hors de l'installation, où
+  l'on écrit ; sur un autre disque, la place, et aucun lien à copier) et pose `maj/deplacer.json` ; la fenêtre qui l'a
+  servie la fait partir aussitôt et se ferme (posée en ligne de commande, elle part au lancement suivant de la
+  fenêtre). Partir, c'est effacer la demande, écrire le **déplacement en cours** (`EnCours`, dans le dossier de
+  l'utilisateur : d'où, où, l'étape écrite avant d'être faite) et lancer le **relais**, du dossier temporaire du poste
+  (Windows ne déplace pas un dossier qui porte un programme en marche ni le dossier courant d'un processus). Le relais
+  tient un verrou du système de bout en bout ; tant que le déplacement en cours nomme une installation, rien ne s'y
+  ouvre (la fenêtre le dit dans une boîte, avant même son propre verrou ; la ligne de commande refuse), et un relais
+  mort en route est repris au lancement suivant, qui finit ce qui était fini ou défait ce qui était commencé. Le relais
+  **renomme** chaque entrée de l'installation dans le nouveau dossier (même disque : instantané, sans place en double)
+  ou, sur un autre disque, la **copie** (chaque fichier écrit sur le disque, puis comparé à l'original par son
+  empreinte) puis efface l'original ; il réécrit ce que l'installeur a posé (la clé de désinstallation sous `HKCU`, le
+  raccourci du menu Démarrer), puis rouvre la fenêtre. Au moindre échec tout revient et la fenêtre se rouvre à l'ancien
+  endroit ; ce qui ne revient pas se dit tel quel, ce qui est où, et la fenêtre ne se rouvre pas. L'issue (`Dernier`)
+  se retient dans le dossier de l'utilisateur, et l'accueil la redit. Le créneau retenu (`.fenetre.json`) voyage avec
+  l'installation : le port de la page, donc ce que le navigateur retient, ne change pas.
 - **Toutes les compagnies tenues à jour dès le lancement** (`Fenetre::prechauffer`, `etat_garde::Fil`) : chaque vraie
   compagnie de l'installation (pas les fictives) reçoit sa file des états sur **un seul fil de calcul** pour toute la
   fenêtre, la dernière ouverte d'abord (la date de son `journal/interface.log`), puis chacune son tour ; la compagnie

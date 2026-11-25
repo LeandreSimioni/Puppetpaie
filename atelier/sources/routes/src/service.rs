@@ -84,6 +84,11 @@ pub fn commande(quoi: &str, args: &[Argument]) -> Option<std::process::ExitCode>
     // trouve pas refuse la route.
     let lues = options(&args)?
         .and_then(|o| compagnie::installation::fixer_le_code().map(|()| o))
+        // Le logiciel qui se deplace (`compagnie::deplacement`) : rien ne s'y lit ni ne s'y ecrit avant la fin.
+        .and_then(|o| match compagnie::deplacement::en_cours_ici(&compagnie::installation::base(), o.racine.as_deref())? {
+            Some(p) => Err(socle::echec::refus(p)),
+            None => Ok(o),
+        })
         .and_then(|o| compagnie::demande::canal_de_la_route(&racine_de(&o)).map(|canal| (o, canal)));
     let mut entree = String::new();
     let lue = std::io::stdin().read_to_string(&mut entree);

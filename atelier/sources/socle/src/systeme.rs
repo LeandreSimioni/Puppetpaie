@@ -1,5 +1,5 @@
 //! LES APPELS AU NOYAU DE WINDOWS : la memoire du poste, le disque libre, l'heritage d'une prise d'ecoute, l'attente de
-//! la fin d'un processus. C'est le seul endroit ou un entier signe est impose par l'exterieur (le `BOOL` de l'API, un
+//! la fin d'un processus, la boite qui dit pourquoi le programme ne s'ouvre pas. C'est le seul endroit ou un entier signe est impose par l'exterieur (le `BOOL` de l'API, un
 //! `i32`) et le seul bloc `unsafe` du logiciel : chaque appel rend une valeur typee (des octets, un booleen), et le reste
 //! du logiciel ne voit ni l'API ni ses entiers. L'espace interdit `unsafe_code` (`deny`) : ce module le leve (et la
 //! racine de la crate `onglet`, pour le seul attribut de ses exports).
@@ -62,6 +62,23 @@ pub fn disque_libre(p: &Path) -> std::io::Result<u64> {
     match unsafe { GetDiskFreeSpaceExW(large.as_ptr(), &mut libre, &mut total, &mut libre_total) } != 0 {
         true => Ok(libre),
         false => Err(std::io::Error::last_os_error()),
+    }
+}
+
+/// UNE BOITE DE WINDOWS qui dit `texte` sous le titre `titre`, et attend qu'on la ferme (`MessageBoxW`, bouton OK,
+/// icone d'information) : ce que dit un programme qui ne s'ouvre pas, quand il n'a ni fenetre ni console.
+#[cfg(windows)]
+pub fn dire_dans_une_boite(titre: &str, texte: &str) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(fenetre: isize, texte: *const u16, titre: *const u16, genre: u32) -> i32;
+    }
+    const MB_ICONINFORMATION: u32 = 0x40;
+    let large = |t: &str| t.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (t, x) = (large(titre), large(texte));
+    // SAFETY : deux textes termines par zero, vivants le temps de l'appel ; aucune fenetre parente.
+    unsafe {
+        MessageBoxW(0, x.as_ptr(), t.as_ptr(), MB_ICONINFORMATION);
     }
 }
 
