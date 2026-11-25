@@ -2076,7 +2076,7 @@ pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
 /// Attend la fin du processus `pid` (60 s au plus). Vrai s'il est parti. Sous Windows, le processus lui-meme (son numero,
 /// qui ne se confond avec aucun autre) ; le dossier d'installation n'y sert pas.
 #[cfg(windows)]
-fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
+pub(crate) fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
     Ok(socle::systeme::attendre_la_fin(pid, std::time::Duration::from_secs(60)))
 }
 
@@ -2084,7 +2084,7 @@ fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
 /// a son creneau (`instance::ouverte`, qui compare le dossier de l'installation), elle est partie. Une autre
 /// installation ouverte sur le poste a son propre creneau, et ne se confond jamais avec elle.
 #[cfg(not(windows))]
-fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
+pub(crate) fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
     for _ in 0..120 {
         if !crate::instance::ouverte(inst, crate::instance::Plage::DU_POSTE)? {
             return Ok(true);

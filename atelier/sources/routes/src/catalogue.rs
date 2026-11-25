@@ -213,6 +213,7 @@ routes! {
         AdministrateurDeposer = "administrateur-deposer",
         AdministrateurSuivre = "administrateur-suivre",
         PortableCompleter = "portable-completer",
+        LogicielDeplacer = "logiciel-deplacer",
         Basculer = "basculer",
         Routes = "routes",
     }

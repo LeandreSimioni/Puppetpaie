@@ -4140,6 +4140,22 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   (`O_EXCL`) ; la séance gardée est **une par coffre** (`ouverture-gardee-<empreinte>.bin`). La mise à jour est déjà
   par installation (`maj/`) ; son relais attend la fin de **sa** fenêtre (le processus sous Windows, le créneau de son
   installation ailleurs), et `moteur maj --appliquer` ne refuse que si **cette** installation est ouverte.
+- **Le logiciel se déplace entier, logiciel fermé** (`compagnie/src/deplacement.rs`, route `logiciel-deplacer`, sous
+  « Avancé » de l'accueil). L'installeur propose les Documents (`Documents\PuppetPaie`) ou un autre dossier ; la route
+  dit où est le logiciel, et, un dossier dit, vérifie tout ce qui se vérifie (un dossier neuf ou vide, dit en entier,
+  hors de l'installation, où l'on écrit ; sur un autre disque, la place) et pose `maj/deplacer.json`. Le déplacement se
+  fait au lancement, avant toute fenêtre, comme une mise à jour ; la fenêtre qui a servi la route le lance aussitôt et
+  se ferme. Son **relais** part du dossier temporaire du poste (Windows ne déplace pas un dossier qui porte un programme
+  en marche ni le dossier courant d'un processus) : il attend la fin de la fenêtre, **renomme** chaque entrée de
+  l'installation dans le nouveau dossier (même disque : instantané, sans place en double) ou, sur un autre disque, la
+  **copie**, la compare (chaque dossier, chaque fichier et sa taille) puis efface l'original ; il réécrit ce que
+  l'installeur a posé (la clé de désinstallation sous `HKCU`, le raccourci du menu Démarrer), puis rouvre la fenêtre.
+  Au moindre échec tout revient et la fenêtre se rouvre à l'ancien endroit. Le créneau retenu (`.fenetre.json`) voyage
+  avec l'installation : le port de la page, donc ce que le navigateur retient, ne change pas. Une **ancienne
+  installation** — celle qui est le dossier de l'utilisateur lui-même (`installation::dossier_de_l_utilisateur`,
+  `AppData\Local\PuppetPaie`), cachée — va **une fois, d'office**, au lancement, dans `Documents\PuppetPaie` ; son
+  dossier des fenêtres, qui est à l'utilisateur, reste. Une installation portable ne bouge jamais d'office. Ce qui
+  s'est passé, ou ce qui l'a empêché, se retient dans `maj/deplacement.json` et la route le redit.
 - **Toutes les compagnies tenues à jour dès le lancement** (`Fenetre::prechauffer`, `etat_garde::Fil`) : chaque vraie
   compagnie de l'installation (pas les fictives) reçoit sa file des états sur **un seul fil de calcul** pour toute la
   fenêtre, la dernière ouverte d'abord (la date de son `journal/interface.log`), puis chacune son tour ; la compagnie

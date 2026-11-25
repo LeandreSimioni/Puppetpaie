@@ -17,6 +17,7 @@ pub mod coffre;
 pub mod coffre_verifier;
 pub mod consultation;
 pub mod demande;
+pub mod deplacement;
 pub mod etat_dsn;
 pub mod diagnostic;
 pub mod editeur;

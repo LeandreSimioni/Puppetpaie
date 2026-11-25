@@ -834,6 +834,23 @@ impl Fenetre {
                 RouteReponse::de(nom, rendu)
             });
         }
+        // Un deplacement demande part au relais tout de suite, et le logiciel se ferme comme par sa croix : le relais
+        // attend sa fin, deplace, et rouvre la fenetre au nouvel endroit (`compagnie::deplacement`).
+        if nom == Route::LogicielDeplacer {
+            let rendu = api::route_de_l_installation(nom, charge);
+            if !rendu.est_rendue() {
+                return rendu;
+            }
+            return match compagnie::deplacement::lancer_s_il_est_demande(&inst) {
+                Ok(true) => {
+                    self.ecrire("Le logiciel se ferme pour se deplacer.\n");
+                    self.fermer_apres_les_envois(|| self.poser_phase(Phase::Accueil));
+                    rendu
+                }
+                Ok(false) => rendu,
+                Err(e) => RouteReponse::de(nom, Err(e.reclasser(Classe::Refuse))),
+            };
+        }
         if nom == Route::AdministrateurTableau {
             let c: routes::accueil::ChargeTableau = match charge.lire() {
                 Ok(c) => c,

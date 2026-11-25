@@ -1,7 +1,8 @@
 //! L'ACCUEIL DES COMPAGNIES : les routes de l'installation (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`,
 //! `fictives/` : `compagnie/installation.rs`), et non d'une compagnie. Les lister, en ajouter une, choisir sa couleur, remettre
 //! une fictive livree a zero, garder au deblocage les compagnies creees en demo, completer un dossier portable des systemes
-//! qui lui manquent (`maj::completer_le_portable`) ; et ce que l'administrateur fait sur
+//! qui lui manquent (`maj::completer_le_portable`), dire ou est le logiciel et l'y deplacer (`compagnie::deplacement`) ;
+//! et ce que l'administrateur fait sur
 //! toutes ses compagnies a la fois (son tableau, son depot groupe).
 //!
 //! L'INSTALLATION D'UNE ROUTE : celle de la compagnie nommee (`--racine`, `administrateur::installation_de`), sinon celle
@@ -151,6 +152,18 @@ pub const ROUTES: &[Fiche] = &[
         ecran: Ecran::Auto(Place::Accueil, Affiche::new("Ajouter les systèmes qui manquent")),
     },
     Fiche {
+        route: Route::LogicielDeplacer,
+        geste: "Dire où sont le logiciel et ses compagnies ; un dossier dit, les y déplacer, logiciel fermé.",
+        charge: &ChargeDeplacer::CHARGE,
+        exemple: r#"{}"#,
+        rend: "dossier (où il est), vers (où il va, s'il est demandé), phrase ; la fenêtre ouverte se ferme, et se rouvre au nouvel endroit",
+        refus: &[Refus { classe: Classe::Refuse, corriger: "un dossier neuf ou vide, dit en entier, où l'on écrit, avec la place ; rien n'a changé" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
+        acte: Acte::Ecrit,
+        phrase: 0,
+        ecran: Ecran::Auto(Place::Accueil, Affiche::new("Où est le logiciel, le déplacer")),
+    },
+    Fiche {
         route: Route::Basculer,
         geste: "Brider le logiciel (la démo) ou le débloquer, sur ce poste.",
         charge: &crate::SansCharge::CHARGE,
@@ -250,6 +263,53 @@ charge! {
     #[derive(Debug)]
     struct ChargePortable {
         portable: Option<bool> = dit("Rendre ce dossier portable", "vrai : faire aussi de ce dossier un dossier portable, pour une clé USB (PORTABLE.json)"),
+    }
+}
+
+charge! {
+    /// La charge de `logiciel-deplacer` : sans dossier, la route dit ou est le logiciel.
+    #[derive(Debug)]
+    struct ChargeDeplacer {
+        dossier: Option<PathBuf> = dit("Nouveau dossier", "le dossier où le logiciel et ses compagnies vont, dit en entier (C:\\Users\\…\\Documents\\PuppetPaie) : neuf, ou vide ; absent, la route dit où ils sont"),
+    }
+}
+
+/// Ce que rend `logiciel-deplacer`.
+#[derive(Debug, Serialize)]
+struct Deplacement {
+    phrase: Phrase,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: PathBuf,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin", skip_serializing_if = "Option::is_none")]
+    vers: Option<PathBuf>,
+}
+
+impl Dite for Deplacement {
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
+    }
+}
+
+/// `logiciel-deplacer` sur l'installation `inst` (`compagnie::deplacement`).
+fn deplacer(inst: &Path, c: ChargeDeplacer) -> R<Rendu> {
+    use compagnie::deplacement::{demander, dernier, dit, Verdict};
+    let Some(vers) = c.dossier else {
+        let phrase = match dernier(inst)? {
+            Some(d) => socle::phrase!("Le logiciel et ses compagnies sont dans : {}. {}", dit(inst), d.phrase),
+            None => socle::phrase!("Le logiciel et ses compagnies sont dans : {}.", dit(inst)),
+        };
+        return en_json(Deplacement { phrase, dossier: inst.to_path_buf(), vers: None });
+    };
+    match demander(inst, &vers).map_err(|e| e.reclasser(Classe::Refuse))? {
+        Verdict::DejaLa => en_json(Deplacement { phrase: socle::phrase!("Le logiciel est déjà dans : {}. Rien ne change.", dit(inst)), dossier: inst.to_path_buf(), vers: None }),
+        Verdict::Possible(v) => en_json(Deplacement {
+            phrase: socle::phrase!(
+                "Le logiciel va dans : {}. Il se ferme, s'y déplace avec ses compagnies, puis se rouvre là ; s'il n'est pas ouvert, ce sera à son prochain lancement.",
+                dit(&v)
+            ),
+            dossier: inst.to_path_buf(),
+            vers: Some(v),
+        }),
     }
 }
 
@@ -432,6 +492,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(complete)
         }
+        Route::LogicielDeplacer => deplacer(&inst, charge.lire()?),
         Route::AdministrateurDeposer => {
             let c: ChargeDeposer = charge.lire()?;
             let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.mode, charge.mot_de_passe().cloned())?;

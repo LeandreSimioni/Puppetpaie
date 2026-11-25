@@ -85,6 +85,9 @@ fn main() -> std::process::ExitCode {
         }
         // Le relais de la mise a jour (`compagnie::maj`) : lance depuis le `maj/` de l'installation, il bascule puis rouvre la fenetre.
         Some("maj-relais") => return compagnie::maj::relais(&args[1..]),
+        // Le relais du deplacement (`compagnie::deplacement`) : lance du dossier temporaire du poste, il deplace
+        // l'installation puis rouvre la fenetre la ou elle est.
+        Some(compagnie::deplacement::RELAIS) => return compagnie::deplacement::relais(&args[1..]),
         // `puppetpaie maj` : chercher et preparer une version tout de suite (le bac a sable de l'atelier s'en sert).
         Some("maj") => return moteur::commandes::maj::commande(&args[1..]),
         _ => {}
@@ -105,6 +108,11 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    // Un deplacement demande (ou celui d'une ancienne installation, une fois) part ICI, avant toute fenetre : le relais
+    // attend notre fin, deplace l'installation et rouvre la fenetre la ou elle est.
+    if compagnie::deplacement::au_lancement() {
+        return std::process::ExitCode::SUCCESS;
+    }
     // Une livraison de fictives prete se pose (`compagnie::maj::poser_les_fictives_pretes`), et le reste d'une
     // compagnie supprimee s'efface (`suppression::effacer_les_restes`).
     moteur::interface::preparer_l_installation();
