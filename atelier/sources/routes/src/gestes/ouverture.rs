@@ -33,6 +33,7 @@ use envois::courriel::Courriel;
 use envois::drive::Drive;
 use envois::etats;
 use socle::echec::R;
+use socle::grandeurs::Coefficient;
 use socle::paris::{ecrit, Moment};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
@@ -498,22 +499,53 @@ fn chemin_etape(racine: &Path) -> std::path::PathBuf {
     ETAPE_DE_L_OUVERTURE.dans(racine)
 }
 
-/// L'etape d'un passage en cours (`config/.ouverture-etape.json`) : ce qu'il fait, depuis quand.
+/// L'etape d'un passage en cours (`config/.ouverture-etape.json`) : ce qu'il fait, depuis quand, et la part faite
+/// quand elle se compte (`progression`, de 0 a 1, comme celle de la mise a jour : `maj::EtatDeLaRecherche`) ; une etape
+/// qui ne se compte pas n'en a pas.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Etape {
-    etape: String,
+pub struct Etape {
+    pub etape: String,
     #[serde(with = "socle::paris::ecrit::francaise")]
     depuis: Moment,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub progression: Option<Coefficient>,
 }
 
 /// Entre dans l'etape `etape` : l'etape en cours finit (`Ouverture::finir_l_etape`), celle-ci s'ecrit et se mesure
-/// jusqu'a la suivante, ou jusqu'a ce que le passage la finisse.
-fn dire_l_etape(ctx: &Contexte, r: &mut Ouverture, etape: &str) -> R<()> {
+/// jusqu'a la suivante, ou jusqu'a ce que le passage la finisse. Rend le moment ou elle commence.
+fn dire_l_etape(ctx: &Contexte, r: &mut Ouverture, etape: &str) -> R<Moment> {
     r.finir_l_etape();
-    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)?;
+    let depuis = socle::temps::secondes().a_la_minute();
+    redire_l_etape(&ctx.racine, etape, depuis, None)?;
     r.en_cours = Some((etape.to_string(), std::time::Instant::now()));
-    Ok(())
+    Ok(depuis)
+}
+
+/// L'etape en cours, commencee a `depuis`, dit ce qu'elle fait maintenant (`etape`) et la part faite : la sauvegarde du
+/// Drive qui avance.
+fn redire_l_etape(racine: &Path, etape: &str, depuis: Moment, progression: Option<Coefficient>) -> R<()> {
+    socle::ecriture::ecrire_json(&chemin_etape(racine), &Etape { etape: etape.to_string(), depuis, progression }, 1)
+}
+
+/// CE QUE DIT LA SAUVEGARDE DU DRIVE QUI AVANCE (`sauvegarde::sauvegarder`, son `avancer`) : les fichiers verifies sur
+/// ceux a sauvegarder, et ceux envoyes, des qu'il y en a ; la part faite suit les verifies (aucune sans fichier a
+/// sauvegarder). Un nombre se dit au pluriel des deux.
+fn sauvegarde_qui_avance(verifies: usize, envoyes: usize, total: usize) -> R<(String, Option<Coefficient>)> {
+    let s = |n: usize| if n >= 2 { "s" } else { "" };
+    let mut dit = format!(
+        "Sauvegarde du Drive : {} fichier{} vérifié{} sur {}",
+        socle::texte::compte(verifies),
+        s(verifies),
+        s(verifies),
+        socle::texte::compte(total)
+    );
+    if envoyes > 0 {
+        dit.push_str(&format!(", {} envoyé{}", socle::texte::compte(envoyes), s(envoyes)));
+    }
+    let en_u32 = |n: usize| u32::try_from(n).map_err(|_| socle::refus!("{} fichiers à sauvegarder : trop pour se compter.", n));
+    let progression = std::num::NonZeroU32::new(en_u32(total)?).map(|t| en_u32(verifies).map(|v| Coefficient::fraction(v, t).a_decimales(3))).transpose()?;
+    Ok((dit, progression))
 }
 
 fn finir_les_etapes(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
@@ -522,13 +554,12 @@ fn finir_les_etapes(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
 }
 
 /// L'etape qu'un passage en cours a ecrite, ou `None` quand aucun n'en a ecrit.
-pub fn etape_en_cours(racine: &Path) -> R<Option<String>> {
+pub fn etape_en_cours(racine: &Path) -> R<Option<Etape>> {
     let p = chemin_etape(racine);
     if !p.exists() {
         return Ok(None);
     }
-    let e: Etape = socle::forme::lire_fichier(&p, "L'étape du passage en cours ne se lit pas.")?;
-    Ok(Some(e.etape))
+    socle::forme::lire_fichier(&p, "L'étape du passage en cours ne se lit pas.").map(Some)
 }
 
 // ------------------------------------------------------------------ la trace
@@ -737,7 +768,7 @@ static PASSAGES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 /// processus : la route refuse (`EN_COURS_AILLEURS`), sans rien relever, envoyer ni sauvegarder, et le tour suivant de
 /// la veille la reprend.
 fn prendre_en_compte_la_version(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
-    let prise = passer_la_version(ctx, || dire_l_etape(ctx, r, PRISE_EN_COMPTE));
+    let prise = passer_la_version(ctx, || dire_l_etape(ctx, r, PRISE_EN_COMPTE).map(|_| ()));
     r.finir_l_etape();
     match prise {
         Ok(PriseEnCompte::EnCoursAilleurs) => Err(socle::echec::refus(EN_COURS_AILLEURS)),
@@ -1263,12 +1294,20 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
             }
         }
     }
-    dire_l_etape(ctx, r, "Google Drive : sauvegarde…")?;
+    let depuis = dire_l_etape(ctx, r, "Google Drive : sauvegarde…")?;
     let drive: Option<&mut dyn Drive> = match clients.drive.as_mut() {
         Some(d) => Some(&mut **d),
         None => None,
     };
-    match crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive) {
+    // LA SAUVEGARDE QUI AVANCE, dans l'etape que le bandeau relit chaque seconde : la premiere envoie tout.
+    let mut avancer = |verifies: usize, envoyes: usize, total: usize| {
+        let (dit, progression) = sauvegarde_qui_avance(verifies, envoyes, total)?;
+        redire_l_etape(&ctx.racine, &dit, depuis, progression)
+    };
+    let sauvegarde = compagnie::sauvegarde::PosteSurLeDrive::de_ce_poste(&ctx.racine)
+        .map_err(envois::drive::ErreurGoogle::from)
+        .and_then(|p| crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, &p, drive, &mut avancer));
+    match sauvegarde {
         // CE QUI EST REPORTE N'EST PAS UN INCIDENT : un dossier que Google a refuse une fois (un 500,
         // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
         // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.

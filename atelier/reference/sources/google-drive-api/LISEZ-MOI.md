@@ -55,9 +55,13 @@ vont au dépôt privé (`reference-privee/sources/google-drive-api/`) ; leurs co
   celui de la compagnie : la sauvegarde suivante renvoie tout dans un dossier neuf).
 - **Les propriétés privées** (« To add properties restricted to your app, use the appProperties field of the files
   resource » ; « Maximum of 124 bytes per property string (including both key and value) ») : `envois::drive::
-  MarqueDuDossier`, la marque du dossier d'une compagnie (son identité, sa dernière sauvegarde, son volume), posée et lue
-  par `compagnie/src/sauvegarde.rs` et `compagnie/src/sur_le_drive.rs`. La plus longue (`puppetpaie_compagnie` et
-  `siret:` suivi de 14 chiffres, ou `cie:` suivi de 32 caractères) fait 56 octets.
+  MarqueDuDossier`, la marque du dossier d'une compagnie (son identité, sa dernière sauvegarde, son volume, et la main :
+  le poste qui la tient et depuis quand), posée et lue par `compagnie/src/sauvegarde.rs` et
+  `compagnie/src/sur_le_drive.rs`. La plus longue (`puppetpaie_compagnie` et `siret:` suivi de 14 chiffres, ou `cie:`
+  suivi de 32 caractères) fait 56 octets ; `puppetpaie_poste` et `poste:` suivi de 32 caractères, 54. « Note: The
+  Google Drive UI doesn't include a built-in way for you to edit custom properties » : la main ne se change que par le
+  logiciel, `Drive::marquer` ne change que les clés qu'il dit (« Add or update custom file properties », `files.update`),
+  et `Drive::en_place` la relit (`fields=trashed,appProperties`).
 
 **Inférence**, non écrite par Google : trois nouvelles tentatives (sept secondes d'attente au plus, hasard compris
 jusqu'à dix) suffisent pour une panne passagère ; au-delà, c'est le passage suivant de la veille (vingt minutes plus tard)

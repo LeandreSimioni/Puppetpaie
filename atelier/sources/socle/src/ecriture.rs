@@ -644,6 +644,19 @@ pub fn nombre_ecrit(n: &serde_json::Number) -> String {
 /// Ecrit `donnees` dans `chemin` : cree le dossier, ecrit en
 /// LF, le JSON suivi d'un saut de ligne.
 pub fn ecrire_json<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize) -> R<()> {
+    ecrire_json_ainsi(chemin, donnees, indent, false)
+}
+
+/// Comme `ecrire_json`, mais SUR LE DISQUE avant de rendre la main : le fichier provisoire est ecrit sur le disque
+/// (`sync_all`) avant de prendre sa place ; sa place, il la prend sur le disque : sous Windows par un renommage ecrit au
+/// travers (`systeme::renommer_sur_le_disque`), ailleurs en vidant aussi le dossier qui le porte, pour que son nouveau
+/// nom tienne a une coupure de courant. Pour un journal qui doit etre sur le disque avant
+/// une etape qui detruit (`compagnie::deplacement`).
+pub fn ecrire_json_sur_le_disque<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize) -> R<()> {
+    ecrire_json_ainsi(chemin, donnees, indent, true)
+}
+
+fn ecrire_json_ainsi<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize, sur_le_disque: bool) -> R<()> {
     if let Some(dossier) = chemin.parent() {
         std::fs::create_dir_all(dossier).map_err(|e| crate::echec::du_disque(&dossier, &e))?;
     }
@@ -651,6 +664,26 @@ pub fn ecrire_json<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: us
     let mut texte = String::new();
     ecrire(&donnees, indent, 0, &mut texte);
     texte.push('\n');
+    if sur_le_disque {
+        let provisoire = provisoire(chemin);
+        let ecrit = std::fs::File::create(&provisoire).and_then(|mut f| {
+            std::io::Write::write_all(&mut f, texte.as_bytes())?;
+            f.sync_all()
+        });
+        ecrit.map_err(|e| crate::echec::du_disque(&provisoire, &e))?;
+        #[cfg(windows)]
+        crate::systeme::renommer_sur_le_disque(&provisoire, chemin).map_err(|e| crate::echec::du_disque(&chemin, &e))?;
+        #[cfg(not(windows))]
+        std::fs::rename(&provisoire, chemin).map_err(|e| crate::echec::du_disque(&chemin, &e))?;
+        #[cfg(unix)]
+        {
+            if let Some(dossier) = chemin.parent() {
+                std::fs::File::open(dossier).and_then(|d| d.sync_all()).map_err(|e| crate::echec::du_disque(&dossier, &e))?;
+            }
+        }
+        crate::forme::change_pendant_le_geste(chemin);
+        return Ok(());
+    }
     // ATOMIQUE : le fichier s'ecrit a cote puis prend sa place d'un coup. `std::fs::write` tronque d'abord,
     // puis ecrit : un lecteur arrive entre les deux (l'etat du mois se refait dans le fil de la fenetre, `etat_garde::
     // FileDesEtats`, pendant qu'une route relit `journal/dsn-ecrites.json`) lirait un fichier vide, « EOF while

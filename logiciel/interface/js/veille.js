@@ -23,8 +23,11 @@ async function rafraichirApresVeille(v) {
   const avant = VEILLE?.dernier?.quand;
   const apres = v?.dernier?.quand;
   const envoisAuBout = envoisArrives(v);
-  if (!envoisAuBout && (!apres || apres === avant || v.en_cours)) return;
-  if (envoisAuBout) oublierLeMois();
+  const passageNeuf = !!apres && apres !== avant && !v.en_cours;
+  if (!envoisAuBout && !passageNeuf) return;
+  // Une fiche de salarié reçue (`dernier.fiches`) change ce que les cases d'une carte offrent : la lecture du mois
+  // s'oublie, comme après un envoi arrivé au bout.
+  if (envoisAuBout || (passageNeuf && v.dernier.fiches)) oublierLeMois();
   const mois = document.getElementById("mois").value;
   try {
     await dessinerEtatsDesEngagements(mois);
@@ -36,18 +39,25 @@ async function rafraichirApresVeille(v) {
 /* LES ENVOIS PARTIS EN FOND (`dit.envois`, routes/src/envois_en_fond.rs) : un envoi
    à la signature, des documents, un dépôt réel partent sur un fil du moteur une fois
    vérifiés ; la page reçoit « en cours d'envoi » (`en_fond`), et le bandeau dit la
-   suite. Les numéros déjà vus au bout, pour ne repeindre et ne suivre qu'une fois. */
+   suite. Les numéros déjà vus au bout, pour ne repeindre et ne suivre qu'une fois ; ceux
+   vus en cours, car un envoi au bout que le bandeau ne dit pas (une demande de fiche
+   partie) n'est plus dans la liste : sa place se repeint quand même. */
 const ENVOIS_VUS_AU_BOUT = new Set();
+let ENVOIS_VUS_EN_COURS = new Set();
 
 /** Des envois sont-ils arrivés au bout depuis le dernier regard ? Un dépôt réel parti
  *  se suit ensuite comme après l'avoir attendu (`suivre`, la charge de `suivre-depot`). */
 function envoisArrives(v) {
-  const neufs = (v?.dit?.envois || []).filter((e) => e.etat !== "en_cours" && !ENVOIS_VUS_AU_BOUT.has(e.numero));
+  const envois = v?.dit?.envois || [];
+  const neufs = envois.filter((e) => e.etat !== "en_cours" && !ENVOIS_VUS_AU_BOUT.has(e.numero));
   neufs.forEach((e) => {
     ENVOIS_VUS_AU_BOUT.add(e.numero);
     if (e.suivre) suivreDepot(e.suivre.quoi, e.suivre.flux, e.suivre.mois);
   });
-  return neufs.length > 0;
+  const enCours = new Set(envois.filter((e) => e.etat === "en_cours").map((e) => e.numero));
+  const sortis = [...ENVOIS_VUS_EN_COURS].some((n) => !enCours.has(n));
+  ENVOIS_VUS_EN_COURS = enCours;
+  return neufs.length > 0 || sortis;
 }
 
 /* LE BANDEAU. On y cherche trois choses, dans cet ordre : est-ce que tout
@@ -103,9 +113,14 @@ function dessinerVeille(v) {
     ? ` · <button class="lien" data-fictive-explique="coulisses">${echapper(k.fictive)}</button>` : ""}`];
   // LA SAUVEGARDE QUI N'ARRIVE PAS AU BOUT, à sa place : un dossier que
   // Google refuse une fois repart au passage suivant, sans bruit ; ce qui dure, le moteur le dit
-  // en une phrase (`sauvegarde::souci`), et elle se lit ici, à côté de l'état, pas parmi les retours.
-  if (d && k.sauvegarde_souci && !d.hors_ligne) {
-    morceaux.push(`<span class="veille-sauvegarde"${d.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(k.sauvegarde_souci)}</span>`);
+  // en une phrase (`sauvegarde::souci`), et elle se lit ici, à côté de l'état, pas parmi les retours. Le moteur dit
+  // s'ils se montrent (hors connexion, ni la phrase ni le geste).
+  if (k.sauvegarde_souci) {
+    morceaux.push(`<span class="veille-sauvegarde"${d?.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(k.sauvegarde_souci)}</span>`);
+  }
+  // LA MAIN SUR LE DRIVE TROUVÉE AILLEURS : le geste qui la prend, tel que le moteur le rend (`prendre_la_main`).
+  if (k.prendre_la_main) {
+    morceaux.push(`<button class="lien" data-prendre-la-main>${echapper(k.prendre_la_main.libelle)}</button>`);
   }
 
   // 2. LES NOUVELLES : ce qui est arrivé depuis le dernier regard.
@@ -155,6 +170,9 @@ function dessinerVeille(v) {
   texte.querySelectorAll("[data-aller]").forEach((b) => {
     b.onclick = () => allerAuxMotsDePasse();
   });
+  texte.querySelectorAll("[data-prendre-la-main]").forEach((b) => {
+    b.onclick = (ev) => { ev.preventDefault(); faireLeGeste(k.prendre_la_main, {}, () => {}, b); };   // la sauvegarde qui suit (`ensuite`) relit le bandeau
+  });
   texte.querySelectorAll("[data-refaire]").forEach((b) => {
     b.onclick = (ev) => { ev.preventDefault(); ouvrirGeste(envois[+b.dataset.refaire].refaire); };
   });
@@ -192,11 +210,26 @@ function suivreLesEtapes() {
     if (e.en_cours || e.sauvegarde_en_cours || e.envoi_en_cours || RELEVE_DEMANDE) {
       const el = document.querySelector("#veille-texte .veille-etape");
       if (el && e.etape) el.textContent = e.etape;
+      if (el) poserLaBarre(el, e.progression);
       suivreLesEtapes();
     } else {
       suivreVeille();
     }
   }, 1000);
+}
+
+/** LA PART FAITE DE L'ÉTAPE (`progression`, de 0 à 1, dite par le moteur : la sauvegarde du Drive), en barre juste
+ *  après l'étape : la barre de la mise à jour (`.maj-barre`, mise-a-jour.css). Aucune part dite, pas de barre. */
+function poserLaBarre(etape, progression) {
+  let barre = etape.nextElementSibling?.classList.contains("veille-barre") ? etape.nextElementSibling : null;
+  if (progression == null) { if (barre) barre.remove(); return; }
+  if (!barre) {
+    barre = document.createElement("span");
+    barre.className = "maj-barre veille-barre";
+    barre.appendChild(document.createElement("span"));
+    etape.after(barre);
+  }
+  barre.firstElementChild.style.width = (progression * 100).toFixed(1) + "%";
 }
 
 async function suivreVeille() {

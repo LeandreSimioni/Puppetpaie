@@ -391,6 +391,7 @@ un libellé, chacun sa forme.
 | jours par semaine (un rythme : « 1 jour par semaine calendaire » d'ancienneté, un préavis d'une convention, `clauses::TranchePreavis.jours_par_semaine`) | `JoursParSemaine` (semaines × jours par semaine = `Jours`) | `socle/src/grandeurs.rs` |
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
+| jour d'une ligne de paie qui dit ce qu'il porte (sa quantité, dans l'unité de la ligne, et son lieu : 4 des 10 heures, à Lyon ; la quantité de la ligne se répartit sur ses jours, le reste sur les premiers, `QuantiteDeLigne::repartie`, quand aucun ne dit la sienne ou qu'elle diffère de leur somme, sinon elle est leur somme, `LignePaie::jours_tenus` ; une date nue d'une ligne dont aucun jour ne dit sa quantité porte sa part, `LignePaie::quantites_des_jours`) | `JourDeLigne` (la date détaillée d'une `DateDeLigne`) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
 | effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif × coefficient = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; une moyenne, `reparti_sur` ; écrit en 13.003 et dans le 118 que le banc rend par `norme::quantite` ; R. 130-1 le compte par `droit::effectif`, des DSN déposées pour le banc, `envois::organismes_simules`, des paies reprises pour « Pour démarrer », `engagement::effectif_repris`, chaque jour d'une personne une part, un `Coefficient`) | `socle/src/grandeurs.rs` |
 | mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets, des heures ou des unités — la pige, la vacation, la tâche —, chacun sa grandeur, comme le dit la mesure de la nature ; lue d'une DSN dans la grandeur de son unité, `MesureDActivite::lue` ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
@@ -399,7 +400,7 @@ un libellé, chacun sa forme.
 | quotité et son plafond (40.012 ou 40.013, et le plafond de sa nature dans la même unité : CCH-12, CCH-13 du bloc 40) | `QuotitePlafonnee` (des jours et des jours, ou des heures et des heures : `depasse` ne compare jamais deux unités ; elle ne se fait que du plafond que la nature donne dans son unité, `PlafondDeLaQuotite<G>`, une clé que seule `Nature::selon_l_unite` rend, par `PlafondDeLaQuotite::plafonne`) | `droit/src/natures.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
-| coefficient | `Coefficient` (la part de mois de salaire qu'un barème donne par année d'ancienneté aussi, `droit::clauses`, `droit::permanents`) | `socle/src/grandeurs.rs` |
+| coefficient | `Coefficient` (la part de mois de salaire qu'un barème donne par année d'ancienneté aussi, `droit::clauses`, `droit::permanents` ; la part faite que montre une barre, de 0 à 1 : la mise à jour reçue, `maj::EtatDeLaRecherche`, la sauvegarde du Drive vérifiée, `ouverture::Etape`) | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` | `socle/src/grandeurs.rs` |
 | montant en devise (une somme dans la monnaie de son lieu, sa monnaie dite à côté, `droit::missions::CodeMonnaie` : l'indemnité journalière de mission d'un lieu à l'étranger, `droit::missions::Indemnite`) | `MontantEnDevise` (montant en devise × taux de change = montant) | `socle/src/grandeurs.rs` |
 | taux de change (des euros pour une unité d'une monnaie : le taux de chancellerie d'une monnaie pour un lieu, `change.csv`) | `TauxDeChange` (`TauxDeChange::UN` : l'euro) | `socle/src/grandeurs.rs` |
@@ -468,7 +469,7 @@ un libellé, chacun sa forme.
 - Une grandeur qu'un texte fixe s'écrit par son écriture constante, au socle, jamais par `du_decimal` : `Montant::euros`,
   `Taux::points`, `Taux::centiemes_de_point`, `Taux::milliemes_de_point`, `Coefficient::entier_fixe`,
   `Coefficient::dixiemes`, `Coefficient::centiemes`, `Coefficient::dix_milliemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
-  `UN`, `Heures::UN_MILLIARDIEME`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
+  `UN`, `Heures::UNE`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
   (`socle::grandeurs::lu::en_texte`).
 - Chaque grandeur porte un décimal exact, son échelle gardée ; il n'en sort qu'au socle, par ses écritures et ses
   lectures (`grandeurs::decimal`, interne au socle) : hors du socle, il ne se nomme pas.
@@ -590,14 +591,33 @@ un libellé, chacun sa forme.
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
 | identité d'une compagnie sur le Drive | `compagnie::sauvegarde::IdentiteSurLeDrive` | `compagnie/src/sauvegarde.rs` |
 | marque du dossier d'une compagnie dans le Drive | `envois::drive::MarqueDuDossier` | `envois/src/drive.rs` |
+| poste nommé sur le Drive (`poste:` et l'empreinte de la clé du poste, jamais un secret ni un nom) | `compagnie::sauvegarde::PosteSurLeDrive` | `compagnie/src/sauvegarde.rs` |
+| main sur le Drive d'une compagnie : le seul poste qui sauvegarde dans son dossier, et depuis quand | `compagnie::sauvegarde::LaMain` | `compagnie/src/sauvegarde.rs` |
+| ce poste n'a pas la main (un autre poste la tient depuis une date, ou elle ne se lit pas), tel que le dernier passage l'a noté dans l'index ; tant qu'il le dit, ce poste ne sauvegarde ni n'archive sur le Drive, et la compagnie s'y sert comme avant | `compagnie::sauvegarde::SansLaMain` | `compagnie/src/sauvegarde.rs` |
+| geste « Prendre la main » que le bandeau propose à côté de ce qui persiste de la sauvegarde | `routes::veille::PrendreLaMain` | `routes/src/veille.rs` |
+| ce qui tient une compagnie ouverte (la fenêtre : sa veille, sa file des états, ses envois en fond, son journal) et la lâche quand une route remplace son dossier sous elle (`drive-prendre-la-main`), passé à la route par ses options ; en ligne de commande, rien ne la tient | `routes::enveloppe::LacherLaCompagnie` | `routes/src/enveloppe.rs` |
+| récupération du Drive par « Prendre la main » quand un autre poste tient la main (ou qu'elle ne se lit pas) : le dossier de la compagnie revient dans un dossier caché à côté (`.recuperee-…`, par `restauration::restaurer`), ce qui est propre au poste y passe (le coffre, le jeton Google, les journaux), puis les deux dossiers s'échangent et l'ancienne compagnie s'efface, sans copie de côté (ce qu'elle a écrit sans la main est perdu, et la boîte le dit avant) ; ce qu'elle a fait (pas au bout, pas échangée, échangée) ; un échange coupé se répare au lancement | `compagnie::recuperation::Recuperation` | `compagnie/src/recuperation.rs` |
+| main sur le dossier du Drive qu'une reprise allée au bout garde (rien à prendre, déjà la sienne, prise, pas prise et pourquoi), à l'accueil (`drive-reprendre`, que `moteur restaurer` sert sous un nom de commande) | `compagnie::restauration::MainDeLaReprise` | `compagnie/src/restauration.rs` |
 | sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
+| dossier du Drive demandé par son identifiant : en place avec sa marque, ou retiré (corbeille, disparu) | `envois::drive::DossierEnPlace` | `envois/src/drive.rs` |
 | dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
 | fichiers d'un dossier du Drive, par nom, homonymes compris | `envois::drive::FichiersDuDossier` | `envois/src/drive.rs` |
 | corbeille du Drive, à part du client | `envois::drive::Corbeille` | `envois/src/drive.rs` |
 | reprise du Drive pas finie sur ce poste | `compagnie::restauration::RepriseEnCours` | `compagnie/src/restauration.rs` |
 | geste d'un écran de la reprise du Drive (la charge de sa route) | `GesteDeLaReprise` | `routes/src/accueil/drive.rs` |
+| geste de l'écran du Drive d'une compagnie (la charge de sa route : supprimer un dossier, prendre la main) | `GesteDuDrive` | `routes/src/drive.rs` |
 | provenance du coffre d'une compagnie restaurée (descendu du Drive, ou déjà là : seul le premier se met de côté) | `compagnie::restauration::OrigineDuCoffre` | `compagnie/src/restauration.rs` |
-| ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
+| ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie, la relire entière quand elle revient changée) | `ApresLeGeste` | `routes/src/ecran.rs` |
+| déplacement du logiciel demandé, qui attend de partir (le dossier où il va ; posé en ligne de commande, il part au lancement suivant, et s'annule) | `compagnie::deplacement::Demande` | `compagnie/src/deplacement.rs` |
+| ce que la vérification d'un déplacement conclut (déjà là, ou possible vers ce dossier) | `compagnie::deplacement::Verdict` | `compagnie/src/deplacement.rs` |
+| déplacement du logiciel en cours (d'où, où, l'étape écrite avant d'être faite ; tant qu'il est là, rien ne s'ouvre dans ces deux dossiers ; sa reprise regarde les dossiers, pas seulement l'étape) | `compagnie::deplacement::DeplacementEnCours` | `compagnie/src/deplacement.rs` |
+| étape d'un déplacement en cours (attente, renommage) | `compagnie::deplacement::Etape` | `compagnie/src/deplacement.rs` |
+| charge du déplacement du logiciel (le dossier où il va, et, sous OneDrive, qu'on le sait) | `ChargeDeplacer` | `routes/src/accueil/deplacement.rs` |
+| ce que rend « rendre le logiciel portable » (sa phrase : ce qu'il reste à faire, copier soi-même le dossier ; le dossier) | `LogicielPortable` | `routes/src/accueil/deplacement.rs` |
+| ce qu'un déplacement en cours est pour une installation (rien, lu et la nommant, illisible et elle marquée) | `compagnie::deplacement::Ici` | `compagnie/src/deplacement.rs` |
+| issue d'un déplacement (déplacé, resté entier, coupé) | `compagnie::deplacement::Issue` | `compagnie/src/deplacement.rs` |
+| dernier déplacement du logiciel, ou la fin de celui qui vient de se faire (sa date, d'où, où, son issue, sa phrase) | `compagnie::deplacement::Dernier` | `compagnie/src/deplacement.rs` |
+| geste de l'écran « où est le logiciel » (la charge de sa route : le dossier à saisir, ou celui des Documents) | `VersLeDossier` | `routes/src/accueil/deplacement.rs` |
 | sorte d'une erreur de Google pour un fichier demandé (du fichier, passagère, arrêt — autorisation ou non) : le seul classement de la restauration | `envois::drive::SorteDErreur` | `envois/src/drive.rs` |
 | pourquoi une restauration s'est arrêtée en route (hors ligne, autorisation perdue, refus de Google, verrou perdu) | `compagnie::restauration::ArretDeLaRestauration` | `compagnie/src/restauration.rs` |
 | verrou d'une restauration du Drive sur un dossier (une à la fois, d'un processus à l'autre) | `compagnie::restauration::VerrouDeRestauration` | `compagnie/src/restauration.rs` |
@@ -648,6 +668,9 @@ un libellé, chacun sa forme.
 | les envois partis en fond d'une compagnie, que la fenêtre garde | `EnvoisEnFond` | `routes/src/envois_en_fond.rs` |
 | numéro d'un envoi parti en fond | `NumeroDEnvoi` | `routes/src/envois_en_fond.rs` |
 | où en est le mois, le cadre sous lui : son dernier fait et sa prochaine étape | `OuEnEstLeMois` | `routes/src/etapes.rs` |
+| étape d'un passage de la veille, telle que l'ouverture l'écrit en y entrant (`config/.ouverture-etape.json` : ce qu'il fait, depuis quand, et la part faite quand elle se compte, la sauvegarde du Drive) | `routes::gestes::ouverture::Etape` | `routes/src/gestes/ouverture.rs` |
+| où en est le passage de la veille, que la page relit chaque seconde (`veille-etape` : la relève ou la sauvegarde qui tournent ou sont dues, l'étape et sa part faite, un envoi en cours, la fermeture qui l'attend) | `EtapeDeLaVeille` | `moteur/src/interface/veille.rs` |
+| sauvegarde qui suit un geste (le Drive lié) : sa route et sa charge, que la réponse dit en `ensuite` ; l'appelant en ligne de commande l'appelle, la fenêtre la fait par sa veille ; pas un geste qu'on clique, qu'une réponse rend en `suite` (`etapes::Action`) | `SauvegardeQuiSuit` | `routes/src/veille.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -994,7 +1017,7 @@ un libellé, chacun sa forme.
   `sur_le_drive` lit en ses types (ce qui ne s'en lit pas se dit, sans fermer la vue).
 - **dossier vu** : un dossier sous la racine du Drive, tel que la vue le montre (`sur_le_drive::voir`) : le dossier d'une
   compagnie, l'ancienne sauvegarde commune (`sauvegarde`), ou un dossier d'une ancienne version ; ce que la vue du Drive,
-  la reprise à l'accueil, la suppression et `moteur restaurer` lisent.
+  la reprise à l'accueil et la suppression lisent.
 - **entrée mise de côté au tri d'un import** : une entrée d'archive dont le nom ne fait pas un chemin sous l'archive
   (`..`, `:`, un chemin absolu, rien qui reste), un fichier du disque dont le nom n'est pas un `NomDeFichier`, ou une
   entrée, d'archive ou du disque, qui ne se lit pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le
@@ -1235,7 +1258,12 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
 | fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, préavis non effectué, paie importée, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
-| carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
+| carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, ses lignes, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
+| ligne de paie d'une carte telle que la route la rend (sa place, son montant, ses jours un par un) | `routes::mois::LigneRendue` | `routes/src/mois.rs` |
+| jours du mois d'une ligne, un par un, sous « par jour » (le résumé replié, « 4 · 3 · 3 · vide », une rangée par jour, le total) | `routes::mois::ParJour` | `routes/src/mois.rs` |
+| rangée d'un jour d'une ligne (sa date, sa quantité et son lieu en cases, l'unité, le taux, le montant, la croix qui retire le jour) | `routes::mois::JourRendu` | `routes/src/mois.rs` |
+| case d'un jour d'une ligne (sa quantité, son lieu : libellé, forme, valeur, pré-rempli, et rien d'autre ; elle porte sa valeur, quand `engagement::carte::CaseOuverte` ne dit que quelle case de la carte s'ouvre et sa place, la valeur restant sur la carte ; elle n'a ni clé, ni bloc, ni largeur, ni place, ni aide, que `routes::fiches::CaseDeLaFiche` exige d'une case de fiche : sa clé est sa colonne, et sa place, sa rangée sous la ligne) | `routes::mois::CaseDuJour` | `routes/src/mois.rs` |
+| total des jours d'une ligne (sa quantité, son unité, son montant) | `routes::mois::TotalRendu` | `routes/src/mois.rs` |
 | carte proposée à un autre salarié (la copie d'un engagement du mois sans son salarié ni ce qui est au salarié ou à un acte, `Brouillon::proposee_a_un_autre_salarie` : les changements qui la font d'une carte neuve ; la route `copier-engagement` la rend avec le geste qui l'écrit, `enregistrer-saisie` sur une carte neuve. Ni la copie d'une paie versée, `Copie` d'une pièce importée, ni une copie de compagnie, `SorteDeCopie`) | `routes::mois::CarteProposee` | `routes/src/mois.rs` |
 | fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, si « Avancé » s'ouvre, les cases dont la route a récrit la saisie, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
 | case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix et s'ils se cochent en boutons, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir, et la case d'un écran rendu, sous sa propre clé : un contrat de la DSN) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
@@ -1330,7 +1358,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | mois payé d'un contrat, tel que sa paie validée le porte (dernier jour, dates travaillées, cachets, jours, heures, brut), que le certificat Congés Spectacles somme | `documents::conges_spectacles::MoisPaye` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
-| forme d'une case (ce qu'on y saisit : un texte, un texte long sur plusieurs lignes (`Forme::TexteLong`, une zone de texte), un nombre, un mois, un jour, des jours, un oui-non, une liste, la quantité d'une ligne dans l'unité de sa rubrique, des lignes de paie, un objet, un mot de passe qu'un humain tape, que la case masque et que la page ne garde pas, plusieurs valeurs d'une liste fermée, qui se cochent, plusieurs valeurs que la route rend à côté, qui se cochent de même (`Forme::PlusieursChoixRendus` : les salariés d'un départ des documents), une valeur d'une liste fermée, que la fiche porte ou que la route rend à côté, sous la clé de la case : `choix` de la route etat, `rubriques[].choix` ; écrite par son mot ; la page dessine chaque forme d'une seule façon, `js/avance.js`. Une case de la carte la tient de son champ, à un seul endroit, `Forme::de_la_case`, que prennent les cases que les fiches nomment ; une clé d'une ligne de paie, `Forme::de_la_cle`. La portent le champ d'une fiche, `routes::catalogue::Champ`, la case d'une nature décrite, générique sur sa forme parce qu'`engagement` est au-dessous des routes, et la clé d'une ligne que la route etat rend) | `routes::catalogue::Forme` (ses porteurs : `engagement::carte::CaseDecrite`, `routes::ouverture::CleDeLaLigne`) | `routes/src/catalogue.rs`, `engagement/src/carte.rs`, `routes/src/ouverture.rs` |
+| forme d'une case (ce qu'on y saisit : un texte, un texte long sur plusieurs lignes (`Forme::TexteLong`, une zone de texte), un nombre, un mois, un jour, des jours, un oui-non, une liste, la quantité d'une ligne dans l'unité de sa rubrique, des lignes de paie, un objet, un mot de passe qu'un humain tape, que la case masque et que la page ne garde pas, plusieurs valeurs d'une liste fermée, qui se cochent, plusieurs valeurs que la route rend à côté, qui se cochent de même (`Forme::PlusieursChoixRendus` : les salariés d'un départ des documents), une valeur d'une liste fermée, que la fiche porte ou que la route rend à côté, sous la clé de la case : `choix` de la route etat, `nouvelle_carte.choix` de la route saisie, `rubriques[].choix` ; écrite par son mot ; la page dessine chaque forme d'une seule façon, `js/avance.js`. Une case de la carte la tient de son champ, à un seul endroit, `Forme::de_la_case`, que prennent les cases que les fiches nomment ; une clé d'une ligne de paie, `Forme::de_la_cle`. La portent le champ d'une fiche, `routes::catalogue::Champ`, la case d'une nature décrite, générique sur sa forme parce qu'`engagement` est au-dessous des routes, et la clé d'une ligne que la route etat rend) | `routes::catalogue::Forme` (ses porteurs : `engagement::carte::CaseDecrite`, `routes::ouverture::CleDeLaLigne`) | `routes/src/catalogue.rs`, `engagement/src/carte.rs`, `routes/src/ouverture.rs` |
 | liste fermée (un type dont les valeurs se comptent : chacune, son code, celui que sa lecture attend, et son libellé, dits par le type lui-même ; une `enum` que serde écrit en un mot tire son code de son écriture, `socle::liste::code_ecrit` ; `socle::noms_fermes!` la déclare avec ses libellés. Le champ d'une charge qu'elle lit a la forme `choix`, une liste de ses valeurs la forme `plusieurs_choix`, dont les valeurs ne se tirent que de son type, `routes::catalogue::ListeDeChoix::de` ; une valeur hors de la liste se refuse par une seule phrase, `socle::liste::pas_de_la_liste`, celle de la porte pour une `enum`. Tenu par le compilateur : une liste fermée à qui l'on donnerait aussi une forme à la main ne se déclare pas) | `socle::liste::ListeFermee` (sa forme au catalogue : `routes::catalogue::ListeDeChoix`) | `socle/src/liste.rs`, `routes/src/catalogue.rs` |
 | charge d'une route déclarée (une seule déclaration, `charge!`, donne la structure que la route lit, `Deserialize` et `deny_unknown_fields` compris, et les champs que sa fiche dit, dans l'ordre de la structure : le nom de chacun est celui du champ, sa forme celle que son type donne, il est obligatoire si son type n'est pas `Option` ; une liste fermée est un `choix` par son type, un autre type a sa forme dite une fois, dans la table du module ou à côté de lui, et une liste fermée à qui l'on donnerait aussi une forme à la main ne compile pas ; ne s'écrivent à la main que le libellé, le sens et « avancé », sa légende, et un texte peut s'y préciser en choix rendu ou en fichier. Le mot de passe tapé, que l'enveloppe lit et retire avant la structure, s'y dit en tête (`motdepasse = légende;`) : la charge le porte en dernier, sa forme tirée du type que l'enveloppe lit. La fiche la nomme, `charge: &Type::CHARGE` ; une charge que la macro ne déclare pas (une énumération, une structure d'une autre crate, une clé lue hors de la structure) s'écrit champ par champ, chacun tiré de son type, son nom seul à la main. Un geste rendu nomme ses cases par `cle!`, que le compilateur tient) | `routes::declaration::ValeurDeLaCharge` (sa légende : `routes::declaration::Legende` ; un champ : `routes::declaration::ChampDuType` ; la charge : `routes::declaration::ChargeDuType`) | `routes/src/declaration.rs`, `routes/src/catalogue.rs` |
 | ligne de rémunération (ce qu'une ligne de paie paie, sa rubrique et son montant. Celle que le calcul rend dit toujours ce qu'elle paie, `LigneBrut` (son paiement obligatoire) ; celle d'un bulletin importé que l'import a rattachée à sa rubrique garde son montant lu, et ce qu'elle paie quand il l'imprime, `LigneRattachee` (la même ligne, son paiement facultatif : un forfait imprimé à son seul montant) ; un seul rattachement, `importe::LigneImprimee::rattachee` : une rubrique et un montant ; elle n'est pas une ligne de paie (`LignePaie`). Ses formes : la paie écrite, la ligne du calcul elle-même (son paiement écrit sans zéro, `EcritSansZero`) ; la zone `importe`, `LigneImprimee`, qu'une ligne non rattachée garde. Un état la lit d'une paie du mois sans recopie, `etats::RemunerationDuMois` : la ligne calculée, la ligne rattachée, ou ce que le bulletin importé imprime) | `engagement::calcul::LigneBrut`, `engagement::calcul::LigneRattachee` | `engagement/src/calcul.rs` |
@@ -2151,7 +2179,7 @@ case (`routes::catalogue::Forme`), par un seul dessinateur (`js/avance.js`) : un
 jour, le calendrier ; des jours, le calendrier où l'on coche (`js/calendrier.js`, le seul) ; une quantité, sa case dans
 l'unité de sa rubrique ; un nombre, un texte, sa case ; un texte long (`Forme::TexteLong` : un alinéa d'un modèle de
 contrat, le motif d'un dépôt réel sans test), une zone de texte ; un oui-non, une coche ; une liste fermée, un choix (celle que la
-fiche porte, ou celle que la route rend sous la clé de la case : `choix` de la route etat, `rubriques[].choix`) ; plusieurs valeurs d'une liste fermée, une coche par
+fiche porte, ou celle que la route rend sous la clé de la case : `choix` de la route etat, `nouvelle_carte.choix` de la route saisie, `rubriques[].choix`) ; plusieurs valeurs d'une liste fermée, une coche par
 choix ; des lignes de paie, des rangées aux colonnes fixes, une colonne par clé de leur rubrique ; une valeur composée, telle quelle ;
 un geste, un bouton. Il dessine les champs d'une fiche de route (« Avancé », la boîte d'un geste) et la carte d'un
 engagement (`js/carte.js`) : les cases de sa nature (`natures[].carte` de la route etat), la valeur que la carte écrit
@@ -2168,9 +2196,10 @@ composée par `routes::mois::bornes_dites`). Avant tout aperçu, la
 page montre les cases de toute carte de sa nature (`ouverte` : « toujours », `natures[].carte`). Une case qu'aucun fait
 n'ouvre n'est pas rendue ; ce que rien ne lit pour une nature n'est pas une de ses cases. Un fait qui ne se lit pas
 pour un engagement fait la `faute` de sa carte rendue, et d'elle seule : l'aperçu des autres reste. Ce qu'offrent les
-cases qui se choisissent vient sous la clé de leur case : `choix` de la route etat (les fiches, les métiers sous leur
-famille, la transaction, le type d'un préavis), de la nature (`natures[].choix` : ses motifs de recours), d'une carte
-neuve (`nouvelle_carte.choix` de la route saisie : la nature, qui est alors une case de `nouvelle_carte.cases`) et de
+cases qui se choisissent vient sous la clé de leur case : `choix` de la route etat (la transaction, le type d'un
+préavis), de la nature (`natures[].choix` : ses motifs de recours), de l'écran du mois (`nouvelle_carte.choix` de la
+route saisie, relu quand on ouvre la case : les fiches, les métiers sous leur famille, les établissements ; la nature
+quand elle se choisit, qui est alors une case de `nouvelle_carte.cases`) et de
 la paie (`carte.choix` : le motif de la fin, le choix vide en tête ; les modèles de contrat). **Le seul pré-remplissage**
 est `carte.prerempli` (`routes::mois::Prerempli`) : ce que le moteur prend pour une case que la carte ne dit pas (le
 jour du versement, le début que la porte « Imprévu… » lit, le métier que la paie applique) et ce qu'une
@@ -2201,8 +2230,8 @@ sous `parties` de la route etat) : le dessinateur la fait saisir partie par part
 d'un geste ouvre de même les cases du geste qui ne valent que pour lui (`ouvre` d'un `routes::ouverture::Choix` : la
 nature d'un contrat repris, `importation-nature`) : la boîte ne montre que les cases du choix fait, se redessine quand il
 change, et ce qu'elle cache ne part pas. Les jours d'une ligne partent tous
-dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et fait suivre la quantité d'une ligne
-qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
+dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et tient ensemble la quantité d'une ligne
+et celle de chacun de ses jours (`LignePaie::jours_tenus`). Une grandeur s'écrit elle-même dans la réponse (des
 cachets en entier) ; la page montre ce qu'elle reçoit. **Une fiche se rend comme une carte** : la route `fiche`
 (`routes::fiches::rendue`) rend une fiche telle qu'on la saisit (`{nom, cle, changements}` : ce qui est saisi, posé sur
 la fiche enregistrée comme à l'écriture et comme sur la carte, une case qu'on ne nomme pas gardant sa valeur ; sans
@@ -2427,8 +2456,25 @@ Ce que ça impose au moteur :
   taux de la première ligne `cachet`. Un
   engagement portant `dates`, `cachets`, `heures` ou `taux_horaire` est
   refusé, avec ce que le moteur a vu et ce qu'une saisie porte.
-- Une date de ligne est une `engagement::ligne::DateDeLigne` : nue (un jour), ou détaillée `{"jour": …, "lieu": …}` ;
-  une date détaillée est une date, tout ce qui parcourt des jours continue de marcher sans le savoir.
+- Une date de ligne est une `engagement::ligne::DateDeLigne` : nue (un jour), ou détaillée
+  `{"jour": …, "quantite": …, "lieu": …}` (`JourDeLigne`, chacun ne s'écrivant que s'il est dit) ; une date détaillée
+  est une date, tout ce qui parcourt des jours continue de marcher sans le savoir.
+- **Une quantité par jour** (Léandre, 25/11/2026) : une ligne qui se compte jour par jour (des heures, des cachets, des
+  journées, des services, un forfait) a une quantité par jour du mois. La porte des lignes (`LignePaie::jours_tenus`,
+  `ligne::ranger`) ne compare la ligne reçue à rien d'autre qu'elle-même : quand aucun jour ne dit sa quantité (des
+  dates nues), la quantité de la ligne se répartit sur eux, le reste sur les premiers (10 h sur 3 jours : 4 · 3 · 3) ;
+  quand des jours disent la leur et que la quantité est absente ou égale à leur somme, les jours comptent : la quantité
+  est leur somme, un jour qui n'en dit pas est vide (5 · 3 · 2 avec 10 reste 5 · 3 · 2 ; 4 · 3 · 3 puis un jour ajouté :
+  4 · 3 · 3 · vide, 10) ; quand elle en diffère, elle a été tapée et se répartit sur tous les jours (5 · 3 · 2 avec 12 :
+  4 · 4 · 4), ce que disaient les jours étant remplacé sans refus (on change de rubrique en tapant la quantité). Quand
+  les jours comptent, une quantité de jour dans une autre unité que la ligne, sur une ligne qui ne se compte pas jour par
+  jour, ou sur un jour d'un mois suivant se refuse en le nommant. **Une seule forme écrite** : des
+  dates nues et un total veulent dire « le total réparti ainsi » ; une ligne ne porte la quantité de ses jours que
+  quand ils en diffèrent (un jour modifié, un jour vide), et dès qu'un jour dit la sienne, un jour qui n'en dit pas est
+  vide (`LignePaie::quantites_des_jours`, que lisent la route et le contrôle des 10 heures par jour,
+  `engagement::duree`). Une ligne lue (route ou fichier) et renvoyée telle quelle ne change donc rien,
+  `copier-engagement` compris. Ce qui lit la quantité d'une ligne
+  (bulletin, DSN, AEM, Congés Spectacles, contrat) lit son total.
 - La construction d'un `Engagement` (`engagement/src/lib.rs`) réunit les deux écritures et n'en
   laisse qu'une : `dates_travail` reste une liste de dates triées, le lieu part
   dans `lieux` (`lieu_de()`, `lieux_joues()`). Le contrat groupe les dates par
@@ -4140,6 +4186,44 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   (`O_EXCL`) ; la séance gardée est **une par coffre** (`ouverture-gardee-<empreinte>.bin`). La mise à jour est déjà
   par installation (`maj/`) ; son relais attend la fin de **sa** fenêtre (le processus sous Windows, le créneau de son
   installation ailleurs), et `moteur maj --appliquer` ne refuse que si **cette** installation est ouverte.
+- **Le logiciel se déplace entier, logiciel fermé, et rien ne se déplace d'office** (`compagnie/src/deplacement.rs`,
+  `routes/src/accueil/deplacement.rs`). L'installeur propose les Documents (`Documents\PuppetPaie`) ou un autre dossier.
+  L'accueil dit d'emblée où est le logiciel (la route `logiciel-ou`, l'écran rendu de sa place) avec le geste qui le
+  déplace (`logiciel-deplacer`, sa charge : le dossier) ; une **ancienne installation** — celle qui est le dossier de
+  l'utilisateur lui-même (`installation::dossier_de_l_utilisateur`, `AppData\Local\PuppetPaie`), cachée — y voit en
+  plus pourquoi la ranger, et « Ranger dans Documents ». Un dossier que OneDrive synchronise (sous un dossier que
+  Windows nomme dans `OneDrive`, `OneDriveConsumer` ou `OneDriveCommercial`) se dit dans la boîte du geste, avant de
+  partir, et la route le refuse tant que la charge ne dit pas qu'on le sait (`onedrive`). **Déplacer se prouve comme un
+  acte réel** : le mot de passe du logiciel, tapé par une personne au moment du geste, celui de la première compagnie
+  réelle des tuiles qui en a un (il n'y a pas de mot de passe de l'installation ; aucune n'en a : le geste n'est pas
+  offert). **Le logiciel ne se déplace que sur le disque où il est** (Léandre, 25/11/2026 : « Même disque ok sauf si on
+  fait une installation portable ») : un dossier sur un autre disque se refuse, sans rien toucher, et le refus dit la
+  façon. Pour une clé USB, l'accueil offre à côté **« Rendre portable »** (`logiciel-rendre-portable`, prouvé du même
+  mot de passe ; pas offert à une installation déjà portable) : la clé du poste se copie dans le dossier du logiciel (le
+  poste garde la sienne) et le marqueur `PORTABLE.json` se pose (`coffre::rendre_portable`, `coffre::marquer_portable`,
+  celui que pose aussi `portable-completer`) ; la personne copie ensuite elle-même le dossier sur la clé, et n'efface
+  l'ancien qu'une fois la copie réussie. La route de déplacement vérifie tout ce qui se vérifie (un dossier neuf ou
+  vide, dit en entier, hors de l'installation, sur le même disque, où l'on écrit ; aucun autre déplacement en cours sur
+  le poste, son journal lisible ou non) et pose `maj/deplacer.json` ; la fenêtre qui l'a
+  servie la fait partir une fois ses envois en vol finis, et se ferme (posée en ligne de commande, elle part au
+  lancement suivant de la fenêtre ; d'ici là, `logiciel-ou` la dit et offre de l'annuler : le même geste, vers le
+  dossier où il est). Partir, c'est effacer la demande, écrire le **déplacement en cours** (`DeplacementEnCours`, dans
+  le dossier de l'utilisateur : d'où, où, l'étape écrite sur le disque avant d'être faite), poser une **marque** dans l'ancien
+  dossier et le neuf (`.deplacement-en-cours`) et lancer le **relais**, du dossier temporaire du poste (Windows ne
+  déplace pas un dossier qui porte un programme en marche ni le dossier courant d'un processus). Le relais tient un
+  verrou du système de bout en bout ; tant que le déplacement en cours concerne une installation (il la nomme, ou il ne
+  se lit pas et elle porte la marque : `Ici`), rien ne s'y ouvre (la fenêtre le dit dans une boîte, avant même son
+  propre verrou ; la ligne de commande refuse, sauf `logiciel-ou`, qui dit où il en est) ; toute autre installation du
+  poste s'ouvre ; un relais mort en route est repris au lancement suivant, qui **regarde les deux dossiers** nom par
+  nom (le journal peut retarder sur le disque) et finit ce qui était fini, défait ce qui était commencé, ou s'arrête
+  « coupé » sans rien toucher quand ce qui est où ne se lit pas sûrement (un dossier illisible n'est jamais pris pour
+  vide). Le relais
+  **renomme** chaque entrée de l'installation dans le nouveau dossier, `logiciel/` la dernière (elle revient la
+  première), pour que le raccourci trouve le programme après une coupure (instantané, sans place en double) ; il réécrit ce que l'installeur a posé (la clé de désinstallation sous `HKCU`, le
+  raccourci du menu Démarrer), puis rouvre la fenêtre. Au moindre échec tout revient et la fenêtre se rouvre à l'ancien
+  endroit ; ce qui ne revient pas se dit tel quel, ce qui est où, et la fenêtre ne se rouvre pas. L'issue (`Dernier`)
+  se retient dans le dossier de l'utilisateur, et l'accueil la redit. Le créneau retenu (`.fenetre.json`) voyage avec
+  l'installation : le port de la page, donc ce que le navigateur retient, ne change pas.
 - **Toutes les compagnies tenues à jour dès le lancement** (`Fenetre::prechauffer`, `etat_garde::Fil`) : chaque vraie
   compagnie de l'installation (pas les fictives) reçoit sa file des états sur **un seul fil de calcul** pour toute la
   fenêtre, la dernière ouverte d'abord (la date de son `journal/interface.log`), puis chacune son tour ; la compagnie

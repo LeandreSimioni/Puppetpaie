@@ -339,7 +339,9 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     use crate::gestes::ouverture::{ouverture, Clients, Options};
     let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::entiere() };
     let r = ouverture(ctx, &opt, Clients::default(), None)?;
-    let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
+    // Sans la main sur le Drive, rien n'est parti : la phrase le dit (`SansLaMain`).
+    let sans_la_main = r.sauvegarde.as_ref().and_then(|s| s.sans_la_main.as_ref()).map(|s| s.phrase());
+    let erreurs: Vec<String> = sans_la_main.into_iter().chain(r.manquants).chain(r.incidents).collect();
     let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| e.echec)?;
     let phrase = match (erreurs.is_empty(), &s) {
         (false, _) => socle::phrase!("Sauvegarde : {}", erreurs.join(" ")),

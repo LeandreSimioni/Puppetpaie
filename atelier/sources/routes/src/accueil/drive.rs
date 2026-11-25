@@ -1,7 +1,7 @@
 //! REPRENDRE UNE COMPAGNIE DE SON DRIVE, A L'ACCUEIL (le « + » : « De mon Drive ») : lier un compte Google a l'accueil
 //! (`drive-lier`) ou l'oublier (`drive-oublier`), voir ce qu'il porte (`drive-compagnies`, l'ecran de
 //! `Place::AccueilDrive`), ramener une compagnie sur ce poste (`drive-reprendre`) comme une compagnie neuve de
-//! l'installation, par la restauration (`compagnie::restauration`, le seul chemin, que `moteur restaurer` prend aussi),
+//! l'installation, par la restauration (`compagnie::restauration`, le seul chemin ; `moteur restaurer` n'est que cette route),
 //! l'ouvrir (`compagnie-ouvrir`), ou abandonner une reprise pas finie (`drive-abandonner`). Ces routes sont celles de
 //! l'installation (`accueil::DE_L_INSTALLATION`), a leur place. Chaque geste dit ce que la page fait de sa reponse
 //! (`ecran::ApresLeGeste`).
@@ -18,7 +18,8 @@
 //! reseau, un fichier a retenter), elle se continue dans ce dossier-la, et dans aucun autre. Allee au bout (chaque
 //! fichier descendu, sauf ceux qui ne descendront jamais par cette voie, et la fiche Entreprise revenue et lisible), la
 //! compagnie recoit une copie du jeton de l'accueil (elle est liee au meme compte, et sa sauvegarde repart dans le meme
-//! dossier du Drive, qui ne perd rien : elle n'y supprime jamais), sa marque s'efface, et l'ecran de fin de reprise
+//! dossier du Drive, qui ne perd rien : elle n'y supprime jamais), ce poste prend la main sur ce dossier
+//! (`compagnie::restauration::prendre_la_main`), sa marque s'efface, et l'ecran de fin de reprise
 //! propose de l'ouvrir (`compagnie-ouvrir`) : rien ne l'ouvre avant ce geste.
 //!
 //! UNE REPRISE PAS FINIE SE VOIT TOUJOURS (`drive-compagnies`), que son dossier du Drive se voie ou non (supprime, a la
@@ -33,7 +34,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use compagnie::installation::{IdDeCompagnie, Marqueur, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
-use compagnie::restauration::{ArretDeLaRestauration, RepriseEnCours};
+use compagnie::restauration::{ArretDeLaRestauration, MainDeLaReprise, RepriseEnCours};
 use compagnie::sauvegarde::IdentiteSurLeDrive;
 use compagnie::sur_le_drive::{DossierVu, GenreDuDossier};
 use envois::drive::IdDrive;
@@ -225,8 +226,8 @@ pub(crate) struct RepriseAbandonnee {
 /// qui l'abandonne) ; puis, pour qui lit la reponse, la compagnie (son identifiant, son nom, et son dossier sur ce poste,
 /// au bout seulement : avant, ce n'est pas une compagnie, et aucune route ne s'y sert), si la reprise est allee au bout,
 /// le nombre de fichiers revenus, et le detail de ce qui ne l'est pas, un fichier par ligne, chemins et empreintes
-/// compris (l'ecran en dit le nombre) : ce qui ne descendra jamais par cette voie (`incidents`), ce qu'une nouvelle
-/// reprise retente (`a_retenter`).
+/// compris (l'ecran en dit le nombre) : ce qui ne descendra jamais par cette voie, et la main sur le dossier du Drive
+/// qui ne s'est pas prise (`incidents`, `MainDeLaReprise::noter`), ce qu'une nouvelle reprise retente (`a_retenter`).
 #[derive(Debug, Serialize)]
 pub(crate) struct Reprise {
     phrase: Phrase,
@@ -323,8 +324,6 @@ pub(crate) fn route(inst: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
 
 /// Ce que dit la boite d'« Oublier ce compte ».
 const OUBLIER_DIT: &str = "Ce poste oublie le compte Google de l'accueil. Les compagnies déjà reprises gardent le leur. L'accès accordé côté Google se retire sur myaccount.google.com.";
-/// Ce que dit l'ecran de fin d'une reprise allee au bout, du dossier du Drive qu'elle garde.
-const UN_SEUL_POSTE: &str = "Si l'ancien poste se sert encore de cette compagnie, n'en gardez qu'un : les deux sauvegardes iraient au même dossier.";
 
 /// Une reprise pas finie sur ce poste : la compagnie qu'elle remplit, sa racine, sa marque.
 type Commencee = (IdDeCompagnie, PathBuf, RepriseEnCours);
@@ -397,10 +396,29 @@ fn deja_sur_ce_poste(noms: &[&str], douteuses: &[&str]) -> String {
 }
 
 /// Le geste « Reprendre » du dossier `dossier`, et ce que sa boite dit.
-fn geste_reprendre(dossier: &IdDrive, boite: String) -> GesteDeRoute<GesteDeLaReprise, SansCharge, SansCharge> {
+fn geste_reprendre(dossier: &IdDrive, boite: Vec<String>) -> GesteDeRoute<GesteDeLaReprise, SansCharge, SansCharge> {
     GesteDeRoute::avec_cases(Route::DriveReprendre, GesteDeLaReprise::Reprendre(ChargeReprendre { dossier: dossier.clone() }), REPRENDRE, Vec::new(), SansCharge {}, SansCharge {})
-        .disant(vec![boite])
+        .disant(boite)
         .principal()
+}
+
+/// CE QUE LA BOITE DE « REPRENDRE » DIT DE LA MAIN, AVANT LE GESTE : allee au bout, la reprise du dossier `vu` d'une
+/// compagnie la prend (`restauration::prendre_la_main`), et ce que cela change pour le poste qui la tenait. Rien pour
+/// l'ancienne sauvegarde commune, ni pour une compagnie qui ne sauvegarde pas (`bride` : elle revient fictive).
+/// `ce_poste` : ce poste, tel que la main le nomme (sans lui, la reprise dira pourquoi elle ne la prend pas).
+fn la_main_qu_elle_prendra(vu: &DossierVu, bride: bool, ce_poste: &R<compagnie::sauvegarde::PosteSurLeDrive>) -> Option<String> {
+    if bride || compagnie::bridage::paquet_soude() || !matches!(vu.genre, GenreDuDossier::Compagnie(_)) {
+        return None;
+    }
+    Some(match &vu.main {
+        Ok(Some(m)) if ce_poste.as_ref().is_ok_and(|p| *p == m.poste) => "Ce poste tient déjà la main sur son Drive : il la garde.".to_string(),
+        Ok(Some(m)) => format!(
+            "Allée au bout, elle prend la main sur son Drive : le poste qui la tient depuis le {} n'y sauvegardera plus, et le dira.",
+            m.depuis.jour_de_paris().jj_mm()
+        ),
+        Ok(None) => "Allée au bout, elle prend la main sur son Drive : ce poste seul y sauvegardera.".to_string(),
+        Err(_) => "Allée au bout, elle prend la main sur son Drive, dont la main notée ne se lit pas : ce poste seul y sauvegardera.".to_string(),
+    })
 }
 
 /// Le geste « Abandonner cette reprise » du dossier `reprise` sur ce poste, d'une reprise de `nom` : sa boite dit que
@@ -516,6 +534,8 @@ pub(crate) fn compagnies(inst: &Path) -> R<CompagniesDuDrive> {
             encarts.push(Encart::de(EtatDEcran::Information, "Aucune compagnie dans ce Drive", "Ce compte Google ne porte aucune sauvegarde de PuppetPaie. Est-ce le bon compte ?"));
         }
     }
+    // Ce poste, tel que la main le nomme : ce que la boite de « Reprendre » dit de la main qu'elle prendra.
+    let ce_poste = compagnie::sauvegarde::PosteSurLeDrive::de_ce_poste(inst);
     // Les reprises pas finies que le rang d'un dossier du Drive montre ; les autres ont leur rang a elles, plus bas.
     let mut montrees: Vec<&Path> = Vec::new();
     for vu in vus {
@@ -528,6 +548,9 @@ pub(crate) fn compagnies(inst: &Path) -> R<CompagniesDuDrive> {
             dit.push(format!("Volume : {}.", o));
         }
         dit.extend(vu.illisible.iter().cloned());
+        if let Err(e) = &vu.main {
+            dit.push(compagnie::sauvegarde::main_illisible_dite(e));
+        }
         let (pastille, gestes) = match ce_qu_on_en_fait(&du_poste, &en_cours, vu) {
             // DEJA SUR CE POSTE : la reprise se refuserait ; le geste ne se propose pas, le rang dit ou elle est. Une
             // reprise de ce dossier commencee ici ne continuera pas : le geste qui l'abandonne.
@@ -554,14 +577,17 @@ pub(crate) fn compagnies(inst: &Path) -> R<CompagniesDuDrive> {
                     // continue si elle le peut.
                     dit.push(format!("Une reprise commencée sur ce poste le {} n'est pas finie : « Reprendre » dit où elle en est, et la continue si elle le peut.", depuis));
                     if se_reprend {
-                        gestes.push(geste_reprendre(&vu.id, format!("La reprise de « {} » continue où elle en était, si elle le peut.", vu.nom)));
+                        let mut boite = vec![format!("La reprise de « {} » continue où elle en était, si elle le peut.", vu.nom)];
+                        boite.extend(la_main_qu_elle_prendra(vu, matches!(id, IdDeCompagnie::Fictive(_)), &ce_poste));
+                        gestes.push(geste_reprendre(&vu.id, boite));
                     }
                     gestes.push(geste_abandonner(id, &vu.nom));
                 }
                 (Pastille::de(EtatDEcran::EnAttente, "reprise pas finie"), gestes)
             }
             CeQuOnEnFait::Neuve => {
-                let boite = format!("« {} » revient sur ce poste dans un dossier neuf. Son coffre revient aussi ; l'écran de fin de reprise dit ce qu'il reste à faire pour lui.", vu.nom);
+                let mut boite = vec![format!("« {} » revient sur ce poste dans un dossier neuf. Son coffre revient aussi ; l'écran de fin de reprise dit ce qu'il reste à faire pour lui.", vu.nom)];
+                boite.extend(la_main_qu_elle_prendra(vu, compagnie::bridage::est_bride_de(inst), &ce_poste));
                 let gestes = if se_reprend { vec![geste_reprendre(&vu.id, boite)] } else { Vec::new() };
                 (Pastille::de(EtatDEcran::Information, "dans le Drive"), gestes)
             }
@@ -672,8 +698,11 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
         None => compagnie::bridage::est_bride_de(inst),
     };
     if let Some((id, _, _)) = commencee.filter(|(id, _, _)| reelle_en_demo(inst, id)) {
-        return Ok(arretee(&vu, id.clone(), REELLE_EN_DEMO, "Reprise pas finie : elle ne continue pas sur ce logiciel en démo.", false, false));
+        return Ok(arretee(&vu, id.clone(), REELLE_EN_DEMO, "Reprise pas finie : elle ne continue pas sur ce logiciel en démo.", None, false));
     }
+    // CE QUE LE GESTE « REPRENDRE » D'UNE REPRISE PAS FINIE DIT DE LA MAIN, comme celui de la liste (`compagnies`).
+    let la_main_a_venir = la_main_qu_elle_prendra(&vu, bride, &compagnie::sauvegarde::PosteSurLeDrive::de_ce_poste(inst));
+    let reprendre_dit = |debut: String| -> Vec<String> { std::iter::once(debut).chain(la_main_a_venir.clone()).collect() };
     let (id, racine, neuve) = ou_revient(inst, &vu, bride, commencee)?;
     // Une restauration du dossier a la fois (`VerrouDeRestauration`, que `restaurer` rafraichit a chaque fichier) ; une
     // reprise continuee abandonnee entre-temps ne se recree pas.
@@ -718,7 +747,8 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
             } else {
                 "Ce qu'elle a déjà ramené sur ce poste n'est plus la copie du Drive : elle ne peut pas continuer. L'abandonner, puis la reprendre de nouveau."
             };
-            return Ok(arretee(&vu, id, &pourquoi, dit, retenter, relier));
+            let reprendre = retenter.then(|| reprendre_dit(format!("La reprise de « {} » continue où elle en était, si elle le peut.", vu.nom)));
+            return Ok(arretee(&vu, id, &pourquoi, dit, reprendre, relier));
         }
     };
     let fiche = if !droit::contexte::ENTREPRISE.dans(&racine).is_file() {
@@ -730,6 +760,9 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
     };
     let au_bout = r.complete() && fiche == FicheRevenue::Lisible;
     let mut a_faire = Vec::new();
+    // La main sur le dossier du Drive (`MainDeLaReprise`) : rien a prendre tant que la reprise n'est pas au bout.
+    let mut main = MainDeLaReprise::PasAPrendre;
+    let mut incidents = r.incidents.clone();
     if au_bout {
         if bride {
             let marqueur = Marqueur {
@@ -752,11 +785,16 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
             let coffre = compagnie::coffre::Coffre::du_poste(&racine);
             a_faire = compagnie::restauration::a_faire(&coffre, r.origine_du_coffre(&coffre));
         }
+        // « REPRENDRE » PREND LA MAIN D'OFFICE sur le dossier d'une compagnie, qu'elle garde (`restauration::prendre_la_main`) ;
+        // pas prise, elle va dans les incidents de la reprise et chez l'editeur.
+        main = compagnie::restauration::prendre_la_main(&racine, &vu, &mut client);
+        incidents.extend(main.noter(&racine));
         compagnie::restauration::finir_la_reprise(&racine)?;
     }
     let nom = if fiche == FicheRevenue::Lisible { compagnie::installation::nom_de(&racine)? } else { vu.nom.clone() };
     let revenus = r.redescendus.len();
-    let ecran = fin_de_reprise(&vu, &id, &nom, au_bout, bride, fiche, &r, a_faire);
+    let reprendre = reprendre_dit(format!("La reprise de « {} » continue où elle en était.", vu.nom));
+    let ecran = fin_de_reprise(&vu, &id, &nom, au_bout, fiche, &r, a_faire, &main, reprendre);
     let phrase = if au_bout {
         socle::phrase!("« {} » est reprise de votre Drive : {} fichier(s) revenu(s).", nom, revenus)
     } else {
@@ -771,7 +809,7 @@ pub(crate) fn reprendre(inst: &Path, dossier: &IdDrive) -> R<Reprise> {
         chemin: au_bout.then_some(racine),
         au_bout,
         redescendus: revenus,
-        incidents: r.incidents,
+        incidents,
         a_retenter: r.a_retenter,
     })
 }
@@ -787,8 +825,9 @@ enum FicheRevenue {
 
 /// CE QUE REND UNE REPRISE COMMENCEE QUI NE CONTINUE PAS (rien n'est ecrit) : son ecran dit pourquoi (`pourquoi`, en mots,
 /// et `dit` sur son rang), et ce qui se fait : l'abandonner (tout ce qu'elle a ramene vient du Drive, et y reste), ou la
-/// reprendre une fois le Drive corrige (`retenter`), ou le compte Google relie (`relier`).
-fn arretee(vu: &DossierVu, id: IdDeCompagnie, pourquoi: &str, dit: &str, retenter: bool, relier: bool) -> Reprise {
+/// reprendre une fois le Drive corrige (`reprendre` : ce que sa boite dit, la main comprise ; aucun quand elle ne
+/// continuera pas), ou le compte Google relie (`relier`).
+fn arretee(vu: &DossierVu, id: IdDeCompagnie, pourquoi: &str, dit: &str, reprendre: Option<Vec<String>>, relier: bool) -> Reprise {
     let encarts = vec![Encart::de(EtatDEcran::Refuse, "Cette reprise ne continue pas", pourquoi)];
     let mut gestes = Vec::new();
     if relier {
@@ -796,8 +835,8 @@ fn arretee(vu: &DossierVu, id: IdDeCompagnie, pourquoi: &str, dit: &str, retente
     }
     let abandonner = geste_abandonner(&id, &vu.nom);
     gestes.push(if relier { abandonner } else { abandonner.principal() });
-    if retenter {
-        gestes.push(GesteDeRoute::avec_cases(Route::DriveReprendre, GesteDeLaReprise::Reprendre(ChargeReprendre { dossier: vu.id.clone() }), REPRENDRE, Vec::new(), SansCharge {}, SansCharge {}).disant(vec![format!("La reprise de « {} » continue où elle en était, si elle le peut.", vu.nom)]));
+    if let Some(boite) = reprendre {
+        gestes.push(GesteDeRoute::avec_cases(Route::DriveReprendre, GesteDeLaReprise::Reprendre(ChargeReprendre { dossier: vu.id.clone() }), REPRENDRE, Vec::new(), SansCharge {}, SansCharge {}).disant(boite));
     }
     let rang = RangDeLEcran { titre: vu.nom.clone(), dit: vec![dit.to_string()], pastille: Pastille::de(EtatDEcran::EnAttente, "reprise pas finie"), etat: None, montre: None, gestes };
     Reprise {
@@ -818,9 +857,10 @@ fn arretee(vu: &DossierVu, id: IdDeCompagnie, pourquoi: &str, dit: &str, retente
 /// mots, le detail dans `Reprise::incidents`) ; pourquoi elle n'est pas finie (la connexion tombee, des fichiers a
 /// retenter, la fiche Entreprise absente ou illisible) et ce qui se fait vraiment : la continuer quand une nouvelle
 /// tentative peut changer quelque chose, sinon l'abandonner ; allee au bout, ce qui reste a faire pour son coffre
-/// (`a_faire`, une compagnie reelle), le dossier du Drive qu'elle garde avec l'ancien poste, et le geste qui l'ouvre.
+/// (`a_faire`, une compagnie reelle), la main prise sur le dossier du Drive qu'elle garde (`main`), ou pourquoi elle ne
+/// l'est pas, et le geste qui l'ouvre. `reprendre` : ce que dit la boite du geste qui la continue, la main comprise.
 #[allow(clippy::too_many_arguments)]
-fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, bride: bool, fiche: FicheRevenue, r: &compagnie::restauration::Restauration, a_faire: Vec<String>) -> EcranDeLaReprise {
+fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, fiche: FicheRevenue, r: &compagnie::restauration::Restauration, a_faire: Vec<String>, main: &MainDeLaReprise, reprendre: Vec<String>) -> EcranDeLaReprise {
     let mut encarts = Vec::new();
     // Pas finie : une nouvelle tentative change-t-elle quelque chose (la connexion, des fichiers a retenter) ?
     let continuer = !au_bout && !r.complete();
@@ -858,8 +898,12 @@ fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, 
     if au_bout {
         // Reprise du dossier d'une compagnie, elle en garde l'identite : sa sauvegarde ira dans ce meme dossier. Reprise de
         // l'ancienne sauvegarde commune, sa premiere sauvegarde fera le sien.
-        if !bride && matches!(vu.genre, GenreDuDossier::Compagnie(_)) {
-            encarts.push(Encart::de(EtatDEcran::Information, "Un seul poste", UN_SEUL_POSTE));
+        if let Some(dit) = main.phrase(vu) {
+            let (etat, titre) = match main {
+                MainDeLaReprise::PasPrise(_) => (EtatDEcran::AFaire, "La main n'est pas prise"),
+                MainDeLaReprise::PasAPrendre | MainDeLaReprise::DejaLaSienne | MainDeLaReprise::Prise => (EtatDEcran::Information, "Un seul poste"),
+            };
+            encarts.push(Encart::de(etat, titre, dit));
         }
         if !a_faire.is_empty() {
             rangs.push(RangDeLEcran { titre: "Son coffre des mots de passe".to_string(), dit: a_faire, pastille: Pastille::de(EtatDEcran::AFaire, "à faire"), etat: None, montre: None, gestes: Vec::new() });
@@ -867,13 +911,12 @@ fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, 
         let ouvrir = GesteDeRoute::avec_cases(Route::CompagnieOuvrir, GesteDeLaReprise::Ouvrir(ChargeOuvrir { compagnie: id.clone() }), OUVRIR, Vec::new(), SansCharge {}, SansCharge {}).principal();
         rangs.push(RangDeLEcran { titre: nom.to_string(), dit: vec!["Reprise de votre Drive.".to_string()], pastille: Pastille::de(EtatDEcran::Fait, "sur ce poste"), etat: None, montre: None, gestes: vec![ouvrir] });
     } else if continuer {
-        let boite = format!("La reprise de « {} » continue où elle en était.", vu.nom);
         let mut gestes = Vec::new();
         // L'autorisation perdue : relier d'abord, puis reprendre.
         if r.arret == Some(ArretDeLaRestauration::AutorisationPerdue) {
             gestes.push(geste_lier(RELIER));
         }
-        gestes.extend([geste_reprendre(&vu.id, boite), geste_abandonner(id, &vu.nom)]);
+        gestes.extend([geste_reprendre(&vu.id, reprendre), geste_abandonner(id, &vu.nom)]);
         rangs.push(RangDeLEcran { titre: nom.to_string(), dit: vec!["Reprise pas finie : la compagnie ne s'ouvre pas encore.".to_string()], pastille: Pastille::de(EtatDEcran::EnAttente, "reprise pas finie"), etat: None, montre: None, gestes });
     } else {
         rangs.push(rang_a_abandonner(nom.to_string(), vec!["Reprise pas finie : la compagnie ne s'ouvre pas.".to_string()], id, &vu.nom));

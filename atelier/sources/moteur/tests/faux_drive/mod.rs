@@ -266,12 +266,19 @@ impl Drive for FauxDrive {
         if marque.octets.is_some() {
             m.octets = marque.octets.clone();
         }
+        if marque.poste.is_some() {
+            m.poste = marque.poste.clone();
+        }
+        if marque.main.is_some() {
+            m.main = marque.main.clone();
+        }
         Ok(())
     }
 
-    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle> {
+    fn en_place(&mut self, id: &IdDrive) -> Result<envois::drive::DossierEnPlace, ErreurGoogle> {
+        use envois::drive::DossierEnPlace;
         self.journal.push(format!("en_place {}", self.chemin_de(id)));
-        Ok(!self.jete(id))
+        Ok(if self.jete(id) { DossierEnPlace::Retire } else { DossierEnPlace::EnPlace(self.marques.get(id).cloned()) })
     }
 
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {
@@ -301,6 +308,17 @@ pub fn racine(prefixe: &str, nom: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&r);
     std::fs::create_dir_all(&r).unwrap();
     r
+}
+
+/// LE POSTE DES TESTS, tel que la main le nomme sur le Drive : sa cle (32 octets inventes, les memes a chaque appel, donc
+/// le meme poste) est posee dans un dossier de test a lui, un par appel (`nom`, le processus et un compteur : deux tests
+/// en meme temps ne se marchent pas dessus), jamais dans celui de la machine.
+pub fn ce_poste(nom: &str) -> compagnie::sauvegarde::PosteSurLeDrive {
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let d = racine("poste", &format!("{}-{}-{}", nom, std::process::id(), n));
+    std::fs::write(d.join(compagnie::coffre::FICHIER_CLE), [7u8; 32]).unwrap();
+    compagnie::sauvegarde::PosteSurLeDrive::du_coffre(&compagnie::coffre::Coffre::sur(&d, &d, socle::temps::secondes().a_la_minute())).unwrap()
 }
 
 pub fn ecrire(racine: &Path, relatif: &str, contenu: &str) {

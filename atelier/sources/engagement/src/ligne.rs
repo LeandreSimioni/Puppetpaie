@@ -23,21 +23,28 @@ use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
 use socle::grandeurs::{courte, sans_zero, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
 
-/// UNE DATE D'UNE LIGNE : le jour nu (`"2026-10-02"`), ou detaille quand il dit ou il se joue
-/// (`{"jour": "2026-10-02", "lieu": "Berlin"}`).
+/// UNE DATE D'UNE LIGNE : le jour nu (`"2026-10-02"`), ou detaille quand il dit sa quantite ou ou il se joue
+/// (`{"jour": "2026-10-02", "quantite": {"heures": "4"}, "lieu": "Berlin"}`, `JourDeLigne`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DateDeLigne {
     Nue(Jour),
-    Detaillee(JourEtLieu),
+    Detaillee(JourDeLigne),
 }
 
-/// Le jour d'une date detaillee, et son lieu : une date qui ne dit pas de lieu est nue.
+/// UN JOUR D'UNE LIGNE QUI DIT CE QU'IL PORTE : sa quantite, dans l'unite de la ligne (4 des 10 heures d'une ligne ;
+/// Leandre, 25/11/2026 : « si je mets 3 jours, 12 heures, il met 4 heures par jour »), et ou il se joue. Chacun ne
+/// s'ecrit que s'il est dit ; une date qui ne dit ni l'un ni l'autre est nue. Une ligne dont aucun jour ne dit sa
+/// quantite porte sur chacun sa part de son total, le reste sur les premiers ; des qu'un jour dit la sienne, un jour qui
+/// n'en dit pas est vide (`LignePaie::quantites_des_jours`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct JourEtLieu {
+pub struct JourDeLigne {
     pub jour: Jour,
-    pub lieu: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantite: Option<QuantiteDeLigne>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lieu: Option<String>,
 }
 
 impl DateDeLigne {
@@ -52,18 +59,38 @@ impl DateDeLigne {
     /// Le lieu que la date dit d'elle-meme, tel qu'il est ecrit ; `None` s'il est vide.
     pub fn lieu(&self) -> Option<String> {
         match self {
-            DateDeLigne::Detaillee(JourEtLieu { lieu, .. }) if !lieu.is_empty() => Some(lieu.clone()),
+            DateDeLigne::Detaillee(JourDeLigne { lieu: Some(lieu), .. }) if !lieu.is_empty() => Some(lieu.clone()),
             _ => None,
+        }
+    }
+
+    /// La quantite que la date dit porter, dans l'unite de sa ligne ; `None` : elle n'en dit pas (ce qu'elle porte alors,
+    /// `LignePaie::quantites_des_jours`).
+    pub fn quantite(&self) -> Option<QuantiteDeLigne> {
+        match self {
+            DateDeLigne::Detaillee(d) => d.quantite,
+            DateDeLigne::Nue(_) => None,
         }
     }
 
     /// Le jour `jour`, au lieu `lieu` s'il est dit.
     pub fn au(jour: Jour, lieu: String) -> DateDeLigne {
-        if lieu.is_empty() {
-            DateDeLigne::Nue(jour)
-        } else {
-            DateDeLigne::Detaillee(JourEtLieu { jour, lieu })
+        DateDeLigne::de(jour, None, Some(lieu))
+    }
+
+    /// Le jour `jour`, sa quantite `quantite` et son lieu `lieu` quand ils sont dits (un lieu vide ne l'est pas) ; ni l'un
+    /// ni l'autre : nu.
+    pub fn de(jour: Jour, quantite: Option<QuantiteDeLigne>, lieu: Option<String>) -> DateDeLigne {
+        let lieu = lieu.filter(|l| !l.is_empty());
+        match (quantite, lieu) {
+            (None, None) => DateDeLigne::Nue(jour),
+            (quantite, lieu) => DateDeLigne::Detaillee(JourDeLigne { jour, quantite, lieu }),
         }
+    }
+
+    /// La meme date, portant la quantite `q` (`None` : plus aucune), son lieu garde.
+    pub fn portant(&self, q: Option<QuantiteDeLigne>) -> DateDeLigne {
+        DateDeLigne::de(self.jour(), q, self.lieu())
     }
 }
 
@@ -539,6 +566,29 @@ impl QuantiteDeLigne {
         }
     }
 
+    /// SE COMPTE-T-ELLE JOUR PAR JOUR dans l'unite `unite` (des heures, des cachets, des journees, des services, des
+    /// unites d'un forfait) : chaque jour d'une telle ligne porte sa part (`JourDeLigne::quantite`). Des semaines, une part
+    /// du mois, un pourcentage ne se comptent pas par jour.
+    pub fn se_compte_par_jour(unite: Unite) -> bool {
+        matches!(unite, Unite::Heure | Unite::Cachet | Unite::Jour | Unite::Service | Unite::Forfait)
+    }
+
+    /// ELLE, REPARTIE SUR `n` JOURS, le reste sur les premiers (`socle::grandeurs::repartie`, la regle « A » : 10 h sur
+    /// 3 jours, 4 · 3 · 3).
+    pub fn repartie(self, n: usize) -> Vec<QuantiteDeLigne> {
+        use socle::grandeurs::repartie;
+        use QuantiteDeLigne as Q;
+        match self {
+            Q::Heures(g) => repartie(g, n).into_iter().map(Q::Heures).collect(),
+            Q::Cachets(g) => repartie(g, n).into_iter().map(Q::Cachets).collect(),
+            Q::Jours(g) => repartie(g, n).into_iter().map(Q::Jours).collect(),
+            Q::Services(g) => repartie(g, n).into_iter().map(Q::Services).collect(),
+            Q::Semaines(g) => repartie(g, n).into_iter().map(Q::Semaines).collect(),
+            Q::PartDuMois(g) => repartie(g, n).into_iter().map(Q::PartDuMois).collect(),
+            Q::Unites(g) => repartie(g, n).into_iter().map(Q::Unites).collect(),
+        }
+    }
+
     /// RIEN, dans l'unite `unite` (une ligne du planning dont aucune date ne compte la quantite, a completer) ; `None` :
     /// le pourcentage, qui n'a pas de quantite.
     pub fn nulle(unite: Unite) -> Option<QuantiteDeLigne> {
@@ -633,6 +683,14 @@ impl QuantiteDeLigne {
     /// Est-elle nulle ?
     pub fn est_nul(self) -> bool {
         chaque_quantite!(self, q => q.est_nul())
+    }
+
+    /// SON UNITE, ACCORDEE A ELLE (« heures », « cachet » ; au singulier jusqu'a deux exclus, `au_pluriel`) : la
+    /// designation d'une ligne (`calcul`), et ce qu'une rangee d'un jour montre sous sa rubrique. Le mois ne prend pas d's.
+    pub fn unite_dite(self) -> String {
+        let unite = self.unite();
+        let s = if self.au_pluriel() && unite != Unite::Mois { "s" } else { "" };
+        format!("{}{}", unite, s)
     }
 
     /// TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 »).
@@ -1167,27 +1225,122 @@ impl LignePaie {
         self.avec_les_jours(dates, planning)
     }
 
-    /// LA QUANTITE QUI SUIT SES JOURS : la ligne telle qu'elle etait (`avant`, de meme rubrique, d'unite `unite`) comptait
-    /// un cachet, une journee ou un service par date du mois (`QuantiteDeLigne::par_dates`, comme le planning,
-    /// `crate::lignes_du_planning`), et seuls ses jours changent : sa quantite suit leur nombre. Une quantite dite autrement
-    /// (deux cachets un meme jour), ou changee en meme temps, reste celle qui est dite.
-    pub fn quantite_qui_suit(self, avant: &LignePaie, unite: Unite) -> LignePaie {
-        fn dite(l: &LignePaie) -> Option<&Option<QuantiteDeLigne>> {
-            match l {
-                LignePaie::Unites(x) => Some(&x.quantite),
-                LignePaie::UnitesEtHeures(x) => Some(&x.quantite),
-                LignePaie::Frais(x) => Some(&x.quantite),
-                _ => None,
+    /// SA QUANTITE ET CELLE DE CHACUN DE SES JOURS DU MOIS, TENUES ENSEMBLE (Leandre, 25/11/2026 : « si je mets 3 jours,
+    /// 12 heures, il met 4 heures par jour » ; « Si je modifie, c'est la modification qui compte » ; un jour ajoute aux
+    /// jours deja la arrive vide) : la ligne de rubrique `r` telle que l'appelant la donne, ses jours deja ranges par mois,
+    /// et la quantite qu'il a donnee (`donnee` : `None`, la cle absente ; `Some(None)`, `null`). Elle ne se compare a rien
+    /// d'autre qu'elle-meme : renvoyee telle qu'elle s'ecrit, elle ne change pas.
+    /// - aucun de ses jours ne dit sa quantite (des dates nues) : sa quantite se repartit sur eux, le reste sur les premiers
+    ///   (`QuantiteDeLigne::repartie` : 10 h sur 3 jours, 4 · 3 · 3) ;
+    /// - des jours disent la leur, et `donnee` est absente ou leur somme : ses jours comptent, sa quantite est leur somme,
+    ///   un jour qui n'en dit pas est vide (5 · 3 · 2 avec 10 reste 5 · 3 · 2 ; 4 · 3 · 3 puis un jour ajoute :
+    ///   4 · 3 · 3 · vide, 10) ;
+    /// - des jours disent la leur, et `donnee` en differe : elle a ete tapee, elle se repartit sur tous ses jours (5 · 3 · 2
+    ///   avec 12 : 4 · 4 · 4) ; ce que disaient ses jours est remplace, et rien ne s'en refuse (on change de rubrique en
+    ///   tapant la quantite).
+    ///
+    /// Quand ses jours comptent (les deux premiers cas), un jour qui dit sa quantite dans une autre unite que la ligne, sur
+    /// une ligne qui ne se compte pas jour par jour, ou un jour d'un mois suivant (il la dit dans la carte de son mois, ou
+    /// sa ligne vient, `lignes_du_planning`) se refuse en le nommant.
+    ///
+    /// Elle s'ecrit sous sa seule forme : des jours dont les quantites sont la repartition de son total ne les disent pas
+    /// (`quantites_des_jours` les relit telles), ils ne les disent que quand ils en different (un jour modifie, un jour
+    /// vide). Une ligne qui ne se compte pas jour par jour, et un jour d'un mois suivant, ne portent aucune quantite de
+    /// jour. Ses heures par unite (le forfait d'un cachet) ne changent pas.
+    fn jours_tenus(self, donnee: Option<Option<QuantiteDeLigne>>, r: &droit::catalogue::Rubrique) -> R<LignePaie> {
+        let unite = r.unite;
+        let dits: Vec<QuantiteDeLigne> = self.dates().iter().filter_map(DateDeLigne::quantite).collect();
+        // Leur somme ; `None` : deux unites, qui ne s'ajoutent pas (aucune quantite ne l'egale).
+        let mut somme: Option<Option<QuantiteDeLigne>> = Some(None);
+        for q in &dits {
+            somme = match somme {
+                Some(None) => Some(Some(*q)),
+                Some(Some(s)) => s.plus(*q).map(Some),
+                None => None,
+            };
+        }
+        let tapee = !dits.is_empty() && donnee.is_some_and(|q| somme != Some(q));
+        if !tapee {
+            if self.planning().iter().any(|d| d.quantite().is_some()) {
+                return Err(socle::refus!("un jour d'un mois suivant ne dit pas sa quantité : elle se dit dans la carte de son mois."));
+            }
+            if !dits.is_empty() && !QuantiteDeLigne::se_compte_par_jour(unite) {
+                return Err(socle::refus!("la ligne « {} » ne se compte pas jour par jour : ses jours ne disent pas de quantité.", r.libelle));
+            }
+            if dits.iter().any(|q| q.unite() != unite) {
+                let cle = QuantiteDeLigne::cle(unite).ok_or_else(|| refus("une rubrique qui se compte par jour sans quantité : le signaler au développeur"))?;
+                return Err(socle::refus!("la ligne « {} » : la quantité de chaque jour se dit en {} : {{\"{}\": …}}.", r.libelle, cle, cle));
             }
         }
-        let suit = self.rubrique() == avant.rubrique()
-            && self.dates().len() != avant.dates().len()
-            && dite(&self).is_some_and(|q| Some(q) == dite(avant))
-            && QuantiteDeLigne::par_dates(unite, avant.dates().len()).is_some_and(|q| dite(avant) == Some(&Some(q)));
-        if !suit {
-            return self;
+        let planning: Vec<DateDeLigne> = self.planning().iter().map(|d| d.portant(None)).collect();
+        if !QuantiteDeLigne::se_compte_par_jour(unite) || self.quantite_dite().is_none() {
+            let dates: Vec<DateDeLigne> = self.dates().iter().map(|d| d.portant(None)).collect();
+            return Ok(self.avec_les_jours(dates, planning));
         }
-        let quantite = QuantiteDeLigne::par_dates(unite, self.dates().len());
+        let n = self.dates().len();
+        let (quantite, parts): (Option<QuantiteDeLigne>, Vec<Option<QuantiteDeLigne>>) = if tapee || dits.is_empty() {
+            let q = self.quantite_dite().flatten();
+            let parts = match q {
+                Some(q) => q.repartie(n).into_iter().map(Some).collect(),
+                None => vec![None; n],
+            };
+            (q, parts)
+        } else {
+            let parts: Vec<Option<QuantiteDeLigne>> = self.dates().iter().map(DateDeLigne::quantite).collect();
+            (somme.flatten(), parts)
+        };
+        let repartie: Option<Vec<Option<QuantiteDeLigne>>> = quantite.map(|q| q.repartie(n).into_iter().map(Some).collect());
+        let parts = if repartie.as_ref() == Some(&parts) { vec![None; n] } else { parts };
+        let dates: Vec<DateDeLigne> = self.dates().iter().zip(parts).map(|(d, q)| d.portant(q)).collect();
+        Ok(self.avec_les_jours(dates, planning).avec_la_quantite(quantite))
+    }
+
+    /// LA QUANTITE DE CHACUN DE SES JOURS DU MOIS, dans l'ordre de ses dates, d'une ligne d'unite `unite` qui se compte
+    /// jour par jour (`jours_tenus`) : quand un de ses jours dit sa quantite, celle que chacun dit (un jour qui n'en dit
+    /// pas est vide) ; sinon, chaque jour porte sa part de la quantite de la ligne, le reste sur les premiers
+    /// (`QuantiteDeLigne::repartie`) ; aucune sans quantite. `None` : une ligne qui ne se compte pas jour par jour.
+    pub fn quantites_des_jours(&self, unite: Unite) -> Option<Vec<Option<QuantiteDeLigne>>> {
+        if !QuantiteDeLigne::se_compte_par_jour(unite) {
+            return None;
+        }
+        let dite = self.quantite_dite()?;
+        let n = self.dates().len();
+        let des_jours: Vec<Option<QuantiteDeLigne>> = self.dates().iter().map(DateDeLigne::quantite).collect();
+        if des_jours.iter().any(Option::is_some) {
+            return Some(des_jours);
+        }
+        Some(match dite {
+            Some(q) => q.repartie(n).into_iter().map(Some).collect(),
+            None => vec![None; n],
+        })
+    }
+
+    /// CE QU'ELLE PAIE, quand ce qui le dit est rempli : quantite x taux (ou sa base x son pourcentage), tels que ses
+    /// cases les disent dans l'unite `unite` de sa rubrique ; `None` : une case vide, ou une ligne au montant, dont la
+    /// case est le montant.
+    pub fn montant_dit(&self, unite: Unite) -> Option<Montant> {
+        if matches!(self, LignePaie::Montant(_) | LignePaie::AvantageEnNature(_)) {
+            return None;
+        }
+        match (self.quantite(unite), self.base(unite), self.taux()) {
+            (Some(q), _, Some(TauxDeLigne::ParUnite(u))) => Some(PaiementDeLigne::de(q, u).montant()),
+            (None, Some(b), Some(TauxDeLigne::PartDeLaBase(c))) => Some(PaiementDeLigne::Base(b, c).montant()),
+            _ => None,
+        }
+    }
+
+    /// La quantite qu'elle dit dans sa case, vide ou dite ; `None` : une ligne dont la quantite n'est pas une case.
+    fn quantite_dite(&self) -> Option<Option<QuantiteDeLigne>> {
+        match self {
+            LignePaie::Unites(x) => Some(x.quantite),
+            LignePaie::UnitesEtHeures(x) => Some(x.quantite),
+            LignePaie::Frais(x) => Some(x.quantite),
+            _ => None,
+        }
+    }
+
+    /// La ligne, la case de sa quantite devenue `quantite` ; une ligne dont la quantite n'est pas une case reste telle.
+    fn avec_la_quantite(self, quantite: Option<QuantiteDeLigne>) -> LignePaie {
         let mut l = self;
         match &mut l {
             LignePaie::Unites(x) => x.quantite = quantite,
@@ -1325,10 +1478,15 @@ impl LignePaie {
         fn qo(x: Option<QuantiteDeLigne>) -> Option<QuantiteDeLigne> {
             x.map(QuantiteDeLigne::sans_zero)
         }
+        fn jo(x: Vec<DateDeLigne>) -> Vec<DateDeLigne> {
+            x.iter().map(|d| d.portant(qo(d.quantite()))).collect()
+        }
         match self.clone() {
-            LignePaie::Unites(l) => LignePaie::Unites(Unites { quantite: qo(l.quantite), taux: o(l.taux), ..l }),
-            LignePaie::UnitesEtHeures(l) => LignePaie::UnitesEtHeures(UnitesEtHeures { quantite: qo(l.quantite), taux: o(l.taux), heures: o(l.heures), ..l }),
-            LignePaie::Frais(l) => LignePaie::Frais(Frais { quantite: qo(l.quantite), taux: o(l.taux), marques: Marques::default(), ..l }),
+            LignePaie::Unites(l) => LignePaie::Unites(Unites { quantite: qo(l.quantite), taux: o(l.taux), dates: jo(l.dates), ..l }),
+            LignePaie::UnitesEtHeures(l) => {
+                LignePaie::UnitesEtHeures(UnitesEtHeures { quantite: qo(l.quantite), taux: o(l.taux), heures: o(l.heures), dates: jo(l.dates), ..l })
+            }
+            LignePaie::Frais(l) => LignePaie::Frais(Frais { quantite: qo(l.quantite), taux: o(l.taux), marques: Marques::default(), dates: jo(l.dates), ..l }),
             LignePaie::Pourcentage(l) => LignePaie::Pourcentage(EnPourcentage { base: o(l.base), taux_majoration: o(l.taux_majoration), ..l }),
             LignePaie::Montant(l) => LignePaie::Montant(AuMontant { montant: o(l.montant), ..l }),
             LignePaie::AvantageEnNature(l) => LignePaie::AvantageEnNature(AvantageEnNature { montant: o(l.montant), ..l }),
@@ -1386,6 +1544,29 @@ impl Cle {
             Cle::Lieu => "lieu",
             Cle::Dates => "dates",
             Cle::Planning => "planning",
+        }
+    }
+
+    /// LE RANG DE SA COLONNE parmi celles des lignes d'une carte, quelle que soit la forme de chacune (Leandre,
+    /// 25/11/2026 : « Les dates, ça doit être le premier truc », « C'est rubrique et après c'est direct la quantité »,
+    /// puis « d'abord la quantité, ensuite quoi, et ensuite le taux », « mettre le lieu à la fin de la ligne ») : les
+    /// jours, la quantite (ou la base), la rubrique, le taux (ou le pourcentage), les heures par unite, le lieu, puis ce
+    /// que dit une ligne de frais ou un avantage, et le montant au bout.
+    pub fn colonne(self) -> usize {
+        match self {
+            Cle::Dates => 0,
+            Cle::Planning => 1,
+            Cle::Quantite => 2,
+            Cle::Base => 3,
+            Cle::Rubrique => 4,
+            Cle::Taux => 5,
+            Cle::TauxMajoration => 6,
+            Cle::Heures => 7,
+            Cle::Lieu => 8,
+            Cle::Territoire => 9,
+            Cle::Cases => 10,
+            Cle::Genre => 11,
+            Cle::Montant => 12,
         }
     }
 
@@ -1449,13 +1630,13 @@ impl FormeSaisie {
     pub fn cles(self) -> &'static [Cle] {
         use Cle::*;
         match self {
-            FormeSaisie::Unites => &[Rubrique, Quantite, Taux, Lieu, Dates, Planning],
-            FormeSaisie::UnitesEtHeures => &[Rubrique, Quantite, Taux, Heures, Lieu, Dates, Planning],
+            FormeSaisie::Unites => &[Dates, Planning, Quantite, Rubrique, Taux, Lieu],
+            FormeSaisie::UnitesEtHeures => &[Dates, Planning, Quantite, Rubrique, Taux, Heures, Lieu],
             // Une ligne de frais n'a pas de case de lieu (`gardees`) : le lieu d'un repas ou d'une nuitee hors de la
             // metropole, qui change sa limite, est son territoire.
-            FormeSaisie::Frais => &[Rubrique, Quantite, Taux, Territoire, Cases, Dates, Planning],
-            FormeSaisie::FraisSansLimite => &[Rubrique, Quantite, Taux, Dates, Planning],
-            FormeSaisie::Pourcentage => &[Rubrique, Base, TauxMajoration],
+            FormeSaisie::Frais => &[Dates, Planning, Quantite, Rubrique, Taux, Territoire, Cases],
+            FormeSaisie::FraisSansLimite => &[Dates, Planning, Quantite, Rubrique, Taux],
+            FormeSaisie::Pourcentage => &[Base, Rubrique, TauxMajoration],
             FormeSaisie::Montant => &[Rubrique, Montant],
             FormeSaisie::AvantageEnNature => &[Rubrique, Montant, Genre],
         }
@@ -1687,7 +1868,10 @@ impl LigneDonnee {
         };
         let voulues = forme.cles();
         let dites = self.dites();
-        let manquent: Vec<&str> = voulues.iter().filter(|c| !c.facultative() && !dites.contains(c)).map(|c| c.nom()).collect();
+        // La quantite d'une ligne qui se compte jour par jour peut se taire : elle est alors la somme de ses jours
+        // (`LignePaie::jours_tenus`).
+        let se_tait = |c: &Cle| *c == Cle::Quantite && QuantiteDeLigne::se_compte_par_jour(r.unite);
+        let manquent: Vec<&str> = voulues.iter().filter(|c| !c.facultative() && !se_tait(c) && !dites.contains(c)).map(|c| c.nom()).collect();
         let de_trop: Vec<&str> = dites.iter().filter(|c| !voulues.contains(c) && !forme.gardees().contains(c)).map(|c| c.nom()).collect();
         if !manquent.is_empty() || !de_trop.is_empty() {
             let liste = |l: &[&str]| l.iter().map(|c| format!("« {} »", c)).collect::<Vec<_>>().join(", ");
@@ -1789,7 +1973,10 @@ pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qu
             return Err(dans_la_ligne(refus("elle dit sa rubrique (« rubrique »).")));
         };
         let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois)).map_err(dans_la_ligne)?;
-        out.push(l.ranger(&r).map_err(dans_la_ligne)?.jours_ranges(mois));
+        // La quantite donnee (absente, `null` ou dite) et ce que disent ses jours se tiennent (`LignePaie::jours_tenus`).
+        let donnee = l.quantite;
+        let rangee = l.ranger(&r).map_err(dans_la_ligne)?.jours_ranges(mois);
+        out.push(rangee.jours_tenus(donnee, &r).map_err(dans_la_ligne)?);
     }
     Ok(out)
 }

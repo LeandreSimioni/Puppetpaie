@@ -292,14 +292,20 @@ pub struct Restes {
     pub resistent: Vec<String>,
 }
 
-/// AU LANCEMENT : les restes d'une suppression qui ne s'etaient pas effaces. Un dossier de l'installation qui ne se lit
-/// pas se dit.
+/// AU LANCEMENT : les restes d'une suppression qui ne s'etaient pas effaces, et un echange de « Prendre la main » coupe
+/// (`compagnie::recuperation::reparer_un_echange_coupe` : ce qu'il remet se note au journal de l'installation, ce qui
+/// resiste avec les restes). Un dossier de l'installation qui ne se lit pas se dit.
 pub fn effacer_les_restes(inst: &Path) -> R<Restes> {
     let mut r = Restes { partis: Vec::new(), resistent: Vec::new() };
     for d in installation::porteurs(inst) {
         if !socle::fichiers::present(&d)? {
             continue;
         }
+        let (remis, resistent) = compagnie::recuperation::reparer_un_echange_coupe(&d)?;
+        for phrase in &remis {
+            compagnie::maj::noter(inst, phrase);
+        }
+        r.resistent.extend(resistent);
         for e in std::fs::read_dir(&d).map_err(|e| socle::echec::du_disque(&d, &e))? {
             let e = e.map_err(|e| socle::echec::du_disque(&d, &e))?;
             if !e.file_name().to_string_lossy().starts_with(PREFIXE_RESTE) {

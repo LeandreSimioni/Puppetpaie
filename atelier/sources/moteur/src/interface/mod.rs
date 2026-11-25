@@ -834,6 +834,33 @@ impl Fenetre {
                 RouteReponse::de(nom, rendu)
             });
         }
+        // Un deplacement demande part au relais, et le logiciel se ferme comme par sa croix : ses envois en vol vont
+        // d'abord au bout (le relais n'attend la fin de la fenetre qu'un temps borne), puis le relais se lance et la
+        // fenetre se ferme ; il attend sa fin, deplace, et rouvre la fenetre au nouvel endroit (`compagnie::deplacement`).
+        // Le relais qui ne se lance pas : la fenetre reste ouverte, et la route le refuse.
+        if nom == Route::LogicielDeplacer {
+            let rendu = api::route_de_l_installation(nom, charge);
+            if !rendu.est_rendue() || !compagnie::deplacement::une_demande_attend(&inst) {
+                return rendu;
+            }
+            self.ecrire("Le logiciel se fermera pour se deplacer, ses envois finis.\n");
+            let pas_parti = std::cell::RefCell::new(None);
+            routes::envois_en_fond::fermer_apres_les_envois(|| match compagnie::deplacement::lancer_s_il_est_demande(&inst) {
+                Ok(true) => {
+                    self.poser_phase(Phase::Accueil);
+                    tenu(&self.fermer).as_ref().is_some_and(|f| f())
+                }
+                Ok(false) => false,
+                Err(e) => {
+                    *pas_parti.borrow_mut() = Some(e);
+                    false
+                }
+            });
+            return match pas_parti.into_inner() {
+                Some(e) => RouteReponse::de(nom, Err(e.reclasser(Classe::Refuse))),
+                None => rendu,
+            };
+        }
         if nom == Route::AdministrateurTableau {
             let c: routes::accueil::ChargeTableau = match charge.lire() {
                 Ok(c) => c,
@@ -923,7 +950,7 @@ impl Fenetre {
     }
 
     /// Une requete de la fenetre.
-    pub fn traiter(&self, r: Requete) -> Reponse {
+    pub fn traiter(self: &Arc<Self>, r: Requete) -> Reponse {
         let texte = |code: u16| Reponse::nouvelle(code, "text/plain; charset=utf-8", Vec::new());
         if r.methode == "POST" {
             // Un refus du serveur, avant toute route ou tout geste, se dit comme le refus d'une route (`refus`), que la page
@@ -1022,12 +1049,35 @@ impl Fenetre {
                     match routes::envois_en_fond::de_la_compagnie(&racine) {
                         Ok(envois) => {
                             let (r, c) = (racine.clone(), charge.clone());
-                            envois.servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref()))
+                            envois.servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref(), None))
                         }
                         Err(e) => RouteReponse::de(nom, Err(e)),
                     }
                 } else {
-                    api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref())
+                    // UNE ROUTE QUI REMPLACE LE DOSSIER DE LA COMPAGNIE OUVERTE (`drive-prendre-la-main`) la fait lacher
+                    // par la fenetre (sa veille, sa file des etats, ses envois, son journal), juste avant
+                    // (`LacherLaCompagnie`) ; la fenetre la rouvre ensuite, telle qu'elle est alors.
+                    let lachee = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let lacher = veille.is_some().then(|| {
+                        let (fenetre, l) = (Arc::clone(self), Arc::clone(&lachee));
+                        routes::enveloppe::LacherLaCompagnie::nouveau(move |r| fenetre.lacher(r).map(|()| l.store(true, std::sync::atomic::Ordering::SeqCst)))
+                    });
+                    let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref(), lacher);
+                    // CE QUE LA REPONSE DIT SUIVRE (`ensuite` : la sauvegarde du Drive lie), la veille le fait, sur son fil :
+                    // celle de la compagnie rouverte, si la route l'a fait lacher.
+                    if lachee.load(std::sync::atomic::Ordering::SeqCst) {
+                        // Le journal de la fenetre redevient celui de la compagnie (lacher l'avait laisse), sans le recommencer.
+                        *tenu(&self.journal) = Some(JOURNAL_INTERFACE.dans(&racine));
+                        if let Err(e) = self.ouvrir(racine.clone()) {
+                            self.ecrire(&format!("La compagnie ne se rouvre pas apres {} : {}\n", nom, e.en_lignes()));
+                        }
+                        if let Phase::Ouverte { veille, .. } = self.phase() {
+                            veille.faire_suivre(&rendu);
+                        }
+                    } else if let Some(v) = &veille {
+                        v.faire_suivre(&rendu);
+                    }
+                    rendu
                 };
                 self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
                 return Reponse::json(200, &rendu);
@@ -1397,6 +1447,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
         return ExitCode::FAILURE;
     }
     compagnie::incidents::brancher_l_engagement();
+    // Le logiciel qui se deplace (`compagnie::deplacement`) : rien ne s'y ouvre avant la fin.
+    if let Err(e) = compagnie::deplacement::refuser_s_il_se_deplace(&installation::base(), None) {
+        eprintln!("{}", e.en_lignes());
+        return ExitCode::FAILURE;
+    }
     #[cfg(feature = "atelier")]
     let args = &match poser_le_banc(args) {
         Ok(reste) => reste,

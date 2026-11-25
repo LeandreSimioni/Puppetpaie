@@ -24,6 +24,9 @@ pub(crate) enum ApresLeGeste {
     Relire,
     /// La compagnie que la reponse nomme (`ouvrir`) s'ouvre.
     Ouvrir,
+    /// La compagnie ouverte s'est fermee le temps du geste et revient changee (« Prendre la main » a recupere le Drive) :
+    /// la page la relit entiere.
+    Rouvrir,
 }
 
 /// UN ECRAN QU'UNE ROUTE REND : ce qu'il dit en tete (`encarts`), ses rangs dans l'ordre ou il les montre, ses cases

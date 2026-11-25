@@ -1,8 +1,8 @@
 //! L'ACCUEIL DES COMPAGNIES : les routes de l'installation (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`,
 //! `fictives/` : `compagnie/installation.rs`), et non d'une compagnie. Les lister, en ajouter une, choisir sa couleur, remettre
 //! une fictive livree a zero, garder au deblocage les compagnies creees en demo, completer un dossier portable des systemes
-//! qui lui manquent (`maj::completer_le_portable`) ; et ce que l'administrateur fait sur
-//! toutes ses compagnies a la fois (son tableau, son depot groupe).
+//! qui lui manquent (`maj::completer_le_portable`) ; dire ou est le logiciel et le deplacer (`deplacement`) ; et ce que
+//! l'administrateur fait sur toutes ses compagnies a la fois (son tableau, son depot groupe).
 //!
 //! L'INSTALLATION D'UNE ROUTE : celle de la compagnie nommee (`--racine`, `administrateur::installation_de`), sinon celle
 //! du programme (`compagnies::base`, a cote de `logiciel/`) : `moteur route` sans `--racine` sert l'installation ou il est
@@ -17,6 +17,7 @@
 //! marqueur, sa tuile) : `compagnie::installation`. Le dossier portable complete (`compagnie::maj::PortableComplete`, la
 //! route `portable-completer`) se dit ici (`Dite`).
 
+pub mod deplacement;
 pub mod drive;
 pub mod suppression;
 
@@ -142,7 +143,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::PortableCompleter,
         geste: "Ajouter au dossier les systèmes qui lui manquent (Windows, Linux, macOS).",
         charge: &ChargePortable::CHARGE,
-        exemple: r#"{"portable":true}"#,
+        exemple: r#"{}"#,
         rend: "ajoutes, absents (les systèmes que la version n'a pas), version, portable, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le réseau, la mise à jour en attente, ou ce que la phrase dit ; rien n'est posé" }],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
@@ -165,8 +166,9 @@ pub const ROUTES: &[Fiche] = &[
 ];
 
 /// LES ROUTES DE L'INSTALLATION, chaque module de l'accueil sa liste (sa place) : celles-ci, et reprendre une compagnie de
-/// son Drive (`drive::ROUTES`). Elles se servent sans compagnie (`route`).
-pub const DE_L_INSTALLATION: [&[Fiche]; 2] = [ROUTES, drive::ROUTES];
+/// son Drive (`drive::ROUTES`), dire ou est le logiciel et le deplacer (`deplacement::ROUTES`). Elles se servent sans
+/// compagnie (`route`).
+pub const DE_L_INSTALLATION: [&[Fiche]; 3] = [ROUTES, drive::ROUTES, deplacement::ROUTES];
 
 /// `route` est-elle une route de l'installation (`DE_L_INSTALLATION`) ?
 pub fn est_de_l_installation(route: Route) -> bool {
@@ -420,6 +422,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             en_json(tableau)
         }
         _ if crate::catalogue::dans(drive::ROUTES, nom).is_some() => drive::route(&inst, nom, charge),
+        _ if crate::catalogue::dans(deplacement::ROUTES, nom).is_some() => deplacement::route(&inst, nom, charge),
         Route::Basculer => {
             compagnie::bridage::basculer_de(&inst)?;
             let bride = compagnie::bridage::est_bride_de(&inst);

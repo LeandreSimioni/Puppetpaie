@@ -149,20 +149,15 @@ const CASES = {
       o.prerempli == null ? ` placeholder="jj/mm/aaaa"` : prerempliDe(o, jjmmaaaa)}${valeurDeDepart(v == null ? null : jjmmaaaa(v))}>`,
     lire: lireUnJour,
   },
-  // Des jours : le bouton qui les dit ouvre le calendrier où l'on coche ; un jour qui dit son propre lieu (`{jour, lieu}`)
-  // a sa case à côté, tant qu'il reste coché. `o.mois` : le mois dont les jours se cochent ici (ceux d'avant se lisent,
-  // ceux d'après sont ceux des mois suivants) ; `o.salarie` : de qui le calendrier montre les contrats passés.
+  // Des jours : le bouton qui les dit ouvre le calendrier où l'on coche ; chaque jour garde ce qu'il dit de lui-même (sa
+  // quantité, son lieu : `{jour, quantite, lieu}`) tant qu'il reste coché. `o.mois` : le mois dont les jours se cochent
+  // ici (ceux d'avant se lisent, ceux d'après sont ceux des mois suivants) ; `o.salarie` : de qui le calendrier montre
+  // les contrats passés.
   jours: {
     html: (v, o) => `<span class="jours-case" data-case data-valeur="${echapper(JSON.stringify(v || []))}"${
       o.mois ? ` data-mois="${echapper(o.mois)}"` : ""}${o.salarie ? ` data-salarie="${echapper(o.salarie)}"` : ""}>
-      <button type="button" class="jours-coches" data-calendrier="jours">${echapper(joursDits(v || []))}</button>${
-      lieuxDesJours(v || [])}</span>`,
-    lire: (x) => JSON.parse(x.dataset.valeur).map((d) => {
-      const iso = jourDe(d);
-      const c = x.querySelector(`[data-lieu-jour="${iso}"]`);
-      if (!c) return d;
-      return c.value.trim() ? { jour: iso, lieu: c.value.trim() } : iso;
-    }),
+      <button type="button" class="jours-coches" data-calendrier="jours">${echapper(joursDits(v || []))}</button></span>`,
+    lire: (x) => JSON.parse(x.dataset.valeur),
   },
   liste: {
     html: (v, o) => (o.choix
@@ -269,13 +264,6 @@ const CASES = {
 /** L'ADRESSE OÙ LA FENÊTRE SERT UN DOCUMENT QUE LA ROUTE NOMME (`adresse`, `routes::ouverture::DocumentMontre`), refaite à
  *  chaque fois : le document a pu changer depuis. */
 const adresseDuDocument = (d) => `${d.adresse}${d.adresse.includes("?") ? "&" : "?"}jeton=${encodeURIComponent(JETON)}&t=${Date.now()}`;
-
-/** Les jours qui disent leur propre lieu (`{jour, lieu}`) : une case chacun, le lieu du jour. */
-function lieuxDesJours(jours) {
-  const propres = jours.filter((d) => d && typeof d === "object" && d.lieu);
-  return propres.map((d) => `<label class="lieu-du-jour">${echapper(jjmmaaaa(d.jour).slice(0, 5))}
-    <input type="text" data-lieu-jour="${echapper(d.jour)}"${valeurDeDepart(d.lieu)}></label>`).join("");
-}
 
 /** Un jour tapé : JJ/MM/AAAA (un ou deux chiffres pour le jour et le mois) devient AAAA-MM-JJ ; ce qui ne se lit pas
  *  comme un jour part tel quel, et le moteur le refuse en nommant sa case. */
@@ -424,30 +412,72 @@ function clesDeLaLigne(r, communs) {
   return r ? r.cles : ETAT.rubriques[0].cles.filter((c) => communs[c.cle]);
 }
 
-/** LES COLONNES DES LIGNES : chaque clé de base que leurs rubriques disent, dans l'ordre où elle vient, une colonne
- *  chacune ; les clés de jours d'une rubrique (`jours` : ceux du mois, puis ceux des mois suivants) en une seule colonne,
- *  qui se coche dans un seul calendrier. Une liste à cocher (les cases d'une ligne de frais) et une clé que la route place
- *  sous « Avancé » (`place`) ne font pas de colonne : elles se posent sous leur ligne. */
-function colonnesDesLignes(lignes, communs) {
+/** LES COLONNES DES LIGNES : chaque clé de base que leurs rubriques disent, une colonne chacune, au rang que la route
+ *  donne à sa colonne (`colonne` : les jours, la quantité, la rubrique, le taux, le lieu, le montant au bout) ; les clés
+ *  de jours d'une rubrique (`jours` : ceux du mois, puis ceux des mois suivants) en une seule colonne, qui se coche dans
+ *  un seul calendrier. Une liste à cocher (les cases d'une ligne de frais) et une clé que la route place sous « Avancé »
+ *  (`place`) ne font pas de colonne : elles se posent sous leur ligne. Le montant que la route rend d'une ligne
+ *  (`rendues`, `montant`) se montre sous la colonne `montant`, qu'une ligne au montant saisit. */
+function colonnesDesLignes(lignes, communs, rendues) {
   const colonnes = [];
-  const jours = { cle: null, cles: [], forme: "jours", libelle: "" };
+  const jours = { cle: null, cles: [], forme: "jours", libelle: "", colonne: 0 };
   (lignes.length ? lignes : [{}]).forEach((l) => clesDeLaLigne(rubriqueDe(l.rubrique), communs).forEach((c) => {
     if (c.forme === "liste" || c.place === "avance") return;
     if (c.forme === "jours") {
-      if (!jours.cle) { jours.cle = c.cle; jours.libelle = c.libelle; colonnes.push(jours); }
+      if (!jours.cle) { jours.cle = c.cle; jours.libelle = c.libelle; jours.colonne = c.colonne; colonnes.push(jours); }
       if (!jours.cles.includes(c.cle)) jours.cles.push(c.cle);
       return;
     }
-    if (!colonnes.some((x) => x.cle === c.cle)) colonnes.push({ cle: c.cle, cles: [c.cle], forme: c.forme, libelle: c.libelle });
+    if (!colonnes.some((x) => x.cle === c.cle)) colonnes.push({ cle: c.cle, cles: [c.cle], forme: c.forme, libelle: c.libelle, colonne: c.colonne });
   }));
-  return colonnes;
+  if (rendues.some((x) => x.montant != null) && !colonnes.some((x) => x.cle === "montant")) {
+    colonnes.push({ cle: "montant", cles: [], forme: "montant", libelle: ETAT.aides.ligne_montant, colonne: Infinity });
+  }
+  return colonnes.sort((a, b) => a.colonne - b.colonne);
 }
 
 /** La largeur d'une colonne, par sa forme : une liste où l'on choisit et un texte s'élargissent, un nombre reste court. */
 const LARGEUR_DE_COLONNE = {
   choix_rendu: "minmax(8rem, 1.4fr)", choix: "minmax(8rem, 1.4fr)", texte: "minmax(8rem, 2fr)",
-  quantite: "minmax(4rem, .5fr)", nombre: "minmax(4.5rem, .6fr)", montant: "minmax(4.5rem, .6fr)", jours: "minmax(7rem, 1fr)",
+  quantite: "minmax(4rem, .5fr)", nombre: "minmax(4.5rem, .6fr)", montant: "minmax(5rem, .7fr)", jours: "minmax(7rem, 1fr)",
 };
+
+/** LES JOURS D'UNE LIGNE, UN PAR UN (`p` : `par_jour` de ce que la route rend de la ligne) : « ▸ par jour », repliée son
+ *  résumé, ouverte une rangée par jour sous les colonnes de la ligne, chaque chose sous la colonne de sa clé (la date
+ *  sous les jours, la quantité et le lieu en cases, l'unité sous la rubrique, le taux, le montant), puis son total.
+ *  `ouverte` : la flèche l'était (le seul confort de la page : elle ne décide rien). `colonnes` : celles des lignes ;
+ *  `bouts` : les cellules après elles (la croix, le « i ») ; sous la croix de la ligne, celle du jour (`retirer`, son
+ *  libellé), qui le retire de la ligne. Une case d'un jour montre ce que la route rend de ce jour (`valeur`). */
+function joursDeLaLigne(p, colonnes, bouts, ouverte, unite) {
+  const croix = (j) => `<button type="button" class="lien retirer-jour" data-retirer-jour="${echapper(j.jour)}" title="${
+    echapper(j.retirer)}" aria-label="${echapper(j.retirer)}">&times;</button>${"<span></span>".repeat(bouts - 1)}`;
+  const vides = "<span></span>".repeat(bouts);
+  const sous = (col, j) => {
+    if (col.forme === "jours") return `<span class="colonne">${echapper(j.dates)}</span>`;
+    if (col.cle === "quantite" && j.quantite) {
+      return `<span class="colonne">${caseDeForme(j.quantite.forme, j.quantite.valeur, { unite })
+        .replace("data-case", `data-case data-jour="${echapper(j.jour)}" data-jour-cle="quantite"`)}</span>`;
+    }
+    if (col.cle === "lieu" && j.lieu) {
+      return `<span class="colonne">${caseDeForme(j.lieu.forme, j.lieu.valeur, { prerempli: j.lieu.prerempli })
+        .replace("data-case", `data-case data-jour="${echapper(j.jour)}" data-jour-cle="lieu"`)}</span>`;
+    }
+    if (col.cle === "rubrique" && j.rubrique) return `<span class="colonne">${echapper(j.rubrique)}</span>`;
+    if (col.cle === "taux" && j.taux) return `<span class="colonne">${echapper(j.taux)}</span>`;
+    if (col.cle === "montant" && j.montant != null) return `<span class="colonne montant-rendu">${echapper(euros(j.montant))}</span>`;
+    return `<span class="colonne vide"></span>`;
+  };
+  const total = (col, t) => {
+    if (col.forme === "jours") return `<span class="colonne">${echapper(t.libelle)}</span>`;
+    if (col.cle === "quantite") return `<span class="colonne montant-rendu">${echapper(t.quantite)}</span>`;
+    if (col.cle === "rubrique") return `<span class="colonne">${echapper(t.rubrique)}</span>`;
+    if (col.cle === "montant" && t.montant != null) return `<span class="colonne montant-rendu">${echapper(euros(t.montant))}</span>`;
+    return `<span class="colonne vide"></span>`;
+  };
+  return `<details class="ligne-par-jour"${ouverte ? " open" : ""}><summary>${p.resume ? `${echapper(p.resume)} ` : ""}${echapper(ETAT.aides.ligne_par_jour)}</summary>
+    ${p.jours.map((j) => `<div class="rangee-du-jour">${colonnes.map((c) => sous(c, j)).join("")}${croix(j)}</div>`).join("")}
+    ${p.total ? `<div class="rangee-du-jour total">${colonnes.map((c) => total(c, p.total)).join("")}${vides}</div>` : ""}</details>`;
+}
 
 /** DES LIGNES DE PAIE, une par rangée, aux colonnes fixes et titrées une fois : chaque clé que sa rubrique dit, chacune
  *  sa case, puis la croix qui retire la ligne, au bout. Sous la ligne : ses cases à cocher (une liste, quand des valeurs
@@ -458,7 +488,8 @@ const LARGEUR_DE_COLONNE = {
  *  ligne dont la rubrique en a une porte un « i » au bout, qui ouvre sa bulle sous elle (`o.ouvertes` : les rangs des
  *  lignes dont la bulle est ouverte). */
 function lignesDePaie(lignes, choixDe, o) {
-  const colonnes = colonnesDesLignes(lignes, o.choix);
+  const rendues = o.rendues || [];
+  const colonnes = colonnesDesLignes(lignes, o.choix, rendues);
   const bulleDe = (l) => (o.bulles && l.rubrique ? o.bulles[l.rubrique] : null);
   const avecBulles = lignes.some(bulleDe);
   const gabarit = colonnes.map((c) => LARGEUR_DE_COLONNE[c.forme] || "minmax(6rem, 1fr)").concat("2rem", avecBulles ? ["1.5rem"] : []).join(" ");
@@ -467,23 +498,31 @@ function lignesDePaie(lignes, choixDe, o) {
     const r = rubriqueDe(l.rubrique);
     const cles = clesDeLaLigne(r, o.choix);
     const choix = { ...o.choix, ...(r ? r.choix : {}), ...choixDe(i) };
-    // Les nombres de la ligne, que les mots de sa rubrique suivent : le premier et le second, ou le seul.
+    const rendue = rendues.find((x) => x.ligne === i);
+    // Les mots de sa rubrique autour de ses nombres (`mots`) : après le premier ; avant et après le second ; après le
+    // seul.
     const nombres = cles.filter((c) => c.forme === "quantite" || c.forme === "nombre" || c.forme === "montant").map((c) => c.cle);
-    const mot = (cle) => {
-      if (!r || !nombres.includes(cle)) return "";
-      const k = nombres.length > 1 ? nombres.indexOf(cle) : 1;
-      return k < 2 ? `<span class="mot">${echapper(r.mots[k])}</span>` : "";
+    const mot = (k) => (k ? `<span class="mot">${echapper(k)}</span>` : "");
+    const mots = (cle) => {
+      const k = nombres.indexOf(cle);
+      if (!r || k < 0 || k > 1) return ["", ""];
+      if (nombres.length === 1) return ["", mot(r.mots[2])];
+      return k === 0 ? ["", mot(r.mots[0])] : [mot(r.mots[1]), mot(r.mots[2])];
     };
     const cellule = (col) => {
       const siennes = cles.filter((c) => col.cles.includes(c.cle));
+      if (!siennes.length && col.cle === "montant" && rendue && rendue.montant != null) {
+        return `<span class="colonne montant-rendu">${echapper(euros(rendue.montant))}</span>`;
+      }
       if (!siennes.length) return `<span class="colonne vide"></span>`;
       const c = siennes[0];
       const marque = (h) => h.replace("data-case", `data-case data-cle="${c.cle}" data-cles="${siennes.map((x) => x.cle).join(" ")}"`);
       const v = c.forme === "jours" ? siennes.flatMap((x) => l[x.cle] || []) : l[c.cle];
       // Les choix de la rubrique s'expliquent au survol, quand elle dit leur aide (`lieu_aide`).
       const aide = r && r.lieu_aide && r.choix[c.cle] ? ` title="${echapper(r.lieu_aide)}"` : "";
-      return `<label class="colonne"${aide}><span class="colonne-libelle">${echapper(c.libelle)}</span>${marque(caseDeForme(c.forme, v, {
-        unite: r ? r.quantite : null, choix: choix[c.cle], mois: siennes.length > 1 ? o.mois : null, salarie: o.salarie }))}${mot(c.cle)}</label>`;
+      const [avant, apres] = mots(c.cle);
+      return `<label class="colonne"${aide}><span class="colonne-libelle">${echapper(c.libelle)}</span>${avant}${marque(caseDeForme(c.forme, v, {
+        unite: r ? r.quantite : null, choix: choix[c.cle], mois: siennes.length > 1 ? o.mois : null, salarie: o.salarie }))}${apres}</label>`;
     };
     const coches = cles.filter((c) => c.forme === "liste" && c.place !== "avance" && choix[c.cle] && choix[c.cle].length);
     // Les clés que la route place sous « Avancé » (le territoire d'un repas ou d'une nuitée) : repliées sous la ligne,
@@ -508,10 +547,22 @@ function lignesDePaie(lignes, choixDe, o) {
       ${colonnes.map(cellule).join("")}
       <button type="button" class="lien retirer-ligne" title="retirer cette ligne" aria-label="retirer cette ligne">&times;</button>
       ${porte}
+      ${rendue && rendue.par_jour ? joursDeLaLigne(rendue.par_jour, colonnes, avecBulles ? 2 : 1, !!(o.parJour && o.parJour.has(i)), r ? r.quantite : null) : ""}
       ${sous.length ? `<div class="ligne-sous">${sous.join("")}</div>` : ""}
       ${bulle ? bulleDeLaLigne(bulle, ouverte) : ""}
     </div>`;
   }).join("")}</div>`;
+}
+
+/** « ▸ par jour » ouverte ou fermée : `ouverts` garde les rangs des lignes dont elle est ouverte, pour qu'elle le reste
+ *  quand les lignes se redessinent. */
+function brancherLesJoursDesLignes(bloc, ouverts) {
+  bloc.querySelectorAll(".ligne-par-jour").forEach((d) => {
+    d.ontoggle = () => {
+      const i = +d.closest(".ligne-paie").dataset.ligne;
+      if (d.open) ouverts.add(i); else ouverts.delete(i);
+    };
+  });
 }
 
 /** LA BULLE D'UNE LIGNE : ce que la route dit de sa rubrique (`tete`, `montants` : chacun sa `condition` et son
@@ -542,7 +593,9 @@ function brancherLesBulles(bloc, ouvertes) {
 /** Les lignes que montrent les rangées de `bloc`, telles que la route les lit : ce que chaque case dit, par-dessus la
  *  ligne telle qu'elle était écrite (une clé qui ne se dessine pas garde sa valeur). Les jours d'une colonne partent tous
  *  dans sa première clé, les autres vides : la route les range par mois (`ligne::ranger`). Une ligne dont on vient de
- *  changer la rubrique garde les clés que la nouvelle dit aussi. */
+ *  changer la rubrique garde les clés que la nouvelle dit aussi. Un jour qui a sa rangée sous la ligne (« par jour »)
+ *  dit ce que ses cases disent (sa quantité, son lieu : `{jour, quantite, lieu}`), un jour qui n'en dit rien est nu. La
+ *  route tient ensemble la quantité de la ligne et celle de ses jours (`LignePaie::jours_tenus`). */
 function lireLesLignes(bloc) {
   return [...bloc.querySelectorAll(".ligne-paie[data-ligne]")].map((rangee) => {
     const lu = JSON.parse(rangee.dataset.valeur);
@@ -554,7 +607,28 @@ function lireLesLignes(bloc) {
       autres.forEach((k) => { lu[k] = []; });
     });
     const r = rubriqueDe(lu.rubrique);
-    return r ? ligneDonnee(lu, r) : lu;
+    if (r) {
+      r.cles.filter((c) => c.forme === "jours" && Array.isArray(lu[c.cle])).forEach((c) => {
+        lu[c.cle] = lu[c.cle].map((d) => {
+          const iso = jourDe(d);
+          const cases = rangee.querySelectorAll(`[data-jour="${iso}"][data-jour-cle]`);
+          if (!cases.length) return d;
+          const jour = typeof d === "object" ? { ...d } : { jour: iso };
+          cases.forEach((x) => {
+            const v = lireLaCase(x);
+            if (v == null) delete jour[x.dataset.jourCle]; else jour[x.dataset.jourCle] = v;
+          });
+          return Object.keys(jour).length > 1 ? jour : iso;
+        });
+      });
+    }
+    if (!r) return lu;
+    const donnee = ligneDonnee(lu, r);
+    // La quantité de la ligne ne part que si l'on a touché à sa case (le seul confort de la saisie : quelle case a
+    // bougé) ; sinon la route prend la somme des jours (`LignePaie::jours_tenus`), et un jour changé ou retiré compte.
+    const q = rangee.querySelector('[data-case][data-cle="quantite"]');
+    if (q && q.value === q.defaultValue && rangee.querySelector('[data-jour-cle="quantite"]')) delete donnee.quantite;
+    return donnee;
   });
 }
 
@@ -863,6 +937,8 @@ function partiEnFond(r) {
   if (!r || !r.en_fond) return false;
   fermerBoite();
   dire(r.phrase);
+  // Vu en cours dès sa réponse : s'il est au bout avant que le bandeau le lise, sa place se repeint quand même.
+  ENVOIS_VUS_EN_COURS.add(r.en_fond);
   suivreVeille();
   // Le cadre sous le mois (`etat-du-mois`) dit l'envoi en cours.
   rafraichirActions();
@@ -892,8 +968,14 @@ async function faireLeGeste(g, entete, apres, bouton) {
     if (partiEnFond(r)) { rallumer(); return ENREGISTRE_PUIS_SUITE; }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
+    // La compagnie s'est fermée le temps du geste et revient changée (`apres` : `rouvrir`, routes/src/ecran.rs) : la
+    // page la relit entière.
+    if (r.apres === "rouvrir") { location.reload(); return ENREGISTRE_PUIS_SUITE; }
     await apres(r);
     rallumer();
+    // La sauvegarde que la route dit suivre (`ensuite`, sa route et sa charge), la fenêtre la fait par sa veille : le
+    // bandeau la suit.
+    if (r.ensuite) suivreVeille();
     // Ce que la route dit qui suit (`suite` : le dépôt d'un signalement écrit) s'ouvre ensuite.
     if (r.suite) ouvrirGeste(r.suite);
     // Écrit, et la boîte déjà fermée par lui : quitter ne la referme pas (elle peut être la suite).

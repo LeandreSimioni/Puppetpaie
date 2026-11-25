@@ -337,6 +337,14 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             // une installation a part.
             Route::CompagnieCouleur | Route::CompagnieRemettreAZero | Route::CompagniesGarder => route(&installation_a_part(&c, f.nom()).1, f.nom(), exemple, "2026-11-02"),
             Route::AdministrateurRattacher | Route::AdministrateurDetacher => administrateur(&c, f.route, exemple),
+            // Le dossier de l'exemple est celui d'un poste ; ici, celui ou l'installation est deja : rien ne bouge.
+            Route::LogicielDeplacer => route(&c, f.nom(), json!({ "dossier": inst }), "2026-11-02"),
+            // Une installation a part, deja portable : rien ne bouge, rien n'est exige (la cle du poste ne se copie pas).
+            Route::LogicielRendrePortable => {
+                let (inst, reelle) = installation_a_part(&c, f.nom());
+                compagnie::coffre::marquer_portable(&inst).unwrap();
+                route(&reelle, f.nom(), exemple, "2026-11-02")
+            }
             // La compagnie n'a qu'une annee a regulariser, que l'exemple de `casc-regularise` a deja notee : l'envoi se
             // joue sur cette annee de nouveau a regulariser.
             Route::CascEnvoyer => {

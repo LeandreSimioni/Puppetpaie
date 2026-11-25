@@ -1018,6 +1018,19 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         return Err(refus_avec(format!("Ce dossier n'est pas une installation de PuppetPaie. {}", rien), a_part_chemin(inst)));
     }
     let version = courante(&code)?;
+    // Le marqueur seul ne fait suivre aucune cle : une installation qui a deja une compagnie reelle ne s'ouvrirait plus
+    // ailleurs. Elle passe par « Rendre portable » (`coffre::rendre_portable`, avec le mot de passe) ; l'installation
+    // neuve que l'installeur portable complete n'a encore ni compagnie ni coffre.
+    if portable && !inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
+        for r in compagnies_de(inst)? {
+            if !crate::installation::est_fictive(&r)? {
+                return Err(socle::refus!(
+                    "Ce logiciel a déjà des compagnies : pour le rendre portable, utilisez « Rendre portable » à l'accueil, qui emporte la clé de leurs coffres. {}",
+                    rien
+                ));
+            }
+        }
+    }
     if a_installer(inst)?.is_some() {
         return Err(socle::refus!("Une mise à jour attend le redémarrage : redémarrez PuppetPaie, puis recommencez. {}", rien));
     }
@@ -1076,8 +1089,8 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
             ajoutes.extend(systemes.iter().copied().filter(|s| programme_de(&code, *s, "puppetpaie").is_file()));
         }
     }
-    if portable && !inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
-        std::fs::write(inst.join(crate::coffre::MARQUEUR_PORTABLE), crate::coffre::CONTENU_PORTABLE).map_err(|e| socle::echec::du_disque(&inst, &e))?;
+    if portable {
+        crate::coffre::marquer_portable(inst)?;
     }
     let noms = |l: &[Systeme]| l.iter().map(|s| s.lu()).collect::<Vec<_>>().join(", ");
     use socle::texte::Phrase;
@@ -2076,7 +2089,7 @@ pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
 /// Attend la fin du processus `pid` (60 s au plus). Vrai s'il est parti. Sous Windows, le processus lui-meme (son numero,
 /// qui ne se confond avec aucun autre) ; le dossier d'installation n'y sert pas.
 #[cfg(windows)]
-fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
+pub(crate) fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
     Ok(socle::systeme::attendre_la_fin(pid, std::time::Duration::from_secs(60)))
 }
 
@@ -2084,7 +2097,7 @@ fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
 /// a son creneau (`instance::ouverte`, qui compare le dossier de l'installation), elle est partie. Une autre
 /// installation ouverte sur le poste a son propre creneau, et ne se confond jamais avec elle.
 #[cfg(not(windows))]
-fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
+pub(crate) fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
     for _ in 0..120 {
         if !crate::instance::ouverte(inst, crate::instance::Plage::DU_POSTE)? {
             return Ok(true);

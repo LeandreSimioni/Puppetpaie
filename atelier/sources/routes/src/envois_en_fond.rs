@@ -7,8 +7,10 @@
 //! mais quand la route arrive au point ou tout est verifie, le mot de passe compris, et ou seul le transport reste
 //! (`partir`, juste avant le premier octet qui quitte le poste), la page recoit aussitot « en cours d'envoi » et la route
 //! continue sur son fil. Ce qu'elle rend ensuite, partie ou refusee, se dit dans le bandeau (`EnvoisEnFond::dits`, que
-//! la veille rend a la page) et a sa place (`PlaceDeLEnvoi` : l'etape du mois, la fiche d'un salarie neuf), avec le
-//! geste qui la refait quand elle a echoue. Tant qu'il est en cours, sa place le dit a la place de son geste : un second
+//! la veille rend a la page) et a sa place (`PlaceDeLEnvoi` : l'etape du mois), avec le geste qui la refait quand elle
+//! a echoue ; une demande de fiche partie ne s'y dit pas : elle quitte la liste (`EnvoisEnFond::finir`) et se voit dans
+//! les fiches en attente (`configuration`, `fiches_attendues`), ou elle attend sa reponse des jours durant ; refusee, elle
+//! se dit comme les autres. Tant qu'il est en cours, sa place le dit a la place de son geste : un second
 //! clic ne le refait pas partir. En ligne de commande, dans la veille, dans l'horloge d'une fictive et dans le navigateur
 //! (`SANS_FIL`), aucun fil n'attend ce point : `partir` ne fait rien, et la route va au bout avant de rendre ce qu'elle
 //! rend.
@@ -41,7 +43,7 @@ use crate::etapes::QuelleEtape;
 /// dit « en cours d'envoi » a la place du geste de l'etape entiere, `etat-par-engagement` a la place du geste de ce qu'il
 /// emporte, et de cela seul, puis son issue dans le cadre du mois), la demande de fiche a `adresse`, partie de la fiche
 /// d'ou on la fait (`salarie` : la fiche de ce salarie ; aucun, la fiche d'un salarie neuf, que la route `fiche` designe
-/// sans cle ; cette fiche dit la demande en cours a la place de son geste), ou ailleurs (un dossier, la regularisation
+/// sans cle ; cette fiche dit la demande en cours a la place de son geste, et rien d'elle une fois partie), ou ailleurs (un dossier, la regularisation
 /// CASC-SVP depuis les Exports, un signalement), ou son geste reste a sa place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PlaceDeLEnvoi {
@@ -580,9 +582,14 @@ impl EnvoisEnFond {
         }
     }
 
-    /// L'envoi `numero` est au bout : la phrase de sa route, ou son refus.
+    /// L'envoi `numero` est au bout : la phrase de sa route, ou son refus. Une demande de fiche partie sans refus ne se
+    /// dit plus : elle a sa place dans les fiches en attente, ou elle attend sa reponse des jours durant.
     fn finir(&self, numero: NumeroDEnvoi, r: &Reponse, suivre: Option<crate::depots::ChargeSuivre>) {
-        if let Some(e) = tenu(&self.envois).iter_mut().find(|e| e.numero == numero) {
+        let mut envois = tenu(&self.envois);
+        if r.issue_dite().is_ok() {
+            envois.retain(|e| e.numero != numero || !matches!(e.place, PlaceDeLEnvoi::Fiche { .. }));
+        }
+        if let Some(e) = envois.iter_mut().find(|e| e.numero == numero) {
             e.etat = match r.issue_dite() {
                 Ok(p) => EtatDUnEnvoi::Parti(p.to_string()),
                 Err(x) => EtatDUnEnvoi::Echoue(format!("{} : l'envoi n'est pas allé au bout. {}", e.quoi, x.phrase)),

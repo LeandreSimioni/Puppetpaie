@@ -5,7 +5,8 @@
  * écriture, route `enregistrer-saisie`). Les cases ouvertes et leur place, la route les dit pour chaque carte (`carte`
  * de sa paie dans l'aperçu : `cases`, chacune `base`, `avance`, `imprevu` ou `rendue`) ; avant tout aperçu, celles de
  * toute carte de sa nature (`ouverte` : « toujours »). Ce qu'offrent les cases qui se choisissent : `choix` de l'état, de
- * sa nature, d'une carte neuve et de sa paie, sous la clé de leur case ; ce que le moteur prend pour une case vide :
+ * sa nature, de l'écran du mois (`nouvelle_carte` de la route saisie, relu quand on ouvre la case) et de sa paie, sous la
+ * clé de leur case ; ce que le moteur prend pour une case vide :
  * `prerempli`. Sous les lignes, ce que l'aperçu dit du contrat ; puis sa paie, le montant qu'on vise (route `ajuster`),
  * son état (`etat-par-engagement`) et ses gestes.
  *
@@ -30,13 +31,25 @@ function rendueDe(div) {
 }
 
 /** CE QUE LES CASES DE LA CARTE QUI SE CHOISISSENT OFFRENT, sous la clé de leur case, tel que les routes le rendent :
- *  `choix` de l'état (les fiches, les métiers sous leur famille, les établissements, la transaction, le type d'un
- *  préavis), de sa nature (ses motifs de recours), d'une carte neuve (`nouvelle_carte` de la route saisie : la nature),
- *  et de sa paie (le motif de la fin, les modèles de contrat). */
+ *  `choix` de l'état (la transaction, le type d'un préavis), de sa nature (ses motifs de recours), de l'écran du mois
+ *  (`nouvelle_carte` de la route saisie : les salariés, les spectacles, les métiers sous leur famille, les
+ *  établissements ; la nature quand elle se choisit), et de sa paie (le motif de la fin, les modèles de contrat). */
 function choixDeLaCarte(div) {
   const n = natureDe(div._carte.nature);
   const r = rendueDe(div);
   return { ...ETAT.choix, ...(n ? n.choix : {}), ...NOUVELLE_CARTE.choix, ...(r ? r.choix : {}) };
+}
+
+/** UNE CASE QUI SE CHOISIT DANS CE QUE REND L'ÉCRAN DU MOIS (`nouvelle_carte.choix` de la route saisie) relit cette
+ *  route quand on l'ouvre, et montre la liste qu'elle rend : une fiche créée depuis s'y trouve. */
+async function relireLesChoix(div, x, cle) {
+  const mois = MOIS_AFFICHE;
+  let r;
+  try { r = await api("saisie", { mois }); } catch (e) { dire(e.message, "erreur"); return; }
+  if (mois !== MOIS_AFFICHE || !x.isConnected) return;
+  NOUVELLE_CARTE = r.nouvelle_carte;
+  const rendue = rendueDe(div);
+  x.innerHTML = optionsDuChoix(div._carte[cle], NOUVELLE_CARTE.choix[cle], rendue ? rendue.prerempli[cle] : null);
 }
 
 /** Ce que les choix d'une ligne de paie offrent à toutes les lignes de la carte : les rubriques que la carte propose
@@ -102,7 +115,8 @@ function caseDeLaCarte(div, d, choix) {
   if (d.forme === "lignes") {
     return `<div class="case case-lignes" data-cle="${d.cle}"><span class="case-libelle">${echapper(d.libelle)}</span>
       ${lignesDePaie(v || [], lignesChoixDe(div), { choix: choixDesLignes(div, v || []), mois: MOIS_AFFICHE, salarie: salarieDuBloc(div) || null,
-        bulles: bullesDeLaCarte(div), ouvertes: bullesOuvertes(div) })}
+        bulles: bullesDeLaCarte(div), ouvertes: bullesOuvertes(div), rendues: rendueDe(div) ? rendueDe(div).lignes : [],
+        parJour: joursOuverts(div) })}
       <button type="button" class="lien ajouter-ligne">+ une ligne</button>
       <p class="e-montre discret"></p></div>`;
   }
@@ -132,6 +146,11 @@ function metierDeLaCarte(div) {
 /** Les rangs des lignes de la carte dont la bulle est ouverte. */
 function bullesOuvertes(div) {
   return div._bulles || (div._bulles = new Set());
+}
+
+/** Les rangs des lignes de la carte dont « par jour » est ouverte. */
+function joursOuverts(div) {
+  return div._parJour || (div._parJour = new Set());
 }
 
 /** CE QUE LA CONVENTION FIXE AU MÉTIER DE LA CARTE, sous le code de chaque rubrique (`rubriques` de la route), chacune
@@ -218,6 +237,11 @@ function dessinerLaCarte(div) {
     <div class="etats"></div>`;
   brancherLesCases(div, { passes: (mois, salarie) => api("contrats-passes", { mois, salarie }) });
   brancherLesBulles(div, bullesOuvertes(div));
+  brancherLesJoursDesLignes(div, joursOuverts(div));
+  div.querySelectorAll(".case[data-cle] > select[data-case]").forEach((x) => {
+    const cle = x.parentElement.dataset.cle;
+    if (cle in NOUVELLE_CARTE.choix && !(r && cle in r.choix)) x.onfocus = () => relireLesChoix(div, x, cle);
+  });
   const avance = div.querySelector(".e-avance");
   if (avance) avance.ontoggle = () => { div._avance = avance.open; };
   div.onchange = (ev) => caseChangee(div, ev.target);
@@ -234,11 +258,25 @@ function dessinerLaCarte(div) {
       const bloc = b.closest(".case-lignes");
       const retiree = +b.closest(".ligne-paie").dataset.ligne;
       const lignes = lireLesLignes(bloc).filter((_, i) => i !== retiree);
-      // Une bulle ouverte reste sur sa ligne : celles d'après remontent d'un rang.
-      const ouvertes = bullesOuvertes(div);
-      const restees = [...ouvertes].filter((i) => i !== retiree).map((i) => (i > retiree ? i - 1 : i));
-      ouvertes.clear();
-      restees.forEach((i) => ouvertes.add(i));
+      // Une bulle ou « par jour » ouverte reste sur sa ligne : celles d'après remontent d'un rang.
+      [bullesOuvertes(div), joursOuverts(div)].forEach((ouvertes) => {
+        const restees = [...ouvertes].filter((i) => i !== retiree).map((i) => (i > retiree ? i - 1 : i));
+        ouvertes.clear();
+        restees.forEach((i) => ouvertes.add(i));
+      });
+      changer(div, [{ case: bloc.dataset.cle, valeur: lignes }]);
+    };
+  });
+  // La croix d'un jour sous « par jour » : le jour quitte sa ligne, avec sa quantité et son lieu, et les lignes partent à
+  // la route (`LignePaie::jours_tenus`).
+  div.querySelectorAll(".retirer-jour").forEach((b) => {
+    b.onclick = () => {
+      const bloc = b.closest(".case-lignes");
+      const i = +b.closest(".ligne-paie").dataset.ligne;
+      const iso = b.dataset.retirerJour;
+      const lignes = lireLesLignes(bloc);
+      const l = lignes[i];
+      ["dates", "planning"].forEach((k) => { if (Array.isArray(l[k])) l[k] = l[k].filter((d) => jourDe(d) !== iso); });
       changer(div, [{ case: bloc.dataset.cle, valeur: lignes }]);
     };
   });
@@ -646,12 +684,16 @@ function ouvrirLaFin(div, champ) {
 
 /** RETIRER DES JOURS PAYÉS PENDANT UN IMPRÉVU (`jours` : `{rubrique, iso}`, ce que la route `imprevus` nomme) : chaque
  *  jour quitte la ligne de sa rubrique qui le porte, et les lignes partent à la route, comme décochées au calendrier ; la
- *  route fait suivre la quantité d'une ligne qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`), et la
- *  carte se redessine de ce qu'elle rend. Rend le nombre de jours retirés : aucun quand la carte est validée et fermée,
- *  ou qu'aucune ligne ne les porte. */
+ *  route tient ensemble la quantité de la ligne et celle de ses jours (`LignePaie::jours_tenus`), et la carte se redessine
+ *  de ce qu'elle rend. Rend le nombre de jours retirés : aucun quand la carte est validée et fermée, ou qu'aucune ligne ne
+ *  les porte. */
 async function retirerDesJours(div, jours) {
   if (carteFermee(div)) return 0;
-  const lignes = (div._carte[caseDesLignes(div).cle] || []).map((l) => ({ ...l }));
+  // Les lignes telles que la carte les montre, chaque jour avec la quantité que la route lui rend : le jour retiré part
+  // avec la sienne (`lireLesLignes`, comme la croix d'un jour).
+  const bloc = div.querySelector(".case-lignes");
+  if (!bloc) return 0;
+  const lignes = lireLesLignes(bloc);
   let retires = 0;
   // Les clés de jours d'une ligne : celles que sa rubrique dit de forme `jours`.
   const clesDeJours = (l) => (rubriqueDe(l.rubrique) ? rubriqueDe(l.rubrique).cles.filter((c) => c.forme === "jours").map((c) => c.cle) : []);
@@ -720,13 +762,6 @@ function poserLesCartes(r) {
     const div = carteDEngagement(e, r.identites[i]);
     div._aCompleter = r.a_completer[i];
     cible.appendChild(div);
-  });
-}
-
-/** Les listes des cartes ouvertes, refaites sur l'ETAT relu (une fiche créée depuis la configuration). */
-function rafraichirReferentiels() {
-  document.querySelectorAll("#engagements .engagement").forEach((div) => {
-    if (!carteFermee(div) && !div.contains(document.activeElement)) dessinerCarte(div);
   });
 }
 

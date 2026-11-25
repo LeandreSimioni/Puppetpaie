@@ -9,7 +9,7 @@ use serde::de::IntoDeserializer;
 use socle::grandeurs::Octets;
 use socle::paris::Moment;
 
-use crate::sauvegarde::{IdentiteSurLeDrive, SAUVEGARDE};
+use crate::sauvegarde::{IdentiteSurLeDrive, LaMain, SAUVEGARDE};
 
 /// CE QU'EST UN DOSSIER SOUS LA RACINE DU DRIVE : le dossier d'une compagnie (sa marque dit son identite), l'ancien
 /// dossier commun (`sauvegarde`, ou toutes les compagnies d'un meme compte ecrivaient, homonymes compris), ou un autre
@@ -23,14 +23,19 @@ pub enum GenreDuDossier {
 
 /// UN DOSSIER SOUS LA RACINE DU DRIVE, tel que la vue le montre : son identifiant, son nom, ce qu'il est, la date de sa
 /// derniere sauvegarde et son volume (ce que sa marque dit ; rien sans marque), et ce qui ne s'en lit pas.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DossierVu {
     pub id: IdDrive,
     pub nom: String,
     pub genre: GenreDuDossier,
     pub derniere: Option<Moment>,
     pub octets: Option<Octets>,
-    /// Ce qui ne se lit pas dans sa marque, une phrase par chose, en mots : le dossier se montre quand meme.
+    /// La main sur le dossier (`LaMain`) : aucune quand sa marque n'en dit rien ; `Err` : elle ne se lit pas, et pourquoi,
+    /// detail compris, que `sauvegarde::main_illisible_dite` dit (illisible n'est pas aucune : la sauvegarde ne part pas,
+    /// `SansLaMain::Illisible`).
+    pub main: Result<Option<LaMain>, socle::echec::Echec>,
+    /// Ce qui ne se lit pas dans sa marque, une phrase par chose, en mots : le dossier se montre quand meme. La main
+    /// illisible n'y est pas : `main` la dit.
     pub illisible: Vec<String>,
 }
 
@@ -43,12 +48,13 @@ impl DossierVu {
 
 /// Le dossier `d`, lu depuis sa marque : ce qui ne s'en lit pas se dit dans `illisible`, sans fermer la vue.
 fn vu(d: envois::drive::SousDossier) -> DossierVu {
-    // Sans marque, le dossier ne dit ni identite, ni date, ni volume.
+    // Sans marque, le dossier ne dit ni identite, ni date, ni volume, ni main.
+    let mut illisible = Vec::new();
+    let main = LaMain::de(d.marque.as_ref());
     let (compagnie, derniere, octets) = match d.marque {
-        Some(MarqueDuDossier { compagnie, derniere, octets }) => (compagnie, derniere, octets),
+        Some(MarqueDuDossier { compagnie, derniere, octets, .. }) => (compagnie, derniere, octets),
         None => (None, None, None),
     };
-    let mut illisible = Vec::new();
     let genre = match compagnie.map(|c| IdentiteSurLeDrive::lire(&c)) {
         Some(Ok(i)) => GenreDuDossier::Compagnie(i),
         Some(Err(e)) => {
@@ -75,7 +81,7 @@ fn vu(d: envois::drive::SousDossier) -> DossierVu {
             None
         }
     });
-    DossierVu { id: d.id, nom: d.nom, genre, derniere, octets, illisible }
+    DossierVu { id: d.id, nom: d.nom, genre, derniere, octets, main, illisible }
 }
 
 /// LES DOSSIERS SOUS LA RACINE `racine_drive` DU DRIVE DE `client`, dans l'ordre ou Drive les rend, de toutes les racines

@@ -146,7 +146,7 @@ impl LigneBrut {
                 let minuscule: String = l.next().into_iter().flat_map(|c| c.to_lowercase()).chain(l).collect();
                 return format!("{} h {}", nb, socle::texte::de(&minuscule));
             }
-            return format!("{} ({} {}{})", self.libelle, nb, self.unite, if pluriel { "s" } else { "" });
+            return format!("{} ({} {})", self.libelle, nb, q.unite_dite());
         }
         // Le pluriel porte sur le premier mot : il nomme ce qui se compte.
         let tete = if pluriel && !tete.ends_with('s') { format!("{}s", tete) } else { tete.to_string() };

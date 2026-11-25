@@ -200,6 +200,13 @@ pub(crate) fn commande_et_route(o: &Options, entree: &str) -> (Option<Route>, Re
     match Demande::lire(entree) {
         Ok(mut d) => {
             d.charge.sans_les_secrets(d.route);
+            // LE LOGICIEL QUI SE DEPLACE (`compagnie::deplacement`) : rien ne s'y lit ni ne s'y ecrit avant la fin, sauf
+            // « ou est le logiciel », qui dit ou en est le deplacement. Une installation qu'il ne concerne pas se sert.
+            if d.route != Route::LogicielOu {
+                if let Err(e) = compagnie::deplacement::refuser_s_il_se_deplace(&compagnie::installation::base(), o.racine.as_deref()) {
+                    return (Some(d.route), Reponse::de(d.route, Err(e)));
+                }
+            }
             // UNE MISE A JOUR SE PREND EN COMPTE dans un autre processus : une route qui ecrit attend qu'elle ait fini.
             if let Err(e) = gestes::ouverture::porte_pendant_la_version(o, d.route) {
                 return (Some(d.route), Reponse::de(d.route, Err(e)));

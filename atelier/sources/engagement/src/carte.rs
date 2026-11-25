@@ -1108,25 +1108,6 @@ impl Changements {
                 }
             }
             let ch = ch.ranger(&|l| crate::ligne::ranger(&ctx.racine, mois, l, &q), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
-            // Une ligne dont seuls les jours changent garde une quantite d'un par date (`LignePaie::quantite_qui_suit`).
-            let ch = match ch {
-                Changement::Lignes(Some(lignes)) => {
-                    // Une carte qui ne disait aucune ligne n'en a aucune a suivre.
-                    let avant = essai.en_carte().lignes;
-                    let mut suivies = Vec::new();
-                    for (i, l) in lignes.into_iter().enumerate() {
-                        suivies.push(match avant.as_ref().and_then(|a| a.get(i)) {
-                            Some(a) => {
-                                let unite = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &mois.dernier_jour())?.unite;
-                                l.quantite_qui_suit(a, unite)
-                            }
-                            None => l,
-                        });
-                    }
-                    Changement::Lignes(Some(suivies))
-                }
-                autre => autre,
-            };
             essai.changer(ch, &q)?;
         }
         sans_les_faits_que_le_motif_n_a_pas(&mut essai, &qui)?;

@@ -18,37 +18,7 @@ pub fn dossier_local(inst: &Path, port: u16) -> PathBuf {
     if inst.join(compagnie::coffre::MARQUEUR_PORTABLE).is_file() {
         return inst.join(DOSSIER_PORTABLE);
     }
-    dossier_utilisateur().join("fenetres").join(port.to_string())
-}
-
-/// Ce qui appartient a l'utilisateur de ce poste (le profil du navigateur) : ni dans les donnees, ni a cote du code. Le
-/// dossier des donnees de la personne, et quand la variable ne le dit pas, celui que le systeme lui donne par defaut
-/// (`atelier/reference/sources/dossiers-de-configuration/`) :
-/// - Windows, `LOCALAPPDATA` : FOLDERID_LocalAppData, « Default Path %LOCALAPPDATA% (%USERPROFILE%\AppData\Local) »
-///   (Microsoft, KNOWNFOLDERID) ;
-/// - macOS, `~/Library/Application Support/<identifiant du paquet>` : « Contains all app-specific data and support
-///   files » ; « all of these items should be put in a subdirectory whose name matches the bundle identifier of the
-///   app » (Apple, macOS Library Directory Details) ; l'identifiant est celui de la fenetre (`fenetre/tauri.conf.json`) ;
-/// - ailleurs, `XDG_DATA_HOME` : « If $XDG_DATA_HOME is either not set or empty, a default equal to $HOME/.local/share
-///   should be used » ; un chemin relatif ne vaut rien (« If an implementation encounters a relative path in any of these
-///   variables it should consider the path invalid and ignore it ») (XDG Base Directory Specification 0.8).
-pub fn dossier_utilisateur() -> PathBuf {
-    use compagnie::coffre::{env_du_poste, maison_de, IDENTIFIANT_DU_PAQUET};
-    if cfg!(windows) {
-        let base = match env_du_poste("LOCALAPPDATA") {
-            Some(b) => PathBuf::from(b),
-            None => maison_de(&env_du_poste).join("AppData").join("Local"),
-        };
-        return base.join("PuppetPaie");
-    }
-    if cfg!(target_os = "macos") {
-        return maison_de(&env_du_poste).join("Library").join("Application Support").join(IDENTIFIANT_DU_PAQUET);
-    }
-    let base = match env_du_poste("XDG_DATA_HOME") {
-        Some(b) if Path::new(&b).is_absolute() => PathBuf::from(b),
-        Some(_) | None => maison_de(&env_du_poste).join(".local").join("share"),
-    };
-    base.join("puppetpaie")
+    compagnie::installation::dossier_de_l_utilisateur().join(compagnie::installation::DOSSIER_DES_FENETRES).join(port.to_string())
 }
 
 fn candidats() -> Vec<PathBuf> {

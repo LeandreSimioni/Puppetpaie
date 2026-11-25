@@ -91,7 +91,7 @@ fn journal_de_la_premiere_passe(nom: &str) -> Vec<String> {
 }
 
 fn passer(r: &Path, d: &mut FauxDrive) -> Sauvegarde {
-    sauvegarder(r, RD, false, Some(d as &mut dyn Drive)).unwrap()
+    sauvegarder(r, RD, false, &faux_drive::ce_poste("sauvegarde"), Some(d as &mut dyn Drive), &mut |_, _, _| Ok(())).unwrap()
 }
 
 // ------------------------------------------------------------ la premiere passe et l'index
@@ -180,7 +180,7 @@ fn copie_de_developpement_refus_avant_tout() {
     let r = monde("copie");
     ecrire(&r, "COPIE-DE-DEVELOPPEMENT.json", r#"{"copie_de": "prive", "quoi": "copie de developpement"}"#);
     // Sans client donne : le vrai se construit, et refuse une copie de developpement avant tout (pas de reseau, pas d'index).
-    let e = sauvegarder(&r, RD, false, None).unwrap_err();
+    let e = sauvegarder(&r, RD, false, &faux_drive::ce_poste("copie"), None, &mut |_, _, _| Ok(())).unwrap_err();
     assert_eq!(e.echec.classe, Some(socle::echec::Classe::CopieDeDeveloppement));
     assert!(!r.join("config/.sauvegarde.json").exists());
 }

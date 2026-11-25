@@ -425,7 +425,7 @@ par l'état du coffre, ni en clair sur le disque (`tests/fichiers/coffre.rs`) ; 
 
 ```bash
 route sauvegarde-maintenant  # les différences
-moteur restaurer [DOSSIER]  # le retour : redescendre prive/ du Drive (vérifié, rien d'effacé)
+moteur restaurer DOSSIER_DRIVE  # le retour : route drive-reprendre {"dossier": …} (vérifié, rien d'effacé)
 ```
 
 Vers `PuppetPaie / sauvegarde / …` dans le Drive, en conservant l'arborescence.
@@ -439,7 +439,7 @@ c'est un miroir, et un miroir recopie fidèlement les accidents.
 
 Le coffre (`coffre.bin`) monte : il est
 scellé par le mot de passe du logiciel, qui l'ouvre sur un poste neuf après
-`moteur restaurer` ; sans ce mot de passe, il ne s'ouvre nulle part ailleurs.
+sa reprise (`drive-reprendre`) ; sans ce mot de passe, il ne s'ouvre nulle part ailleurs.
 Ne montent jamais : `google-jeton.bin` (le compte se relie de nouveau),
 `.compteurs.verrou`, `.sauvegarde.json`, `.ouverture.json` (de l'état machine,
 qui ment ailleurs), et le rebut (`*.tmp`).
@@ -462,7 +462,7 @@ Dans ce texte, « route NOM {charge} » se lit `echo '{"route":"NOM","charge":{�
 terminal, sans écho : il n'entre jamais par l'entrée standard. Un refus reste une réponse —
 `{"ok": false, "ecrit": …, "refus": {"classe": "AnnuleRemplaceHorsDelai", "phrase": "…", "corriger": "…"}}` — sur
 la classe de laquelle un appelant branche son comportement. Restent des commandes : `moteur coffre` (ce qui est posé, et la séance), `moteur restaurer` (un poste
-neuf), `moteur interface` ; `moteur --aide` les liste. Un secret (le mot de passe du logiciel, celui d'un organisme)
+neuf : la route `drive-reprendre`, rien d'autre), `moteur interface` ; `moteur --aide` les liste. Un secret (le mot de passe du logiciel, celui d'un organisme)
 ne se lit jamais dans la charge : la route le fait taper par le moteur.
 
 ### Les outils de l'atelier sur une compagnie
