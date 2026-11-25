@@ -1,13 +1,14 @@
 //! LE DRIVE, VU D'UNE COMPAGNIE (Configuration › Le Drive) : ce que le compte Google lie porte sous `PuppetPaie/`
 //! (`drive-etat` : chaque dossier, ce qu'il est, sa derniere sauvegarde, son volume), et en supprimer un
-//! (`drive-supprimer` : avec le mot de passe du logiciel, comme un acte reel ; le dossier va a la corbeille de Google).
+//! (`drive-supprimer` : avec le mot de passe du logiciel, comme un acte reel ; le dossier va a la corbeille de Google), et
+//! prendre la main sur le dossier de cette compagnie (`drive-prendre-la-main`, `compagnie::sauvegarde::LaMain`).
 //! La vue elle-meme est `compagnie::sur_le_drive` ; reprendre une compagnie du Drive se fait a l'accueil
 //! (`accueil::drive`).
 
 use serde::Serialize;
 
 use compagnie::sur_le_drive::{DossierVu, GenreDuDossier};
-use envois::drive::IdDrive;
+use envois::drive::{Drive, IdDrive};
 use socle::echec::{Classe, R};
 use socle::ecran::{EtatDEcran, Pastille};
 
@@ -23,6 +24,9 @@ const RECENTE: std::time::Duration = std::time::Duration::from_secs(7 * 86_400);
 /// Le geste, tel que la demande du mot de passe le dit.
 const GESTE_SUPPRIMER: &str = "mettre un dossier du Drive à la corbeille";
 const SUPPRIMER: Affiche = Affiche::new("Supprimer…");
+/// Le geste, tel que la demande du mot de passe le dit.
+const GESTE_MAIN: &str = "prendre la main sur le Drive de cette compagnie";
+const PRENDRE_LA_MAIN: Affiche = Affiche::new("Prendre la main…");
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
@@ -54,6 +58,21 @@ pub const ROUTES: &[Fiche] = &[
         phrase: 200,
         ecran: Ecran::Geste(Place::Drive),
     },
+    Fiche {
+        route: Route::DrivePrendreLaMain,
+        geste: "Prendre la main sur le Drive de cette compagnie : ce poste seul y sauvegarde, avec le mot de passe du logiciel.",
+        charge: &ChargePrendreLaMain::CHARGE,
+        exemple: r#"{}"#,
+        rend: "phrase ; ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite (absente pour une compagnie fictive)",
+        refus: &[
+            Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien ne change" },
+            OPERATION,
+        ],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
+        acte: Acte::Ecrit,
+        phrase: 200,
+        ecran: Ecran::Geste(Place::Drive),
+    },
 ];
 
 charge! {
@@ -66,7 +85,23 @@ charge! {
     }
 }
 
-type EcranDuDrive = EcranRendu<ChargeSupprimer>;
+charge! {
+    motdepasse = dit("Mot de passe du logiciel", "le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain");
+    /// La charge de `drive-prendre-la-main` : rien que le mot de passe du logiciel.
+    #[derive(Debug)]
+    pub(crate) struct ChargePrendreLaMain {}
+}
+
+/// CE QU'UN GESTE DE L'ECRAN DU DRIVE PORTE : la charge de sa route. Supprimer porte un dossier ; prendre la main, rien
+/// (c'est le dossier de cette compagnie).
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum GesteDuDrive {
+    Supprimer(ChargeSupprimer),
+    PrendreLaMain(SansCharge),
+}
+
+type EcranDuDrive = EcranRendu<GesteDuDrive>;
 
 /// Ce que rend `drive-etat`.
 #[derive(Debug, Serialize)]
@@ -95,6 +130,20 @@ impl Dite for DossierSupprime {
     }
 }
 
+/// Ce que rend `drive-prendre-la-main` : la phrase, et la sauvegarde qui suit (`ensuite`, `SauvegardeQuiSuit`).
+#[derive(Debug, Serialize)]
+struct MainPrise {
+    phrase: Phrase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ensuite: Option<crate::veille::SauvegardeQuiSuit>,
+}
+
+impl Dite for MainPrise {
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
+    }
+}
+
 /// Une route de ce module, branchee sur l'enveloppe.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
@@ -105,6 +154,10 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::DriveSupprimer => {
             let c: ChargeSupprimer = charge.lire()?;
             en_json(supprimer(porte.ctx, &c.dossier, charge.mot_de_passe())?)
+        }
+        Route::DrivePrendreLaMain => {
+            let ChargePrendreLaMain {} = charge.lire()?;
+            en_json(prendre_la_main(porte.ctx, charge.mot_de_passe())?)
         }
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
     }
@@ -150,6 +203,49 @@ fn avant_de_supprimer(vu: &DossierVu, le_sien: bool, maintenant: socle::paris::M
     }
     l.push("Le dossier va à la corbeille de Google, avec tout ce qu'il porte : on l'en sort pendant 30 jours.".to_string());
     l
+}
+
+/// Qui tient la main sur le dossier de cette compagnie, en mots (`a_ce_poste` : ce poste).
+fn main_dite(main: Option<&compagnie::sauvegarde::LaMain>, a_ce_poste: bool) -> String {
+    match main {
+        Some(m) if a_ce_poste => format!("Ce poste tient la main depuis le {} : lui seul y sauvegarde.", m.depuis.jour_de_paris().jj_mm()),
+        Some(m) => format!("Un autre poste tient la main depuis le {} : ce poste n'y sauvegarde pas.", m.depuis.jour_de_paris().jj_mm()),
+        None => "Aucun poste n'en tient la main : la prochaine sauvegarde de ce poste la prend.".to_string(),
+    }
+}
+
+/// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce que le geste change pour ce poste et pour l'autre, et ce que la
+/// sauvegarde qui suit fait du dossier.
+fn avant_de_prendre_la_main() -> Vec<String> {
+    vec![
+        "Ce poste seul sauvegardera dans le dossier de cette compagnie ; le poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string(),
+        "La sauvegarde de ce poste part aussitôt : elle remplace dans le Drive ce que l'autre poste y avait mis.".to_string(),
+    ]
+}
+
+// ------------------------------------------------------------------ drive-prendre-la-main
+
+/// PRENDRE LA MAIN SUR LE DRIVE DE CETTE COMPAGNIE (`LaMain`) : le mot de passe du logiciel s'il est pose
+/// (`coffre::exiger_mot_de_passe`), puis le dossier de la compagnie (celui que sa sauvegarde trouve, ou un neuf) recoit la
+/// main de ce poste, et l'index ne dit plus qu'il ne l'a pas ; la sauvegarde suit (`ensuite`). Sert aussi quand on s'est
+/// trompe, ou que le poste qui la tenait est perdu. Une compagnie fictive n'a rien sur le Drive : rien ne change.
+fn prendre_la_main(ctx: &droit::contexte::Contexte, mdp: Option<&socle::secret::Secret>) -> R<MainPrise> {
+    if compagnie::bridage::branchement(&ctx.racine)?.joue() {
+        return Ok(MainPrise { phrase: Phrase::fixe("Compagnie fictive : rien ne part au Drive, il n'y a pas de main à prendre."), ensuite: None });
+    }
+    crate::coffre::exiger_mot_de_passe(&ctx.racine, mdp, GESTE_MAIN)?;
+    let mut client = crate::coffre::client_drive(&ctx.racine).map_err(|e| e.echec)?;
+    let identite = compagnie::sauvegarde::identite(&ctx.racine)?;
+    let nom = compagnie::installation::nom_de(&ctx.racine)?;
+    let connu = compagnie::sauvegarde::lire_index(&ctx.racine).map_err(|e| e.echec)?.and_then(|i| i.compagnie);
+    let (id, _) = compagnie::sauvegarde::dossier_de_la_compagnie(&mut client, compagnie::sauvegarde::RACINE_DRIVE, &identite, &nom, connu.as_ref()).map_err(|e| e.echec)?;
+    let main = compagnie::sauvegarde::LaMain::de_ce_poste(&ctx.racine)?;
+    client.marquer(&id, &main.marque(&identite)).map_err(|e| e.echec)?;
+    compagnie::sauvegarde::main_reprise(&ctx.racine).map_err(|e| e.echec)?;
+    Ok(MainPrise {
+        phrase: Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie : sa sauvegarde suit, et l'autre poste n'y sauvegarde plus."),
+        ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()),
+    })
 }
 
 // ------------------------------------------------------------------ drive-etat
@@ -209,6 +305,17 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
             None
         }
     };
+    // PRENDRE LA MAIN demande le mot de passe du logiciel s'il est pose (`exiger_mot_de_passe`) ; qu'il ne se lise pas, et
+    // le geste ne se propose pas (l'encart d'au-dessus le dit deja).
+    let demande_main = compagnie::coffre::Coffre::du_poste(&ctx.racine).ouverture_exigee().and_then(|pose| pose.then(|| crate::coffre::demande(&ctx.racine, GESTE_MAIN)).transpose());
+    // Ce poste, tel que la main le nomme : qu'il ne se lise pas, et la main ne se dit pas.
+    let ce_poste = match compagnie::sauvegarde::PosteSurLeDrive::de_ce_poste(&ctx.racine) {
+        Ok(p) => Some(p),
+        Err(e) => {
+            encarts.push(Encart::de(EtatDEcran::Refuse, "Ce poste ne se nomme pas sur le Drive", e.phrase));
+            None
+        }
+    };
     let maintenant = socle::temps::secondes();
     if vus.is_empty() {
         encarts.push(Encart::de(EtatDEcran::Information, "Rien encore dans le Drive", "La prochaine sauvegarde y crée le dossier de cette compagnie."));
@@ -228,12 +335,27 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
         } else {
             Pastille::de(EtatDEcran::Information, "ancien ou d'une autre compagnie")
         };
-        let gestes = match &demande {
-            Some(d) => vec![GesteDeRoute::avec_cases(Route::DriveSupprimer, ChargeSupprimer { dossier: vu.id.clone() }, SUPPRIMER, Vec::new(), SansCharge {}, SansCharge {})
-                .disant(avant_de_supprimer(vu, le_sien, maintenant))
-                .exigeant(Some(d.clone()))],
-            None => Vec::new(),
-        };
+        let mut gestes = Vec::new();
+        // LA MAIN, sur le dossier de cette compagnie : qui la tient, et le geste qui la prend quand ce n'est pas ce poste.
+        if let (true, Some(p)) = (le_sien, &ce_poste) {
+            let a_ce_poste = vu.main.as_ref().is_some_and(|m| m.poste == *p);
+            dit.push(main_dite(vu.main.as_ref(), a_ce_poste));
+            if let (false, Ok(d)) = (a_ce_poste, &demande_main) {
+                gestes.push(
+                    GesteDeRoute::avec_cases(Route::DrivePrendreLaMain, GesteDuDrive::PrendreLaMain(SansCharge {}), PRENDRE_LA_MAIN, Vec::new(), SansCharge {}, SansCharge {})
+                        .disant(avant_de_prendre_la_main())
+                        .exigeant(d.clone())
+                        .principal(),
+                );
+            }
+        }
+        if let Some(d) = &demande {
+            gestes.push(
+                GesteDeRoute::avec_cases(Route::DriveSupprimer, GesteDuDrive::Supprimer(ChargeSupprimer { dossier: vu.id.clone() }), SUPPRIMER, Vec::new(), SansCharge {}, SansCharge {})
+                    .disant(avant_de_supprimer(vu, le_sien, maintenant))
+                    .exigeant(Some(d.clone())),
+            );
+        }
         rangs.push(RangDeLEcran { titre: vu.nom.clone(), dit, pastille, etat: None, montre: None, gestes });
     }
     let phrase = socle::phrase!("Le Drive de {} : {} dossier(s).", compte, vus.len());

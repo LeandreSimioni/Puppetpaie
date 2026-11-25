@@ -118,6 +118,7 @@ routes! {
         GoogleOublier = "google-oublier",
         DriveEtat = "drive-etat",
         DriveSupprimer = "drive-supprimer",
+        DrivePrendreLaMain = "drive-prendre-la-main",
         DriveCompagnies = "drive-compagnies",
         DriveLier = "drive-lier",
         DriveReprendre = "drive-reprendre",
