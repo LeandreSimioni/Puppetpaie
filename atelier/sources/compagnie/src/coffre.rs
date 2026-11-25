@@ -751,11 +751,15 @@ impl Coffre {
     /// L'EMPREINTE DE CE POSTE : 16 octets du SHA-256 de sa cle, precedee d'un libelle propre a cet usage, en
     /// hexadecimal. Elle nomme le poste sans rien livrer de sa cle (le SHA-256 ne se remonte pas) ; elle ne change pas
     /// tant que la cle ne change pas, et c'est la meme pour toutes les compagnies et toutes les installations du poste.
-    /// Une cle absente se pose, comme a la premiere ouverture du coffre.
+    /// La lire ne pose rien : sans cle, il n'y a pas d'empreinte, et c'est dit (la cle se pose en liant le Drive, qui
+    /// scelle le jeton de Google par elle).
     pub fn empreinte_du_poste(&self) -> R<String> {
         use sha2::{Digest, Sha256};
-        let Some(cle) = self.cle_poste(true)? else {
-            return Err(refus(format!("La cle de ce poste ({}) ne se pose pas.", affiche(&self.chemin_cle()))));
+        let Some(cle) = self.cle_poste(false)? else {
+            return Err(refus(format!(
+                "La clé de ce poste n'est pas posée ({}) : sans elle, ce poste ne se nomme pas sur le Drive. Elle se pose en liant le Drive.",
+                affiche(&self.chemin_cle())
+            )));
         };
         let mut h = Sha256::new();
         h.update(b"PuppetPaie : le poste qui tient le Drive d'une compagnie\0");

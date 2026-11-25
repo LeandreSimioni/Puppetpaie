@@ -60,7 +60,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::DrivePrendreLaMain,
-        geste: "Prendre la main sur le Drive de cette compagnie : ce poste seul y sauvegarde, avec le mot de passe du logiciel.",
+        geste: "Prendre la main sur le Drive de la compagnie : ce poste seul y sauvegarde.",
         charge: &ChargePrendreLaMain::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase ; ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite (absente pour une compagnie fictive)",
@@ -206,11 +206,12 @@ fn avant_de_supprimer(vu: &DossierVu, le_sien: bool, maintenant: socle::paris::M
 }
 
 /// Qui tient la main sur le dossier de cette compagnie, en mots (`a_ce_poste` : ce poste).
-fn main_dite(main: Option<&compagnie::sauvegarde::LaMain>, a_ce_poste: bool) -> String {
+fn main_dite(main: &Result<Option<compagnie::sauvegarde::LaMain>, String>, a_ce_poste: bool) -> String {
     match main {
-        Some(m) if a_ce_poste => format!("Ce poste tient la main depuis le {} : lui seul y sauvegarde.", m.depuis.jour_de_paris().jj_mm()),
-        Some(m) => format!("Un autre poste tient la main depuis le {} : ce poste n'y sauvegarde pas.", m.depuis.jour_de_paris().jj_mm()),
-        None => "Aucun poste n'en tient la main : la prochaine sauvegarde de ce poste la prend.".to_string(),
+        Ok(Some(m)) if a_ce_poste => format!("Ce poste tient la main depuis le {} : lui seul y sauvegarde.", m.depuis.jour_de_paris().jj_mm()),
+        Ok(Some(m)) => format!("Un autre poste tient la main depuis le {} : ce poste n'y sauvegarde pas.", m.depuis.jour_de_paris().jj_mm()),
+        Ok(None) => "Aucun poste n'en tient la main : la prochaine sauvegarde de ce poste la prend.".to_string(),
+        Err(phrase) => format!("{} Ce poste n'y sauvegarde pas tant qu'il ne prend pas la main.", phrase),
     }
 }
 
@@ -351,12 +352,15 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
         };
         let mut gestes = Vec::new();
         // LA MAIN, sur le dossier de cette compagnie : qui la tient, et le geste qui la prend quand ce n'est pas ce poste.
+        // Une main illisible sur un autre dossier se dit comme le reste de ce qui ne s'y lit pas.
         if let (true, Some(p)) = (le_sien, &ce_poste) {
-            let a_ce_poste = vu.main.as_ref().is_some_and(|m| m.poste == *p);
-            dit.push(main_dite(vu.main.as_ref(), a_ce_poste));
+            let a_ce_poste = vu.main.as_ref().is_ok_and(|m| m.as_ref().is_some_and(|m| m.poste == *p));
+            dit.push(main_dite(&vu.main, a_ce_poste));
             if let (false, Ok(d)) = (a_ce_poste, &demande_main) {
                 gestes.push(geste_prendre_la_main(GesteDuDrive::PrendreLaMain(SansCharge {}), d.clone()));
             }
+        } else if let Err(phrase) = &vu.main {
+            dit.push(phrase.clone());
         }
         if let Some(d) = &demande {
             gestes.push(

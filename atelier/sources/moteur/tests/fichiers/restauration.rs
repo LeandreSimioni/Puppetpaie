@@ -41,7 +41,7 @@ fn petite(r: &Path) {
 }
 
 fn sauvegarder_dans(r: &Path, d: &mut FauxDrive) {
-    let s = sauvegarder(r, RD, false, Some(d as &mut dyn Drive), &mut |_, _, _| Ok(())).unwrap();
+    let s = sauvegarder(r, RD, false, &faux_drive::ce_poste("restauration"), Some(d as &mut dyn Drive), &mut |_, _, _| Ok(())).unwrap();
     assert!(s.incidents.is_empty(), "{:?}", s.incidents);
 }
 

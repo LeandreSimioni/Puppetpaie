@@ -453,14 +453,15 @@ pub fn chemin_index(racine: &Path) -> PathBuf {
 /// (`souci`). L'index d'une version qui sauvegardait dans le dossier commun n'a pas `compagnie` : ses dossiers sont ceux
 /// du dossier commun, que la sauvegarde ne reprend pas (`dossiers_connus`), et rien n'est a jour (`rien_n_a_bouge`).
 /// `sans_la_main` : le dernier passage a trouve la main ailleurs (`SansLaMain`) et n'a rien envoye ; absente, ce poste la
-/// tenait (un index d'avant la main ne la porte pas : il se lit de meme).
+/// tenait (un index d'avant la main ne la porte pas : il se lit de meme). `quand` absent : aucun passage n'a sauvegarde
+/// depuis ce poste (le premier a trouve la main ailleurs, et l'index ne garde que cela).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Index {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sans_la_main: Option<SansLaMain>,
-    #[serde(with = "socle::paris::ecrit::saisie")]
-    pub quand: socle::paris::Moment,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::saisie::option")]
+    pub quand: Option<socle::paris::Moment>,
     pub racine_drive: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compagnie: Option<IdDrive>,
@@ -531,7 +532,8 @@ pub struct Derniere {
 
 /// Le dernier passage, ou `None` si aucune sauvegarde n'est encore partie.
 pub fn derniere(racine: &Path) -> Result<Option<Derniere>, ErreurGoogle> {
-    Ok(lire_index(racine)?.map(|i| Derniere { fichiers: i.fichiers.len(), quand: i.quand, racine_drive: i.racine_drive }))
+    // Sans `quand`, aucun passage n'a sauvegarde : il n'y a pas de derniere sauvegarde.
+    Ok(lire_index(racine)?.and_then(|i| i.quand.map(|quand| Derniere { fichiers: i.fichiers.len(), quand, racine_drive: i.racine_drive })))
 }
 
 // ------------------------------------------------------------ le dossier de la compagnie
@@ -632,9 +634,10 @@ pub fn marque(identite: &IdentiteSurLeDrive, quand: socle::paris::Moment, octets
 /// LE DOSSIER DE LA COMPAGNIE `identite` DANS LE DRIVE, sous la racine `racine_drive`, et sa marque telle que le Drive la
 /// rend : `connu` (celui que l'index garde) s'il est encore en place ; sinon celui que sa marque designe sous la racine
 /// (le premier, s'il y en a deux : la vue du Drive les montre tous) ; sinon un dossier neuf, nomme `nom` et marque de son
-/// identite, et de `main` quand l'appelant la prend (la sauvegarde ; l'archivage n'en prend pas). Un dossier mis a la
-/// corbeille n'est plus en place : la sauvegarde suivante renvoie tout dans un dossier neuf.
-pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, identite: &IdentiteSurLeDrive, nom: &str, connu: Option<&IdDrive>, main: Option<&LaMain>) -> Result<(IdDrive, MarqueDuDossier), ErreurGoogle> {
+/// identite, et de `main` quand l'appelant la prend (la sauvegarde ; l'archivage n'en prend pas). La marque est `None`
+/// quand le dossier n'en porte aucune. Un dossier mis a la corbeille n'est plus en place : la sauvegarde suivante renvoie
+/// tout dans un dossier neuf.
+pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, identite: &IdentiteSurLeDrive, nom: &str, connu: Option<&IdDrive>, main: Option<&LaMain>) -> Result<(IdDrive, Option<MarqueDuDossier>), ErreurGoogle> {
     if let Some(id) = connu {
         if let Some(marque) = client.en_place(id)? {
             return Ok((id.clone(), marque));
@@ -642,14 +645,14 @@ pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, ident
     }
     let racine = client.chemin(&IdDrive::RACINE, &[racine_drive])?;
     if let Some(d) = client.sous_dossiers(&racine)?.into_iter().find(|d| d.marque.as_ref().and_then(|m| m.compagnie.as_deref()) == Some(identite.texte())) {
-        return Ok((d.id, d.marque.unwrap_or_default()));
+        return Ok((d.id, d.marque));
     }
     let marque = match main {
         Some(m) => m.marque(identite),
         None => MarqueDuDossier { compagnie: Some(identite.texte().to_string()), ..MarqueDuDossier::default() },
     };
     let id = client.creer_dossier(nom, &racine, &marque)?;
-    Ok((id, marque))
+    Ok((id, Some(marque)))
 }
 
 // ------------------------------------------------------------ la main
@@ -678,7 +681,12 @@ impl PosteSurLeDrive {
 
     /// Ce poste-ci (`racine` : une compagnie ou une installation de ce poste ; la cle est celle du poste).
     pub fn de_ce_poste(racine: &Path) -> socle::echec::R<PosteSurLeDrive> {
-        PosteSurLeDrive::lire(&format!("{}{}", PREFIXE_POSTE, crate::coffre::Coffre::du_poste(racine).empreinte_du_poste()?))
+        PosteSurLeDrive::du_coffre(&crate::coffre::Coffre::du_poste(racine))
+    }
+
+    /// Le poste dont `coffre` tient la cle (`Coffre::sur` : celle d'un dossier de test).
+    pub fn du_coffre(coffre: &crate::coffre::Coffre) -> socle::echec::R<PosteSurLeDrive> {
+        PosteSurLeDrive::lire(&format!("{}{}", PREFIXE_POSTE, coffre.empreinte_du_poste()?))
     }
 
     /// Lui tel qu'ecrit.
@@ -703,10 +711,11 @@ impl LaMain {
         Ok(LaMain { poste: PosteSurLeDrive::de_ce_poste(racine)?, depuis: socle::temps::secondes().a_la_minute() })
     }
 
-    /// Celle que la marque `m` porte : aucune quand elle n'en dit rien ; un poste ou une date qui ne se lit pas, ou l'un
-    /// sans l'autre, se refuse (la main ne se lit pas, elle n'est pas absente).
-    pub fn de(m: &MarqueDuDossier) -> socle::echec::R<Option<LaMain>> {
+    /// Celle que la marque `m` porte : aucune sans marque, ou quand elle n'en dit rien ; un poste ou une date qui ne se lit
+    /// pas, ou l'un sans l'autre, se refuse (la main ne se lit pas, elle n'est pas absente).
+    pub fn de(m: Option<&MarqueDuDossier>) -> socle::echec::R<Option<LaMain>> {
         use serde::de::IntoDeserializer;
+        let Some(m) = m else { return Ok(None) };
         match (&m.poste, &m.main) {
             (None, None) => Ok(None),
             (Some(p), Some(d)) => {

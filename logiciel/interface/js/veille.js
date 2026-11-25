@@ -110,9 +110,10 @@ function dessinerVeille(v) {
     ? ` · <button class="lien" data-fictive-explique="coulisses">${echapper(k.fictive)}</button>` : ""}`];
   // LA SAUVEGARDE QUI N'ARRIVE PAS AU BOUT, à sa place : un dossier que
   // Google refuse une fois repart au passage suivant, sans bruit ; ce qui dure, le moteur le dit
-  // en une phrase (`sauvegarde::souci`), et elle se lit ici, à côté de l'état, pas parmi les retours.
-  if (d && k.sauvegarde_souci && !d.hors_ligne) {
-    morceaux.push(`<span class="veille-sauvegarde"${d.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(k.sauvegarde_souci)}</span>`);
+  // en une phrase (`sauvegarde::souci`), et elle se lit ici, à côté de l'état, pas parmi les retours. Le moteur dit
+  // s'ils se montrent (hors connexion, ni la phrase ni le geste).
+  if (k.sauvegarde_souci) {
+    morceaux.push(`<span class="veille-sauvegarde"${d?.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(k.sauvegarde_souci)}</span>`);
   }
   // LA MAIN SUR LE DRIVE TROUVÉE AILLEURS : le geste qui la prend, tel que le moteur le rend (`prendre_la_main`).
   if (k.prendre_la_main) {

@@ -493,8 +493,8 @@ pub trait Drive {
     /// Pose sur le dossier `id` ce que `marque` dit ; une cle qu'elle ne dit pas reste telle quelle.
     fn marquer(&mut self, id: &IdDrive, marque: &MarqueDuDossier) -> Result<(), ErreurGoogle>;
     /// Le dossier `id` est-il en place : il existe, et ni lui ni un dossier qui le porte n'est a la corbeille ? En place,
-    /// sa marque (vide quand il n'en porte aucune) ; `None` : il n'est plus en place.
-    fn en_place(&mut self, id: &IdDrive) -> Result<Option<MarqueDuDossier>, ErreurGoogle>;
+    /// sa marque (`None` quand il n'en porte aucune) ; `None` : il n'est plus en place.
+    fn en_place(&mut self, id: &IdDrive) -> Result<Option<Option<MarqueDuDossier>>, ErreurGoogle>;
 }
 
 /// LA CORBEILLE DU DRIVE, A PART DU CLIENT : un `Client` (la sauvegarde, l'archivage, la restauration, la vue) n'a pas de
@@ -846,13 +846,13 @@ impl Drive for Client {
         self.changer(id, &DossierAChanger { marque: Some(marque), trashed: None })
     }
 
-    fn en_place(&mut self, id: &IdDrive) -> Result<Option<MarqueDuDossier>, ErreurGoogle> {
+    fn en_place(&mut self, id: &IdDrive) -> Result<Option<Option<MarqueDuDossier>>, ErreurGoogle> {
         // `trashed` : « Whether the file was trashed, either explicitly or from a trashed parent folder »
         // (`google-drive-api-corbeille-20261124.txt`, « Determine a trashed file's properties »). Un 404 : il n'existe plus.
         let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("fields", "trashed,appProperties".into())])));
         match self.appel::<EtatDuDossier>(&url, None, None, None) {
             Ok(f) if f.trashed => Ok(None),
-            Ok(f) => Ok(Some(f.marque.unwrap_or_default())),
+            Ok(f) => Ok(Some(f.marque)),
             Err(e) if e.statut == Some(ureq::http::StatusCode::NOT_FOUND) => Ok(None),
             Err(e) => Err(e),
         }

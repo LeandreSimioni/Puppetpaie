@@ -548,7 +548,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
     }
     let maintenant = socle::temps::secondes();
     let index = Index {
-        quand: maintenant.a_la_minute(),
+        quand: Some(maintenant.a_la_minute()),
         racine_drive: racine_drive.to_string(),
         compagnie,
         dossiers: index_dossiers,

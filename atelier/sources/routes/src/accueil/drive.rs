@@ -530,6 +530,9 @@ pub(crate) fn compagnies(inst: &Path) -> R<CompagniesDuDrive> {
             dit.push(format!("Volume : {}.", o));
         }
         dit.extend(vu.illisible.iter().cloned());
+        if let Err(phrase) = &vu.main {
+            dit.push(phrase.clone());
+        }
         let (pastille, gestes) = match ce_qu_on_en_fait(&du_poste, &en_cours, vu) {
             // DEJA SUR CE POSTE : la reprise se refuserait ; le geste ne se propose pas, le rang dit ou elle est. Une
             // reprise de ce dossier commencee ici ne continuera pas : le geste qui l'abandonne.
@@ -874,10 +877,15 @@ fn fin_de_reprise(vu: &DossierVu, id: &IdDeCompagnie, nom: &str, au_bout: bool, 
         // l'ancienne sauvegarde commune, sa premiere sauvegarde fera le sien.
         match main {
             Some(Ok(())) => encarts.push(Encart::de(EtatDEcran::Information, "Un seul poste", UN_SEUL_POSTE)),
+            // Ce qui suit depend de la main que le dossier portait avant la reprise.
             Some(Err(pourquoi)) => encarts.push(Encart::de(
                 EtatDEcran::AFaire,
                 "La main n'est pas prise",
-                format!("{} Tant que l'ancien poste la tient, ce poste ne sauvegarde pas : « Prendre la main » (Configuration › Le Drive) la prend.", pourquoi),
+                match &vu.main {
+                    Ok(Some(_)) => format!("{} Tant que l'ancien poste la tient, ce poste ne sauvegarde pas : « Prendre la main » (Configuration › Le Drive) la prend.", pourquoi),
+                    Ok(None) => format!("{} Aucun poste ne la tenait : la première sauvegarde de ce poste la prend.", pourquoi),
+                    Err(illisible) => format!("{} {} Ce poste ne sauvegarde pas tant qu'il ne la prend pas : « Prendre la main » (Configuration › Le Drive).", pourquoi, illisible),
+                },
             )),
             None => {}
         }

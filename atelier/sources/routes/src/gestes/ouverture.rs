@@ -1304,7 +1304,10 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
         let (dit, progression) = sauvegarde_qui_avance(verifies, envoyes, total)?;
         redire_l_etape(&ctx.racine, &dit, depuis, progression)
     };
-    match crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, drive, &mut avancer) {
+    let sauvegarde = compagnie::sauvegarde::PosteSurLeDrive::de_ce_poste(&ctx.racine)
+        .map_err(envois::drive::ErreurGoogle::from)
+        .and_then(|p| crate::gestes::sauvegarde::sauvegarder(&ctx.racine, &opt.racine_drive, false, &p, drive, &mut avancer));
+    match sauvegarde {
         // CE QUI EST REPORTE N'EST PAS UN INCIDENT : un dossier que Google a refuse une fois (un 500,
         // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
         // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.

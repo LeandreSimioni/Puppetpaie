@@ -208,12 +208,15 @@ pub fn dit_du_bandeau(
     };
     let nouveaux = d.map(|t| t.nouveaux).filter(|n| *n > 0);
     let horloge = d.map(|t| t.horloge.len()).filter(|n| fictive && *n > 0);
+    // CE QUI PERSISTE DE LA SAUVEGARDE, ET LE GESTE QUI PREND LA MAIN, se disent ensemble, apres un passage qui a joint
+    // le reseau : sans passage, ou hors connexion, le bandeau dit la connexion, et ni l'un ni l'autre.
+    let joint = d.is_some() && !hors_ligne;
     DitDuBandeau {
         etat,
         muets,
         a_poser,
-        sauvegarde_souci,
-        prendre_la_main,
+        sauvegarde_souci: sauvegarde_souci.filter(|_| joint),
+        prendre_la_main: prendre_la_main.filter(|_| joint),
         envois,
         fermeture: fermeture.then_some("PuppetPaie se fermera dès que l'envoi en cours sera parti."),
         retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),

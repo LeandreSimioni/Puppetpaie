@@ -25,10 +25,14 @@ const INDISPONIBLE_D_AFFILEE: usize = 3;
 /// fichiers sont verifies (identiques au Drive, ou envoyes), combien sont envoyes, sur combien a sauvegarder. Son erreur
 /// (l'ecriture de l'etape) n'arrete pas l'envoi : elle se dit une fois dans les incidents du passage, et l'avancement ne
 /// se dit plus jusqu'a sa fin.
+///
+/// `ce_poste` : ce poste, tel que la main le nomme sur le Drive (`PosteSurLeDrive::de_ce_poste` ; un test le tire d'une
+/// cle de son dossier, `PosteSurLeDrive::du_coffre`).
 pub fn sauvegarder(
     racine: &Path,
     racine_drive: &str,
     tout: bool,
+    ce_poste: &PosteSurLeDrive,
     client: Option<&mut dyn Drive>,
     avancer: &mut dyn FnMut(usize, usize, usize) -> socle::echec::R<()>,
 ) -> Result<Sauvegarde, ErreurGoogle> {
@@ -43,8 +47,6 @@ pub fn sauvegarder(
     // L'identite de la compagnie sur le Drive, ecrite avant l'inventaire a la premiere sauvegarde : elle part avec elle.
     let identite = compagnie::sauvegarde::identite(racine).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Illisible)))?;
     let nom = compagnie::installation::nom_de(racine).map_err(ErreurGoogle::from)?;
-    // Ce poste, tel que la main le nomme sur le Drive.
-    let ce_poste = PosteSurLeDrive::de_ce_poste(racine).map_err(ErreurGoogle::from)?;
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
 
@@ -99,11 +101,16 @@ pub fn sauvegarder(
     let connu = index.as_ref().filter(|_| !tout).and_then(|i| i.compagnie.clone());
     // Un dossier neuf se cree avec la main de ce poste.
     let la_sienne = LaMain { poste: ce_poste.clone(), depuis: socle::temps::secondes().a_la_minute() };
+    // Ce qui ne se lit pas dans la main : dit plus bas, avec son detail.
+    let mut main_illisible: Option<socle::echec::Echec> = None;
     let trouve = match compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref(), Some(&la_sienne)) {
-        Ok((id, marque)) => match LaMain::de(&marque) {
-            Ok(Some(m)) if m.poste == ce_poste => Ok(Ok(id)),
+        Ok((id, marque)) => match LaMain::de(marque.as_ref()) {
+            Ok(Some(m)) if m.poste == *ce_poste => Ok(Ok(id)),
             Ok(Some(m)) => Ok(Err(SansLaMain::AutrePoste { depuis: m.depuis })),
-            Err(_) => Ok(Err(SansLaMain::Illisible)),
+            Err(e) => {
+                main_illisible = Some(e);
+                Ok(Err(SansLaMain::Illisible))
+            }
             Ok(None) => client.marquer(&id, &la_sienne.marque(&identite)).map(|()| Ok(id)),
         },
         Err(e) => Err(e),
@@ -243,12 +250,26 @@ pub fn sauvegarder(
     }
 
     let maintenant = socle::temps::secondes();
-    // SANS LA MAIN, rien n'est parti : l'index garde ce qu'il disait (sans index, un index vide), et note la main ailleurs.
+    // SANS LA MAIN, rien n'est parti : l'index garde ce qu'il disait (sans index, un index qui ne dit aucun passage), et
+    // note la main ailleurs. Une main illisible se dit avec son detail dans ce passage, et chez l'editeur la premiere fois.
     if let Some(sans) = &resultat.sans_la_main {
+        if let Some(e) = &main_illisible {
+            let detail = e.a_part.as_ref().and_then(socle::echec::APart::lieu).and_then(|l| l.detail.clone());
+            resultat.incidents.push(match detail {
+                Some(d) => format!("{} ({})", e.phrase, d),
+                None => e.phrase.clone(),
+            });
+            let deja_dit = index.as_ref().is_some_and(|i| i.sans_la_main == Some(SansLaMain::Illisible));
+            if !deja_dit {
+                if let Err(n) = compagnie::incidents::depuis_exception(racine, e.classe, &e.phrase, None, "sauvegarde", e.a_part.as_ref(), None) {
+                    resultat.incidents.push(format!("La main illisible : le journal des incidents ne l'a pas notée : {}", n.phrase));
+                }
+            }
+        }
         let garde = match index.clone() {
             Some(i) => Index { sans_la_main: Some(sans.clone()), ..i },
             None => Index {
-                quand: maintenant.a_la_minute(),
+                quand: None,
                 racine_drive: racine_drive.to_string(),
                 compagnie: None,
                 dossiers: BTreeMap::new(),
@@ -297,11 +318,11 @@ pub fn sauvegarder(
     let derniere_complete = match &index {
         _ if echecs.is_empty() => None,
         Some(Index { derniere_complete: Some(c), .. }) => Some(*c),
-        Some(i) if anciens.is_empty() => Some(i.quand),
+        Some(i) if anciens.is_empty() => i.quand,
         _ => None,
     };
     let nouvel_index = Index {
-        quand,
+        quand: Some(quand),
         racine_drive: racine_drive.to_string(),
         compagnie: compagnie_id,
         dossiers,
