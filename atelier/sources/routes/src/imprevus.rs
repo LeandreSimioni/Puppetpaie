@@ -2392,9 +2392,9 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let (rang, _, _) = engagement_qui_finit(&saisie, &cle, c.salarie.as_str(), mois)?;
     let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
-    let dossier = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
-    // Les sorties du mois : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
-    let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
+    // Les sorties du mois, par leur porte : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
+    let (dossier, [certificat, recu]) =
+        documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|d| Ok((d.to_path_buf(), documents::fin_de_contrat::ecrire(ctx, &p, date, d)?)))?;
     Ok(ReponsePapiers {
         phrase: socle::phrase!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
         certificat,
@@ -2471,7 +2471,9 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
     let nom = nom_du_signalement(&format!("{}{}_{}", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
-    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().dans(&ctx.racine, mois).join(&nom);
+    // Il s'ecrit dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    let cible = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|sorties| {
+    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().sous(sorties).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration,
@@ -2490,6 +2492,8 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible)?;
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    Ok(cible)
+    })?;
     let preavis = declarations::fctu::libelle_preavis(fin.type_preavis)?;
     Ok(ReponseSignalementFin {
         suite: le_depot(&cible),
@@ -2619,8 +2623,10 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace,
         ordre,
     )?;
-    // Arret et reprise : deux pieces du mois, la sienne dit son dossier.
-    let cible = piece.dossier().dans(&ctx.racine, dernier.mois_civil()).join(&nom);
+    // Arret et reprise : deux pieces du mois, la sienne dit son dossier ; il s'ecrit dans les sorties du mois, par leur
+    // porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    let cible = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, dernier.mois_civil())?.ecrire(|sorties| {
+    let cible = piece.dossier().sous(sorties).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature_declaration: nature,
@@ -2633,6 +2639,8 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible)?;
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
+    Ok(cible)
+    })?;
     let fait = match c.nature {
         NatureSignalement::Arret => "Signalement d'arrêt écrit. Rien n'est parti.",
         NatureSignalement::Reprise => "Signalement de reprise écrit. Rien n'est parti.",

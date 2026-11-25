@@ -240,11 +240,8 @@ impl SortiesDuMois {
                 let Some(o) = self.octets(d, nom)? else {
                     return Ok(None);
                 };
-                let p = self.chemin_de(d, nom).dans(&socle::fichiers::dossier_temporaire().join(format!("puppetpaie-exercices-{}", socle::processus::numero())));
-                if let Some(parent) = p.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| socle::echec::du_disque(parent, &e).reclasser(Classe::Disque))?;
-                }
-                std::fs::write(&p, &o).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
+                let p = self.chemin_de(d, nom).dans(&copies().join("lecture"));
+                poser(&p, &o)?;
                 Ok(Some(p))
             }
         }
@@ -261,6 +258,54 @@ impl SortiesDuMois {
         Ok(None)
     }
 
+    /// ECRIT DANS LES SORTIES DE CE MOIS : `ecrire` recoit le dossier des sorties du mois (`sorties/<mois>/`, son
+    /// `envoi/` dessous) et y ecrit comme dans un dossier. En vrac, c'est le dossier lui-meme. Dans une annee close,
+    /// c'est une copie des sorties du mois tirees de l'archive, dans le dossier temporaire du systeme, sous le meme
+    /// chemin relatif : le geste y trouve ce qui existe deja (il ne le refait pas) ; ce qu'il y ecrit de neuf, ou de
+    /// change, entre dans l'archive (`ranger`), et la note de la cloture suit. Les chemins qu'il rend restent ceux de
+    /// la copie, qui reste.
+    pub fn ecrire<T>(&self, ecrire: impl FnOnce(&Path) -> R<T>) -> R<T> {
+        let SortiesDuMois::DansLExercice { racine, mois, archive } = self else {
+            return ecrire(&DossierDuMois::Sorties.dans(self.racine(), self.mois()));
+        };
+        static ECRITURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = ECRITURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let copie = copies().join(format!("ecriture-{}", n));
+        let prefixe = format!("{}/", DossierDuMois::Sorties.chemin(*mois));
+        let mut avant: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        let mut z = ouverte(archive)?;
+        let noms: Vec<String> = z.file_names().filter(|n| n.starts_with(&prefixe) && !n.ends_with('/')).map(str::to_string).collect();
+        for n in noms {
+            let Some(o) = entree(&mut z, archive, &n)? else {
+                continue;
+            };
+            poser(&CheminRelatif::lire(&n)?.dans(&copie), &o)?;
+            avant.insert(n, o);
+        }
+        let dossier = DossierDuMois::Sorties.dans(&copie, *mois);
+        std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
+        let rendu = ecrire(&dossier)?;
+        let mut ecrits: Vec<(String, Vec<u8>)> = Vec::new();
+        for p in fichiers_sous(&dossier)? {
+            let rel = CheminRelatif::sous(&copie, &p)?;
+            let o = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
+            if avant.get(rel.texte()) != Some(&o) {
+                ecrits.push((rel.texte().to_string(), o));
+            }
+        }
+        if !ecrits.is_empty() {
+            ranger(racine, mois.annee(), archive, ecrits)?;
+        }
+        Ok(rendu)
+    }
+
+    /// La compagnie.
+    fn racine(&self) -> &Path {
+        match self {
+            SortiesDuMois::EnVrac { racine, .. } | SortiesDuMois::DansLExercice { racine, .. } => racine,
+        }
+    }
+
     /// REMET EN VRAC LES SORTIES DE CE MOIS, a l'octet pres, depuis l'archive de son exercice (sous-dossiers compris) :
     /// la reouverture de l'annee. Rien pour un mois en vrac.
     pub fn remettre_en_vrac(&self) -> R<()> {
@@ -271,17 +316,82 @@ impl SortiesDuMois {
         let mut z = ouverte(archive)?;
         let noms: Vec<String> = z.file_names().filter(|n| n.starts_with(&prefixe) && !n.ends_with('/')).map(str::to_string).collect();
         for n in noms {
-            let p = CheminRelatif::lire(&n)?.dans(racine);
             let Some(o) = entree(&mut z, archive, &n)? else {
                 continue;
             };
-            if let Some(parent) = p.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| socle::echec::du_disque(parent, &e).reclasser(Classe::Disque))?;
-            }
-            std::fs::write(&p, &o).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
+            poser(&CheminRelatif::lire(&n)?.dans(racine), &o)?;
         }
         Ok(())
     }
+}
+
+/// Le dossier, dans le dossier temporaire du systeme, des copies des pieces d'une annee close que ce processus a
+/// tirees de leur archive (pour les lire par un chemin, ou y ecrire).
+fn copies() -> PathBuf {
+    socle::fichiers::dossier_temporaire().join(format!("puppetpaie-exercices-{}", socle::processus::numero()))
+}
+
+/// Ecrit `octets` au fichier `p`, son dossier cree s'il manque.
+fn poser(p: &Path, octets: &[u8]) -> R<()> {
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| socle::echec::du_disque(parent, &e).reclasser(Classe::Disque))?;
+    }
+    std::fs::write(p, octets).map_err(|e| socle::echec::du_disque(p, &e).reclasser(Classe::Disque))
+}
+
+/// Les fichiers sous le dossier `d`, sous-dossiers compris, tries ; aucun s'il n'existe pas.
+fn fichiers_sous(d: &Path) -> R<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for p in socle::fichiers::entrees(d)?.into_iter().flatten() {
+        if p.is_dir() {
+            out.extend(fichiers_sous(&p)?);
+        } else if p.is_file() {
+            out.push(p);
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// RANGE DANS L'ARCHIVE `archive` DE L'EXERCICE `annee` les pieces `ecrits` (leur chemin relatif a la compagnie, leurs
+/// octets) : on ouvre l'archive, une piece du meme chemin y prend sa place, une piece neuve s'y ajoute a la fin, les
+/// autres entrees y restent telles quelles (copiees sans se recompresser), et on la referme. La note de la cloture
+/// (`config/exercices.json` : les octets, l'empreinte et le nombre de fichiers de l'archive) suit, et rien d'autre.
+fn ranger(racine: &Path, annee: Annee, archive: &Path, mut ecrits: Vec<(String, Vec<u8>)>) -> R<()> {
+    use std::io::Write;
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let ancienne = std::fs::read(archive).map_err(|e| socle::echec::du_disque(archive, &e).reclasser(Classe::Disque))?;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(ancienne)).map_err(|e| illisible(archive, e))?;
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..z.len() {
+        let f = z.by_index_raw(i).map_err(|e| illisible(archive, e))?;
+        match ecrits.iter().position(|(n, _)| n == f.name()) {
+            Some(k) => {
+                let (n, o) = ecrits.remove(k);
+                w.start_file(n, options).map_err(|e| illisible(archive, e))?;
+                w.write_all(&o).map_err(|e| illisible(archive, e))?;
+            }
+            None => w.raw_copy_file(f).map_err(|e| illisible(archive, e))?,
+        }
+    }
+    for (n, o) in ecrits {
+        w.start_file(n, options).map_err(|e| illisible(archive, e))?;
+        w.write_all(&o).map_err(|e| illisible(archive, e))?;
+    }
+    let octets = w.finish().map_err(|e| illisible(archive, e))?.into_inner();
+    let fichiers = zip::ZipArchive::new(std::io::Cursor::new(&octets)).map_err(|e| illisible(archive, e))?.len();
+    // L'archive neuve s'ecrit a cote, puis prend la place de l'ancienne : une ecriture qui echoue ne la perd pas.
+    let neuve = archive.with_extension("zip.tmp");
+    std::fs::write(&neuve, &octets).map_err(|e| socle::echec::du_disque(&neuve, &e).reclasser(Classe::Disque))?;
+    std::fs::rename(&neuve, archive).map_err(|e| socle::echec::du_disque(archive, &e).reclasser(Classe::Disque))?;
+    let mut tous = lire_exercices(racine)?;
+    let Some(note) = tous.clos.get_mut(&annee) else {
+        return Err(socle::refus!("L'exercice {} n'est plus clos : la pièce est dans son archive, que la clôture ne note plus.", annee));
+    };
+    note.octets = Octets::de(&octets);
+    note.empreinte = Empreinte::des_octets(&octets);
+    note.fichiers = fichiers as u64;
+    ecrire_exercices(racine, &tous)
 }
 
 /// LES MOIS QUI ONT DES SORTIES : les dossiers `sorties/<mois>/` en vrac, et les mois de chaque annee close dont

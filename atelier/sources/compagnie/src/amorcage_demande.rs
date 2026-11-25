@@ -160,13 +160,13 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: NatureDEvenementDeclench
     Ok(lignes)
 }
 
-/// ECRIT LE SIGNALEMENT D'AMORCAGE de chaque ligne retenue, dans `sorties/<mois>/`, un fichier par individu
+/// ECRIT LE SIGNALEMENT D'AMORCAGE de chaque ligne retenue, dans `dossier` (celui de sa piece, sous les sorties du mois
+/// que leur porte donne, `SortiesDuMois::ecrire`), un fichier par individu
 /// (`Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`), constitue le jour `constitution`. UN NUMERO D'ORDRE PAR FICHIER, a la
 /// suite de tous les signalements deja partis : la sequence ne se remet jamais a zero (cahier technique DSN, p. 136), et
 /// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
-pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, mois: Mois, constitution: Jour, mode: Mode) -> R<Vec<PathBuf>> {
+pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, dossier: &std::path::Path, constitution: Jour, mode: Mode) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
-    let dossier = documents::PieceDuMois::Amorcage.dossier().dans(&ctx.racine, mois);
     let premier = droit::natures::NumeroDOrdre::suivant(envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
@@ -225,8 +225,11 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         return Err(erreur(Classe::AmorcageImpossible, format!("Taux de PAS non demandé : {}.", raisons.join(" ; "))));
     }
     let mois = d.mois;
-    let dossier = documents::PieceDuMois::Amorcage.dossier().dans(&ctx.racine, mois);
-    let fichiers = ecrire(ctx, paies, &retenus, d.motif, mois, d.constitution, d.mode)?;
+    // Les signalements et leur note s'ecrivent dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de
+    // l'exercice d'une annee close).
+    documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|sorties| {
+    let dossier = documents::PieceDuMois::Amorcage.dossier().sous(sorties);
+    let fichiers = ecrire(ctx, paies, &retenus, d.motif, &dossier, d.constitution, d.mode)?;
     ecrits.extend(fichiers.iter().cloned());
     // Le recapitulatif : ce qu'on lit avant de deposer -- et apres, pour savoir ce qu'on attend.
     let jour = d.constitution.aaaammjj();
@@ -255,4 +258,5 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
     let recap = dossier.join(format!("{}{}_{}_recapitulatif.txt", documents::SorteDePieceProduite::Amorcage.prefixe(), d.motif, jour));
     std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| socle::echec::du_disque(&recap, &e).reclasser(Classe::Disque))?;
     Ok(Lot { motif: d.motif, dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
+    })
 }

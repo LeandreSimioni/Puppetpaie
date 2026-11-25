@@ -608,7 +608,11 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         return dit;
     }
     // Le fichier s'ecrit reel ; son depot de test le bascule en memoire (`envois::depot::basculer_dsn`).
-    let fichiers = match ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, mois, ctx.aujourdhui, Mode::Reel) {
+    // Dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee close).
+    let ecrits = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois).and_then(|s| {
+        s.ecrire(|sorties| ad::ecrire(ctx, &paies, &retenues, declarations::amorcage::EMBAUCHE, &documents::PieceDuMois::Amorcage.dossier().sous(sorties), ctx.aujourdhui, Mode::Reel))
+    });
+    let fichiers = match ecrits {
         Ok(f) => f,
         Err(e) => {
             dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", en, e.phrase));
