@@ -61,13 +61,11 @@ pub(crate) fn contexte(o: &Options) -> R<Contexte> {
 
 /// LA COMPAGNIE QU'OUVRE LA ROUTE `route` (servie par la porte, `servir`, ou par l'etat garde de la fenetre,
 /// `etat_garde`) : ce que ses fiches portent et ne lisent pas part chez l'editeur, une fois par chose (`non_lus`) ; puis le
-/// barrage d'une valeur a saisir de nouveau (`redire::barrage`) : une route que sa fiche ne dit pas servie refuse ; et
-/// sans la main sur le Drive, une route qui ecrit refuse (`drive::sans_la_main`).
+/// barrage d'une valeur a saisir de nouveau (`redire::barrage`) : une route que sa fiche ne dit pas servie refuse.
 pub(crate) fn contexte_de_la_route(o: &Options, route: crate::catalogue::Route) -> R<Contexte> {
     let ctx = contexte(o)?;
     crate::non_lus::noter(&ctx);
     crate::redire::barrage(&ctx, route)?;
-    crate::drive::sans_la_main(&ctx.racine, route)?;
     Ok(ctx)
 }
 

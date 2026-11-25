@@ -1,6 +1,7 @@
-//! « PRENDRE LA MAIN » RECUPERE LE DRIVE (Leandre, 25/11/2026 : « Un seul poste a la main. Celui qui ne l'a pas ne fait
-//! rien : il regarde, c'est tout » ; son seul geste, « Prendre la main », recupere ce qu'il y a sur le Drive, puis prend
-//! la main). Rien n'a pu s'ecrire ici sans la main (`routes::drive::sans_la_main`) : rien de ce poste n'est ecrase.
+//! « PRENDRE LA MAIN » RECUPERE LE DRIVE (Leandre, 25/11/2026 : « on lui dit des changements ont ete faits ailleurs que
+//! sur ce poste. Prendre la main va effacer tous les changements effectues. Etes-vous sur ? Et s'il dit oui, et ben ca
+//! efface tout. […] Je veux pas de double copie. ») : la compagnie de ce poste devient ce qu'il y a sur le Drive. Ce
+//! qu'elle a ecrit sans la main s'efface avec elle, sans copie de cote ; seul ce qui est propre au poste reste.
 //!
 //! CE QU'ELLE FAIT, dans cet ordre :
 //! 1. le Drive revient dans un dossier cache a cote de la compagnie (`.recuperee-<dossier>`, que `installation::est_cache`
@@ -11,7 +12,7 @@
 //!    et ses mots de passe restent ceux de ce poste (« Le coffre reste celui du poste »), comme le jeton Google, le
 //!    diagnostic, le journal des incidents et celui de l'interface ;
 //! 3. son index dit encore la main ailleurs (`Index::sans_la_main`) : tant que la main n'est pas notee sur le Drive, la
-//!    compagnie revenue ne s'ecrit pas, et l'appelant l'efface une fois la main prise ;
+//!    compagnie revenue ne se sauvegarde pas, et l'appelant l'efface une fois la main prise ;
 //! 4. les deux dossiers s'echangent : la compagnie devient `.remplacee-<dossier>`, le dossier cache prend sa place, puis
 //!    l'ancienne s'efface. Le second renommage refuse : le premier se defait, rien n'a bouge. Coupe entre les deux
 //!    (le logiciel tue, une panne), le lancement suivant remet l'ancienne a sa place (`reparer_un_echange_coupe`).

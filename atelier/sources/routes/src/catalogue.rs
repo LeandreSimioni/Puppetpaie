@@ -257,16 +257,10 @@ impl<'de> serde::Deserialize<'de> for Route {
 pub enum Acte {
     /// Elle lit : rien ne s'ecrit.
     Lit,
-    /// Elle ecrit dans la compagnie ; rien ne part. Sans la main sur le Drive, elle refuse (`drive::sans_la_main`).
+    /// Elle ecrit dans la compagnie ; rien ne part.
     Ecrit,
-    /// Un acte reel (un envoi, un depot, une signature) : le mot de passe du logiciel, tape par un humain. Sans la main
-    /// sur le Drive, il refuse (`drive::sans_la_main`).
+    /// Un acte reel (un envoi, un depot, une signature) : le mot de passe du logiciel, tape par un humain.
     Engage,
-    /// ELLE ECRIT, ET SE SERT MEME QUAND CE POSTE N'A PAS LA MAIN SUR LE DRIVE DE LA COMPAGNIE (Leandre, 25/11/2026 :
-    /// « Celui qui ne l'a pas ne fait rien : il regarde, c'est tout ») : ce qu'elle ecrit reste au poste et « Prendre la
-    /// main » ne le remplace pas (ses acces : le coffre et ses mots de passe, le compte Google), ou c'est « Prendre la
-    /// main » elle-meme, ou ce que la veille fait sans geste de la personne (le releve). Rien d'autre.
-    EcritSansLaMain,
 }
 
 impl Acte {
@@ -275,25 +269,6 @@ impl Acte {
             Acte::Lit => "lit",
             Acte::Ecrit => "écrit",
             Acte::Engage => "engage (le mot de passe du logiciel, tapé par un humain)",
-            Acte::EcritSansLaMain => "écrit, même quand un autre poste tient la compagnie",
-        }
-    }
-
-    /// Le mot du catalogue (`moteur routes --json`), que la page lit.
-    fn ecrit(self) -> &'static str {
-        match self {
-            Acte::Lit => "lit",
-            Acte::Ecrit => "ecrit",
-            Acte::Engage => "engage",
-            Acte::EcritSansLaMain => "ecrit_sans_la_main",
-        }
-    }
-
-    /// LA ROUTE SE SERT-ELLE QUAND CE POSTE N'A PAS LA MAIN ? Celle qui lit, et celle qui le dit (`EcritSansLaMain`).
-    pub fn sans_la_main(self) -> bool {
-        match self {
-            Acte::Lit | Acte::EcritSansLaMain => true,
-            Acte::Ecrit | Acte::Engage => false,
         }
     }
 }
@@ -820,7 +795,11 @@ impl Fiche {
             exemple,
             rend: self.rend,
             refus: self.refus.iter().map(|r| RefusEcrit { classe: r.classe, corriger: r.corriger }).collect(),
-            acte: self.acte.ecrit(),
+            acte: match self.acte {
+                Acte::Lit => "lit",
+                Acte::Ecrit => "ecrit",
+                Acte::Engage => "engage",
+            },
             avance: self.ecran.avance(),
             longueur_de_phrase: self.phrase,
             ecran: self.ecran.place().map(Place::nom),
@@ -1033,7 +1012,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     dire!("Les routes (echo '{{\"route\":NOM,\"charge\":{{…}}}}' | moteur route ; la fiche : moteur routes NOM ; toutes : --avance)\n");
     let large = montrees.iter().map(|f| f.nom().len()).fold(0, usize::max);
     for f in &montrees {
-        dire!("  {:<large$}  {:<5}  {}  [{}]", f.nom(), match f.acte { Acte::Lit => "lit", Acte::Ecrit | Acte::EcritSansLaMain => "écrit", Acte::Engage => "engage" }, f.geste, f.ecran.texte());
+        dire!("  {:<large$}  {:<5}  {}  [{}]", f.nom(), match f.acte { Acte::Lit => "lit", Acte::Ecrit => "écrit", Acte::Engage => "engage" }, f.geste, f.ecran.texte());
     }
     let cachees = tout.len() - montrees.len();
     if cachees > 0 {

@@ -17,9 +17,8 @@ use routes::enveloppe::{Charge, Reponse};
 /// Les refus qui ne sont pas des defauts du logiciel : une saisie en cours, un mot de passe mal tape, un mois sans
 /// paie, et ceux que la page traite elle-meme (une fiche refusee, un depot deja fait...). On ne les compte pas en incidents.
 /// Une valeur a saisir de nouveau est deja chez l'editeur, une fois par case (`routes::non_lus`).
-const PAS_DES_INCIDENTS: [Classe; 9] = [
+const PAS_DES_INCIDENTS: [Classe; 8] = [
     Classe::ValeurARedire,
-    Classe::SansLaMain,
     Classe::SaisieIncomplete,
     Classe::PreuveInsuffisante,
     Classe::AucunDocument,

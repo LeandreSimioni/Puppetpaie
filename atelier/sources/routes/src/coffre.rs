@@ -104,7 +104,7 @@ pub const ROUTES: &[Fiche] = &[
         rend: "l'état du coffre, et ce qu'une tentative de connexion en dit : phrase, couleur",
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 400,
         ecran: GESTE,
     },
@@ -128,7 +128,7 @@ pub const ROUTES: &[Fiche] = &[
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 0,
         ecran: GESTE,
     },
@@ -140,7 +140,7 @@ pub const ROUTES: &[Fiche] = &[
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 0,
         ecran: GESTE,
     },
@@ -152,7 +152,7 @@ pub const ROUTES: &[Fiche] = &[
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 0,
         ecran: GESTE_AVANCE,
     },
@@ -161,10 +161,10 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lier le compte Google de la sauvegarde : Google s'ouvre, la personne accepte.",
         charge: &SeulLeMotDePasse::CHARGE,
         exemple: r#"{}"#,
-        rend: "compte : l'adresse du compte Google lié ; ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite, absente quand l'index de la sauvegarde ne se lit pas ou qu'un autre poste tient la compagnie ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
+        rend: "compte : l'adresse du compte Google lié ; ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite, absente quand l'index de la sauvegarde ne se lit pas ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
         refus: &[PREUVE, Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 0,
         ecran: GESTE,
     },
@@ -176,7 +176,7 @@ pub const ROUTES: &[Fiche] = &[
         rend: "l'état du compte Google",
         refus: &[PREUVE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 0,
         ecran: GESTE_AVANCE,
     },
@@ -461,11 +461,13 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             // compte il decrit le Drive (et `google-oublier` le garde) : relier un autre compte renvoie tout. La phrase
             // dit donc toujours que la premiere est longue, ce qui n'est jamais faux. Un index qui ne se lit pas
             // n'empeche pas de lier : la sauvegarde le refuserait (`sauvegarder`) ; la phrase le dit, et rien ne suit.
-            // SANS LA MAIN au dernier passage (`Index::sans_la_main`), la phrase le dit plutot que la premiere sauvegarde,
-            // et aucune ne suit : sans la main, `sauvegarde-maintenant` refuse (`drive::sans_la_main`) ; « Prendre la
-            // main » la fait suivre.
+            // SANS LA MAIN au dernier passage (`Index::sans_la_main`), la phrase le dit plutot que la premiere sauvegarde :
+            // celle qui suit relit la main, et ne part que si ce poste la tient.
             let (phrase, ensuite) = match compagnie::sauvegarde::lire_index(&ctx.racine) {
-                Ok(Some(compagnie::sauvegarde::Index { sans_la_main: Some(sans), .. })) => (socle::phrase!("Drive lié : {}. {}", compte, sans.phrase()), None),
+                Ok(Some(compagnie::sauvegarde::Index { sans_la_main: Some(sans), .. })) => (
+                    socle::phrase!("Drive lié : {}. Au dernier passage de la sauvegarde : {} La sauvegarde qui suit relit la main.", compte, sans.phrase()),
+                    Some(crate::veille::SauvegardeQuiSuit::du_drive()),
+                ),
                 Ok(_) => (
                     socle::phrase!(
                         "Drive lié : {}. La sauvegarde du Drive suit ; la première est longue : gardez une connexion internet stable et laissez le logiciel ouvert jusqu'à la fin.",

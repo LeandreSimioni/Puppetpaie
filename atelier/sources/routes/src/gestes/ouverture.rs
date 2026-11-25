@@ -58,7 +58,7 @@ pub const ROUTES: &[Fiche] = &[
         rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet, spectacles_ranges : ceux que 24 mois sans engagement ont rangés dans les archives), et les incidents en phrases ; ne refuse jamais",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
     },

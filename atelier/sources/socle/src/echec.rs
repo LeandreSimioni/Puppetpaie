@@ -92,9 +92,6 @@ classes! {
     /// Une valeur d'une fiche ne se lit plus : la saisir de nouveau (la route `valeurs-illisibles` la demande) avant
     /// tout autre geste.
     ValeurARedire,
-    /// Un autre poste tient la compagnie (la main sur son Drive) : ce poste la regarde et n'y ecrit pas ; « Prendre la
-    /// main » d'abord.
-    SansLaMain,
     /// La DSN de ce mois est deja deposee.
     DsnDejaDeposee,
     /// La repetition d'un depot manque.

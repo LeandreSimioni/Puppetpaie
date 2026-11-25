@@ -69,7 +69,7 @@ pub const ROUTES: &[Fiche] = &[
             OPERATION,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::EcritSansLaMain,
+        acte: Acte::Ecrit,
         phrase: 400,
         ecran: Ecran::Geste(Place::Drive),
     },
@@ -177,25 +177,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     }
 }
 
-// ------------------------------------------------------------------ sans la main
-
-/// SANS LA MAIN, LA COMPAGNIE SE REGARDE ET NE S'ECRIT PAS (Leandre, 25/11/2026 : « Un seul poste a la main. Celui qui ne
-/// l'a pas ne fait rien : il regarde, c'est tout »). Quand le dernier passage de la sauvegarde a trouve la main ailleurs
-/// (`Index::sans_la_main`, lu sur le poste, sans reseau), toute route dont l'acte ecrit ou engage refuse
-/// (`Classe::SansLaMain`) ; celle qui lit se sert, et celle que sa fiche dit servie sans la main
-/// (`Acte::EcritSansLaMain`). Pose une fois, la ou toute route prend sa compagnie (`service::contexte_de_la_route`). Un
-/// index qui ne se lit pas : l'erreur remonte pour l'ecriture, rien ne s'ecrit sur une main qu'on ne sait pas.
-pub(crate) fn sans_la_main(racine: &std::path::Path, route: Route) -> R<()> {
-    let Some(fiche) = crate::catalogue::catalogue().into_iter().find(|f| f.route == route) else { return Ok(()) };
-    if fiche.acte.sans_la_main() {
-        return Ok(());
-    }
-    match compagnie::sauvegarde::lire_index(racine).map_err(|e| e.echec)?.and_then(|i| i.sans_la_main) {
-        Some(s) => Err(socle::echec::erreur(Classe::SansLaMain, s.refus_d_ecrire())),
-        None => Ok(()),
-    }
-}
-
 // ------------------------------------------------------------------ ce qu'un dossier dit
 
 /// Ce qu'est le dossier `vu`, pour la compagnie dont l'identite est `la_sienne`.
@@ -264,16 +245,18 @@ pub(crate) fn geste_prendre_la_main<C>(charge: C, demande: Option<compagnie::dem
         .principal()
 }
 
-/// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce que le geste fait de cette compagnie sur ce poste (elle repart de
-/// ce qu'il y a sur le Drive, quand un autre poste tient la main), et ce qu'il change pour l'autre poste.
+/// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce qu'il change pour l'autre poste ; puis, quand un autre poste
+/// tient la main (ou qu'elle ne se lit pas), que la compagnie de ce poste repart de ce qu'il y a sur le Drive, en effacant
+/// ce qui s'est fait ici, dans les mots de Leandre (25/11/2026 : « on lui dit des changements ont ete faits ailleurs que
+/// sur ce poste. Prendre la main va effacer tous les changements effectues. Etes-vous sur ? ») ; sinon, que la sauvegarde
+/// part aussitot.
 fn avant_de_prendre_la_main(recupere: bool) -> Vec<String> {
-    let mut l = Vec::new();
+    let mut l = vec!["Ce poste seul sauvegardera dans le dossier de cette compagnie ; un poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string()];
     if recupere {
-        l.push("Ce poste repart de ce qu'il y a sur le Drive : la compagnie se ferme, revient telle que le poste qui tenait la main l'a sauvegardée, puis se rouvre. Ses mots de passe restent ceux de ce poste.".to_string());
+        l.push("Des changements ont été faits ailleurs que sur ce poste. Prendre la main va effacer tous les changements effectués sur ce poste. Êtes-vous sûr ?".to_string());
     } else {
         l.push("La sauvegarde de ce poste part aussitôt dans le dossier de cette compagnie.".to_string());
     }
-    l.push("Ce poste seul sauvegardera dans le dossier de cette compagnie ; un poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string());
     l
 }
 
@@ -292,8 +275,8 @@ fn a_recuperer(avant: &Result<Option<compagnie::sauvegarde::LaMain>, socle::eche
 
 /// PRENDRE LA MAIN SUR LE DRIVE DE CETTE COMPAGNIE (`LaMain`) : le mot de passe du logiciel s'il est pose
 /// (`coffre::exiger_mot_de_passe`), puis le dossier de la compagnie (celui que sa sauvegarde trouve, ou un neuf).
-/// UN AUTRE POSTE TIENT LA MAIN, OU ELLE NE SE LIT PAS (`a_recuperer`) : ce poste n'a rien pu ecrire sans elle
-/// (`sans_la_main`) ; il recupere d'abord ce qu'il y a sur le Drive (`compagnie::recuperation`), puis prend la main, et la
+/// UN AUTRE POSTE TIENT LA MAIN, OU ELLE NE SE LIT PAS (`a_recuperer`) : ce poste recupere d'abord ce qu'il y a sur le
+/// Drive (`compagnie::recuperation`), et ce qu'il a ecrit sans la main s'efface (la boite l'a dit), puis prend la main, et la
 /// page relit la compagnie revenue (`apres` : `Rouvrir`). La fenetre ferme la compagnie le temps du geste et la rouvre
 /// ensuite (`interface`). Pas tout revenu, ou les dossiers ne s'echangent pas : la compagnie reste telle quelle, la main
 /// n'est pas prise, la phrase le dit, et le geste de nouveau continue. PERSONNE, OU CE POSTE : le dossier recoit la main
@@ -332,7 +315,7 @@ fn prendre_la_main(ctx: &droit::contexte::Contexte, mdp: Option<&socle::secret::
 /// RECUPERER LE DRIVE PUIS PRENDRE LA MAIN (`prendre_la_main`, quand un autre poste la tient ou qu'elle ne se lit pas) :
 /// le dossier `id` revient dans la compagnie (`compagnie::recuperation::recuperer`) ; au bout, la main de ce poste s'y
 /// note, et l'index de la compagnie revenue ne dit plus qu'il ne l'a pas. La main qui ne se note pas laisse l'index dire
-/// `sans` : la compagnie revenue se regarde, et le geste de nouveau la prend.
+/// `sans` : ce poste n'y sauvegarde pas, et le geste de nouveau la prend.
 fn recuperer_puis_prendre(
     ctx: &droit::contexte::Contexte,
     client: &mut envois::drive::Client,
@@ -363,7 +346,7 @@ fn recuperer_puis_prendre(
     let mut phrase = match client.marquer(id, &main.marque(identite)).map_err(|e| e.echec).and_then(|()| compagnie::sauvegarde::main_reprise(&ctx.racine).map_err(|e| e.echec)) {
         Ok(()) => format!("La compagnie est revenue telle que {} l'a sauvegardée, et ce poste tient maintenant la main : lui seul y sauvegarde.", qui),
         Err(e) => format!(
-            "La compagnie est revenue telle que {} l'a sauvegardée, mais la main ne se prend pas ({}) : la compagnie se regarde, et « Prendre la main » de nouveau la prend.",
+            "La compagnie est revenue telle que {} l'a sauvegardée, mais la main ne se prend pas ({}) : ce poste ne la sauvegarde pas, et « Prendre la main » de nouveau la prend.",
             qui, e.phrase
         ),
     };
