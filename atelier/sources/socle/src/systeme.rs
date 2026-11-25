@@ -1,5 +1,5 @@
 //! LES APPELS AU NOYAU DE WINDOWS : la memoire du poste, le disque libre, l'heritage d'une prise d'ecoute, l'attente de
-//! la fin d'un processus, la boite qui dit pourquoi le programme ne s'ouvre pas. C'est le seul endroit ou un entier signe est impose par l'exterieur (le `BOOL` de l'API, un
+//! la fin d'un processus, la boite qui dit pourquoi le programme ne s'ouvre pas, le renommage ecrit sur le disque. C'est le seul endroit ou un entier signe est impose par l'exterieur (le `BOOL` de l'API, un
 //! `i32`) et le seul bloc `unsafe` du logiciel : chaque appel rend une valeur typee (des octets, un booleen), et le reste
 //! du logiciel ne voit ni l'API ni ses entiers. L'espace interdit `unsafe_code` (`deny`) : ce module le leve (et la
 //! racine de la crate `onglet`, pour le seul attribut de ses exports).
@@ -82,6 +82,26 @@ pub fn dire_dans_une_boite(titre: &str, texte: &str) {
     // SAFETY : deux textes termines par zero, vivants le temps de l'appel ; aucune fenetre parente.
     unsafe {
         MessageBoxW(0, x.as_ptr(), t.as_ptr(), MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
+    }
+}
+
+/// RENOMME `de` EN `vers` (qu'il remplace), SUR LE DISQUE avant de rendre la main : `MoveFileExW` avec
+/// `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` (« the function does not return until the file is actually
+/// moved on the disk »). Pour un journal qui doit tenir a une coupure de courant (`ecriture::ecrire_json_sur_le_disque`).
+#[cfg(windows)]
+pub fn renommer_sur_le_disque(de: &Path, vers: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    extern "system" {
+        fn MoveFileExW(de: *const u16, vers: *const u16, drapeaux: u32) -> i32;
+    }
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+    let large = |p: &Path| p.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (d, v) = (large(de), large(vers));
+    // SAFETY : deux chemins termines par zero, vivants le temps de l'appel.
+    match unsafe { MoveFileExW(d.as_ptr(), v.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } != 0 {
+        true => Ok(()),
+        false => Err(std::io::Error::last_os_error()),
     }
 }
 

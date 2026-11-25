@@ -648,8 +648,9 @@ pub fn ecrire_json<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: us
 }
 
 /// Comme `ecrire_json`, mais SUR LE DISQUE avant de rendre la main : le fichier provisoire est ecrit sur le disque
-/// (`sync_all`) avant de prendre sa place, puis, la ou le systeme le permet (hors de Windows), le dossier qui le porte
-/// aussi, pour que son nouveau nom tienne a une coupure de courant. Pour un journal qui doit etre sur le disque avant
+/// (`sync_all`) avant de prendre sa place ; sa place, il la prend sur le disque : sous Windows par un renommage ecrit au
+/// travers (`systeme::renommer_sur_le_disque`), ailleurs en vidant aussi le dossier qui le porte, pour que son nouveau
+/// nom tienne a une coupure de courant. Pour un journal qui doit etre sur le disque avant
 /// une etape qui detruit (`compagnie::deplacement`).
 pub fn ecrire_json_sur_le_disque<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize) -> R<()> {
     ecrire_json_ainsi(chemin, donnees, indent, true)
@@ -670,6 +671,9 @@ fn ecrire_json_ainsi<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: 
             f.sync_all()
         });
         ecrit.map_err(|e| crate::echec::du_disque(&provisoire, &e))?;
+        #[cfg(windows)]
+        crate::systeme::renommer_sur_le_disque(&provisoire, chemin).map_err(|e| crate::echec::du_disque(&chemin, &e))?;
+        #[cfg(not(windows))]
         std::fs::rename(&provisoire, chemin).map_err(|e| crate::echec::du_disque(&chemin, &e))?;
         #[cfg(unix)]
         {

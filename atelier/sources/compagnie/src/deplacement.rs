@@ -8,7 +8,7 @@
 //! (`maj/deplacer.json`, `demander`). La fenetre qui a servi la route la fait partir aussitot et se ferme
 //! (`lancer_s_il_est_demande`) ; posee en ligne de commande, elle part au prochain lancement de la fenetre
 //! (`au_lancement`). PARTIR, c'est : effacer la demande (un retrait qui echoue ne lance rien : la demande se rejouerait a
-//! chaque lancement), ecrire le DEPLACEMENT EN COURS (`EnCours`), puis lancer le relais.
+//! chaque lancement), ecrire le DEPLACEMENT EN COURS (`DeplacementEnCours`), puis lancer le relais.
 //!
 //! LE DEPLACEMENT EN COURS vit hors de l'installation, dans le dossier de l'utilisateur
 //! (`installation::dossier_de_l_utilisateur`, `EN_COURS`) : on l'y retrouve d'ou que l'on lance, l'ancien dossier ou le
@@ -63,7 +63,7 @@ use crate::maj::{dossier_maj, noter};
 
 /// La demande, dans `maj/` de l'installation : le dossier ou le logiciel va.
 const DEMANDE: &str = "deplacer.json";
-/// Le deplacement en cours, dans le dossier de l'utilisateur : `EnCours`.
+/// Le deplacement en cours, dans le dossier de l'utilisateur : `DeplacementEnCours`.
 const EN_COURS: &str = "deplacement-en-cours.json";
 /// Le fichier que le relais verrouille tant qu'il travaille, dans le dossier de l'utilisateur.
 const VERROU: &str = "deplacement-en-cours.verrou";
@@ -109,13 +109,11 @@ enum Etape {
 /// `deplacement-en-cours.json` : le deplacement que le relais fait, ou qu'un relais reprendra.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EnCours {
+struct DeplacementEnCours {
     /// L'installation, resolue.
     de: PathBuf,
     /// Le nouveau dossier, resolu.
     vers: PathBuf,
-    /// Le programme qui a lance le relais, dont la fin s'attend avant de rien toucher.
-    attendre: u32,
     /// Le nouveau dossier a ete cree par le deplacement : il part avec ce qui revient.
     cree: bool,
     /// Les entrees de l'installation qui partent.
@@ -185,6 +183,19 @@ fn resolu(p: &Path) -> R<PathBuf> {
         (None, Some(sans)) => PathBuf::from(sans),
         (None, None) => r.clone(),
     })
+}
+
+/// Le chemin `p` resolu jusqu'ou il existe : le plus proche dossier au-dessus qui existe se resout, et le reste s'y
+/// ajoute tel qu'il est ecrit. Une compagnie dont le dossier part en route se reconnait ainsi dans le deplacement qui
+/// l'emporte, au lieu d'une erreur du disque.
+fn resolu_ce_qui_existe(p: &Path) -> R<PathBuf> {
+    for dessus in p.ancestors() {
+        if socle::fichiers::existe_lu(dessus)? {
+            let reste = p.strip_prefix(dessus).map_err(|_| socle::echec::au_chemin("Ce chemin ne se lit pas.", p))?;
+            return Ok(resolu(dessus)?.join(reste));
+        }
+    }
+    Err(socle::echec::au_chemin("Aucun dossier de ce chemin n'existe.", p))
 }
 
 /// Un fichier du deplacement, dans le dossier de l'utilisateur.
@@ -381,7 +392,7 @@ fn demande(inst: &Path) -> R<Option<Demande>> {
 }
 
 /// Le deplacement en cours, s'il y en a un (pour n'importe quelle installation du poste).
-fn en_cours() -> R<Option<EnCours>> {
+fn en_cours() -> R<Option<DeplacementEnCours>> {
     let p = chez_l_utilisateur(EN_COURS);
     if !p.is_file() {
         return Ok(None);
@@ -393,7 +404,7 @@ fn en_cours() -> R<Option<EnCours>> {
 const ILLISIBLE: &str = "Ce logiciel s'est arrêté au milieu d'un déplacement, et le journal de ce déplacement ne se lit pas : on ne sait pas où sont ses dossiers, et rien ne s'y ouvre. Regarder ce dossier et celui où il allait, puis effacer ce journal.";
 
 /// Ecrit le deplacement en cours, sur le disque avant de rendre la main : l'etape qui suit peut detruire.
-fn ecrire_en_cours(ec: &EnCours) -> R<()> {
+fn ecrire_en_cours(ec: &DeplacementEnCours) -> R<()> {
     socle::ecriture::ecrire_json_sur_le_disque(&chez_l_utilisateur(EN_COURS), ec, 1)
 }
 
@@ -408,7 +419,7 @@ enum Ici {
     /// Il ne la concerne pas, ou il n'y en a pas.
     Rien,
     /// Il la concerne, et se lit.
-    Lu(EnCours),
+    Lu(DeplacementEnCours),
     /// Son journal ne se lit pas, et l'installation porte la marque d'un deplacement.
     Illisible(socle::echec::Echec),
 }
@@ -426,7 +437,7 @@ fn ici(inst: &Path, racine: Option<&Path>) -> R<Ici> {
     };
     let dedans = match racine {
         Some(r) => {
-            let r = resolu(r)?;
+            let r = resolu_ce_qui_existe(r)?;
             socle::fichiers::sous(&r, &ec.de).is_some() || socle::fichiers::sous(&r, &ec.vers).is_some()
         }
         None => false,
@@ -470,8 +481,20 @@ fn phrase_en_cours(au_travail: &R<bool>) -> String {
 }
 
 /// D'ou et vers ou, pour une boite.
-fn de_vers(ec: &EnCours) -> String {
+fn de_vers(ec: &DeplacementEnCours) -> String {
     format!("De : {}. Vers : {}.", dit(&ec.de), dit(&ec.vers))
+}
+
+/// CE QUE LA LECTURE « OU EST LE LOGICIEL » DIT D'UN DEPLACEMENT EN COURS qui concerne l'installation `inst` (elle
+/// repond pendant qu'il dure) : sa phrase, en mots (il travaille ; il s'est arrete, et ce qui le finit ; son journal
+/// illisible, et quoi faire), puis les lignes qui disent les dossiers ; `None` s'il ne la concerne pas.
+pub fn en_cours_dit(inst: &Path) -> Option<(String, Vec<String>)> {
+    match ici(inst, None) {
+        Ok(Ici::Rien) => None,
+        Ok(Ici::Lu(ec)) => Some((phrase_en_cours(&relais_au_travail()), vec![de_vers(&ec)])),
+        Ok(Ici::Illisible(e)) => Some((format!("{} ({}.)", ILLISIBLE, e.phrase.trim_end_matches('.')), vec![format!("Ce journal : {}.", dit(&chez_l_utilisateur(EN_COURS)))])),
+        Err(e) => Some((format!("On ne sait pas si ce logiciel se déplace : {}", e.phrase), Vec::new())),
+    }
 }
 
 /// POUR LA LIGNE DE COMMANDE : un deplacement en cours qui concerne l'installation `inst` (ou celle de la compagnie
@@ -511,9 +534,8 @@ fn dire(texte: &str) {
 }
 
 /// Retient ce qui s'est passe (`DERNIER`), et le note au journal de la mise a jour la ou le logiciel est entier.
-fn retenir(fin: &Fin) {
-    let d = Dernier { quand: socle::temps::secondes().a_la_minute(), de: fin.de.clone(), vers: fin.vers.clone(), issue: fin.issue, phrase: fin.phrase.clone() };
-    let ecrit = crate::maj::ecrire_json(&chez_l_utilisateur(DERNIER), &d);
+fn retenir(fin: &Dernier) {
+    let ecrit = crate::maj::ecrire_json(&chez_l_utilisateur(DERNIER), fin);
     if let Some(ou) = fin.ou() {
         noter(ou, &format!("Deplacement : {}", fin.phrase));
         if let Err(e) = ecrit {
@@ -522,32 +544,29 @@ fn retenir(fin: &Fin) {
     }
 }
 
-/// La fin d'un deplacement : ou est le logiciel, et ce qu'on en dit.
-struct Fin {
-    de: PathBuf,
-    vers: PathBuf,
-    issue: Issue,
-    phrase: String,
-}
+impl Dernier {
+    /// Ce qui s'est passe a l'instant : `issue`, et ce qu'on en dit.
+    fn maintenant(de: &Path, vers: &Path, issue: Issue, phrase: String) -> Dernier {
+        Dernier { quand: socle::temps::secondes().a_la_minute(), de: de.to_path_buf(), vers: vers.to_path_buf(), issue, phrase }
+    }
 
-impl Fin {
     /// Le logiciel est arrive dans `vers`.
-    fn deplace(de: &Path, vers: &Path, restes: Vec<String>) -> Fin {
+    fn deplace(de: &Path, vers: &Path, restes: Vec<String>) -> Dernier {
         let phrase = match restes.is_empty() {
             true => format!("Le logiciel est arrivé ici, depuis {}.", dit(de)),
             false => format!("Le logiciel est arrivé ici, depuis {}. L'ancien dossier ne s'est pas effacé entier : {}", dit(de), restes.join(" ; ")),
         };
-        Fin { de: de.to_path_buf(), vers: vers.to_path_buf(), issue: Issue::Deplace, phrase }
+        Dernier::maintenant(de, vers, Issue::Deplace, phrase)
     }
 
     /// Le logiciel est reste dans `de`, entier, pour la raison `pourquoi`.
-    fn reste(de: &Path, vers: &Path, pourquoi: &str) -> Fin {
+    fn reste(de: &Path, vers: &Path, pourquoi: &str) -> Dernier {
         let phrase = format!("Le logiciel n'est pas allé dans {} : {} Il est resté dans {}, entier.", dit(vers), pourquoi, dit(de));
-        Fin { de: de.to_path_buf(), vers: vers.to_path_buf(), issue: Issue::Reste, phrase }
+        Dernier::maintenant(de, vers, Issue::Reste, phrase)
     }
 
     /// Le logiciel n'est entier nulle part : `pourquoi`, puis ce qui est ou (`ou_est`).
-    fn coupe(de: &Path, vers: &Path, pourquoi: &str, ou_est: &str) -> Fin {
+    fn coupe(de: &Path, vers: &Path, pourquoi: &str, ou_est: &str) -> Dernier {
         let phrase = format!(
             "Le déplacement du logiciel de {} vers {} s'est arrêté en route ({}) et tout n'est pas revenu : {}. Le relancer réessaie de tout remettre dans {}.",
             dit(de),
@@ -556,7 +575,7 @@ impl Fin {
             ou_est,
             dit(de)
         );
-        Fin { de: de.to_path_buf(), vers: vers.to_path_buf(), issue: Issue::Coupe, phrase }
+        Dernier::maintenant(de, vers, Issue::Coupe, phrase)
     }
 
     /// Ou le logiciel est entier ; `None` s'il est coupe.
@@ -578,10 +597,9 @@ fn partir(inst: &Path, vers: &Path) -> R<()> {
     let de = resolu(inst)?;
     marquer(&de)?;
     let marque = de.join(MARQUE);
-    let ec = EnCours {
+    let ec = DeplacementEnCours {
         de,
         vers: vers.to_path_buf(),
-        attendre: socle::processus::numero(),
         cree: false,
         noms: Vec::new(),
         etape: Etape::Attente,
@@ -628,20 +646,26 @@ pub fn au_lancement() -> bool {
                 Ok(()) => format!("{} Elle est effacée : redemander.", e.phrase),
                 Err(x) => format!("{} Elle ne s'efface pas non plus ({}).", e.phrase, x.phrase),
             };
-            retenir(&Fin { de: inst.clone(), vers: inst.clone(), issue: Issue::Reste, phrase: pourquoi });
+            retenir(&Dernier::maintenant(&inst, &inst, Issue::Reste, pourquoi));
             return false;
         }
     };
     match partir(&inst, &d.vers) {
         Ok(()) => true,
         Err(e) => {
-            retenir(&Fin::reste(&inst, &d.vers, &e.phrase));
+            retenir(&Dernier::reste(&inst, &d.vers, &e.phrase));
             false
         }
     }
 }
 
-/// APRES LA ROUTE, DANS LA FENETRE : une demande posee part tout de suite (`partir`) ; a la fenetre de se fermer
+/// LE DOSSIER OU UN DEPLACEMENT DEMANDE VA, s'il y en a un en attente dans l'installation `inst` (pose en ligne de
+/// commande, il part au prochain lancement de la fenetre) ; la demande illisible : son refus.
+pub fn demande_posee(inst: &Path) -> R<Option<PathBuf>> {
+    Ok(demande(inst)?.map(|d| d.vers))
+}
+
+/// APRES LA ROUTE, DANS LA FENETRE, SES ENVOIS FINIS : une demande posee part (`partir`) ; a la fenetre de se fermer
 /// aussitot (`true`). Elle ne part pas : le refus le dit.
 pub fn lancer_s_il_est_demande(inst: &Path) -> R<bool> {
     let Some(d) = demande(inst)? else { return Ok(false) };
@@ -713,24 +737,21 @@ pub fn relais(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
         }
     };
     let (de, vers) = (ec.de.clone(), ec.vers.clone());
-    // Le lanceur, et, si rien n'a encore bouge, le programme qui a demande le deplacement.
-    let a_attendre = match ec.etape {
-        Etape::Attente => vec![lanceur, ec.attendre],
-        Etape::Renommage | Etape::Copie | Etape::Effacement => vec![lanceur],
+    // Le lanceur seul s'attend : celui qui a demande le deplacement (`partir`), ou celui qui le reprend
+    // (`en_cours_au_lancement`). Un numero ecrit plus tot pourrait etre, depuis, celui d'un autre programme.
+    let arrete = match crate::maj::attendre_fin(lanceur, &de) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("le programme qui l'a lancé ne s'est pas arrêté.".to_string()),
+        Err(e) => Err(format!("on ne sait pas si le programme qui l'a lancé s'est arrêté ({}).", e.phrase)),
     };
-    let mut arrete = Ok(());
-    for p in a_attendre {
-        arrete = arrete.and_then(|()| match crate::maj::attendre_fin(p, &de) {
-            Ok(true) => Ok(()),
-            Ok(false) => Err("le programme qui l'a demandé ne s'est pas arrêté.".to_string()),
-            Err(e) => Err(format!("on ne sait pas si le programme qui l'a demandé s'est arrêté ({}).", e.phrase)),
-        });
-    }
-    let fin = match (arrete, ec.etape) {
-        (Err(pourquoi), Etape::Attente) => Fin::reste(&de, &vers, &pourquoi),
-        (Err(pourquoi), _) => Fin::coupe(&de, &vers, &pourquoi, "rien n'a été repris"),
-        (Ok(()), Etape::Attente) => commencer(ec),
-        (Ok(()), _) => reprendre(ec),
+    let fin = match arrete {
+        // Rien n'a ete touche par ce relais : ce qui est ou se lit sur le disque, pas dans le journal.
+        Err(pourquoi) => match rien_n_est_parti(&ec) {
+            Ok(true) => Dernier::reste(&de, &vers, &pourquoi),
+            Ok(false) => Dernier::coupe(&de, &vers, &pourquoi, "rien n'a été repris, une partie est dans le nouveau dossier"),
+            Err(e) => Dernier::coupe(&de, &vers, &pourquoi, &format!("rien n'a été repris, et ce qui est où ne se lit pas ({})", e.phrase.trim_end_matches('.'))),
+        },
+        Ok(()) => reprendre(ec),
     };
     retenir(&fin);
     // Coupe, le deplacement en cours et ses marques restent : le lancement suivant reprend. Sinon le journal s'efface,
@@ -771,14 +792,14 @@ pub fn relais(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
 
 /// LE DEPLACEMENT, du debut : verifie de nouveau, cree le nouveau dossier s'il le faut, ecrit l'etape, renomme ; sur un
 /// autre disque, copie. Un renommage refuse : tout revient, et l'on retente, une minute au plus.
-fn commencer(mut ec: EnCours) -> Fin {
+fn commencer(mut ec: DeplacementEnCours) -> Dernier {
     let de = ec.de.clone();
     let mut essai = 1;
     loop {
         let vers = match verifier(&de, &ec.vers) {
             Ok(Verdict::Possible(v)) => v,
-            Ok(Verdict::DejaLa) => return Fin::reste(&de, &ec.vers, "c'est déjà là qu'il est."),
-            Err(e) => return Fin::reste(&de, &ec.vers, &e.phrase),
+            Ok(Verdict::DejaLa) => return Dernier::reste(&de, &ec.vers, "c'est déjà là qu'il est."),
+            Err(e) => return Dernier::reste(&de, &ec.vers, &e.phrase),
         };
         ec.vers = vers.clone();
         let preparer = || -> R<(bool, Vec<PathBuf>)> {
@@ -798,13 +819,13 @@ fn commencer(mut ec: EnCours) -> Fin {
                 ec.cree = cree;
                 ec.noms = noms;
             }
-            Err(e) => return Fin::reste(&de, &vers, &e.phrase),
+            Err(e) => return Dernier::reste(&de, &vers, &e.phrase),
         }
         ec.etape = Etape::Renommage;
         if let Err(e) = ecrire_en_cours(&ec) {
             return match revenir(&ec, false) {
-                Ok(()) => Fin::reste(&de, &vers, &e.phrase),
-                Err(ou) => Fin::coupe(&de, &vers, &e.phrase, &ou),
+                Ok(()) => Dernier::reste(&de, &vers, &e.phrase),
+                Err(ou) => Dernier::coupe(&de, &vers, &e.phrase, &ou),
             };
         }
         let mut renommes = 0;
@@ -824,11 +845,11 @@ fn commencer(mut ec: EnCours) -> Fin {
         }
         let Some(pourquoi) = refuse else { return finir_les_renommages(ec) };
         if let Err(ou) = revenir(&ec, false) {
-            return Fin::coupe(&de, &vers, &pourquoi, &ou);
+            return Dernier::coupe(&de, &vers, &pourquoi, &ou);
         }
         ec.etape = Etape::Attente;
         if essai >= ESSAIS_DU_RENOMMAGE || ecrire_en_cours(&ec).is_err() {
-            return Fin::reste(&de, &vers, &pourquoi);
+            return Dernier::reste(&de, &vers, &pourquoi);
         }
         noter(&de, &format!("Deplacement : le dossier ne se laisse pas encore deplacer ({}) ; nouvel essai.", pourquoi));
         essai += 1;
@@ -836,43 +857,105 @@ fn commencer(mut ec: EnCours) -> Fin {
     }
 }
 
-/// UN DEPLACEMENT REPRIS (le relais d'avant est mort en route) : des renommages, finis s'ils sont tous faits, defaits
-/// sinon ; une copie, defaite ; un effacement, fini.
-fn reprendre(ec: EnCours) -> Fin {
+/// LES NOMS D'UN DEPLACEMENT, LUS SUR LE DISQUE : ceux du journal, ceux de l'ancien dossier (hors ce qui reste) et ceux
+/// du nouveau (hors sa marque), `logiciel/` le dernier. Le journal peut retarder sur le disque (sous Windows, son nouveau
+/// nom n'est pas sur et certain d'y etre quand le courant tombe) : il ne dit pas seul ce qui est ou.
+fn noms_sur_le_disque(ec: &DeplacementEnCours) -> R<Vec<PathBuf>> {
+    let mut v: Vec<OsString> = ec.noms.iter().map(|n| n.clone().into_os_string()).collect();
+    let mut ajouter = |noms: Vec<OsString>| {
+        for n in noms {
+            if !v.contains(&n) {
+                v.push(n);
+            }
+        }
+    };
+    if ec.de.is_dir() {
+        ajouter(entrees(&ec.de, &ce_qui_reste(&ec.de)?)?);
+    }
+    if ec.vers.is_dir() {
+        ajouter(entrees(&ec.vers, &[OsString::from(MARQUE)])?);
+    }
+    v.sort_by_key(|n| n.as_os_str() == crate::maj::LOGICIEL);
+    Ok(v.into_iter().map(PathBuf::from).collect())
+}
+
+/// Rien du deplacement n'est dans le nouveau dossier (lu sur le disque).
+fn rien_n_est_parti(ec: &DeplacementEnCours) -> R<bool> {
+    Ok(noms_sur_le_disque(ec)?.iter().all(|n| std::fs::symlink_metadata(ec.vers.join(n)).is_err()))
+}
+
+/// UN DEPLACEMENT REPRIS. LA REPRISE NE CROIT PAS LE JOURNAL SUR PAROLE : elle regarde les deux dossiers, nom par nom.
+/// - Rien dans le nouveau : a l'etape d'attente, le deplacement commence ; sinon tout revient (les pointeurs aussi).
+/// - Aucun nom des deux cotes (des renommages) : tout dans le nouveau, c'est fini ; sinon tout revient.
+/// - Des noms des deux cotes (une copie) : si tout ce que la copie porte est encore dans l'ancien, l'ancien est entier,
+///   la copie s'efface ; si l'ancien a perdu des noms (son effacement avait commence, la copie comparee et entiere) et
+///   que tout ce qui lui reste est pareil dans la copie, l'effacement se finit ; autrement, rien n'est touche : coupe.
+fn reprendre(mut ec: DeplacementEnCours) -> Dernier {
     let (de, vers) = (ec.de.clone(), ec.vers.clone());
     let arrete = "le déplacement s'était arrêté en route, le poste éteint ou le relais arrêté.";
-    match ec.etape {
-        Etape::Attente => commencer(ec),
-        Etape::Renommage if ec.noms.iter().all(|n| !de.join(n).exists() && vers.join(n).exists()) => finir_les_renommages(ec),
-        Etape::Renommage => match revenir(&ec, true) {
-            Ok(()) => Fin::reste(&de, &vers, arrete),
-            Err(ou) => Fin::coupe(&de, &vers, arrete, &ou),
-        },
-        Etape::Copie => Fin::reste(&de, &vers, &defaire_la_copie(&ec, arrete)),
-        Etape::Effacement => {
-            let mut restes = Vec::new();
-            if let Err(e) = repointer(&de, &vers) {
-                restes.push(format!("ce qui pointait vers l'ancien dossier ne s'est pas réécrit ({})", e.phrase));
-            }
-            effacer_l_ancien(&ec, restes)
-        }
+    match noms_sur_le_disque(&ec) {
+        Ok(noms) => ec.noms = noms,
+        Err(e) => return Dernier::coupe(&de, &vers, arrete, &format!("rien n'est touché : ce qui est où ne se lit pas ({})", e.phrase.trim_end_matches('.'))),
     }
+    let la = |d: &Path, n: &Path| std::fs::symlink_metadata(d.join(n)).is_ok();
+    let dans_le_neuf = ec.noms.iter().filter(|n| la(&vers, n)).count();
+    let dans_l_ancien = ec.noms.iter().filter(|n| la(&de, n)).count();
+    let des_deux = ec.noms.iter().filter(|n| la(&de, n) && la(&vers, n)).count();
+    if dans_le_neuf == 0 {
+        if ec.etape == Etape::Attente {
+            return commencer(ec);
+        }
+        return match revenir(&ec, true) {
+            Ok(()) => Dernier::reste(&de, &vers, arrete),
+            Err(ou) => Dernier::coupe(&de, &vers, arrete, &ou),
+        };
+    }
+    if des_deux == 0 {
+        if dans_l_ancien == 0 {
+            return finir_les_renommages(ec);
+        }
+        return match revenir(&ec, true) {
+            Ok(()) => Dernier::reste(&de, &vers, arrete),
+            Err(ou) => Dernier::coupe(&de, &vers, arrete, &ou),
+        };
+    }
+    let presents = |d: &Path| ec.noms.iter().filter(|n| la(d, n)).map(|n| n.clone().into_os_string()).collect::<Vec<_>>();
+    let (a, b) = match (arbre(&de, &presents(&de)), arbre(&vers, &presents(&vers))) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(e), _) | (_, Err(e)) => return Dernier::coupe(&de, &vers, arrete, &format!("rien n'est touché : ce qui est où ne se lit pas ({})", e)),
+    };
+    if b.keys().all(|k| a.contains_key(k)) {
+        return Dernier::reste(&de, &vers, &defaire_la_copie(&ec, arrete));
+    }
+    if a.iter().all(|(k, t)| b.get(k) == Some(t)) {
+        let mut restes = Vec::new();
+        if let Err(e) = repointer(&de, &vers) {
+            restes.push(format!("ce qui pointait vers l'ancien dossier ne s'est pas réécrit ({})", e.phrase));
+        }
+        return effacer_l_ancien(&ec, restes);
+    }
+    Dernier::coupe(
+        &de,
+        &vers,
+        arrete,
+        &format!("rien n'est touché : l'ancien dossier et la copie dans {} diffèrent l'un de l'autre, et aucun des deux n'est sûrement entier", dit(&vers)),
+    )
 }
 
 /// Tout est renomme : ce qui pointe vers l'ancien dossier se reecrit (sinon tout revient), puis l'ancien dossier
 /// s'efface s'il est vide.
-fn finir_les_renommages(ec: EnCours) -> Fin {
-    if let Err(e) = repointer(&ec.de, &ec.vers) {
+fn finir_les_renommages(ec: DeplacementEnCours) -> Dernier {
+    if let Err(e) = dossier_sur_le_disque(&ec.vers).and_then(|()| dossier_sur_le_disque(&ec.de)).and_then(|()| repointer(&ec.de, &ec.vers)) {
         return match revenir(&ec, true) {
-            Ok(()) => Fin::reste(&ec.de, &ec.vers, &e.phrase),
-            Err(ou) => Fin::coupe(&ec.de, &ec.vers, &e.phrase, &ou),
+            Ok(()) => Dernier::reste(&ec.de, &ec.vers, &e.phrase),
+            Err(ou) => Dernier::coupe(&ec.de, &ec.vers, &e.phrase, &ou),
         };
     }
     effacer_l_ancien(&ec, Vec::new())
 }
 
 /// Le logiciel est au nouvel endroit, entier : ce qui reste de l'ancien s'efface, et ce qui ne s'efface pas se dit.
-fn effacer_l_ancien(ec: &EnCours, mut restes: Vec<String>) -> Fin {
+fn effacer_l_ancien(ec: &DeplacementEnCours, mut restes: Vec<String>) -> Dernier {
     for nom in &ec.noms {
         let p = ec.de.join(nom);
         if std::fs::symlink_metadata(&p).is_ok() {
@@ -894,14 +977,14 @@ fn effacer_l_ancien(ec: &EnCours, mut restes: Vec<String>) -> Fin {
             Err(e) => restes.push(e.phrase),
         }
     }
-    Fin::deplace(&ec.de, &ec.vers, restes)
+    Dernier::deplace(&ec.de, &ec.vers, restes)
 }
 
 /// TOUT REVIENT apres des renommages : (si `pointeurs`) ce qui pointe vers le nouveau dossier revient a l'ancien ;
 /// chaque entree qui est dans le nouveau dossier, et pas dans l'ancien, y revient, `logiciel/` la premiere ; tout
 /// revenu, le nouveau dossier perd sa marque, et, cree par le deplacement, s'efface s'il est vide. Ce qui ne revient
 /// pas : ce qui est ou, en mots.
-fn revenir(ec: &EnCours, pointeurs: bool) -> Result<(), String> {
+fn revenir(ec: &DeplacementEnCours, pointeurs: bool) -> Result<(), String> {
     let (de, vers) = (&ec.de, &ec.vers);
     let mut fautes = Vec::new();
     if pointeurs {
@@ -912,7 +995,12 @@ fn revenir(ec: &EnCours, pointeurs: bool) -> Result<(), String> {
     let mut la_bas = Vec::new();
     for nom in ec.noms.iter().rev() {
         let (ici, ailleurs) = (de.join(nom), vers.join(nom));
-        if std::fs::symlink_metadata(&ailleurs).is_err() || std::fs::symlink_metadata(&ici).is_ok() {
+        if std::fs::symlink_metadata(&ailleurs).is_err() {
+            continue;
+        }
+        // Le meme nom des deux cotes : aucun ne s'ecrase sur l'autre, et le logiciel n'est pas entier.
+        if std::fs::symlink_metadata(&ici).is_ok() {
+            la_bas.push(format!("{} (le même nom est aussi dans {})", nom.to_string_lossy(), dit(de)));
             continue;
         }
         if let Err(e) = std::fs::rename(&ailleurs, &ici) {
@@ -945,7 +1033,7 @@ fn revenir(ec: &EnCours, pointeurs: bool) -> Result<(), String> {
 /// l'original (chaque dossier, chaque fichier, sa taille et son empreinte), ce qui pointe vers l'ancien dossier se
 /// reecrit, l'etape d'effacement s'ecrit, puis l'original s'efface. Au moindre echec, la copie s'efface et les
 /// pointeurs reviennent : l'original est entier.
-fn copier(mut ec: EnCours) -> Fin {
+fn copier(mut ec: DeplacementEnCours) -> Dernier {
     let (de, vers) = (ec.de.clone(), ec.vers.clone());
     let noms: Vec<OsString> = ec.noms.iter().map(|n| n.clone().into_os_string()).collect();
     let fait = ecrire_en_cours(&ec).and_then(|()| copier_et_comparer(&de, &vers, &noms)).and_then(|()| {
@@ -955,13 +1043,13 @@ fn copier(mut ec: EnCours) -> Fin {
     });
     match fait {
         Ok(()) => effacer_l_ancien(&ec, Vec::new()),
-        Err(e) => Fin::reste(&de, &vers, &defaire_la_copie(&ec, &e.phrase)),
+        Err(e) => Dernier::reste(&de, &vers, &defaire_la_copie(&ec, &e.phrase)),
     }
 }
 
 /// La copie s'efface, les pointeurs reviennent a l'ancien dossier, le nouveau dossier cree s'efface : l'original est
 /// entier. Rend `pourquoi`, suivi de ce qui ne s'est pas defait.
-fn defaire_la_copie(ec: &EnCours, pourquoi: &str) -> String {
+fn defaire_la_copie(ec: &DeplacementEnCours, pourquoi: &str) -> String {
     let mut restes = Vec::new();
     if let Err(e) = repointer(&ec.vers, &ec.de) {
         restes.push(format!("ce qui pointait vers {} n'y pointe plus entier ({})", dit(&ec.de), e.phrase));
@@ -988,6 +1076,31 @@ fn defaire_la_copie(ec: &EnCours, pourquoi: &str) -> String {
         true => pourquoi.to_string(),
         false => format!("{} ({}).", pourquoi.trim_end_matches('.'), restes.join(" ; ")),
     }
+}
+
+/// COPIE UN FICHIER, sur le disque avant de rendre la main : le contenu s'ecrit dans un fichier neuf, ouvert en
+/// ecriture, qui se vide sur le disque (`sync_all` ; sous Windows il exige un fichier ouvert en ecriture), puis prend
+/// les dates et les droits de l'original (`m`) : un fichier en lecture seule se copie, et le reste.
+fn copier_un_fichier(de: &Path, vers: &Path, m: &std::fs::Metadata) -> std::io::Result<()> {
+    let mut source = std::fs::File::open(de)?;
+    let mut copie = std::fs::OpenOptions::new().write(true).create_new(true).open(vers)?;
+    std::io::copy(&mut source, &mut copie)?;
+    copie.set_times(std::fs::FileTimes::new().set_modified(m.modified()?).set_accessed(m.accessed()?))?;
+    copie.sync_all()?;
+    drop(copie);
+    std::fs::set_permissions(vers, m.permissions())
+}
+
+/// Les noms du dossier `d` sur le disque : hors de Windows, le dossier ouvert se vide (`sync_all`). Sous Windows, la
+/// bibliotheque standard n'ouvre pas un dossier : rien (la reprise regarde les dossiers, `reprendre`).
+#[cfg(unix)]
+fn dossier_sur_le_disque(d: &Path) -> R<()> {
+    std::fs::File::open(d).and_then(|f| f.sync_all()).map_err(|e| socle::echec::du_disque(d, &e))
+}
+
+#[cfg(not(unix))]
+fn dossier_sur_le_disque(_d: &Path) -> R<()> {
+    Ok(())
 }
 
 /// L'empreinte SHA-256 du contenu d'un fichier.
@@ -1019,13 +1132,17 @@ fn copier_et_comparer(de: &Path, vers: &Path, noms: &[OsString]) -> R<()> {
                 let nom = e.map_err(|e| socle::echec::du_disque(de, &e))?.file_name();
                 copier(&de.join(&nom), &vers.join(&nom))?;
             }
-            return Ok(());
+            // Ses noms sur le disque avant que rien ne s'efface (la ou le systeme le permet).
+            return dossier_sur_le_disque(vers);
         }
-        std::fs::copy(de, vers).map_err(|e| socle::echec::du_disque(de, &e))?;
-        std::fs::OpenOptions::new().write(true).open(vers).and_then(|f| f.sync_all()).map_err(|e| socle::echec::du_disque(vers, &e))
+        copier_un_fichier(de, vers, &m).map_err(|e| socle::echec::du_disque(vers, &e))
     }
     for nom in noms {
         copier(&de.join(nom), &vers.join(nom))?;
+    }
+    dossier_sur_le_disque(vers)?;
+    if let Some(dessus) = vers.parent() {
+        dossier_sur_le_disque(dessus)?;
     }
     let avant = arbre(de, noms).map_err(|e| socle::echec::du_disque(de, &e))?;
     let apres = arbre(vers, noms).map_err(|e| socle::echec::du_disque(vers, &e))?;
