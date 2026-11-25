@@ -391,6 +391,7 @@ un libellé, chacun sa forme.
 | jours par semaine (un rythme : « 1 jour par semaine calendaire » d'ancienneté, un préavis d'une convention, `clauses::TranchePreavis.jours_par_semaine`) | `JoursParSemaine` (semaines × jours par semaine = `Jours`) | `socle/src/grandeurs.rs` |
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
+| jour d'une ligne de paie qui dit ce qu'il porte (sa quantité, dans l'unité de la ligne, et son lieu : 4 des 10 heures, à Lyon ; la quantité de la ligne est la somme de ses jours, `LignePaie::par_jour_qui_suit`, qui répartit une quantité dite sur les jours, le reste sur les premiers, `QuantiteDeLigne::repartie`) | `JourDeLigne` (la date détaillée d'une `DateDeLigne`) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
 | effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif × coefficient = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; une moyenne, `reparti_sur` ; écrit en 13.003 et dans le 118 que le banc rend par `norme::quantite` ; R. 130-1 le compte par `droit::effectif`, des DSN déposées pour le banc, `envois::organismes_simules`, des paies reprises pour « Pour démarrer », `engagement::effectif_repris`, chaque jour d'une personne une part, un `Coefficient`) | `socle/src/grandeurs.rs` |
 | mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets, des heures ou des unités — la pige, la vacation, la tâche —, chacun sa grandeur, comme le dit la mesure de la nature ; lue d'une DSN dans la grandeur de son unité, `MesureDActivite::lue` ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
@@ -2224,8 +2225,8 @@ sous `parties` de la route etat) : le dessinateur la fait saisir partie par part
 d'un geste ouvre de même les cases du geste qui ne valent que pour lui (`ouvre` d'un `routes::ouverture::Choix` : la
 nature d'un contrat repris, `importation-nature`) : la boîte ne montre que les cases du choix fait, se redessine quand il
 change, et ce qu'elle cache ne part pas. Les jours d'une ligne partent tous
-dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et fait suivre la quantité d'une ligne
-qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
+dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et tient ensemble la quantité d'une ligne
+et celle de chacun de ses jours (`LignePaie::par_jour_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
 cachets en entier) ; la page montre ce qu'elle reçoit. **Une fiche se rend comme une carte** : la route `fiche`
 (`routes::fiches::rendue`) rend une fiche telle qu'on la saisit (`{nom, cle, changements}` : ce qui est saisi, posé sur
 la fiche enregistrée comme à l'écriture et comme sur la carte, une case qu'on ne nomme pas gardant sa valeur ; sans
@@ -2450,8 +2451,17 @@ Ce que ça impose au moteur :
   taux de la première ligne `cachet`. Un
   engagement portant `dates`, `cachets`, `heures` ou `taux_horaire` est
   refusé, avec ce que le moteur a vu et ce qu'une saisie porte.
-- Une date de ligne est une `engagement::ligne::DateDeLigne` : nue (un jour), ou détaillée `{"jour": …, "lieu": …}` ;
-  une date détaillée est une date, tout ce qui parcourt des jours continue de marcher sans le savoir.
+- Une date de ligne est une `engagement::ligne::DateDeLigne` : nue (un jour), ou détaillée
+  `{"jour": …, "quantite": …, "lieu": …}` (`JourDeLigne`, chacun ne s'écrivant que s'il est dit) ; une date détaillée
+  est une date, tout ce qui parcourt des jours continue de marcher sans le savoir.
+- **Une quantité par jour** (Léandre, 25/11/2026) : une ligne qui se compte jour par jour (des heures, des cachets, des
+  journées, des services, un forfait) porte la quantité de chacun de ses jours du mois, et sa quantité est leur somme ;
+  une quantité saisie sur la ligne se répartit sur ses jours, le reste sur les premiers (10 h sur 3 jours : 4 · 3 · 3),
+  et un jour modifié compte (`LignePaie::par_jour_qui_suit`, au seul endroit où une carte change). Le contrôle des
+  10 heures par jour lit la quantité de chaque jour (`engagement::duree`). Une ligne écrite avant, dont les jours ne
+  disent pas leur quantité, se lit et se calcule telle quelle (le contrôle y prend la moyenne, et le dit) ; elle prend
+  la forme neuve quand ses lignes s'enregistrent. Ce qui lit la quantité d'une ligne (bulletin, DSN, AEM, Congés
+  Spectacles, contrat) lit son total.
 - La construction d'un `Engagement` (`engagement/src/lib.rs`) réunit les deux écritures et n'en
   laisse qu'une : `dates_travail` reste une liste de dates triées, le lieu part
   dans `lieux` (`lieu_de()`, `lieux_joues()`). Le contrat groupe les dates par

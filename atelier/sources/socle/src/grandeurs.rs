@@ -295,6 +295,29 @@ pub fn courte<G: Grandeur>(g: G) -> G {
     de_decimal::<G>(num::court(crate::grandeurs::decimal(g)))
 }
 
+/// UNE GRANDEUR REPARTIE EN `n` PARTS, le reste sur les premieres (Leandre, 25/11/2026, la regle « A » : 10 h sur 3 jours,
+/// 4 · 3 · 3 ; 4 cachets sur 3 jours, 2 · 1 · 1) : chaque part a la partie entiere du quotient, les premieres une unite
+/// de plus tant qu'il en reste une, et ce qui reste de moins d'une unite va a la suivante. Les parts, sans zero inutile,
+/// font la grandeur ; une grandeur negative se repartit de meme, sous son signe. Aucune part pour `n` nul.
+pub fn repartie<G: Grandeur>(g: G, n: usize) -> Vec<G> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let d = decimal(g);
+    let a = d.abs();
+    let parts = Decimal::from(n);
+    let base = num::div(a, parts).trunc();
+    let mut reste = num::sub(a, num::mul(base, parts));
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        let plus = reste.min(Decimal::ONE);
+        reste = num::sub(reste, plus);
+        let part = num::add(base, plus).normalize();
+        out.push(de_decimal::<G>(if d.is_sign_negative() { -part } else { part }));
+    }
+    out
+}
+
 /// Montant unitaire x coefficient = montant unitaire (la moitie du salaire journalier).
 impl std::ops::Mul<Coefficient> for MontantUnitaire {
     type Output = MontantUnitaire;

@@ -1042,6 +1042,13 @@ impl Jour {
         format!("{} {} {} {}", self.jour_de_la_semaine(), self.jour, self.mois_civil().nom(crate::mois::Graphie::Accentuee), self.an)
     }
 
+    /// « mer. 26 nov. » : le jour d'une rangee sous une ligne de paie, ouverte jour par jour.
+    pub fn en_bref(&self) -> String {
+        // Les noms des jours (`JourDeLaSemaine::NOMS`) s'ecrivent sans accent, en plus de trois lettres.
+        let jour = self.jour_de_la_semaine().nom();
+        format!("{}. {} {}", &jour[..3], self.jour,self.mois_civil().nom(crate::mois::Graphie::Abregee))
+    }
+
     /// Le premier jour de son mois ?
     pub fn premier_du_mois(&self) -> bool {
         self.jour == 1

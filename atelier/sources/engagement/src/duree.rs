@@ -1,7 +1,9 @@
 //! LA DUREE D'UNE JOURNEE DE TRAVAIL SAISIE. Les heures qu'un engagement fait travailler chaque jour, ligne par ligne :
-//! une ligne a l'heure, ou dont les heures se saisissent par unite (une journee, un service), repartit les siennes
-//! egalement sur ses jours ; un cachet (son forfait de 12 h n'est pas une duree de travail), une absence, un conge, un
-//! maintien de salaire ne comptent pas. La journee la plus chargee en compte au moins autant que cette moyenne.
+//! une ligne a l'heure, ou dont les heures se saisissent par unite (une journee, un service), compte celles de chacun de
+//! ses jours (sa quantite du jour, `ligne::JourDeLigne`) ; une ligne ecrite avant que ses jours disent leur quantite
+//! repartit les siennes egalement sur ses jours, et la journee la plus chargee en compte au moins autant que cette
+//! moyenne. Un cachet (son forfait de 12 h n'est pas une duree de travail), une absence, un conge, un maintien de salaire
+//! ne comptent pas.
 //!
 //! - Au-dela de 24 heures en un jour, la saisie se refuse : une journee n'en a que 24 (une faute de frappe, 25 pour 2,5).
 //! - Au-dela de 10 heures, le moteur le dit sans refuser : « La duree quotidienne de travail effectif par salarie ne
@@ -45,17 +47,27 @@ fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (He
         if !travail {
             continue;
         }
-        let dates: Vec<Jour> = l.jours();
+        let dates = l.dates();
         if dates.is_empty() {
             continue;
         }
-        // La quantite d'une ligne de travail est dite (`lignes_dites`, avant ce compte) : sans elle, rien ne se compte.
-        let total = l.heures_comptees(r.unite, r.heures_par_unite(l.heures()))?;
-        let par_jour = total.reparties_sur(dates.len());
-        for j in &dates {
-            let x = jours.entry(*j).or_insert((Heures::ZERO, false));
-            x.0 += par_jour;
-            x.1 |= dates.len() > 1;
+        let par_unite = r.heures_par_unite(l.heures());
+        // Chaque jour qui dit sa quantite compte ses heures (`JourDeLigne::quantite`) ; une ligne ecrite avant, dont les
+        // jours n'en disent pas, repartit ses heures egalement : une moyenne.
+        let des_jours: Option<Vec<(Jour, Heures)>> = dates.iter().map(|d| d.quantite().map(|q| (d.jour(), q.heures(par_unite)))).collect();
+        let (par_jour, moyenne) = match des_jours {
+            Some(h) => (h, false),
+            None => {
+                // La quantite d'une ligne de travail est dite (`lignes_dites`, avant ce compte) : sans elle, rien ne se compte.
+                let total = l.heures_comptees(r.unite, par_unite)?;
+                let chacun = total.reparties_sur(dates.len());
+                (dates.iter().map(|d| (d.jour(), chacun)).collect(), dates.len() > 1)
+            }
+        };
+        for (j, h) in par_jour {
+            let x = jours.entry(j).or_insert((Heures::ZERO, false));
+            x.0 += h;
+            x.1 |= moyenne;
         }
     }
     Ok(jours)
