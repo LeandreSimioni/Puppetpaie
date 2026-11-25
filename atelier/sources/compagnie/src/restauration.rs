@@ -555,6 +555,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         fichiers,
         derniere_complete: None,
         echecs: None,
+        sans_la_main: None,
     };
     ecrire_index(cible, &index)?;
     Ok(resultat)

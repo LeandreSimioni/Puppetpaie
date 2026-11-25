@@ -9,7 +9,7 @@ use serde::de::IntoDeserializer;
 use socle::grandeurs::Octets;
 use socle::paris::Moment;
 
-use crate::sauvegarde::{IdentiteSurLeDrive, SAUVEGARDE};
+use crate::sauvegarde::{IdentiteSurLeDrive, LaMain, SAUVEGARDE};
 
 /// CE QU'EST UN DOSSIER SOUS LA RACINE DU DRIVE : le dossier d'une compagnie (sa marque dit son identite), l'ancien
 /// dossier commun (`sauvegarde`, ou toutes les compagnies d'un meme compte ecrivaient, homonymes compris), ou un autre
@@ -30,6 +30,9 @@ pub struct DossierVu {
     pub genre: GenreDuDossier,
     pub derniere: Option<Moment>,
     pub octets: Option<Octets>,
+    /// La main sur le dossier (`LaMain`) : aucune quand sa marque n'en dit rien, ou qu'elle ne se lit pas (sa phrase est
+    /// alors dans `illisible`).
+    pub main: Option<LaMain>,
     /// Ce qui ne se lit pas dans sa marque, une phrase par chose, en mots : le dossier se montre quand meme.
     pub illisible: Vec<String>,
 }
@@ -43,12 +46,17 @@ impl DossierVu {
 
 /// Le dossier `d`, lu depuis sa marque : ce qui ne s'en lit pas se dit dans `illisible`, sans fermer la vue.
 fn vu(d: envois::drive::SousDossier) -> DossierVu {
-    // Sans marque, le dossier ne dit ni identite, ni date, ni volume.
-    let (compagnie, derniere, octets) = match d.marque {
-        Some(MarqueDuDossier { compagnie, derniere, octets }) => (compagnie, derniere, octets),
-        None => (None, None, None),
-    };
+    // Sans marque, le dossier ne dit ni identite, ni date, ni volume, ni main.
+    let marque = d.marque.unwrap_or_default();
     let mut illisible = Vec::new();
+    let main = match LaMain::de(&marque) {
+        Ok(m) => m,
+        Err(e) => {
+            illisible.push(e.phrase);
+            None
+        }
+    };
+    let MarqueDuDossier { compagnie, derniere, octets, .. } = marque;
     let genre = match compagnie.map(|c| IdentiteSurLeDrive::lire(&c)) {
         Some(Ok(i)) => GenreDuDossier::Compagnie(i),
         Some(Err(e)) => {
@@ -75,7 +83,7 @@ fn vu(d: envois::drive::SousDossier) -> DossierVu {
             None
         }
     });
-    DossierVu { id: d.id, nom: d.nom, genre, derniere, octets, illisible }
+    DossierVu { id: d.id, nom: d.nom, genre, derniere, octets, main, illisible }
 }
 
 /// LES DOSSIERS SOUS LA RACINE `racine_drive` DU DRIVE DE `client`, dans l'ordre ou Drive les rend, de toutes les racines

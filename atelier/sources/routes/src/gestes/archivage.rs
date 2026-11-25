@@ -73,7 +73,7 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
     let identite = compagnie::sauvegarde::identite(racine).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Illisible)))?;
     let nom = compagnie::installation::nom_de(racine).map_err(ErreurGoogle::from)?;
     let connu = compagnie::sauvegarde::lire_index(racine)?.and_then(|i| i.compagnie);
-    let cie = compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref())?;
+    let (cie, _) = compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref())?;
     let cible = client.chemin(&cie, &[compagnie::sauvegarde::ARCHIVES, mois])?;
     // Un seul listage du dossier du mois : c'est lui qui dit quels fichiers se remplacent (et
     // non une recherche par fichier, par nom seul, qui prendrait les dossiers).
@@ -119,7 +119,7 @@ impl Drive for DriveJoue {
     fn marquer(&mut self, _id: &IdDrive, _marque: &envois::drive::MarqueDuDossier) -> Result<(), ErreurGoogle> {
         Ok(())
     }
-    fn en_place(&mut self, _id: &IdDrive) -> Result<bool, ErreurGoogle> {
-        Ok(true)
+    fn en_place(&mut self, _id: &IdDrive) -> Result<Option<envois::drive::MarqueDuDossier>, ErreurGoogle> {
+        Ok(Some(envois::drive::MarqueDuDossier::default()))
     }
 }

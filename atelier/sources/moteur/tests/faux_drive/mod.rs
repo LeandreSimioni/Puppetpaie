@@ -266,12 +266,18 @@ impl Drive for FauxDrive {
         if marque.octets.is_some() {
             m.octets = marque.octets.clone();
         }
+        if marque.poste.is_some() {
+            m.poste = marque.poste.clone();
+        }
+        if marque.main.is_some() {
+            m.main = marque.main.clone();
+        }
         Ok(())
     }
 
-    fn en_place(&mut self, id: &IdDrive) -> Result<bool, ErreurGoogle> {
+    fn en_place(&mut self, id: &IdDrive) -> Result<Option<MarqueDuDossier>, ErreurGoogle> {
         self.journal.push(format!("en_place {}", self.chemin_de(id)));
-        Ok(!self.jete(id))
+        Ok((!self.jete(id)).then(|| self.marques.get(id).cloned().unwrap_or_default()))
     }
 
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {

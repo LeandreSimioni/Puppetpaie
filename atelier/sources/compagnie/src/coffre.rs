@@ -748,6 +748,21 @@ impl Coffre {
         existe(&self.chemin_cle())
     }
 
+    /// L'EMPREINTE DE CE POSTE : 16 octets du SHA-256 de sa cle, precedee d'un libelle propre a cet usage, en
+    /// hexadecimal. Elle nomme le poste sans rien livrer de sa cle (le SHA-256 ne se remonte pas) ; elle ne change pas
+    /// tant que la cle ne change pas, et c'est la meme pour toutes les compagnies et toutes les installations du poste.
+    /// Une cle absente se pose, comme a la premiere ouverture du coffre.
+    pub fn empreinte_du_poste(&self) -> R<String> {
+        use sha2::{Digest, Sha256};
+        let Some(cle) = self.cle_poste(true)? else {
+            return Err(refus(format!("La cle de ce poste ({}) ne se pose pas.", affiche(&self.chemin_cle()))));
+        };
+        let mut h = Sha256::new();
+        h.update(b"PuppetPaie : le poste qui tient le Drive d'une compagnie\0");
+        h.update(&cle);
+        Ok(h.finalize().iter().take(16).map(|o| format!("{:02x}", o)).collect())
+    }
+
     /// Les 32 octets de ce poste, ou None. `creer` en tire de neufs.
     fn cle_poste(&self, creer: bool) -> R<Option<Vec<u8>>> {
         // Le fil de fond de la fenetre ne dechiffre rien : la cle du poste ne s'y sert pas.

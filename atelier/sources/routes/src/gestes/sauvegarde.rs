@@ -9,8 +9,8 @@ use std::path::Path;
 use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
-    cause_de, ecrire_index, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
-    GOOGLE_INDISPONIBLE,
+    cause_de, ecrire_index, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, LaMain, PosteSurLeDrive, Reporte,
+    SansLaMain, Sauvegarde, GOOGLE_INDISPONIBLE,
 };
 
 /// Echecs passagers de suite (chacun deja retente par le client) au-dela desquels le reste du passage est reporte sans appel.
@@ -43,6 +43,8 @@ pub fn sauvegarder(
     // L'identite de la compagnie sur le Drive, ecrite avant l'inventaire a la premiere sauvegarde : elle part avec elle.
     let identite = compagnie::sauvegarde::identite(racine).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Illisible)))?;
     let nom = compagnie::installation::nom_de(racine).map_err(ErreurGoogle::from)?;
+    // Ce poste, tel que la main le nomme sur le Drive.
+    let ce_poste = PosteSurLeDrive::de_ce_poste(racine).map_err(ErreurGoogle::from)?;
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
 
@@ -58,6 +60,7 @@ pub fn sauvegarder(
         reportes: Vec::new(),
         persistant: None,
         hors_ligne: false,
+        sans_la_main: None,
     };
     // GOOGLE ABSENT POUR DE BON : le client a deja retente chaque appel (`drive::NOUVELLES_TENTATIVES`) ; apres
     // `INDISPONIBLE_D_AFFILEE` echecs passagers de suite, le reste du passage est reporte sans appeler, plutot que de
@@ -91,9 +94,28 @@ pub fn sauvegarder(
 
     // LE DOSSIER DE LA COMPAGNIE : celui que l'index garde s'il est encore en place, sinon celui que sa marque designe,
     // sinon un neuf. Qu'il ne se trouve pas, et rien ne part a ce passage : tout est reporte au suivant.
+    // LA MAIN (`LaMain`) : ce poste sauvegarde s'il la tient ; personne ne la tenant, il la prend ; un autre poste la
+    // tenant, ou une main qui ne se lit pas, rien ne part, et l'index le note (`SansLaMain`).
     let connu = index.as_ref().filter(|_| !tout).and_then(|i| i.compagnie.clone());
-    let compagnie_id = match compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref()) {
-        Ok(id) => Some(id),
+    let trouve = match compagnie::sauvegarde::dossier_de_la_compagnie(client, racine_drive, &identite, &nom, connu.as_ref()) {
+        Ok((id, marque)) => match LaMain::de(&marque) {
+            Ok(Some(m)) if m.poste == ce_poste => Ok(Ok(id)),
+            Ok(Some(m)) => Ok(Err(SansLaMain::AutrePoste { depuis: m.depuis })),
+            Err(_) => Ok(Err(SansLaMain::Illisible)),
+            Ok(None) => {
+                let main = LaMain { poste: ce_poste.clone(), depuis: socle::temps::secondes().a_la_minute() };
+                client.marquer(&id, &main.marque(&identite)).map(|()| Ok(id))
+            }
+        },
+        Err(e) => Err(e),
+    };
+    let compagnie_id = match trouve {
+        Ok(Ok(id)) => Some(id),
+        Ok(Err(sans)) => {
+            resultat.sans_la_main = Some(sans);
+            en_echec.extend(presents.iter().map(|(r, _)| r.clone()));
+            None
+        }
         Err(e) => {
             if e.injoignable {
                 resultat.hors_ligne = true;
@@ -222,6 +244,25 @@ pub fn sauvegarder(
     }
 
     let maintenant = socle::temps::secondes();
+    // SANS LA MAIN, rien n'est parti : l'index garde ce qu'il disait (sans index, un index vide), et note la main ailleurs.
+    if let Some(sans) = &resultat.sans_la_main {
+        let garde = match index.clone() {
+            Some(i) => Index { sans_la_main: Some(sans.clone()), ..i },
+            None => Index {
+                quand: maintenant.a_la_minute(),
+                racine_drive: racine_drive.to_string(),
+                compagnie: None,
+                dossiers: BTreeMap::new(),
+                fichiers: BTreeMap::new(),
+                derniere_complete: None,
+                echecs: None,
+                sans_la_main: Some(sans.clone()),
+            },
+        };
+        resultat.persistant = Some(sans.phrase());
+        ecrire_index(racine, &garde)?;
+        return Ok(resultat);
+    }
     // LA MARQUE DU DOSSIER, quand ce passage a envoye quelque chose : la date de cette sauvegarde et ce que la compagnie
     // pese, que la vue du Drive montre (et que la suppression d'un dossier dit avant). Qu'elle ne se pose pas n'arrete rien.
     if let (Some(cie), false) = (&compagnie_id, resultat.deposes.is_empty() || resultat.hors_ligne) {
@@ -268,6 +309,7 @@ pub fn sauvegarder(
         fichiers,
         derniere_complete,
         echecs: (!echecs.is_empty()).then_some(echecs),
+        sans_la_main: None,
     };
     resultat.persistant = phrase_persistante(&nouvel_index, socle::temps::secondes())?;
     ecrire_index(racine, &nouvel_index)?;

@@ -149,6 +149,8 @@ pub struct Sauvegarde {
     pub persistant: Option<String>,
     /// Pas de reseau : arretee au premier dossier.
     pub hors_ligne: bool,
+    /// Ce poste n'a pas la main sur le Drive de la compagnie : rien n'est parti.
+    pub sans_la_main: Option<SansLaMain>,
 }
 
 /// Un dossier (tout ce qu'il porte) ou un fichier qui n'a pas pu monter a un passage : il reste hors de l'index, et le
@@ -210,6 +212,9 @@ impl Sauvegarde {
     pub fn resume(&self) -> String {
         if self.hors_ligne {
             return "Hors connexion : sauvegarde au prochain passage.".into();
+        }
+        if let Some(s) = &self.sans_la_main {
+            return s.phrase();
         }
         let reporte = if self.reportes.is_empty() { String::new() } else { format!(" ; {} au prochain passage", combien(&self.reportes, "reporte", "reportes")) };
         if self.deposes.is_empty() {
@@ -275,8 +280,12 @@ fn une_journee_apres(maintenant: Moment, depuis: Moment) -> bool {
     maintenant.depuis(depuis).is_some_and(|d| d >= UNE_JOURNEE)
 }
 
-/// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'instant `maintenant`, ou `None`.
+/// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'instant `maintenant`, ou `None`. La
+/// main ailleurs (`sans_la_main`) se dit d'abord, des le premier passage : rien ne part tant qu'on ne la reprend pas.
 pub fn phrase_persistante(index: &Index, maintenant: Moment) -> Result<Option<String>, ErreurGoogle> {
+    if let Some(s) = &index.sans_la_main {
+        return Ok(Some(s.phrase()));
+    }
     let Some(echecs) = index.echecs.as_ref().filter(|e| !e.is_empty()) else { return Ok(None) };
     // (cle, depuis, cause) de chaque echec, et ceux qui durent.
     let mut tous: Vec<(&String, Moment, &str, bool)> = Vec::new();
@@ -443,9 +452,13 @@ pub fn chemin_index(racine: &Path) -> PathBuf {
 /// l'etat de chaque fichier passe ; et, s'il reste un echec, la derniere sauvegarde complete et ce qui reste en echec
 /// (`souci`). L'index d'une version qui sauvegardait dans le dossier commun n'a pas `compagnie` : ses dossiers sont ceux
 /// du dossier commun, que la sauvegarde ne reprend pas (`dossiers_connus`), et rien n'est a jour (`rien_n_a_bouge`).
+/// `sans_la_main` : le dernier passage a trouve la main ailleurs (`SansLaMain`) et n'a rien envoye ; absente, ce poste la
+/// tenait (un index d'avant la main ne la porte pas : il se lit de meme).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Index {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sans_la_main: Option<SansLaMain>,
     #[serde(with = "socle::paris::ecrit::saisie")]
     pub quand: socle::paris::Moment,
     pub racine_drive: String,
@@ -606,31 +619,146 @@ pub fn identite_ecrite(racine: &Path) -> socle::echec::R<Option<IdentiteSurLeDri
 }
 
 /// LA MARQUE DU DOSSIER DE LA COMPAGNIE `identite`, apres une sauvegarde qui a envoye quelque chose a `quand` : ce que la
-/// compagnie sauvegarde pese alors (`octets`).
+/// compagnie sauvegarde pese alors (`octets`). Elle ne dit rien de la main, qui reste telle quelle (`Drive::marquer`).
 pub fn marque(identite: &IdentiteSurLeDrive, quand: socle::paris::Moment, octets: Octets) -> MarqueDuDossier {
     MarqueDuDossier {
         compagnie: Some(identite.texte().to_string()),
         derniere: Some(socle::paris::ecrit::minute::texte(quand)),
         octets: Some(socle::ecriture::json_en_ligne(&octets)),
+        ..MarqueDuDossier::default()
     }
 }
 
-/// LE DOSSIER DE LA COMPAGNIE `identite` DANS LE DRIVE, sous la racine `racine_drive` : `connu` (celui que l'index garde)
-/// s'il est encore en place ; sinon celui que sa marque designe sous la racine (le premier, s'il y en a deux : la vue du
-/// Drive les montre tous) ; sinon un dossier neuf, nomme `nom` et marque. Un dossier mis a la corbeille n'est plus en
-/// place : la sauvegarde suivante renvoie tout dans un dossier neuf.
-pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, identite: &IdentiteSurLeDrive, nom: &str, connu: Option<&IdDrive>) -> Result<IdDrive, ErreurGoogle> {
+/// LE DOSSIER DE LA COMPAGNIE `identite` DANS LE DRIVE, sous la racine `racine_drive`, et sa marque telle que le Drive la
+/// rend : `connu` (celui que l'index garde) s'il est encore en place ; sinon celui que sa marque designe sous la racine
+/// (le premier, s'il y en a deux : la vue du Drive les montre tous) ; sinon un dossier neuf, nomme `nom` et marque de son
+/// identite seule (aucun poste n'en tient encore la main). Un dossier mis a la corbeille n'est plus en place : la
+/// sauvegarde suivante renvoie tout dans un dossier neuf.
+pub fn dossier_de_la_compagnie(client: &mut dyn Drive, racine_drive: &str, identite: &IdentiteSurLeDrive, nom: &str, connu: Option<&IdDrive>) -> Result<(IdDrive, MarqueDuDossier), ErreurGoogle> {
     if let Some(id) = connu {
-        if client.en_place(id)? {
-            return Ok(id.clone());
+        if let Some(marque) = client.en_place(id)? {
+            return Ok((id.clone(), marque));
         }
     }
     let racine = client.chemin(&IdDrive::RACINE, &[racine_drive])?;
     if let Some(d) = client.sous_dossiers(&racine)?.into_iter().find(|d| d.marque.as_ref().and_then(|m| m.compagnie.as_deref()) == Some(identite.texte())) {
-        return Ok(d.id);
+        return Ok((d.id, d.marque.unwrap_or_default()));
     }
-    let marque = MarqueDuDossier { compagnie: Some(identite.texte().to_string()), derniere: None, octets: None };
-    client.creer_dossier(nom, &racine, &marque)
+    let marque = MarqueDuDossier { compagnie: Some(identite.texte().to_string()), ..MarqueDuDossier::default() };
+    let id = client.creer_dossier(nom, &racine, &marque)?;
+    Ok((id, marque))
+}
+
+// ------------------------------------------------------------ la main
+
+/// Ce qui commence l'identite d'un poste sur le Drive (`PosteSurLeDrive`).
+const PREFIXE_POSTE: &str = "poste:";
+
+/// UN POSTE, TEL QUE LE DOSSIER D'UNE COMPAGNIE SUR LE DRIVE LE NOMME quand il en tient la main (`LaMain`,
+/// `MarqueDuDossier::poste`) : `poste:` et l'empreinte de la cle du poste (`Coffre::empreinte_du_poste`), jamais un
+/// secret ni le nom de la personne. La meme pour toutes les compagnies et toutes les installations du poste ; une cle du
+/// poste refaite en fait un autre poste. Lue, elle refuse une autre forme.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PosteSurLeDrive(String);
+
+impl PosteSurLeDrive {
+    /// Le poste `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> socle::echec::R<PosteSurLeDrive> {
+        if !texte.strip_prefix(PREFIXE_POSTE).is_some_and(|c| socle::fichiers::est_hexa(c, 32)) {
+            return Err(socle::echec::refus_avec(
+                "Le poste noté sur le Drive ne se lit pas : ce n'est pas ce qu'écrit PuppetPaie.",
+                socle::echec::Lieu { detail: Some(format!("{} : attendu poste:<32 caracteres hexadecimaux>", socle::fichiers::repr(texte))), ..socle::echec::Lieu::default() },
+            ));
+        }
+        Ok(PosteSurLeDrive(texte.to_string()))
+    }
+
+    /// Ce poste-ci (`racine` : une compagnie ou une installation de ce poste ; la cle est celle du poste).
+    pub fn de_ce_poste(racine: &Path) -> socle::echec::R<PosteSurLeDrive> {
+        PosteSurLeDrive::lire(&format!("{}{}", PREFIXE_POSTE, crate::coffre::Coffre::du_poste(racine).empreinte_du_poste()?))
+    }
+
+    /// Lui tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+/// LA MAIN SUR LE DRIVE D'UNE COMPAGNIE (Leandre, 24-25/11/2026, #594) : le seul poste qui sauvegarde dans son dossier,
+/// et depuis quand, notes sur le dossier (`MarqueDuDossier::poste`, `MarqueDuDossier::main`). Un poste qui ne la tient
+/// pas n'y sauvegarde plus et le dit ; « Reprendre » (`routes::accueil::drive`) et « Prendre la main »
+/// (`routes::drive`) la prennent ; un dossier qui n'en porte aucune, la premiere sauvegarde la prend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaMain {
+    pub poste: PosteSurLeDrive,
+    pub depuis: Moment,
+}
+
+impl LaMain {
+    /// La main de ce poste, prise maintenant.
+    pub fn de_ce_poste(racine: &Path) -> socle::echec::R<LaMain> {
+        Ok(LaMain { poste: PosteSurLeDrive::de_ce_poste(racine)?, depuis: socle::temps::secondes().a_la_minute() })
+    }
+
+    /// Celle que la marque `m` porte : aucune quand elle n'en dit rien ; un poste ou une date qui ne se lit pas, ou l'un
+    /// sans l'autre, se refuse (la main ne se lit pas, elle n'est pas absente).
+    pub fn de(m: &MarqueDuDossier) -> socle::echec::R<Option<LaMain>> {
+        use serde::de::IntoDeserializer;
+        match (&m.poste, &m.main) {
+            (None, None) => Ok(None),
+            (Some(p), Some(d)) => {
+                let lu: Result<Moment, serde::de::value::Error> = socle::paris::ecrit::minute::deserialize(d.as_str().into_deserializer());
+                let depuis = lu.map_err(|e| socle::echec::refus_avec("La date de la main, notée sur le Drive, ne se lit pas.", socle::echec::Lieu { detail: Some(format!("{} : {}", socle::fichiers::repr(d), e)), ..socle::echec::Lieu::default() }))?;
+                Ok(Some(LaMain { poste: PosteSurLeDrive::lire(p)?, depuis }))
+            }
+            _ => Err(socle::echec::refus("La main notée sur le Drive est incomplète : le poste sans la date, ou la date sans le poste.")),
+        }
+    }
+
+    /// Ce qui la pose sur le dossier de la compagnie `identite` (`Drive::marquer` : le reste de la marque ne change pas).
+    pub fn marque(&self, identite: &IdentiteSurLeDrive) -> MarqueDuDossier {
+        MarqueDuDossier {
+            compagnie: Some(identite.texte().to_string()),
+            poste: Some(self.poste.texte().to_string()),
+            main: Some(socle::paris::ecrit::minute::texte(self.depuis)),
+            ..MarqueDuDossier::default()
+        }
+    }
+}
+
+/// CE POSTE N'A PAS LA MAIN SUR LE DRIVE DE LA COMPAGNIE, tel que le dernier passage de la sauvegarde l'a trouve
+/// (`Index::sans_la_main`) : un autre poste la tient depuis `depuis`, ou la main notee sur le dossier ne se lit pas. Rien
+/// n'est parti ; `souci` le dit, et « Prendre la main » (`routes::drive`) l'efface.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SansLaMain {
+    AutrePoste {
+        #[serde(with = "socle::paris::ecrit::minute")]
+        depuis: Moment,
+    },
+    Illisible,
+}
+
+impl SansLaMain {
+    /// Ce qu'il en dit.
+    pub fn phrase(&self) -> String {
+        match self {
+            SansLaMain::AutrePoste { depuis } => format!(
+                "Le Drive de cette compagnie est tenu par un autre poste depuis le {} : ce poste ne le sauvegarde plus. « Prendre la main » l'y remet.",
+                depuis.jour_de_paris().jj_mm()
+            ),
+            SansLaMain::Illisible => "La main notée sur le Drive de cette compagnie ne se lit pas : ce poste ne le sauvegarde plus. « Prendre la main » l'y remet.".to_string(),
+        }
+    }
+}
+
+/// LA MAIN A ETE PRISE PAR CE POSTE (`routes::drive`, « Prendre la main ») : l'index ne dit plus qu'il ne l'a pas. Sans
+/// index, rien a effacer.
+pub fn main_reprise(racine: &Path) -> Result<(), ErreurGoogle> {
+    match lire_index(racine)? {
+        Some(i) if i.sans_la_main.is_some() => ecrire_index(racine, &Index { sans_la_main: None, ..i }),
+        Some(_) | None => Ok(()),
+    }
 }
 
 /// LES DOSSIERS QUE L'INDEX CONNAIT DANS LE DOSSIER `compagnie` : aucun quand l'index est celui d'un autre dossier (le
