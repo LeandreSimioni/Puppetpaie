@@ -1065,30 +1065,25 @@ fn memoire() -> (Lu<u64>, Lu<u64>) {
 }
 
 /// Le disque libre la ou vit `p`, en Mo.
+#[cfg(windows)]
 fn disque_libre(p: &Path) -> Lu<u64> {
-    match octets_libres(p) {
+    match socle::systeme::disque_libre(p) {
         Ok(libre) => Lu::Dit(libre / (1024 * 1024)),
-        Err(e) => Lu::PasDit(e),
+        Err(e) => Lu::PasDit(e.to_string()),
     }
 }
 
-/// Le disque libre la ou vit `p`, en octets, pour l'utilisateur qui appelle ; ce qui empeche de le savoir, sinon.
-#[cfg(windows)]
-pub(crate) fn octets_libres(p: &Path) -> Result<u64, String> {
-    socle::systeme::disque_libre(p).map_err(|e| e.to_string())
-}
-
 #[cfg(not(windows))]
-pub(crate) fn octets_libres(p: &Path) -> Result<u64, String> {
+fn disque_libre(p: &Path) -> Lu<u64> {
     let o = match std::process::Command::new("df").arg("-Pk").arg(p).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output() {
         Ok(o) => o,
-        Err(e) => return Err(format!("df : {}", e)),
+        Err(e) => return Lu::PasDit(format!("df : {}", e)),
     };
     let t = String::from_utf8_lossy(&o.stdout).into_owned();
     match t.lines().nth(1).and_then(|l| l.split_whitespace().nth(3)).map(str::parse::<u64>) {
-        Some(Ok(k)) => Ok(k * 1024),
-        Some(Err(e)) => Err(format!("df : {}", e)),
-        None => Err("df ne dit pas le disque libre".to_string()),
+        Some(Ok(k)) => Lu::Dit(k / 1024),
+        Some(Err(e)) => Lu::PasDit(format!("df : {}", e)),
+        None => Lu::PasDit("df ne dit pas le disque libre".to_string()),
     }
 }
 

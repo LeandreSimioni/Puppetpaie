@@ -22,7 +22,8 @@
 //! Toute autre installation du poste s'ouvre, quoi qu'il en soit du deplacement en cours. Le relais au travail : on
 //! attend. Le relais mort (le poste eteint en route) : le lancement suivant lance un relais qui REPREND en regardant les
 //! deux dossiers, nom par nom (le journal peut retarder sur le disque) : il finit ce qui etait fini, defait ce qui etait
-//! commence, ou s'arrete sans rien toucher quand aucun des deux n'est surement entier (`reprendre`).
+//! commence, ou s'arrete sans rien toucher quand ce qui est ou ne se lit pas surement (`reprendre`). Il n'y a qu'un
+//! deplacement en cours par poste : tant qu'il est ecrit, lisible ou non, un autre ne se demande ni ne part.
 //!
 //! LE RELAIS, HORS DU DOSSIER. Windows ne deplace pas un dossier qui porte un programme en marche, ni le dossier courant
 //! d'un processus. Le programme de la fenetre se copie donc dans le dossier temporaire du poste
@@ -31,15 +32,16 @@
 //! attend la fin du lanceur (`maj::attendre_fin`), deplace, puis rouvre la fenetre la ou est le logiciel. Le relais de la
 //! mise a jour, lui, reste dans `maj/` : il ne deplace pas l'installation.
 //!
-//! LE DEPLACEMENT. Chaque entree de l'installation se RENOMME dans le nouveau dossier quand c'est le meme disque :
-//! instantane, sans place en double ; `logiciel/` (le programme que le raccourci lance) part le dernier et revient le
-//! premier, pour qu'une coupure en route laisse le programme la ou le raccourci le cherche. Un autre disque (le systeme refuse le renommage, `CrossesDevices`) : tout se COPIE,
-//! chaque fichier copie s'ecrit sur le disque (`sync_all`) et son contenu se compare a l'original (une empreinte
-//! SHA-256), puis l'original s'efface ; un lien ne se copie pas (le deplacement est refuse). Ce qui pointe vers l'ancien
-//! dossier se reecrit (sous Windows, la cle de desinstallation et le raccourci du menu Demarrer que l'installeur a poses,
-//! `repointer`). AU MOINDRE ECHEC, TOUT REVIENT (les renommes repartent, la copie s'efface, les pointeurs reviennent) et la
-//! fenetre se rouvre a l'ancien endroit. Un renommage refuse (un programme qui tient encore un fichier) se retente, tout
-//! revenu, une seconde plus tard, une minute au plus ; une copie ne se retente pas.
+//! LE DEPLACEMENT, SUR LE MEME DISQUE SEULEMENT (Leandre, 25/11/2026 : « Même disque ok sauf si on fait une installation
+//! portable »). Chaque entree de l'installation se RENOMME dans le nouveau dossier : instantane, sans place en double ;
+//! `logiciel/` (le programme que le raccourci lance) part le dernier et revient le premier, pour qu'une coupure en route
+//! laisse le programme la ou le raccourci le cherche. Un dossier sur un autre disque (le systeme refuse le renommage,
+//! `CrossesDevices`) se refuse, sans rien toucher, et le refus dit la facon : rendre le logiciel portable (la route
+//! `logiciel-rendre-portable`, `coffre::rendre_portable`), puis copier soi-meme son dossier, et n'effacer l'ancien
+//! qu'une fois la copie reussie. Ce qui pointe vers l'ancien dossier se reecrit (sous Windows, la cle de desinstallation
+//! et le raccourci du menu Demarrer que l'installeur a poses, `repointer`). AU MOINDRE ECHEC, TOUT REVIENT (les renommes
+//! repartent, les pointeurs reviennent) et la fenetre se rouvre a l'ancien endroit. Un renommage refuse (un programme qui
+//! tient encore un fichier) se retente, tout revenu, une seconde plus tard, une minute au plus.
 //!
 //! CE QUI S'EST PASSE se dit en verite (`Dernier`, `Issue`) : deplace, reste entier a l'ancien endroit, ou COUPE (des
 //! renommes ne sont pas revenus : ce qui est ou se dit, nom par nom). Il se retient dans le dossier de l'utilisateur
@@ -50,14 +52,12 @@
 //! LE MOT DE PASSE. Deplacer le logiciel se prouve comme un acte reel (la route, `routes::accueil::deplacement`) : un
 //! LLM qui jouerait l'exemple d'une fiche ne deplace rien.
 
-use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::{ErrorKind, Read};
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf, Prefix};
 
 use serde::{Deserialize, Serialize};
 use socle::echec::{refus, R};
-use socle::grandeurs::Octets;
 use socle::paris::Moment;
 
 use crate::maj::{dossier_maj, noter};
@@ -101,10 +101,6 @@ enum Etape {
     Attente,
     /// Les entrees se renomment : ou est chacune se lit sur le disque (dans l'ancien dossier ou dans le nouveau).
     Renommage,
-    /// Les entrees se copient : l'original est entier.
-    Copie,
-    /// La copie est sur le disque, comparee, et les pointeurs reecrits : l'original s'efface.
-    Effacement,
 }
 
 /// `deplacement-en-cours.json` : le deplacement que le relais fait, ou qu'un relais reprendra.
@@ -244,41 +240,29 @@ fn demarquer(d: &Path) -> R<()> {
     socle::fichiers::effacer(&d.join(MARQUE))
 }
 
-/// Ce que porte un chemin d'un arbre, pour comparer une copie a l'original. Un lien ne se suit pas.
-#[derive(Debug, PartialEq, Eq)]
-enum Trace {
-    Dossier,
-    Fichier(Octets),
-    Lien,
+/// LE CHEMIN `p` EST-IL LA (un lien ne se suit pas) ? Seule l'absence vraie dit non : un disque qui refuse de le dire
+/// se dit, et un dossier illisible n'est jamais pris pour un dossier vide.
+fn la(p: &Path) -> R<bool> {
+    match std::fs::symlink_metadata(p) {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(socle::echec::du_disque(p, &e)),
+    }
 }
 
-/// L'arbre des `noms` sous `racine` : chaque chemin relatif, et ce qu'il porte, sans suivre les liens.
-fn arbre(racine: &Path, noms: &[OsString]) -> std::io::Result<BTreeMap<PathBuf, Trace>> {
-    fn sous(racine: &Path, rel: &Path, t: &mut BTreeMap<PathBuf, Trace>) -> std::io::Result<()> {
-        let m = std::fs::symlink_metadata(racine.join(rel))?;
-        if m.file_type().is_symlink() {
-            t.insert(rel.to_path_buf(), Trace::Lien);
-        } else if m.is_dir() {
-            t.insert(rel.to_path_buf(), Trace::Dossier);
-            for e in std::fs::read_dir(racine.join(rel))? {
-                sous(racine, &rel.join(e?.file_name()), t)?;
-            }
-        } else {
-            t.insert(rel.to_path_buf(), Trace::Fichier(Octets::du_disque(&m)));
-        }
-        Ok(())
+/// Le refus d'un dossier sur un autre disque, sans chemin : la facon de l'y emporter quand meme, en mots (Leandre,
+/// 25/11/2026 : « on puisse rendre portable dans le logiciel, comme ça on garde le coffre, et après copier coller à la
+/// main »).
+fn autre_disque(inst: &Path) -> &'static str {
+    match inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
+        true => "Ce dossier est sur un autre disque : le logiciel ne se déplace que sur le disque où il est. Il est portable : pour l'emporter sur une clé USB, copiez vous-même son dossier sur la clé, vérifiez que la copie a réussi, et seulement alors supprimez l'ancien. Rien n'a changé.",
+        false => "Ce dossier est sur un autre disque : le logiciel ne se déplace que sur le disque où il est. Pour l'emporter sur une clé USB : rendez-le portable (« Rendre portable »), puis copiez vous-même son dossier sur la clé, vérifiez que la copie a réussi, et seulement alors supprimez l'ancien. Rien n'a changé.",
     }
-    let mut t = BTreeMap::new();
-    for n in noms {
-        sous(racine, Path::new(n), &mut t)?;
-    }
-    Ok(t)
 }
 
 /// TOUT CE QUI SE VERIFIE AVANT LE DEPLACEMENT de l'installation `inst` vers `vers` : un dossier dit en entier, qui n'est
-/// ni elle ni dedans, qui n'existe pas (le dossier qui le portera, si) ou est vide ; qu'on peut y ecrire ; et, sur un
-/// autre disque, que la place suffit et qu'aucun lien n'est a copier. Un depot de travail (qui porte `.git`) ne se
-/// deplace pas.
+/// ni elle ni dedans, qui n'existe pas (le dossier qui le portera, si) ou est vide ; sur le meme disque ; qu'on peut y
+/// ecrire. Un depot de travail (qui porte `.git`) ne se deplace pas.
 pub fn verifier(inst: &Path, vers: &Path) -> R<Verdict> {
     if cfg!(target_os = "wasi") {
         return Err(refus("Dans le navigateur, le logiciel ne se déplace pas. Rien n'a changé."));
@@ -328,23 +312,7 @@ pub fn verifier(inst: &Path, vers: &Path) -> R<Verdict> {
         Ok(()) => socle::fichiers::effacer(&la_bas)?,
         Err(e) if e.kind() == ErrorKind::CrossesDevices => {
             socle::fichiers::effacer(&essai)?;
-            if let Err(e) = std::fs::write(&la_bas, b"") {
-                return Err(pas_d_ecriture(&lieu, &e));
-            }
-            socle::fichiers::effacer(&la_bas)?;
-            let t = arbre(&inst, &entrees(&inst, &ce_qui_reste(&inst)?)?).map_err(|e| socle::echec::du_disque(&inst, &e))?;
-            if let Some(lien) = t.iter().find(|(_, x)| **x == Trace::Lien).map(|(p, _)| p) {
-                return Err(socle::echec::au_chemin(LIEN, &inst.join(lien)));
-            }
-            let faut = t.values().fold(Octets::ZERO, |s, x| match x {
-                Trace::Fichier(o) => s + *o,
-                Trace::Dossier | Trace::Lien => s,
-            });
-            let libre = crate::diagnostic::octets_libres(&lieu)
-                .map_err(|e| refus(format!("La place libre de ce disque ne se lit pas ({}). Rien n'a changé.", e)))?;
-            if Octets::lue(libre) < faut {
-                return Err(refus(format!("La place manque sur ce disque : il faut {}, il n'y a que {}. Rien n'a changé.", faut, Octets::lue(libre))));
-            }
+            return Err(refus(autre_disque(&inst)));
         }
         Err(e) => {
             socle::fichiers::effacer(&essai)?;
@@ -353,9 +321,6 @@ pub fn verifier(inst: &Path, vers: &Path) -> R<Verdict> {
     }
     Ok(Verdict::Possible(vers))
 }
-
-/// Un lien de l'installation, que la copie sur un autre disque ne suit pas.
-const LIEN: &str = "Un fichier du logiciel est un lien : il ne se copie pas sur un autre disque. Rien n'a changé.";
 
 /// Le refus d'un dossier ou l'on n'ecrit pas : le dossier et ce que le systeme a dit, a part.
 fn pas_d_ecriture(lieu: &Path, e: &std::io::Error) -> socle::echec::Echec {
@@ -367,12 +332,13 @@ fn pas_d_ecriture(lieu: &Path, e: &std::io::Error) -> socle::echec::Echec {
 
 /// LE DEPLACEMENT DEMANDE (la route `logiciel-deplacer`) : verifie ; possible, `avant` dit s'il peut partir (ce que la
 /// route exige de plus : la personne qui le sait, son mot de passe), puis la demande se pose (`maj/deplacer.json`). Rend
-/// le verdict. Deja la : rien ne change, rien n'est exige.
+/// le verdict. Deja la : rien ne change, rien n'est exige. Un deplacement en cours sur le poste (lisible ou non) : refus.
 pub fn demander(inst: &Path, vers: &Path, avant: impl FnOnce(&Path) -> R<()>) -> R<Verdict> {
     let v = verifier(inst, vers)?;
     match &v {
         Verdict::DejaLa => socle::fichiers::effacer(&dossier_maj(inst).join(DEMANDE))?,
         Verdict::Possible(vers) => {
+            sans_autre_en_cours()?;
             avant(vers)?;
             crate::maj::ecrire_json(
                 &dossier_maj(inst).join(DEMANDE),
@@ -403,6 +369,15 @@ fn en_cours() -> R<Option<DeplacementEnCours>> {
 
 /// Ce qui se dit d'un deplacement en cours dont le journal ne se lit pas, la ou il concerne l'installation.
 const ILLISIBLE: &str = "Ce logiciel s'est arrêté au milieu d'un déplacement, et le journal de ce déplacement ne se lit pas : on ne sait pas où sont ses dossiers, et rien ne s'y ouvre. Regarder ce dossier et celui où il allait, puis effacer ce journal.";
+
+/// LE DEPLACEMENT EN COURS EST UNIQUE sur le poste (`EN_COURS`, dans le dossier de l'utilisateur) : tant qu'il est
+/// ecrit, lisible ou non, un autre se refuse ; l'ecraser perdrait ce qui dit ou sont les dossiers du premier.
+fn sans_autre_en_cours() -> R<()> {
+    match la(&chez_l_utilisateur(EN_COURS))? {
+        true => Err(refus("Un déplacement du logiciel est déjà en cours sur ce poste : un autre ne part pas avant sa fin. Rien n'a changé.")),
+        false => Ok(()),
+    }
+}
 
 /// Ecrit le deplacement en cours, sur le disque avant de rendre la main : l'etape qui suit peut detruire.
 fn ecrire_en_cours(ec: &DeplacementEnCours) -> R<()> {
@@ -591,10 +566,11 @@ impl Dernier {
 
 /// PARTIR : la demande s'efface (sinon rien ne part : elle se rejouerait a chaque lancement), l'installation se marque,
 /// le deplacement en cours s'ecrit, et le relais se lance ; s'il ne se lance pas, le deplacement en cours et la marque
-/// s'effacent.
+/// s'effacent. Un deplacement deja en cours sur le poste (lisible ou non) ne s'ecrase pas : rien ne part.
 fn partir(inst: &Path, vers: &Path) -> R<()> {
     socle::fichiers::effacer(&dossier_maj(inst).join(DEMANDE))
         .map_err(|e| e.reformuler(|m| format!("la demande ne s'efface pas ({}) ; rien ne part, pour ne pas la rejouer à chaque lancement.", m)))?;
+    sans_autre_en_cours()?;
     let de = resolu(inst)?;
     marquer(&de)?;
     let marque = de.join(MARQUE);
@@ -796,8 +772,9 @@ pub fn relais(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     std::process::ExitCode::SUCCESS
 }
 
-/// LE DEPLACEMENT, du debut : verifie de nouveau, cree le nouveau dossier s'il le faut, ecrit l'etape, renomme ; sur un
-/// autre disque, copie. Un renommage refuse : tout revient, et l'on retente, une minute au plus.
+/// LE DEPLACEMENT, du debut : verifie de nouveau, cree le nouveau dossier s'il le faut, ecrit l'etape, renomme. Un
+/// renommage refuse : tout revient, et l'on retente, une minute au plus ; refuse parce que c'est un autre disque : tout
+/// revient, sans retenter.
 fn commencer(mut ec: DeplacementEnCours) -> Dernier {
     let de = ec.de.clone();
     let mut essai = 1;
@@ -834,19 +811,16 @@ fn commencer(mut ec: DeplacementEnCours) -> Dernier {
                 Err(ou) => Dernier::coupe(&de, &vers, &e.phrase, &ou),
             };
         }
-        let mut renommes = 0;
         let mut refuse = None;
+        let mut ailleurs = false;
         for nom in &ec.noms {
-            match std::fs::rename(de.join(nom), vers.join(nom)) {
-                Ok(()) => renommes += 1,
-                Err(e) if e.kind() == ErrorKind::CrossesDevices && renommes == 0 => {
-                    ec.etape = Etape::Copie;
-                    return copier(ec);
-                }
-                Err(e) => {
-                    refuse = Some(socle::echec::du_disque(&de.join(nom), &e).phrase);
-                    break;
-                }
+            if let Err(e) = std::fs::rename(de.join(nom), vers.join(nom)) {
+                ailleurs = e.kind() == ErrorKind::CrossesDevices;
+                refuse = Some(match ailleurs {
+                    true => autre_disque(&de).to_string(),
+                    false => socle::echec::du_disque(&de.join(nom), &e).phrase,
+                });
+                break;
             }
         }
         let Some(pourquoi) = refuse else { return finir_les_renommages(ec) };
@@ -854,7 +828,7 @@ fn commencer(mut ec: DeplacementEnCours) -> Dernier {
             return Dernier::coupe(&de, &vers, &pourquoi, &ou);
         }
         ec.etape = Etape::Attente;
-        if essai >= ESSAIS_DU_RENOMMAGE || ecrire_en_cours(&ec).is_err() {
+        if ailleurs || essai >= ESSAIS_DU_RENOMMAGE || ecrire_en_cours(&ec).is_err() {
             return Dernier::reste(&de, &vers, &pourquoi);
         }
         noter(&de, &format!("Deplacement : le dossier ne se laisse pas encore deplacer ({}) ; nouvel essai.", pourquoi));
@@ -875,38 +849,52 @@ fn noms_sur_le_disque(ec: &DeplacementEnCours) -> R<Vec<PathBuf>> {
             }
         }
     };
-    if ec.de.is_dir() {
+    // Un dossier absent n'a rien ; un dossier qui ne se lit pas n'est pas vide : son erreur remonte.
+    if la(&ec.de)? {
         ajouter(entrees(&ec.de, &ce_qui_reste(&ec.de)?)?);
     }
-    if ec.vers.is_dir() {
+    if la(&ec.vers)? {
         ajouter(entrees(&ec.vers, &[OsString::from(MARQUE)])?);
     }
     v.sort_by_key(|n| n.as_os_str() == crate::maj::LOGICIEL);
     Ok(v.into_iter().map(PathBuf::from).collect())
 }
 
-/// Rien du deplacement n'est dans le nouveau dossier (lu sur le disque).
+/// Rien du deplacement n'est dans le nouveau dossier (lu sur le disque ; ce qui ne se lit pas remonte).
 fn rien_n_est_parti(ec: &DeplacementEnCours) -> R<bool> {
-    Ok(noms_sur_le_disque(ec)?.iter().all(|n| std::fs::symlink_metadata(ec.vers.join(n)).is_err()))
+    for n in noms_sur_le_disque(ec)? {
+        if la(&ec.vers.join(n))? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// UN DEPLACEMENT REPRIS. LA REPRISE NE CROIT PAS LE JOURNAL SUR PAROLE : elle regarde les deux dossiers, nom par nom.
 /// - Rien dans le nouveau : a l'etape d'attente, le deplacement commence ; sinon tout revient (les pointeurs aussi).
-/// - Aucun nom des deux cotes (des renommages) : tout dans le nouveau, c'est fini ; sinon tout revient.
-/// - Des noms des deux cotes (une copie) : si tout ce que la copie porte est encore dans l'ancien, l'ancien est entier,
-///   la copie s'efface ; si l'ancien a perdu des noms (son effacement avait commence, la copie comparee et entiere) et
-///   que tout ce qui lui reste est pareil dans la copie, l'effacement se finit ; autrement, rien n'est touche : coupe.
+/// - Aucun nom des deux cotes : tout dans le nouveau, c'est fini ; sinon tout revient.
+/// - Un nom des deux cotes, ou ce qui est ou qui ne se lit pas : rien n'est touche, coupe.
 fn reprendre(mut ec: DeplacementEnCours) -> Dernier {
     let (de, vers) = (ec.de.clone(), ec.vers.clone());
     let arrete = "le déplacement s'était arrêté en route, le poste éteint ou le relais arrêté.";
-    match noms_sur_le_disque(&ec) {
-        Ok(noms) => ec.noms = noms,
+    let ou_sont = |ec: &DeplacementEnCours| -> R<(Vec<PathBuf>, Vec<(bool, bool)>)> {
+        let noms = noms_sur_le_disque(ec)?;
+        let mut cotes = Vec::new();
+        for n in &noms {
+            cotes.push((la(&de.join(n))?, la(&vers.join(n))?));
+        }
+        Ok((noms, cotes))
+    };
+    let cotes = match ou_sont(&ec) {
+        Ok((noms, cotes)) => {
+            ec.noms = noms;
+            cotes
+        }
         Err(e) => return Dernier::coupe(&de, &vers, arrete, &format!("rien n'est touché : ce qui est où ne se lit pas ({})", e.phrase.trim_end_matches('.'))),
-    }
-    let la = |d: &Path, n: &Path| std::fs::symlink_metadata(d.join(n)).is_ok();
-    let dans_le_neuf = ec.noms.iter().filter(|n| la(&vers, n)).count();
-    let dans_l_ancien = ec.noms.iter().filter(|n| la(&de, n)).count();
-    let des_deux = ec.noms.iter().filter(|n| la(&de, n) && la(&vers, n)).count();
+    };
+    let dans_le_neuf = cotes.iter().filter(|(_, n)| *n).count();
+    let dans_l_ancien = cotes.iter().filter(|(a, _)| *a).count();
+    let des_deux = cotes.iter().filter(|(a, n)| *a && *n).count();
     if dans_le_neuf == 0 {
         if ec.etape == Etape::Attente {
             return commencer(ec);
@@ -925,26 +913,12 @@ fn reprendre(mut ec: DeplacementEnCours) -> Dernier {
             Err(ou) => Dernier::coupe(&de, &vers, arrete, &ou),
         };
     }
-    let presents = |d: &Path| ec.noms.iter().filter(|n| la(d, n)).map(|n| n.clone().into_os_string()).collect::<Vec<_>>();
-    let (a, b) = match (arbre(&de, &presents(&de)), arbre(&vers, &presents(&vers))) {
-        (Ok(a), Ok(b)) => (a, b),
-        (Err(e), _) | (_, Err(e)) => return Dernier::coupe(&de, &vers, arrete, &format!("rien n'est touché : ce qui est où ne se lit pas ({})", e)),
-    };
-    if b.keys().all(|k| a.contains_key(k)) {
-        return Dernier::reste(&de, &vers, &defaire_la_copie(&ec, arrete));
-    }
-    if a.iter().all(|(k, t)| b.get(k) == Some(t)) {
-        let mut restes = Vec::new();
-        if let Err(e) = repointer(&de, &vers) {
-            restes.push(format!("ce qui pointait vers l'ancien dossier ne s'est pas réécrit ({})", e.phrase));
-        }
-        return effacer_l_ancien(&ec, restes);
-    }
+    let doubles = ec.noms.iter().zip(&cotes).filter(|(_, (a, n))| *a && *n).map(|(n, _)| n.to_string_lossy().into_owned()).collect::<Vec<_>>();
     Dernier::coupe(
         &de,
         &vers,
         arrete,
-        &format!("rien n'est touché : l'ancien dossier et la copie dans {} diffèrent l'un de l'autre, et aucun des deux n'est sûrement entier", dit(&vers)),
+        &format!("rien n'est touché : ces noms sont à la fois dans {} et dans {} : {}", dit(&de), dit(&vers), doubles.join(", ")),
     )
 }
 
@@ -957,31 +931,23 @@ fn finir_les_renommages(ec: DeplacementEnCours) -> Dernier {
             Err(ou) => Dernier::coupe(&ec.de, &ec.vers, &e.phrase, &ou),
         };
     }
-    effacer_l_ancien(&ec, Vec::new())
+    effacer_l_ancien(&ec)
 }
 
-/// Le logiciel est au nouvel endroit, entier : ce qui reste de l'ancien s'efface, et ce qui ne s'efface pas se dit.
-fn effacer_l_ancien(ec: &DeplacementEnCours, mut restes: Vec<String>) -> Dernier {
-    for nom in &ec.noms {
-        let p = ec.de.join(nom);
-        if std::fs::symlink_metadata(&p).is_ok() {
-            if let Err(e) = socle::fichiers::effacer(&p) {
-                restes.push(e.phrase);
-            }
-        }
-    }
+/// Le logiciel est au nouvel endroit, entier : l'ancien dossier, vide, s'efface, et ce qui l'en empeche se dit.
+fn effacer_l_ancien(ec: &DeplacementEnCours) -> Dernier {
+    let mut restes = Vec::new();
     // Le dossier de l'utilisateur reste (il porte les fenetres et le journal du deplacement) ; un autre, vide, s'efface
-    // avec sa marque. Deja parti (un effacement repris) : rien a faire.
-    if std::fs::symlink_metadata(&ec.de).is_ok() {
-        match est_le_dossier_de_l_utilisateur(&ec.de) {
-            Ok(true) => {}
-            Ok(false) => {
-                if let Err(e) = demarquer(&ec.de).and_then(|()| std::fs::remove_dir(&ec.de).map_err(|e| socle::echec::du_disque(&ec.de, &e))) {
-                    restes.push(e.phrase);
-                }
-            }
-            Err(e) => restes.push(e.phrase),
+    // avec sa marque. Deja parti : rien a faire.
+    let effacer = || -> R<()> {
+        if la(&ec.de)? && !est_le_dossier_de_l_utilisateur(&ec.de)? {
+            demarquer(&ec.de)?;
+            std::fs::remove_dir(&ec.de).map_err(|e| socle::echec::du_disque(&ec.de, &e))?;
         }
+        Ok(())
+    };
+    if let Err(e) = effacer() {
+        restes.push(e.phrase);
     }
     Dernier::deplace(&ec.de, &ec.vers, restes)
 }
@@ -1001,13 +967,26 @@ fn revenir(ec: &DeplacementEnCours, pointeurs: bool) -> Result<(), String> {
     let mut la_bas = Vec::new();
     for nom in ec.noms.iter().rev() {
         let (ici, ailleurs) = (de.join(nom), vers.join(nom));
-        if std::fs::symlink_metadata(&ailleurs).is_err() {
-            continue;
+        // Ce qui ne se lit pas n'est pris ni pour absent ni pour revenu : il se dit.
+        match la(&ailleurs) {
+            Ok(false) => continue,
+            Ok(true) => {}
+            Err(e) => {
+                la_bas.push(format!("{} ({})", nom.to_string_lossy(), e.phrase.trim_end_matches('.')));
+                continue;
+            }
         }
         // Le meme nom des deux cotes : aucun ne s'ecrase sur l'autre, et le logiciel n'est pas entier.
-        if std::fs::symlink_metadata(&ici).is_ok() {
-            la_bas.push(format!("{} (le même nom est aussi dans {})", nom.to_string_lossy(), dit(de)));
-            continue;
+        match la(&ici) {
+            Ok(false) => {}
+            Ok(true) => {
+                la_bas.push(format!("{} (le même nom est aussi dans {})", nom.to_string_lossy(), dit(de)));
+                continue;
+            }
+            Err(e) => {
+                la_bas.push(format!("{} ({})", nom.to_string_lossy(), e.phrase.trim_end_matches('.')));
+                continue;
+            }
         }
         if let Err(e) = std::fs::rename(&ailleurs, &ici) {
             la_bas.push(format!("{} ({})", nom.to_string_lossy(), e));
@@ -1035,68 +1014,6 @@ fn revenir(ec: &DeplacementEnCours, pointeurs: bool) -> Result<(), String> {
     }
 }
 
-/// LA COPIE SUR UN AUTRE DISQUE : chaque entree se copie (chaque fichier ecrit sur le disque), la copie se compare a
-/// l'original (chaque dossier, chaque fichier, sa taille et son empreinte), ce qui pointe vers l'ancien dossier se
-/// reecrit, l'etape d'effacement s'ecrit, puis l'original s'efface. Au moindre echec, la copie s'efface et les
-/// pointeurs reviennent : l'original est entier.
-fn copier(mut ec: DeplacementEnCours) -> Dernier {
-    let (de, vers) = (ec.de.clone(), ec.vers.clone());
-    let noms: Vec<OsString> = ec.noms.iter().map(|n| n.clone().into_os_string()).collect();
-    let fait = ecrire_en_cours(&ec).and_then(|()| copier_et_comparer(&de, &vers, &noms)).and_then(|()| {
-        repointer(&de, &vers)?;
-        ec.etape = Etape::Effacement;
-        ecrire_en_cours(&ec)
-    });
-    match fait {
-        Ok(()) => effacer_l_ancien(&ec, Vec::new()),
-        Err(e) => Dernier::reste(&de, &vers, &defaire_la_copie(&ec, &e.phrase)),
-    }
-}
-
-/// La copie s'efface, les pointeurs reviennent a l'ancien dossier, le nouveau dossier cree s'efface : l'original est
-/// entier. Rend `pourquoi`, suivi de ce qui ne s'est pas defait.
-fn defaire_la_copie(ec: &DeplacementEnCours, pourquoi: &str) -> String {
-    let mut restes = Vec::new();
-    if let Err(e) = repointer(&ec.vers, &ec.de) {
-        restes.push(format!("ce qui pointait vers {} n'y pointe plus entier ({})", dit(&ec.de), e.phrase));
-    }
-    for nom in &ec.noms {
-        let p = ec.vers.join(nom);
-        if std::fs::symlink_metadata(&p).is_ok() {
-            if let Err(e) = socle::fichiers::effacer(&p) {
-                restes.push(format!("la copie ne s'efface pas entière ({})", e.phrase));
-            }
-        }
-    }
-    if restes.is_empty() {
-        if let Err(e) = demarquer(&ec.vers) {
-            restes.push(format!("la marque du nouveau dossier ne s'efface pas ({})", e.phrase));
-        }
-    }
-    if ec.cree && restes.is_empty() {
-        if let Err(e) = std::fs::remove_dir(&ec.vers) {
-            restes.push(format!("le dossier {} est resté ({})", dit(&ec.vers), e));
-        }
-    }
-    match restes.is_empty() {
-        true => pourquoi.to_string(),
-        false => format!("{} ({}).", pourquoi.trim_end_matches('.'), restes.join(" ; ")),
-    }
-}
-
-/// COPIE UN FICHIER, sur le disque avant de rendre la main : le contenu s'ecrit dans un fichier neuf, ouvert en
-/// ecriture, qui se vide sur le disque (`sync_all` ; sous Windows il exige un fichier ouvert en ecriture), puis prend
-/// les dates et les droits de l'original (`m`) : un fichier en lecture seule se copie, et le reste.
-fn copier_un_fichier(de: &Path, vers: &Path, m: &std::fs::Metadata) -> std::io::Result<()> {
-    let mut source = std::fs::File::open(de)?;
-    let mut copie = std::fs::OpenOptions::new().write(true).create_new(true).open(vers)?;
-    std::io::copy(&mut source, &mut copie)?;
-    copie.set_times(std::fs::FileTimes::new().set_modified(m.modified()?).set_accessed(m.accessed()?))?;
-    copie.sync_all()?;
-    drop(copie);
-    std::fs::set_permissions(vers, m.permissions())
-}
-
 /// Les noms du dossier `d` sur le disque : hors de Windows, le dossier ouvert se vide (`sync_all`). Sous Windows, la
 /// bibliotheque standard n'ouvre pas un dossier : rien (la reprise regarde les dossiers, `reprendre`).
 #[cfg(unix)]
@@ -1106,62 +1023,6 @@ fn dossier_sur_le_disque(d: &Path) -> R<()> {
 
 #[cfg(not(unix))]
 fn dossier_sur_le_disque(_d: &Path) -> R<()> {
-    Ok(())
-}
-
-/// L'empreinte SHA-256 du contenu d'un fichier.
-fn empreinte(p: &Path) -> std::io::Result<[u8; 32]> {
-    use sha2::{Digest, Sha256};
-    let mut f = std::fs::File::open(p)?;
-    let mut h = Sha256::new();
-    let mut tampon = vec![0u8; 1 << 16];
-    loop {
-        let n = f.read(&mut tampon)?;
-        if n == 0 {
-            return Ok(h.finalize().into());
-        }
-        h.update(&tampon[..n]);
-    }
-}
-
-/// Copie les `noms` de `de` dans `vers`, chaque fichier ecrit sur le disque, sans suivre ni copier un lien ; puis
-/// compare : chaque dossier, chaque fichier, sa taille et son empreinte.
-fn copier_et_comparer(de: &Path, vers: &Path, noms: &[OsString]) -> R<()> {
-    fn copier(de: &Path, vers: &Path) -> R<()> {
-        let m = std::fs::symlink_metadata(de).map_err(|e| socle::echec::du_disque(de, &e))?;
-        if m.file_type().is_symlink() {
-            return Err(socle::echec::au_chemin(LIEN, de));
-        }
-        if m.is_dir() {
-            std::fs::create_dir(vers).map_err(|e| socle::echec::du_disque(vers, &e))?;
-            for e in std::fs::read_dir(de).map_err(|e| socle::echec::du_disque(de, &e))? {
-                let nom = e.map_err(|e| socle::echec::du_disque(de, &e))?.file_name();
-                copier(&de.join(&nom), &vers.join(&nom))?;
-            }
-            // Ses noms sur le disque avant que rien ne s'efface (la ou le systeme le permet).
-            return dossier_sur_le_disque(vers);
-        }
-        copier_un_fichier(de, vers, &m).map_err(|e| socle::echec::du_disque(vers, &e))
-    }
-    for nom in noms {
-        copier(&de.join(nom), &vers.join(nom))?;
-    }
-    dossier_sur_le_disque(vers)?;
-    if let Some(dessus) = vers.parent() {
-        dossier_sur_le_disque(dessus)?;
-    }
-    let avant = arbre(de, noms).map_err(|e| socle::echec::du_disque(de, &e))?;
-    let apres = arbre(vers, noms).map_err(|e| socle::echec::du_disque(vers, &e))?;
-    let mut differents = avant.iter().filter(|(p, t)| apres.get(*p) != Some(*t)).count() + apres.keys().filter(|p| !avant.contains_key(*p)).count();
-    for (rel, _) in avant.iter().filter(|(_, t)| matches!(t, Trace::Fichier(_))) {
-        let (a, b) = (de.join(rel), vers.join(rel));
-        if empreinte(&a).map_err(|e| socle::echec::du_disque(&a, &e))? != empreinte(&b).map_err(|e| socle::echec::du_disque(&b, &e))? {
-            differents += 1;
-        }
-    }
-    if differents > 0 {
-        return Err(refus(format!("La copie n'est pas arrivée entière : {} fichier(s) ou dossier(s) manquent ou diffèrent.", differents)));
-    }
     Ok(())
 }
 
