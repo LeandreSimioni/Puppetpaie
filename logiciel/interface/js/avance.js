@@ -894,6 +894,9 @@ async function faireLeGeste(g, entete, apres, bouton) {
     if (partiEnFond(r)) { rallumer(); return ENREGISTRE_PUIS_SUITE; }
     if (boite) fermerBoite();
     dire(r.phrase, r.couleur);
+    // La compagnie s'est fermée le temps du geste et revient changée (`apres` : `rouvrir`, routes/src/ecran.rs) : la
+    // page la relit entière.
+    if (r.apres === "rouvrir") { location.reload(); return ENREGISTRE_PUIS_SUITE; }
     await apres(r);
     rallumer();
     // La sauvegarde que la route dit suivre (`ensuite`, sa route et sa charge), la fenêtre la fait par sa veille : le

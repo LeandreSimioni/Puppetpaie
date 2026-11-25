@@ -63,14 +63,14 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Prendre la main sur le Drive de la compagnie : ce poste seul y sauvegarde.",
         charge: &ChargePrendreLaMain::CHARGE,
         exemple: r#"{}"#,
-        rend: "phrase ; ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite (absente pour une compagnie fictive)",
+        rend: "phrase ; quand un autre poste tient la main (ou qu'elle ne se lit pas), la compagnie revient d'abord du Drive : apres (rouvrir : la compagnie a changé, elle se relit), incidents (ce qui n'est pas redescendu, un fichier par ligne), a_retenter (pas tout revenu : la compagnie n'a pas bougé, la main n'est pas prise, le geste de nouveau continue) ; sinon ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite (absente pour une compagnie fictive)",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien ne change" },
             OPERATION,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::EcritSansLaMain,
-        phrase: 200,
+        phrase: 400,
         ecran: Ecran::Geste(Place::Drive),
     },
 ];
@@ -130,12 +130,26 @@ impl Dite for DossierSupprime {
     }
 }
 
-/// Ce que rend `drive-prendre-la-main` : la phrase, et la sauvegarde qui suit (`ensuite`, `SauvegardeQuiSuit`).
+/// Ce que rend `drive-prendre-la-main` : la phrase, la sauvegarde qui suit (`ensuite`, `SauvegardeQuiSuit`), ce que la
+/// page fait ensuite (`apres` : `Rouvrir`, quand la compagnie est revenue du Drive), et ce que la recuperation n'a pas
+/// fait redescendre (`incidents`, un fichier par ligne) ou laisse a retenter (`a_retenter`).
 #[derive(Debug, Serialize)]
 struct MainPrise {
     phrase: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
     ensuite: Option<crate::veille::SauvegardeQuiSuit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apres: Option<crate::ecran::ApresLeGeste>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    incidents: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    a_retenter: Vec<String>,
+}
+
+impl MainPrise {
+    fn dite(phrase: Phrase) -> MainPrise {
+        MainPrise { phrase, ensuite: None, apres: None, incidents: Vec::new(), a_retenter: Vec::new() }
+    }
 }
 
 impl Dite for MainPrise {
@@ -241,32 +255,53 @@ pub(crate) fn demande_de_la_main(racine: &std::path::Path) -> R<Option<compagnie
 }
 
 /// LE GESTE « PRENDRE LA MAIN… » (`drive-prendre-la-main`), tel que l'ecran du Drive et le bandeau le rendent : `charge`,
-/// la sienne dans l'ecran qui le porte ; `demande`, celle de `demande_de_la_main`.
-pub(crate) fn geste_prendre_la_main<C>(charge: C, demande: Option<compagnie::demande::DemandeDuMotDePasse>) -> GesteDeRoute<C, SansCharge, SansCharge> {
+/// la sienne dans l'ecran qui le porte ; `demande`, celle de `demande_de_la_main` ; `recupere` : un autre poste tient la
+/// main, ou elle ne se lit pas, et le geste recupere d'abord le Drive (`a_recuperer`).
+pub(crate) fn geste_prendre_la_main<C>(charge: C, demande: Option<compagnie::demande::DemandeDuMotDePasse>, recupere: bool) -> GesteDeRoute<C, SansCharge, SansCharge> {
     GesteDeRoute::avec_cases(Route::DrivePrendreLaMain, charge, PRENDRE_LA_MAIN, Vec::new(), SansCharge {}, SansCharge {})
-        .disant(avant_de_prendre_la_main())
+        .disant(avant_de_prendre_la_main(recupere))
         .exigeant(demande)
         .principal()
 }
 
-/// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce que le geste change pour ce poste et pour l'autre, et ce que la
-/// sauvegarde qui suit fait du dossier.
-fn avant_de_prendre_la_main() -> Vec<String> {
-    vec![
-        "Ce poste seul sauvegardera dans le dossier de cette compagnie ; un poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string(),
-        "La sauvegarde de ce poste part aussitôt : elle remplace dans le Drive les fichiers que ce poste a aussi ; ceux que seul l'autre poste y avait mis y restent.".to_string(),
-    ]
+/// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce que le geste fait de cette compagnie sur ce poste (elle repart de
+/// ce qu'il y a sur le Drive, quand un autre poste tient la main), et ce qu'il change pour l'autre poste.
+fn avant_de_prendre_la_main(recupere: bool) -> Vec<String> {
+    let mut l = Vec::new();
+    if recupere {
+        l.push("Ce poste repart de ce qu'il y a sur le Drive : la compagnie se ferme, revient telle que le poste qui tenait la main l'a sauvegardée, puis se rouvre. Ses mots de passe restent ceux de ce poste.".to_string());
+    } else {
+        l.push("La sauvegarde de ce poste part aussitôt dans le dossier de cette compagnie.".to_string());
+    }
+    l.push("Ce poste seul sauvegardera dans le dossier de cette compagnie ; un poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string());
+    l
+}
+
+/// LA MAIN NOTEE SUR LE DRIVE DEMANDE-T-ELLE DE LE RECUPERER, pour ce poste (`ce_poste`) ? Un autre poste la tient, ou
+/// elle ne se lit pas : ce qu'en dira l'index de la compagnie revenue (`SansLaMain`). Personne, ou ce poste : rien a
+/// recuperer.
+fn a_recuperer(avant: &Result<Option<compagnie::sauvegarde::LaMain>, socle::echec::Echec>, ce_poste: &compagnie::sauvegarde::PosteSurLeDrive) -> Option<compagnie::sauvegarde::SansLaMain> {
+    match avant {
+        Ok(Some(m)) if m.poste != *ce_poste => Some(compagnie::sauvegarde::SansLaMain::AutrePoste { depuis: m.depuis }),
+        Ok(_) => None,
+        Err(_) => Some(compagnie::sauvegarde::SansLaMain::Illisible),
+    }
 }
 
 // ------------------------------------------------------------------ drive-prendre-la-main
 
 /// PRENDRE LA MAIN SUR LE DRIVE DE CETTE COMPAGNIE (`LaMain`) : le mot de passe du logiciel s'il est pose
-/// (`coffre::exiger_mot_de_passe`), puis le dossier de la compagnie (celui que sa sauvegarde trouve, ou un neuf) recoit la
-/// main de ce poste, et l'index ne dit plus qu'il ne l'a pas ; la sauvegarde suit (`ensuite`). Sert aussi quand on s'est
+/// (`coffre::exiger_mot_de_passe`), puis le dossier de la compagnie (celui que sa sauvegarde trouve, ou un neuf).
+/// UN AUTRE POSTE TIENT LA MAIN, OU ELLE NE SE LIT PAS (`a_recuperer`) : ce poste n'a rien pu ecrire sans elle
+/// (`sans_la_main`) ; il recupere d'abord ce qu'il y a sur le Drive (`compagnie::recuperation`), puis prend la main, et la
+/// page relit la compagnie revenue (`apres` : `Rouvrir`). La fenetre ferme la compagnie le temps du geste et la rouvre
+/// ensuite (`interface`). Pas tout revenu, ou les dossiers ne s'echangent pas : la compagnie reste telle quelle, la main
+/// n'est pas prise, la phrase le dit, et le geste de nouveau continue. PERSONNE, OU CE POSTE : le dossier recoit la main
+/// de ce poste, l'index ne dit plus qu'il ne l'a pas, et la sauvegarde suit (`ensuite`). Sert aussi quand on s'est
 /// trompe, ou que le poste qui la tenait est perdu. Une compagnie fictive n'a rien sur le Drive : rien ne change.
 fn prendre_la_main(ctx: &droit::contexte::Contexte, mdp: Option<&socle::secret::Secret>) -> R<MainPrise> {
     if compagnie::bridage::branchement(&ctx.racine)?.joue() {
-        return Ok(MainPrise { phrase: Phrase::fixe("Compagnie fictive : rien ne part au Drive, il n'y a pas de main à prendre."), ensuite: None });
+        return Ok(MainPrise::dite(Phrase::fixe("Compagnie fictive : rien ne part au Drive, il n'y a pas de main à prendre.")));
     }
     crate::coffre::exiger_mot_de_passe(&ctx.racine, mdp, GESTE_MAIN)?;
     let mut client = crate::coffre::client_drive(&ctx.racine).map_err(|e| e.echec)?;
@@ -280,18 +315,62 @@ fn prendre_la_main(ctx: &droit::contexte::Contexte, mdp: Option<&socle::secret::
     let (id, marque) = compagnie::sauvegarde::dossier_de_la_compagnie(&mut client, &racine_drive, &identite, &nom, connu.as_ref(), Some(&main)).map_err(|e| e.echec)?;
     // Qui la tenait, avant ce geste : ce que la phrase en dit.
     let avant = compagnie::sauvegarde::LaMain::de(marque.as_ref());
+    if let Some(sans) = a_recuperer(&avant, &main.poste) {
+        return recuperer_puis_prendre(ctx, &mut client, &racine_drive, &id, &main, &identite, sans);
+    }
     client.marquer(&id, &main.marque(&identite)).map_err(|e| e.echec)?;
     compagnie::sauvegarde::main_reprise(&ctx.racine).map_err(|e| e.echec)?;
-    let phrase = match avant {
-        Ok(Some(m)) if m.poste == main.poste => Phrase::fixe("Ce poste tenait déjà la main sur le Drive de cette compagnie : sa sauvegarde suit."),
-        Ok(Some(m)) => socle::phrase!(
-            "Ce poste tient la main sur le Drive de cette compagnie : sa sauvegarde suit, et le poste qui la tenait depuis le {} n'y sauvegarde plus.",
-            m.depuis.jour_de_paris().jj_mm()
-        ),
-        Ok(None) => Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie, qu'aucun poste ne tenait : sa sauvegarde suit."),
-        Err(e) => socle::phrase!("Ce poste tient la main sur le Drive de cette compagnie : sa sauvegarde suit. Avant ce geste : {}", compagnie::sauvegarde::main_illisible_dite(&e)),
+    // Hors de la recuperation, la main notee n'etait que celle de ce poste, ou aucune.
+    let phrase = if matches!(avant, Ok(Some(_))) {
+        Phrase::fixe("Ce poste tenait déjà la main sur le Drive de cette compagnie : sa sauvegarde suit.")
+    } else {
+        Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie, qu'aucun poste ne tenait : sa sauvegarde suit.")
     };
-    Ok(MainPrise { phrase, ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()) })
+    Ok(MainPrise { ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()), ..MainPrise::dite(phrase) })
+}
+
+/// RECUPERER LE DRIVE PUIS PRENDRE LA MAIN (`prendre_la_main`, quand un autre poste la tient ou qu'elle ne se lit pas) :
+/// le dossier `id` revient dans la compagnie (`compagnie::recuperation::recuperer`) ; au bout, la main de ce poste s'y
+/// note, et l'index de la compagnie revenue ne dit plus qu'il ne l'a pas. La main qui ne se note pas laisse l'index dire
+/// `sans` : la compagnie revenue se regarde, et le geste de nouveau la prend.
+fn recuperer_puis_prendre(
+    ctx: &droit::contexte::Contexte,
+    client: &mut envois::drive::Client,
+    racine_drive: &str,
+    id: &IdDrive,
+    main: &compagnie::sauvegarde::LaMain,
+    identite: &compagnie::sauvegarde::IdentiteSurLeDrive,
+    sans: compagnie::sauvegarde::SansLaMain,
+) -> R<MainPrise> {
+    use compagnie::recuperation::Recuperation;
+    let qui = match &sans {
+        compagnie::sauvegarde::SansLaMain::AutrePoste { depuis } => format!("le poste qui tenait la main depuis le {}", depuis.jour_de_paris().jj_mm()),
+        compagnie::sauvegarde::SansLaMain::Illisible => "le dernier poste qui l'a sauvegardée".to_string(),
+    };
+    let vus = compagnie::sur_le_drive::voir(client, racine_drive).map_err(|e| e.echec)?;
+    let vu = compagnie::sur_le_drive::le_dossier(vus, id, racine_drive).map_err(|e| e.echec)?;
+    let (incidents, reste) = match compagnie::recuperation::recuperer(&ctx.racine, &vu, racine_drive, client, sans).map_err(|e| e.echec)? {
+        Recuperation::PasAuBout(r) => {
+            let phrase = socle::phrase!(
+                "Le Drive n'est pas tout revenu ({} fichier(s) à retenter) : la compagnie reste comme elle était, et la main n'est pas prise. « Prendre la main » de nouveau continue là où cela s'est arrêté.",
+                r.a_retenter.len()
+            );
+            return Ok(MainPrise { incidents: r.incidents, a_retenter: r.a_retenter, ..MainPrise::dite(phrase) });
+        }
+        Recuperation::PasEchangee(e) => return Ok(MainPrise::dite(socle::phrase!("{} La main n'est pas prise.", e.phrase))),
+        Recuperation::Echangee { incidents, reste } => (incidents, reste),
+    };
+    let mut phrase = match client.marquer(id, &main.marque(identite)).map_err(|e| e.echec).and_then(|()| compagnie::sauvegarde::main_reprise(&ctx.racine).map_err(|e| e.echec)) {
+        Ok(()) => format!("La compagnie est revenue telle que {} l'a sauvegardée, et ce poste tient maintenant la main : lui seul y sauvegarde.", qui),
+        Err(e) => format!(
+            "La compagnie est revenue telle que {} l'a sauvegardée, mais la main ne se prend pas ({}) : la compagnie se regarde, et « Prendre la main » de nouveau la prend.",
+            qui, e.phrase
+        ),
+    };
+    if let Some(r) = reste {
+        phrase = format!("{} {}", phrase, r);
+    }
+    Ok(MainPrise { apres: Some(crate::ecran::ApresLeGeste::Rouvrir), incidents, ..MainPrise::dite(socle::phrase!("{}", phrase)) })
 }
 
 // ------------------------------------------------------------------ drive-etat
@@ -386,8 +465,14 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
         if let (true, Some(p)) = (le_sien, &ce_poste) {
             let a_ce_poste = vu.main.as_ref().is_ok_and(|m| m.as_ref().is_some_and(|m| m.poste == *p));
             dit.push(main_dite(&vu.main, a_ce_poste));
+            // Une recuperation du Drive commencee et pas finie se voit ; « Prendre la main » la continue.
+            match compagnie::recuperation::commencee(&ctx.racine) {
+                Ok(true) => dit.push("Une récupération de ce dossier, commencée sur ce poste, n'est pas allée au bout : « Prendre la main » la continue.".to_string()),
+                Ok(false) => {}
+                Err(e) => dit.push(e.phrase),
+            }
             if let (false, Ok(d)) = (a_ce_poste, &demande_main) {
-                gestes.push(geste_prendre_la_main(GesteDuDrive::PrendreLaMain(SansCharge {}), d.clone()));
+                gestes.push(geste_prendre_la_main(GesteDuDrive::PrendreLaMain(SansCharge {}), d.clone(), a_recuperer(&vu.main, p).is_some()));
             }
         } else if let Err(e) = &vu.main {
             dit.push(compagnie::sauvegarde::main_illisible_dite(e));

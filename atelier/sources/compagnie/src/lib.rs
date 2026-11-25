@@ -31,6 +31,7 @@ pub mod pieces_ecrites;
 pub mod poste;
 pub mod preuve;
 pub mod problemes;
+pub mod recuperation;
 pub mod restauration;
 pub mod sauvegarde;
 pub mod sur_le_drive;

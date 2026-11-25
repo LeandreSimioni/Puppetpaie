@@ -143,7 +143,7 @@ pub fn main_a_prendre(racine: &std::path::Path) -> socle::echec::R<Option<Prendr
     if !ailleurs || !crate::gestes::ouverture::acces_pose(racine, "google")? {
         return Ok(None);
     }
-    Ok(Some(PrendreLaMain(crate::drive::geste_prendre_la_main(crate::SansCharge {}, crate::drive::demande_de_la_main(racine)?))))
+    Ok(Some(PrendreLaMain(crate::drive::geste_prendre_la_main(crate::SansCharge {}, crate::drive::demande_de_la_main(racine)?, true))))
 }
 
 /// CE QUE LE BANDEAU DIT (`dit` de l'etat de la veille) : l'etat en une phrase, un service muet, ce qu'il y a a poser et

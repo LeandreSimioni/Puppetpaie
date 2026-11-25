@@ -1015,6 +1015,32 @@ impl Fenetre {
                         return Reponse::json(200, &rendu);
                     }
                 }
+                // « PRENDRE LA MAIN » (`drive-prendre-la-main`) peut remplacer le dossier de la compagnie ouverte par ce
+                // qui revient du Drive : la fenetre la lache le temps du geste (sa veille, sa file des etats, ses envois),
+                // puis la rouvre, telle qu'elle est alors. Ce que la page en fait, la reponse le dit (`apres`).
+                if nom == Route::DrivePrendreLaMain && veille.is_some() {
+                    let envoi_en_vol = routes::envois_en_fond::existants(&racine).map(|e| e.is_some_and(|e| e.en_vol()));
+                    let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
+                        RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un relevé ou une sauvegarde de cette compagnie est en cours : attendez qu'il se termine, puis recommencez. Rien n'a changé."))
+                    } else if matches!(envoi_en_vol, Ok(true)) {
+                        RouteReponse::refusee_par(nom, Refus::nouveau(Classe::Refuse, "Un envoi de cette compagnie est en cours : attendez que le bandeau le dise parti, puis recommencez. Rien n'a changé."))
+                    } else if let Err(e) = envoi_en_vol {
+                        RouteReponse::refusee_par(nom, Refus::de(None, e.reclasser(Classe::Refuse)))
+                    } else if let Err(e) = self.lacher(&racine) {
+                        RouteReponse::refusee_par(nom, Refus::de(None, e.reclasser(Classe::Refuse)))
+                    } else {
+                        let debut = Instant::now();
+                        let rendu = api::repondre(&racine, nom, &charge, None, None);
+                        // Le journal de la fenetre redevient celui de la compagnie (lacher l'avait laisse), sans le recommencer.
+                        *tenu(&self.journal) = Some(JOURNAL_INTERFACE.dans(&racine));
+                        if let Err(e) = self.ouvrir(racine.clone()) {
+                            self.ecrire(&format!("La compagnie ne se rouvre pas apres « Prendre la main » : {}\n", e.en_lignes()));
+                        }
+                        self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
+                        rendu
+                    };
+                    return Reponse::json(200, &rendu);
+                }
                 let debut = Instant::now();
                 // UNE ROUTE QUI ENGAGE (un envoi, un depot reel) se fait sur un fil a elle : la page attend sa
                 // verification, pas son transport (`routes::envois_en_fond`). Toute autre, ici.

@@ -1,5 +1,6 @@
 //! La restauration d'une compagnie depuis le Drive : le retour de `sauvegarde.rs`. UN SEUL CHEMIN : la reprise d'une
-//! compagnie a l'accueil (`routes::accueil::drive`, la route `drive-reprendre`, que `moteur restaurer` sert aussi).
+//! compagnie a l'accueil (`routes::accueil::drive`, la route `drive-reprendre`, que `moteur restaurer` sert aussi), et
+//! « Prendre la main », qui recupere le Drive a cote de la compagnie ouverte (`recuperation`).
 //!
 //! Aucun depot Git ne porte les donnees de la compagnie (regle 9) : la sauvegarde Drive est la seule copie de `prive/`
 //! hors du poste ; sans retour, ce n'est pas une copie.
