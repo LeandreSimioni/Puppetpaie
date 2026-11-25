@@ -284,7 +284,14 @@ let CONFIGURATION_A_REDESSINER = false;
 async function relireLaConfiguration(redessiner = false) {
   const n = ++CONFIGURATION_DEMANDEE;
   if (redessiner) CONFIGURATION_A_REDESSINER = true;
-  const c = await api("configuration", {});
+  let c;
+  try {
+    c = await api("configuration", {});
+  } catch (e) {
+    // La dernière lecture a échoué : son redessin ne passe pas à une lecture suivante qui ne l'a pas demandé.
+    if (n === CONFIGURATION_DEMANDEE) CONFIGURATION_A_REDESSINER = false;
+    throw e;
+  }
   if (n !== CONFIGURATION_DEMANDEE) return false;
   ETAT.configuration = c;
   peindreEtatGlobal();

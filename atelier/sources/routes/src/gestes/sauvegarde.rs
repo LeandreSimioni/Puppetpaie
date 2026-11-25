@@ -23,7 +23,8 @@ const INDISPONIBLE_D_AFFILEE: usize = 3;
 ///
 /// `avancer(verifies, envoyes, total)` : en entrant dans chaque dossier et apres chaque fichier envoye, combien de
 /// fichiers sont verifies (identiques au Drive, ou envoyes), combien sont envoyes, sur combien a sauvegarder. Son erreur
-/// (l'ecriture de l'etape) arrete la sauvegarde.
+/// (l'ecriture de l'etape) n'arrete pas l'envoi : elle se dit une fois dans les incidents du passage, et l'avancement ne
+/// se dit plus jusqu'a sa fin.
 pub fn sauvegarder(
     racine: &Path,
     racine_drive: &str,
@@ -74,8 +75,19 @@ pub fn sauvegarder(
     for (relatif, _) in &presents {
         par_dossier.entry(relatif.parent()).or_default().push(relatif.clone());
     }
-    // Ce que `avancer` dit, depuis ce que le passage a fait jusqu'ici.
-    let avancement = |r: &Sauvegarde| (r.identiques + r.deposes.len(), r.deposes.len(), presents.len());
+    // Ce que `avancer` dit, depuis ce que le passage a fait jusqu'ici. L'affichage ne coupe pas une longue premiere
+    // sauvegarde : son echec se dit une fois dans les incidents.
+    let mut avancement_dit = true;
+    let total = presents.len();
+    let mut dire_l_avancement = |r: &mut Sauvegarde| {
+        if !avancement_dit {
+            return;
+        }
+        if let Err(e) = avancer(r.identiques + r.deposes.len(), r.deposes.len(), total) {
+            avancement_dit = false;
+            r.incidents.push(format!("L'avancement de la sauvegarde ne s'écrit plus : {}", e.phrase));
+        }
+    };
 
     // LE DOSSIER DE LA COMPAGNIE : celui que l'index garde s'il est encore en place, sinon celui que sa marque designe,
     // sinon un neuf. Qu'il ne se trouve pas, et rien ne part a ce passage : tout est reporte au suivant.
@@ -104,8 +116,7 @@ pub fn sauvegarder(
 
     for (dossier, fichiers) in par_dossier.iter().filter(|_| compagnie_id.is_some()) {
         let Some(cie) = compagnie_id.as_ref() else { break };
-        let (verifies, envoyes, total) = avancement(&resultat);
-        avancer(verifies, envoyes, total).map_err(ErreurGoogle::from)?;
+        dire_l_avancement(&mut resultat);
         let segments = compagnie::sauvegarde::DossierDuDrive::segments(dossier.as_ref());
         let cle = compagnie::sauvegarde::DossierDuDrive::de(dossier.as_ref());
         // Le dossier, tel qu'un dossier reporte le dit (`.` pour la racine).
@@ -188,8 +199,7 @@ pub fn sauvegarder(
                     let octets = etat_de[relatif].octets;
                     resultat.deposes.push(Fichier { relatif: relatif.clone(), octets, etat });
                     resultat.octets_deposes += octets;
-                    let (verifies, envoyes, total) = avancement(&resultat);
-                    avancer(verifies, envoyes, total).map_err(ErreurGoogle::from)?;
+                    dire_l_avancement(&mut resultat);
                 }
                 // LE FICHIER A DISPARU ENTRE L'INVENTAIRE ET L'ENVOI, et ce n'est pas un incident :
                 // `engagements/avant/` et `config/avant/` ne gardent que les dernieres copies, et

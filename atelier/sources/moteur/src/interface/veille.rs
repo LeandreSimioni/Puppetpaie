@@ -272,7 +272,7 @@ impl Veille {
             return;
         }
         let v = self.clone();
-        routes::fil_de_routes(move || {
+        let parti = routes::fil_de_routes(move || {
             if let Some(f) = &v.etats {
                 if let Err(e) = f.attendre_la_version() {
                     tenu(&v.sauvegarde_due).take();
@@ -282,6 +282,11 @@ impl Veille {
             }
             v.sauvegarder_ce_qui_est_du();
         });
+        // Aucun fil : la sauvegarde ne part pas maintenant, le bandeau le dit, et le tour periodique la fera.
+        if !parti {
+            tenu(&self.sauvegarde_due).take();
+            *tenu(&self.erreur) = Some("La sauvegarde du Drive ne part pas maintenant : le moteur ne démarre pas de fil. Elle partira à la prochaine ouverture de la compagnie.".to_string());
+        }
     }
 
     /// La sauvegarde due, s'il en reste une, faite une fois, le verrou des tours tenu : la route et la charge qu'elle dit

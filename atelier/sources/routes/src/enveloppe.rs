@@ -600,9 +600,14 @@ impl Reponse {
         struct EnTexte {
             phrase: String,
             phrases: Option<Vec<String>>,
+            ensuite: Option<crate::veille::SauvegardeQuiSuit>,
         }
-        match r.lire_cles::<EnTexte>(&["phrase", "phrases"], "Défaut du logiciel : la réponse d'une route ne se relit pas.") {
-            Ok(t) => std::iter::once(t.phrase).chain(t.phrases.into_iter().flatten()).map(|p| format!("{}\n", p)).collect(),
+        match r.lire_cles::<EnTexte>(&["phrase", "phrases", "ensuite"], "Défaut du logiciel : la réponse d'une route ne se relit pas.") {
+            Ok(t) => {
+                // Ce que la reponse dit suivre, que la fenetre fait d'elle-meme : en texte, la route a appeler.
+                let ensuite = t.ensuite.map(|s| format!("Ensuite : la route {}.", s.route().nom()));
+                std::iter::once(t.phrase).chain(t.phrases.into_iter().flatten()).chain(ensuite).map(|p| format!("{}\n", p)).collect()
+            }
             Err(e) => format!("Refus : {} (route {})\n", e.phrase, route),
         }
     }
