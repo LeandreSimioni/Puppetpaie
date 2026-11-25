@@ -63,7 +63,7 @@ mod historique;
 pub mod documents;
 mod dossier_salarie;
 pub mod coffre;
-pub mod drive;
+mod drive;
 mod engagement;
 mod contrats;
 mod modeles_contrat;

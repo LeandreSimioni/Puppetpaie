@@ -197,7 +197,7 @@ fn la_page_n_emploie_aucune_couleur_que_la_capture_ne_lit_pas() {
     assert!(fautes.is_empty(), "{:?}", fautes);
 }
 
-fn poste(f: &Fenetre, jeton: &str, nom: &str, args: serde_json::Value) -> serde_json::Value {
+fn poste(f: &Arc<Fenetre>,jeton: &str, nom: &str, args: serde_json::Value) -> serde_json::Value {
     let entetes = HashMap::from([("x-jeton".to_string(), jeton.to_string())]);
     let corps = args.to_string().into_bytes();
     let r = f.traiter(Requete { methode: "POST".into(), chemin: format!("/lanceur/{}", nom), params: HashMap::new(), entetes, corps });
@@ -206,14 +206,14 @@ fn poste(f: &Fenetre, jeton: &str, nom: &str, args: serde_json::Value) -> serde_
 }
 
 /// Une route du catalogue, demandee par la page a la porte de la fenetre (`/api/<route>`).
-fn route_de_la_page(f: &Fenetre, jeton: &str, nom: &str, charge: serde_json::Value) -> serde_json::Value {
+fn route_de_la_page(f: &Arc<Fenetre>,jeton: &str, nom: &str, charge: serde_json::Value) -> serde_json::Value {
     let entetes = HashMap::from([("x-jeton".to_string(), jeton.to_string())]);
     let r = f.traiter(Requete { methode: "POST".into(), chemin: format!("/api/{}", nom), params: HashMap::new(), entetes, corps: charge.to_string().into_bytes() });
     assert_eq!(r.code, 200, "{}", nom);
     serde_json::from_slice(&r.corps).unwrap()
 }
 
-fn racine_servie(f: &Fenetre, jeton: &str) -> String {
+fn racine_servie(f: &Arc<Fenetre>,jeton: &str) -> String {
     let params = HashMap::from([("jeton".to_string(), jeton.to_string())]);
     let r = f.traiter(Requete { methode: "GET".into(), chemin: "/index.html".into(), params, entetes: HashMap::new(), corps: Vec::new() });
     assert_eq!(r.code, 200);

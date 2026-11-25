@@ -796,7 +796,7 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
 }
 
 fn o_de(o: &Options, racine: &Path) -> Options {
-    Options { racine: Some(racine.to_path_buf()), date: o.date }
+    Options { date: o.date, ..Options::de_la_compagnie(racine) }
 }
 
 /// Le tableau d'une compagnie, refait (sa propre compagnie de routes, sa racine en argument) ; son refus en phrase.

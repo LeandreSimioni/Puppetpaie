@@ -238,17 +238,44 @@ pub struct Options {
     pub racine: Option<std::path::PathBuf>,
     /// Le jour de la route : celui du contexte, et celui de l'horloge qui date ce qu'elle ecrit. Sans lui, aujourd'hui.
     pub date: Option<socle::date::Jour>,
+    /// Ce qui tient la compagnie et la lache quand la route va remplacer son dossier (`LacherLaCompagnie`) : la fenetre
+    /// seule le pose ; en ligne de commande, rien ne la tient.
+    pub lacher: Option<LacherLaCompagnie>,
 }
 
 impl Options {
     /// Les options d'une route servie sans compagnie (l'accueil, un message au developpeur depuis l'accueil).
     pub fn sans_compagnie() -> Options {
-        Options { racine: None, date: None }
+        Options { racine: None, date: None, lacher: None }
     }
 
     /// Les options d'une route servie sur la compagnie `racine`, au jour de l'horloge.
     pub fn de_la_compagnie(racine: &std::path::Path) -> Options {
-        Options { racine: Some(racine.to_path_buf()), date: None }
+        Options { racine: Some(racine.to_path_buf()), date: None, lacher: None }
+    }
+}
+
+/// CE QUI TIENT UNE COMPAGNIE OUVERTE ET LA LACHE (la fenetre : sa veille, sa file des etats, ses envois en fond, son
+/// journal), passe a la route par ses options, quand la route remplace le dossier de la compagnie sous elle
+/// (`drive-prendre-la-main`, `compagnie::recuperation::recuperer`). La route l'appelle une fois tout pret, juste avant ;
+/// qui l'a pose sait ainsi qu'il doit rouvrir la compagnie.
+#[derive(Clone)]
+pub struct LacherLaCompagnie(std::sync::Arc<dyn Fn(&std::path::Path) -> R<()> + Send + Sync>);
+
+impl LacherLaCompagnie {
+    pub fn nouveau(f: impl Fn(&std::path::Path) -> R<()> + Send + Sync + 'static) -> LacherLaCompagnie {
+        LacherLaCompagnie(std::sync::Arc::new(f))
+    }
+
+    /// Lache la compagnie `racine` ; un refus remonte, et rien n'a ete remplace.
+    pub fn lacher(&self, racine: &std::path::Path) -> R<()> {
+        (self.0)(racine)
+    }
+}
+
+impl std::fmt::Debug for LacherLaCompagnie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LacherLaCompagnie")
     }
 }
 

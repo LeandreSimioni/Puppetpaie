@@ -923,7 +923,7 @@ impl Fenetre {
     }
 
     /// Une requete de la fenetre.
-    pub fn traiter(&self, r: Requete) -> Reponse {
+    pub fn traiter(self: &Arc<Self>, r: Requete) -> Reponse {
         let texte = |code: u16| Reponse::nouvelle(code, "text/plain; charset=utf-8", Vec::new());
         if r.methode == "POST" {
             // Un refus du serveur, avant toute route ou tout geste, se dit comme le refus d'une route (`refus`), que la page
@@ -1015,33 +1015,6 @@ impl Fenetre {
                         return Reponse::json(200, &rendu);
                     }
                 }
-                // « PRENDRE LA MAIN » (`drive-prendre-la-main`) peut remplacer le dossier de la compagnie ouverte par ce
-                // qui revient du Drive : la route decide tout (`routes::drive::prendre_la_main_lachant`) et lache la
-                // compagnie par la fenetre (sa veille, sa file des etats, ses envois) juste avant ; si elle l'a lachee, la
-                // fenetre la rouvre, telle qu'elle est alors. La sauvegarde que la reponse dit suivre (`ensuite`) part
-                // ensuite, sur la veille de la compagnie ouverte.
-                if nom == Route::DrivePrendreLaMain && veille.is_some() {
-                    let debut = Instant::now();
-                    let lachee = std::cell::Cell::new(false);
-                    let rendu = routes::garde_dans_la_fenetre(nom, || {
-                        RouteReponse::de(nom, routes::drive::prendre_la_main_lachant(&racine, &charge, &|r| {
-                            lachee.set(true);
-                            self.lacher(r)
-                        }))
-                    });
-                    if lachee.get() {
-                        // Le journal de la fenetre redevient celui de la compagnie (lacher l'avait laisse), sans le recommencer.
-                        *tenu(&self.journal) = Some(JOURNAL_INTERFACE.dans(&racine));
-                        if let Err(e) = self.ouvrir(racine.clone()) {
-                            self.ecrire(&format!("La compagnie ne se rouvre pas apres « Prendre la main » : {}\n", e.en_lignes()));
-                        }
-                    }
-                    if let Phase::Ouverte { veille, .. } = self.phase() {
-                        veille.faire_suivre(&rendu);
-                    }
-                    self.ecrire(&ligne_de_route(nom, debut.elapsed(), &rendu));
-                    return Reponse::json(200, &rendu);
-                }
                 let debut = Instant::now();
                 // UNE ROUTE QUI ENGAGE (un envoi, un depot reel) se fait sur un fil a elle : la page attend sa
                 // verification, pas son transport (`routes::envois_en_fond`). Toute autre, ici.
@@ -1049,14 +1022,32 @@ impl Fenetre {
                     match routes::envois_en_fond::de_la_compagnie(&racine) {
                         Ok(envois) => {
                             let (r, c) = (racine.clone(), charge.clone());
-                            envois.servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref()))
+                            envois.servir(nom, move || api::repondre(&r, nom, &c, veille.as_deref(), etats.as_deref(), None))
                         }
                         Err(e) => RouteReponse::de(nom, Err(e)),
                     }
                 } else {
-                    let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref());
-                    // CE QUE LA REPONSE DIT SUIVRE (`ensuite` : la sauvegarde du Drive lie), la veille le fait, sur son fil.
-                    if let Some(v) = &veille {
+                    // UNE ROUTE QUI REMPLACE LE DOSSIER DE LA COMPAGNIE OUVERTE (`drive-prendre-la-main`) la fait lacher
+                    // par la fenetre (sa veille, sa file des etats, ses envois, son journal), juste avant
+                    // (`LacherLaCompagnie`) ; la fenetre la rouvre ensuite, telle qu'elle est alors.
+                    let lachee = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let lacher = veille.is_some().then(|| {
+                        let (fenetre, l) = (Arc::clone(self), Arc::clone(&lachee));
+                        routes::enveloppe::LacherLaCompagnie::nouveau(move |r| fenetre.lacher(r).map(|()| l.store(true, std::sync::atomic::Ordering::SeqCst)))
+                    });
+                    let rendu = api::repondre(&racine, nom, &charge, veille.as_deref(), etats.as_deref(), lacher);
+                    // CE QUE LA REPONSE DIT SUIVRE (`ensuite` : la sauvegarde du Drive lie), la veille le fait, sur son fil :
+                    // celle de la compagnie rouverte, si la route l'a fait lacher.
+                    if lachee.load(std::sync::atomic::Ordering::SeqCst) {
+                        // Le journal de la fenetre redevient celui de la compagnie (lacher l'avait laisse), sans le recommencer.
+                        *tenu(&self.journal) = Some(JOURNAL_INTERFACE.dans(&racine));
+                        if let Err(e) = self.ouvrir(racine.clone()) {
+                            self.ecrire(&format!("La compagnie ne se rouvre pas apres {} : {}\n", nom, e.en_lignes()));
+                        }
+                        if let Phase::Ouverte { veille, .. } = self.phase() {
+                            veille.faire_suivre(&rendu);
+                        }
+                    } else if let Some(v) = &veille {
                         v.faire_suivre(&rendu);
                     }
                     rendu

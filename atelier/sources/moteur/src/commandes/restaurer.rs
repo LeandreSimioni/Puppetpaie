@@ -35,7 +35,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
         }
     };
     let demande = socle::ecriture::json_en_ligne(&Demande { route: routes::catalogue::Route::DriveReprendre.nom(), charge: Reprendre { dossier } });
-    let o = routes::enveloppe::Options { racine: Some(cadre.racine.clone()), date: Some(cadre.aujourdhui) };
+    let o = routes::enveloppe::Options { date: Some(cadre.aujourdhui), ..routes::enveloppe::Options::de_la_compagnie(&cadre.racine) };
     let reponse = routes::commande(&o, &demande);
     dire!("{}", reponse.en_json());
     if reponse.est_rendue() {

@@ -988,7 +988,7 @@ impl Fil {
     /// RIEN NE SE CALCULE AVANT LA MISE A JOUR : la file nait avec sa prise en compte en tete (`Cle::VersionDuCalcul`),
     /// avant qu'aucune demande puisse y entrer ; ce qu'elle reecrit changerait l'etat qu'on ferait avant elle.
     pub fn file(self: &Arc<Self>, racine: &Path, date: Option<Jour>) -> Arc<FileDesEtats> {
-        let o = Options { racine: Some(racine.to_path_buf()), date };
+        let o = Options { date, ..Options::de_la_compagnie(racine) };
         // Aucune demande encore (numero 0), rien d'affiche ; puis la mise a jour a prendre en compte, seule en tete.
         let mut etat = EtatDeLaFile {
             attente: VecDeque::new(),

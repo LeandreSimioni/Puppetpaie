@@ -63,7 +63,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Prendre la main sur le Drive de la compagnie : ce poste seul y sauvegarde.",
         charge: &ChargePrendreLaMain::CHARGE,
         exemple: r#"{}"#,
-        rend: "phrase ; quand un autre poste tient la main (ou qu'elle ne se lit pas) et que le Drive a été sauvegardé ailleurs depuis la dernière sauvegarde de ce poste, la compagnie revient d'abord du Drive : apres (rouvrir : la compagnie a changé, elle se relit), incidents (ce qui n'est pas redescendu, un fichier par ligne), a_retenter (pas tout revenu : la compagnie n'a pas bougé, la main n'est pas prise, le geste de nouveau continue) ; sinon ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite (absente pour une compagnie fictive)",
+        rend: "phrase ; quand un autre poste tient la main (ou qu'elle ne se lit pas), la compagnie revient d'abord du Drive : apres (rouvrir : la compagnie a changé, elle se relit), incidents (ce qui n'est pas redescendu, un fichier par ligne), a_retenter (pas tout revenu : la compagnie n'a pas bougé, la main n'est pas prise, le geste de nouveau continue) ; sinon ensuite : la sauvegarde qui suit, sa route (sauvegarde-maintenant) et sa charge, à appeler ensuite (absente pour une compagnie fictive)",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien ne change" },
             Refus { classe: Classe::Refuse, corriger: "un envoi de cette compagnie en cours, quand la compagnie doit revenir du Drive : attendre qu'il soit parti ; rien ne change" },
@@ -170,18 +170,12 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let c: ChargeSupprimer = charge.lire()?;
             en_json(supprimer(porte.ctx, &c.dossier, charge.mot_de_passe())?)
         }
-        // En ligne de commande, rien ne tient la compagnie : rien a lacher.
-        Route::DrivePrendreLaMain => prendre_la_main_lachant(&porte.ctx.racine, charge, &|_| Ok(())),
+        Route::DrivePrendreLaMain => {
+            let ChargePrendreLaMain {} = charge.lire()?;
+            en_json(prendre_la_main(&porte.ctx.racine, charge.mot_de_passe(), porte.options.lacher.as_ref())?)
+        }
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
     }
-}
-
-/// `drive-prendre-la-main` SUR LA COMPAGNIE `racine`, `lacher` lachant ce qui la tient avant que la compagnie revenue du
-/// Drive la remplace (`compagnie::recuperation::recuperer`) : la fenetre y passe le sien (sa veille, ses envois en fond,
-/// son journal), qu'elle seule tient, et rouvre la compagnie si elle l'a lachee ; en ligne de commande, rien.
-pub fn prendre_la_main_lachant(racine: &std::path::Path, charge: &Charge, lacher: &dyn Fn(&std::path::Path) -> R<()>) -> R<Rendu> {
-    let ChargePrendreLaMain {} = charge.lire()?;
-    en_json(prendre_la_main(racine, charge.mot_de_passe(), lacher)?)
 }
 
 // ------------------------------------------------------------------ ce qu'un dossier dit
@@ -243,51 +237,35 @@ pub(crate) fn demande_de_la_main(racine: &std::path::Path) -> R<Option<compagnie
 }
 
 /// LE GESTE « PRENDRE LA MAIN… » (`drive-prendre-la-main`), tel que l'ecran du Drive et le bandeau le rendent : `charge`,
-/// la sienne dans l'ecran qui le porte ; `demande`, celle de `demande_de_la_main` ; `avant`, ce qu'il fera de la
-/// compagnie de ce poste, que sa boite dit (`AvantLaMain`).
-pub(crate) fn geste_prendre_la_main<C>(charge: C, demande: Option<compagnie::demande::DemandeDuMotDePasse>, avant: AvantLaMain) -> GesteDeRoute<C, SansCharge, SansCharge> {
+/// la sienne dans l'ecran qui le porte ; `demande`, celle de `demande_de_la_main` ; `recupere` : un autre poste tient la
+/// main, ou elle ne se lit pas, et le geste recupere d'abord le Drive (`a_recuperer`).
+pub(crate) fn geste_prendre_la_main<C>(charge: C, demande: Option<compagnie::demande::DemandeDuMotDePasse>, recupere: bool) -> GesteDeRoute<C, SansCharge, SansCharge> {
     GesteDeRoute::avec_cases(Route::DrivePrendreLaMain, charge, PRENDRE_LA_MAIN, Vec::new(), SansCharge {}, SansCharge {})
-        .disant(avant_de_prendre_la_main(avant))
+        .disant(avant_de_prendre_la_main(recupere))
         .exigeant(demande)
         .principal()
 }
 
-/// CE QUE « PRENDRE LA MAIN » FERA DE LA COMPAGNIE DE CE POSTE, tel que sa boite le dit avant le geste. `Recupere` : un
-/// autre poste tient la main (ou elle ne se lit pas) et le Drive a ete sauvegarde ailleurs depuis la derniere sauvegarde
-/// de ce poste (`compagnie::sauvegarde::change_ailleurs`) : la compagnie revient du Drive, et ce qui s'est fait ici
-/// s'efface. `Marque` : la main se note seulement, rien ne s'efface. `PeutEtre` : ce qui la dit ne sait pas lequel (le
-/// bandeau, qui ne joint pas le Drive) ; la route le sait au moment du geste.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AvantLaMain {
-    Recupere,
-    Marque,
-    PeutEtre,
-}
-
-/// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce qu'il change pour l'autre poste ; puis, quand la compagnie
-/// revient du Drive, en effacant ce qui s'est fait ici, les mots de Leandre (25/11/2026 : « on lui dit des changements ont
-/// ete faits ailleurs que sur ce poste. Prendre la main va effacer tous les changements effectues. Etes-vous sur ? ») ;
-/// quand on ne le sait pas d'ici, la meme chose a sa condition ; sinon, que la sauvegarde part aussitot.
-fn avant_de_prendre_la_main(avant: AvantLaMain) -> Vec<String> {
+/// CE QUE LA BOITE DE « PRENDRE LA MAIN » DIT AVANT : ce qu'il change pour l'autre poste ; puis, quand un autre poste
+/// tient la main (ou qu'elle ne se lit pas), que la compagnie de ce poste repart de ce qu'il y a sur le Drive, en effacant
+/// ce qui s'est fait ici, dans les mots de Leandre (25/11/2026 : « on lui dit des changements ont ete faits ailleurs que
+/// sur ce poste. Prendre la main va effacer tous les changements effectues. Etes-vous sur ? ») ; sinon, que la sauvegarde
+/// part aussitot.
+fn avant_de_prendre_la_main(recupere: bool) -> Vec<String> {
     let mut l = vec!["Ce poste seul sauvegardera dans le dossier de cette compagnie ; un poste qui tenait la main n'y sauvegardera plus, et le dira.".to_string()];
-    l.push(
-        match avant {
-            AvantLaMain::Recupere => "Des changements ont été faits ailleurs que sur ce poste. Prendre la main va effacer tous les changements effectués sur ce poste. Êtes-vous sûr ?",
-            AvantLaMain::PeutEtre => "Si des changements ont été faits ailleurs que sur ce poste depuis sa dernière sauvegarde, prendre la main va effacer tous les changements effectués sur ce poste. Êtes-vous sûr ?",
-            AvantLaMain::Marque => "La sauvegarde de ce poste part aussitôt dans le dossier de cette compagnie.",
-        }
-        .to_string(),
-    );
+    if recupere {
+        l.push("Des changements ont été faits ailleurs que sur ce poste. Prendre la main va effacer tous les changements effectués sur ce poste. Êtes-vous sûr ?".to_string());
+    } else {
+        l.push("La sauvegarde de ce poste part aussitôt dans le dossier de cette compagnie.".to_string());
+    }
     l
 }
 
-/// LA MAIN NOTEE SUR LE DRIVE DEMANDE-T-ELLE DE LE RECUPERER, pour ce poste (`ce_poste`) ? Seulement si des changements
-/// ont ete faits ailleurs depuis sa derniere sauvegarde (`change`, `compagnie::sauvegarde::change_ailleurs`), et qu'un
-/// autre poste la tient, ou qu'elle ne se lit pas : ce qu'en dira l'index de la compagnie revenue (`SansLaMain`).
-/// Personne, ou ce poste, ou rien de change ailleurs : rien a recuperer, la main se note.
-fn a_recuperer(avant: &Result<Option<compagnie::sauvegarde::LaMain>, socle::echec::Echec>, ce_poste: &compagnie::sauvegarde::PosteSurLeDrive, change: bool) -> Option<compagnie::sauvegarde::SansLaMain> {
+/// LA MAIN NOTEE SUR LE DRIVE DEMANDE-T-ELLE DE LE RECUPERER, pour ce poste (`ce_poste`) ? Un autre poste la tient, ou
+/// elle ne se lit pas : ce qu'en dira l'index de la compagnie revenue (`SansLaMain`). Personne, ou ce poste : rien a
+/// recuperer.
+fn a_recuperer(avant: &Result<Option<compagnie::sauvegarde::LaMain>, socle::echec::Echec>, ce_poste: &compagnie::sauvegarde::PosteSurLeDrive) -> Option<compagnie::sauvegarde::SansLaMain> {
     match avant {
-        _ if !change => None,
         Ok(Some(m)) if m.poste != *ce_poste => Some(compagnie::sauvegarde::SansLaMain::AutrePoste { depuis: m.depuis }),
         Ok(_) => None,
         Err(_) => Some(compagnie::sauvegarde::SansLaMain::Illisible),
@@ -298,18 +276,16 @@ fn a_recuperer(avant: &Result<Option<compagnie::sauvegarde::LaMain>, socle::eche
 
 /// PRENDRE LA MAIN SUR LE DRIVE DE CETTE COMPAGNIE (`LaMain`) : le mot de passe du logiciel s'il est pose
 /// (`coffre::exiger_mot_de_passe`), puis le dossier de la compagnie (celui que sa sauvegarde trouve, ou un neuf).
-/// UN AUTRE POSTE TIENT LA MAIN, OU ELLE NE SE LIT PAS, ET LE DRIVE A ETE SAUVEGARDE AILLEURS DEPUIS LA DERNIERE
-/// SAUVEGARDE DE CE POSTE (`a_recuperer`) : ce poste recupere d'abord ce qu'il y a sur le Drive
-/// (`compagnie::recuperation`), et ce qu'il a ecrit sans la main s'efface (la boite l'a dit), puis prend la main, et la
+/// UN AUTRE POSTE TIENT LA MAIN, OU ELLE NE SE LIT PAS (`a_recuperer`) : ce poste recupere d'abord ce qu'il y a sur le
+/// Drive (`compagnie::recuperation`), et ce qu'il a ecrit sans la main s'efface (la boite l'a dit), puis prend la main, et la
 /// page relit la compagnie revenue (`apres` : `Rouvrir`). Un envoi de cette compagnie en cours (`envois_en_fond`) se
-/// refuse d'abord : la compagnie qu'il ecrit va etre remplacee. `lacher` lache ce qui tient la compagnie, une fois tout
-/// revenu. Pas tout revenu, ou les dossiers ne s'echangent pas : la compagnie reste telle quelle, la main n'est pas
-/// prise, la phrase le dit, et le geste de nouveau continue. SINON (personne, ce poste, ou rien de sauvegarde ailleurs
-/// depuis : une cle du poste refaite, une main illisible sur un Drive que personne n'a change) : le dossier recoit la
-/// main de ce poste, rien ne s'efface, l'index ne dit plus qu'il ne l'a pas, et la sauvegarde suit (`ensuite`). Sert
-/// aussi quand on s'est trompe, ou que le poste qui la tenait est perdu. Une compagnie fictive n'a rien sur le Drive :
-/// rien ne change.
-fn prendre_la_main(racine: &std::path::Path, mdp: Option<&socle::secret::Secret>, lacher: &dyn Fn(&std::path::Path) -> R<()>) -> R<MainPrise> {
+/// refuse d'abord : la compagnie qu'il ecrit va etre remplacee. `lacher` (`LacherLaCompagnie`, que la fenetre seule pose)
+/// lache ce qui tient la compagnie, une fois tout revenu. Pas tout revenu, ou les dossiers ne s'echangent pas : la
+/// compagnie reste telle quelle, la main n'est pas prise, la phrase le dit, et le geste de nouveau continue. PERSONNE, OU
+/// CE POSTE : le dossier recoit la main de ce poste, l'index ne dit plus qu'il ne l'a pas, et la sauvegarde suit
+/// (`ensuite`). Sert aussi quand on s'est trompe, ou que le poste qui la tenait est perdu. Une compagnie fictive n'a rien
+/// sur le Drive : rien ne change.
+fn prendre_la_main(racine: &std::path::Path, mdp: Option<&socle::secret::Secret>, lacher: Option<&crate::enveloppe::LacherLaCompagnie>) -> R<MainPrise> {
     if compagnie::bridage::branchement(racine)?.joue() {
         return Ok(MainPrise::dite(Phrase::fixe("Compagnie fictive : rien ne part au Drive, il n'y a pas de main à prendre.")));
     }
@@ -317,8 +293,7 @@ fn prendre_la_main(racine: &std::path::Path, mdp: Option<&socle::secret::Secret>
     let mut client = crate::coffre::client_drive(racine).map_err(|e| e.echec)?;
     let identite = compagnie::sauvegarde::identite(racine)?;
     let nom = compagnie::installation::nom_de(racine)?;
-    let index = compagnie::sauvegarde::lire_index(racine).map_err(|e| e.echec)?;
-    let connu = index.as_ref().and_then(|i| i.compagnie.clone());
+    let connu = compagnie::sauvegarde::lire_index(racine).map_err(|e| e.echec)?.and_then(|i| i.compagnie);
     let main = compagnie::sauvegarde::LaMain::de_ce_poste(racine)?;
     // Le dossier que remplit la sauvegarde qui suit (`ensuite` : `sauvegarde-maintenant`, un passage ordinaire), sous la
     // racine du Drive de ses options.
@@ -326,9 +301,7 @@ fn prendre_la_main(racine: &std::path::Path, mdp: Option<&socle::secret::Secret>
     let (id, marque) = compagnie::sauvegarde::dossier_de_la_compagnie(&mut client, &racine_drive, &identite, &nom, connu.as_ref(), Some(&main)).map_err(|e| e.echec)?;
     // Qui la tenait, avant ce geste : ce que la phrase en dit.
     let avant = compagnie::sauvegarde::LaMain::de(marque.as_ref());
-    // Une date de sauvegarde illisible sur le dossier ne dit pas si le Drive a change : l'erreur remonte, rien ne change.
-    let change = compagnie::sauvegarde::change_ailleurs(compagnie::sauvegarde::derniere_notee(marque.as_ref())?, index.as_ref(), &id);
-    if let Some(sans) = a_recuperer(&avant, &main.poste, change) {
+    if let Some(sans) = a_recuperer(&avant, &main.poste) {
         if crate::envois_en_fond::existants(racine)?.is_some_and(|e| e.en_vol()) {
             return Err(socle::echec::erreur(Classe::Refuse, "Un envoi de cette compagnie est en cours : attendez que le bandeau le dise parti, puis recommencez. Rien n'a changé."));
         }
@@ -336,11 +309,11 @@ fn prendre_la_main(racine: &std::path::Path, mdp: Option<&socle::secret::Secret>
     }
     client.marquer(&id, &main.marque(&identite)).map_err(|e| e.echec)?;
     compagnie::sauvegarde::main_reprise(racine).map_err(|e| e.echec)?;
-    let phrase = match &avant {
-        Ok(Some(m)) if m.poste == main.poste => Phrase::fixe("Ce poste tenait déjà la main sur le Drive de cette compagnie : sa sauvegarde suit."),
-        Ok(None) => Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie, qu'aucun poste ne tenait : sa sauvegarde suit."),
-        // Un autre poste, ou une main illisible, sur un Drive que personne n'a sauvegarde depuis ce poste.
-        Ok(Some(_)) | Err(_) => Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie ; rien n'y a été sauvegardé ailleurs depuis sa dernière sauvegarde, rien ne s'efface ici : sa sauvegarde suit."),
+    // Hors de la recuperation, la main notee n'etait que celle de ce poste, ou aucune.
+    let phrase = if matches!(avant, Ok(Some(_))) {
+        Phrase::fixe("Ce poste tenait déjà la main sur le Drive de cette compagnie : sa sauvegarde suit.")
+    } else {
+        Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie, qu'aucun poste ne tenait : sa sauvegarde suit.")
     };
     Ok(MainPrise { ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()), ..MainPrise::dite(phrase) })
 }
@@ -358,7 +331,7 @@ fn recuperer_puis_prendre(
     main: &compagnie::sauvegarde::LaMain,
     identite: &compagnie::sauvegarde::IdentiteSurLeDrive,
     sans: compagnie::sauvegarde::SansLaMain,
-    lacher: &dyn Fn(&std::path::Path) -> R<()>,
+    lacher: Option<&crate::enveloppe::LacherLaCompagnie>,
 ) -> R<MainPrise> {
     use compagnie::recuperation::Recuperation;
     let qui = match &sans {
@@ -367,7 +340,11 @@ fn recuperer_puis_prendre(
     };
     let vus = compagnie::sur_le_drive::voir(client, racine_drive).map_err(|e| e.echec)?;
     let vu = compagnie::sur_le_drive::le_dossier(vus, id, racine_drive).map_err(|e| e.echec)?;
-    let (incidents, reste) = match compagnie::recuperation::recuperer(racine, &vu, racine_drive, client, sans, lacher).map_err(|e| e.echec)? {
+    let (incidents, reste) = match compagnie::recuperation::recuperer(racine, &vu, racine_drive, client, sans, &|r| match lacher {
+        Some(l) => l.lacher(r),
+        // En ligne de commande, rien ne tient la compagnie.
+        None => Ok(()),
+    }).map_err(|e| e.echec)? {
         Recuperation::PasAuBout(r) => {
             let phrase = socle::phrase!(
                 "Le Drive n'est pas tout revenu ({} fichier(s) à retenter) : la compagnie reste comme elle était, et la main n'est pas prise. « Prendre la main » de nouveau continue là où cela s'est arrêté.",
@@ -489,17 +466,8 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
                 Ok(false) => {}
                 Err(e) => dit.push(e.phrase),
             }
-            // Ce que la boite dit avant : la compagnie revient-elle du Drive ? L'index de ce poste ne se lit pas : le geste
-            // ne se propose pas, la phrase dit quoi faire. Une date de sauvegarde illisible sur le dossier se dit plus haut
-            // (`vu.illisible`), et le geste la refuse.
-            let avant = compagnie::sauvegarde::lire_index(&ctx.racine).map(|i| match a_recuperer(&vu.main, p, compagnie::sauvegarde::change_ailleurs(vu.derniere, i.as_ref(), &vu.id)) {
-                Some(_) => AvantLaMain::Recupere,
-                None => AvantLaMain::Marque,
-            });
-            match (a_ce_poste, &demande_main, avant) {
-                (false, Ok(d), Ok(avant)) => gestes.push(geste_prendre_la_main(GesteDuDrive::PrendreLaMain(SansCharge {}), d.clone(), avant)),
-                (false, _, Err(e)) => dit.push(e.echec.phrase),
-                _ => {}
+            if let (false, Ok(d)) = (a_ce_poste, &demande_main) {
+                gestes.push(geste_prendre_la_main(GesteDuDrive::PrendreLaMain(SansCharge {}), d.clone(), a_recuperer(&vu.main, p).is_some()));
             }
         } else if let Err(e) = &vu.main {
             dit.push(compagnie::sauvegarde::main_illisible_dite(e));
