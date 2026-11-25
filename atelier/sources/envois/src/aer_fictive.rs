@@ -138,7 +138,10 @@ struct ColonneDuCadre4 {
 fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> R<Option<DsnLue>> {
     let Some(l) = crate::etats::etat_dsn_du_mois(lignes, m, None, ctx.entreprise.nic_principal()) else { return Ok(None) };
     let Some(fichier) = l.fichier else { return Ok(None) };
-    let chemin = documents::fichier_depose(&ctx.racine, m, fichier.texte());
+    let depose = documents::FichierDuJournal::Depose.dossier();
+    let chemin = documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, m)?
+        .fichier(depose, &fichier)?
+        .ok_or_else(|| socle::refus!("La DSN déposée {} n'est plus là.", depose.chemin(m).joint(&fichier)))?;
     declarations::dsn_lue::lire_une_dsn(&chemin)
 }
 

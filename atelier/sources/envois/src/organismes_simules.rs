@@ -295,11 +295,8 @@ fn mois_de(l: &Ligne) -> R<Mois> {
 /// sous le mois de son fait. `None` : le fichier n'est plus la.
 fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
     let Some(fichier) = l.fichier() else { return Ok(None) };
-    let chemin = documents::fichier_depose(racine, mois_de(l)?, fichier.texte());
-    let octets = match std::fs::read(&chemin) {
-        Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(socle::echec::du_disque(&chemin, &e)),
+    let Some(octets) = documents::sorties_du_mois::SortiesDuMois::du_mois(racine, mois_de(l)?)?.octets(documents::FichierDuJournal::Depose.dossier(), fichier)? else {
+        return Ok(None);
     };
     declarations::dsn_lue::lire(&octets, Some(fichier)).map(Some)
 }
