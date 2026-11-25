@@ -184,6 +184,11 @@ fn quantites_par_jour(racine: &Path, e: &Engagement) -> R<BTreeMap<Jour, Vec<Str
             None => e.mois.dernier_jour(),
         };
         let r = droit::catalogue::rubrique(racine, l.rubrique(), &jour)?;
+        // Le travail seul (cachets, heures, services) : les frais, primes et le reste ne disent pas une journee de
+        // travail (Leandre, 25/11/2026 : « A », le travail seulement).
+        if r.nature != droit::catalogue::NatureDeRubrique::Salaire {
+            continue;
+        }
         let Some(quantites) = l.quantites_des_jours(r.unite) else { continue };
         for (d, q) in l.dates().iter().zip(quantites) {
             if let Some(q) = q.filter(|q| !q.est_nul()) {
