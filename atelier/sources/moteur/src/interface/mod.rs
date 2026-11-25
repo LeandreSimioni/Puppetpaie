@@ -1415,16 +1415,9 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     }
     compagnie::incidents::brancher_l_engagement();
     // Le logiciel qui se deplace (`compagnie::deplacement`) : rien ne s'y ouvre avant la fin.
-    match compagnie::deplacement::en_cours_ici(&installation::base(), None) {
-        Ok(None) => {}
-        Ok(Some(p)) => {
-            eprintln!("{}", p);
-            return ExitCode::FAILURE;
-        }
-        Err(e) => {
-            eprintln!("{}", e.en_lignes());
-            return ExitCode::FAILURE;
-        }
+    if let Err(e) = compagnie::deplacement::refuser_s_il_se_deplace(&installation::base(), None) {
+        eprintln!("{}", e.en_lignes());
+        return ExitCode::FAILURE;
     }
     #[cfg(feature = "atelier")]
     let args = &match poser_le_banc(args) {

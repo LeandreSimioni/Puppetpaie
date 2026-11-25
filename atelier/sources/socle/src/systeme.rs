@@ -74,11 +74,14 @@ pub fn dire_dans_une_boite(titre: &str, texte: &str) {
         fn MessageBoxW(fenetre: isize, texte: *const u16, titre: *const u16, genre: u32) -> i32;
     }
     const MB_ICONINFORMATION: u32 = 0x40;
+    // Sans fenetre a nous, la boite s'ouvrirait derriere les autres : devant, et au-dessus.
+    const MB_SETFOREGROUND: u32 = 0x0001_0000;
+    const MB_TOPMOST: u32 = 0x0004_0000;
     let large = |t: &str| t.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
     let (t, x) = (large(titre), large(texte));
     // SAFETY : deux textes termines par zero, vivants le temps de l'appel ; aucune fenetre parente.
     unsafe {
-        MessageBoxW(0, x.as_ptr(), t.as_ptr(), MB_ICONINFORMATION);
+        MessageBoxW(0, x.as_ptr(), t.as_ptr(), MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
     }
 }
 

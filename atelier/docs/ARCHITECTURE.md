@@ -600,6 +600,7 @@ un libellé, chacun sa forme.
 | ce que la page fait de la réponse d'un geste (poser l'écran rendu, relire, ouvrir la compagnie) | `ApresLeGeste` | `routes/src/ecran.rs` |
 | déplacement du logiciel en cours (d'où, où, l'étape écrite avant d'être faite ; tant qu'il est là, rien ne s'ouvre dans ces deux dossiers) | `compagnie::deplacement::EnCours` | `compagnie/src/deplacement.rs` |
 | étape d'un déplacement en cours (attente, renommage, copie, effacement) | `compagnie::deplacement::Etape` | `compagnie/src/deplacement.rs` |
+| ce qu'un déplacement en cours est pour une installation (rien, lu et la nommant, illisible et elle marquée) | `compagnie::deplacement::Ici` | `compagnie/src/deplacement.rs` |
 | issue d'un déplacement (déplacé, resté entier, coupé) | `compagnie::deplacement::Issue` | `compagnie/src/deplacement.rs` |
 | dernier déplacement du logiciel (sa date, d'où, où, son issue, sa phrase) | `compagnie::deplacement::Dernier` | `compagnie/src/deplacement.rs` |
 | geste de l'écran « où est le logiciel » (la charge de sa route : le dossier à saisir, ou celui des Documents) | `VersLeDossier` | `routes/src/accueil/deplacement.rs` |
@@ -4152,16 +4153,22 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   l'utilisateur lui-même (`installation::dossier_de_l_utilisateur`, `AppData\Local\PuppetPaie`), cachée — y voit en
   plus pourquoi la ranger, et « Ranger dans Documents ». Un dossier que OneDrive synchronise (sous un dossier que
   Windows nomme dans `OneDrive`, `OneDriveConsumer` ou `OneDriveCommercial`) se dit dans la boîte du geste, avant de
-  partir. La route vérifie tout ce qui se vérifie (un dossier neuf ou vide, dit en entier, hors de l'installation, où
+  partir, et la route le refuse tant que la charge ne dit pas qu'on le sait (`onedrive`). **Déplacer se prouve comme un
+  acte réel** : le mot de passe du logiciel, tapé par une personne au moment du geste, celui de la première compagnie
+  réelle des tuiles qui en a un (il n'y a pas de mot de passe de l'installation ; aucune n'en a : le geste n'est pas
+  offert). La route vérifie tout ce qui se vérifie (un dossier neuf ou vide, dit en entier, hors de l'installation, où
   l'on écrit ; sur un autre disque, la place, et aucun lien à copier) et pose `maj/deplacer.json` ; la fenêtre qui l'a
   servie la fait partir aussitôt et se ferme (posée en ligne de commande, elle part au lancement suivant de la
   fenêtre). Partir, c'est effacer la demande, écrire le **déplacement en cours** (`EnCours`, dans le dossier de
-  l'utilisateur : d'où, où, l'étape écrite avant d'être faite) et lancer le **relais**, du dossier temporaire du poste
-  (Windows ne déplace pas un dossier qui porte un programme en marche ni le dossier courant d'un processus). Le relais
-  tient un verrou du système de bout en bout ; tant que le déplacement en cours nomme une installation, rien ne s'y
-  ouvre (la fenêtre le dit dans une boîte, avant même son propre verrou ; la ligne de commande refuse), et un relais
-  mort en route est repris au lancement suivant, qui finit ce qui était fini ou défait ce qui était commencé. Le relais
-  **renomme** chaque entrée de l'installation dans le nouveau dossier (même disque : instantané, sans place en double)
+  l'utilisateur : d'où, où, l'étape écrite sur le disque avant d'être faite), poser une **marque** dans l'ancien
+  dossier et le neuf (`.deplacement-en-cours`) et lancer le **relais**, du dossier temporaire du poste (Windows ne
+  déplace pas un dossier qui porte un programme en marche ni le dossier courant d'un processus). Le relais tient un
+  verrou du système de bout en bout ; tant que le déplacement en cours concerne une installation (il la nomme, ou il ne
+  se lit pas et elle porte la marque : `Ici`), rien ne s'y ouvre (la fenêtre le dit dans une boîte, avant même son
+  propre verrou ; la ligne de commande refuse) ; toute autre installation du poste s'ouvre ; un relais mort en route
+  est repris au lancement suivant, qui finit ce qui était fini ou défait ce qui était commencé. Le relais
+  **renomme** chaque entrée de l'installation dans le nouveau dossier, `logiciel/` la dernière (elle revient la
+  première), pour que le raccourci trouve le programme après une coupure (même disque : instantané, sans place en double)
   ou, sur un autre disque, la **copie** (chaque fichier écrit sur le disque, puis comparé à l'original par son
   empreinte) puis efface l'original ; il réécrit ce que l'installeur a posé (la clé de désinstallation sous `HKCU`, le
   raccourci du menu Démarrer), puis rouvre la fenêtre. Au moindre échec tout revient et la fenêtre se rouvre à l'ancien

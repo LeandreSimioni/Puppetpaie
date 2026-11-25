@@ -447,10 +447,26 @@
 </script>
 <!-- LA BOITE D'UN GESTE (`js/boites.js`), celle de la page d'une compagnie : un geste d'un ecran rendu l'ouvre. -->
 <div class="voile cachee" id="voile"><div class="boite" id="boite"></div></div>
+<!-- LE MOT DE PASSE DU LOGICIEL (`js/boites.js`, demanderMotDePasse), celui de la page d'une compagnie : un geste rendu
+     qui l'exige (`demande`) le fait taper ici. Ses trois lignes sont la demande que la route rend. -->
+<div class="voile cachee" id="voile-mdp">
+  <form class="boite" id="forme-mdp" autocomplete="off">
+    <h3 id="mdp-titre"></h3>
+    <p id="mdp-de-qui"></p>
+    <p class="note" id="mdp-pour"></p>
+    <input type="password" id="mdp-valeur" autocomplete="off">
+    <div class="actions">
+      <button type="button" class="secondaire" id="mdp-annuler">Annuler</button>
+      <button type="submit" id="mdp-ok">Confirmer</button>
+    </div>
+  </form>
+</div>
 <script>
-  // Ce que `js/avance.js` lit dans la page d'une compagnie (`js/tuyau.js`) : le catalogue et la route ; l'echappement,
-  // les pastilles et les encarts viennent de `js/montrer.js`, commun aux deux pages.
+  // Ce que `js/avance.js` et `js/boites.js` lisent dans la page d'une compagnie (`js/tuyau.js`) : le catalogue, la
+  // route, et l'etat de la compagnie (a l'accueil, aucune : `null`) ; l'echappement, les pastilles et les encarts
+  // viennent de `js/montrer.js`, commun aux deux pages.
   let CATALOGUE = {};
+  let ETAT = null;
   // `appel` rend toujours `{ok, resultat}` ou `{ok: false, refus}` (la cale de la fenêtre).
   const api = (nom, charge) => appel(nom, charge).then((r) => { if (!r.ok) throw new Error(r.refus.phrase); return r.resultat; });
 </script>
@@ -462,6 +478,7 @@
 <script>
   document.getElementById("avance-accueil").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("voile").addEventListener("mousedown", (e) => e.stopPropagation());
+  document.getElementById("voile-mdp").addEventListener("mousedown", (e) => e.stopPropagation());
   const CATALOGUE_LU = appel("routes", { avance: true }).then((r) => {
     if (!r || !r.ok) return;
     CATALOGUE = Object.fromEntries(r.resultat.routes.map((f) => [f.nom, f]));
