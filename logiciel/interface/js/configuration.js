@@ -169,7 +169,7 @@ function dessinerConfig() {
       <button class="secondaire" id="config-nouvelle">${echapper(mots.nouvelle)}</button>
     </div>
     <div id="config-rangs"></div>`
-    + (salarie ? fichesAttenduesHtml() : "");
+    + (salarie ? `<div id="fiches-attendues">${fichesAttenduesHtml()}</div>` : "");
 
   // LA RECHERCHE DANS TOUS LES CHAMPS. Chaque valeur
   // de la fiche, les anciennes valeurs datées comprises (un courriel changé
