@@ -1076,8 +1076,8 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
             ajoutes.extend(systemes.iter().copied().filter(|s| programme_de(&code, *s, "puppetpaie").is_file()));
         }
     }
-    if portable && !inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
-        std::fs::write(inst.join(crate::coffre::MARQUEUR_PORTABLE), crate::coffre::CONTENU_PORTABLE).map_err(|e| socle::echec::du_disque(&inst, &e))?;
+    if portable {
+        crate::coffre::marquer_portable(inst)?;
     }
     let noms = |l: &[Systeme]| l.iter().map(|s| s.lu()).collect::<Vec<_>>().join(", ");
     use socle::texte::Phrase;

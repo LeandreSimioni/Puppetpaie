@@ -601,9 +601,9 @@ un libellé, chacun sa forme.
 | déplacement du logiciel demandé, qui attend de partir (le dossier où il va ; posé en ligne de commande, il part au lancement suivant, et s'annule) | `compagnie::deplacement::Demande` | `compagnie/src/deplacement.rs` |
 | ce que la vérification d'un déplacement conclut (déjà là, ou possible vers ce dossier) | `compagnie::deplacement::Verdict` | `compagnie/src/deplacement.rs` |
 | déplacement du logiciel en cours (d'où, où, l'étape écrite avant d'être faite ; tant qu'il est là, rien ne s'ouvre dans ces deux dossiers ; sa reprise regarde les dossiers, pas seulement l'étape) | `compagnie::deplacement::DeplacementEnCours` | `compagnie/src/deplacement.rs` |
-| étape d'un déplacement en cours (attente, renommage, copie, effacement) | `compagnie::deplacement::Etape` | `compagnie/src/deplacement.rs` |
-| ce que porte un chemin d'une installation, pour comparer une copie à l'original (dossier, fichier et sa taille, lien) | `compagnie::deplacement::Trace` | `compagnie/src/deplacement.rs` |
+| étape d'un déplacement en cours (attente, renommage) | `compagnie::deplacement::Etape` | `compagnie/src/deplacement.rs` |
 | charge du déplacement du logiciel (le dossier où il va, et, sous OneDrive, qu'on le sait) | `ChargeDeplacer` | `routes/src/accueil/deplacement.rs` |
+| ce que rend « rendre le logiciel portable » (sa phrase : ce qu'il reste à faire, copier soi-même le dossier ; le dossier) | `LogicielPortable` | `routes/src/accueil/deplacement.rs` |
 | ce qu'un déplacement en cours est pour une installation (rien, lu et la nommant, illisible et elle marquée) | `compagnie::deplacement::Ici` | `compagnie/src/deplacement.rs` |
 | issue d'un déplacement (déplacé, resté entier, coupé) | `compagnie::deplacement::Issue` | `compagnie/src/deplacement.rs` |
 | dernier déplacement du logiciel, ou la fin de celui qui vient de se faire (sa date, d'où, où, son issue, sa phrase) | `compagnie::deplacement::Dernier` | `compagnie/src/deplacement.rs` |
@@ -4160,8 +4160,15 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   partir, et la route le refuse tant que la charge ne dit pas qu'on le sait (`onedrive`). **Déplacer se prouve comme un
   acte réel** : le mot de passe du logiciel, tapé par une personne au moment du geste, celui de la première compagnie
   réelle des tuiles qui en a un (il n'y a pas de mot de passe de l'installation ; aucune n'en a : le geste n'est pas
-  offert). La route vérifie tout ce qui se vérifie (un dossier neuf ou vide, dit en entier, hors de l'installation, où
-  l'on écrit ; sur un autre disque, la place, et aucun lien à copier) et pose `maj/deplacer.json` ; la fenêtre qui l'a
+  offert). **Le logiciel ne se déplace que sur le disque où il est** (Léandre, 25/11/2026 : « Même disque ok sauf si on
+  fait une installation portable ») : un dossier sur un autre disque se refuse, sans rien toucher, et le refus dit la
+  façon. Pour une clé USB, l'accueil offre à côté **« Rendre portable »** (`logiciel-rendre-portable`, prouvé du même
+  mot de passe ; pas offert à une installation déjà portable) : la clé du poste se copie dans le dossier du logiciel (le
+  poste garde la sienne) et le marqueur `PORTABLE.json` se pose (`coffre::rendre_portable`, `coffre::marquer_portable`,
+  celui que pose aussi `portable-completer`) ; la personne copie ensuite elle-même le dossier sur la clé, et n'efface
+  l'ancien qu'une fois la copie réussie. La route de déplacement vérifie tout ce qui se vérifie (un dossier neuf ou
+  vide, dit en entier, hors de l'installation, sur le même disque, où l'on écrit ; aucun autre déplacement en cours sur
+  le poste, son journal lisible ou non) et pose `maj/deplacer.json` ; la fenêtre qui l'a
   servie la fait partir une fois ses envois en vol finis, et se ferme (posée en ligne de commande, elle part au
   lancement suivant de la fenêtre ; d'ici là, `logiciel-ou` la dit et offre de l'annuler : le même geste, vers le
   dossier où il est). Partir, c'est effacer la demande, écrire le **déplacement en cours** (`DeplacementEnCours`, dans
@@ -4173,11 +4180,10 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   propre verrou ; la ligne de commande refuse, sauf `logiciel-ou`, qui dit où il en est) ; toute autre installation du
   poste s'ouvre ; un relais mort en route est repris au lancement suivant, qui **regarde les deux dossiers** nom par
   nom (le journal peut retarder sur le disque) et finit ce qui était fini, défait ce qui était commencé, ou s'arrête
-  « coupé » sans rien toucher quand aucun des deux n'est sûrement entier. Le relais
+  « coupé » sans rien toucher quand ce qui est où ne se lit pas sûrement (un dossier illisible n'est jamais pris pour
+  vide). Le relais
   **renomme** chaque entrée de l'installation dans le nouveau dossier, `logiciel/` la dernière (elle revient la
-  première), pour que le raccourci trouve le programme après une coupure (même disque : instantané, sans place en double)
-  ou, sur un autre disque, la **copie** (chaque fichier écrit sur le disque, puis comparé à l'original par son
-  empreinte) puis efface l'original ; il réécrit ce que l'installeur a posé (la clé de désinstallation sous `HKCU`, le
+  première), pour que le raccourci trouve le programme après une coupure (instantané, sans place en double) ; il réécrit ce que l'installeur a posé (la clé de désinstallation sous `HKCU`, le
   raccourci du menu Démarrer), puis rouvre la fenêtre. Au moindre échec tout revient et la fenêtre se rouvre à l'ancien
   endroit ; ce qui ne revient pas se dit tel quel, ce qui est où, et la fenêtre ne se rouvre pas. L'issue (`Dernier`)
   se retient dans le dossier de l'utilisateur, et l'accueil la redit. Le créneau retenu (`.fenetre.json`) voyage avec

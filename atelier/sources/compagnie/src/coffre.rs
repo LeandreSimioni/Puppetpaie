@@ -592,9 +592,71 @@ fn mot_de_passe_tape() -> Option<Secret> {
 /// n'importe quel ordinateur, quel que soit le systeme. La cle du poste vit alors dans ce dossier, pas sur la machine.
 pub const MARQUEUR_PORTABLE: &str = "PORTABLE.json";
 /// Ce que porte le marqueur : sa presence seule compte, la phrase le dit a qui ouvre le fichier. L'archive d'installation
-/// de tous les systemes le porte (`moteur::publication`, l'archive d'installation), la route `portable-completer` le pose ;
+/// de tous les systemes le porte (`moteur::publication`, l'archive d'installation), `marquer_portable` le pose (les routes
+/// `portable-completer` et `logiciel-rendre-portable`) ;
 /// l'installeur Windows ecrit la meme phrase (`atelier/installeur/puppetpaie.nsi`).
 pub const CONTENU_PORTABLE: &str = "{\"_quoi\": \"Ce dossier est une installation PORTABLE de PuppetPaie : le logiciel, ses donnees et la cle qui les scelle (cle-poste.bin) vivent ici, ensemble, et s'ouvrent sur n'importe quel ordinateur. Effacer ce fichier rattache le coffre a la machine.\"}\n";
+
+/// Pose le marqueur portable dans l'installation `inst` (rien s'il y est) : ce que l'installeur portable y ecrit.
+pub fn marquer_portable(inst: &Path) -> R<()> {
+    let p = inst.join(MARQUEUR_PORTABLE);
+    if p.is_file() {
+        return Ok(());
+    }
+    std::fs::write(&p, CONTENU_PORTABLE).map_err(|e| socle::echec::du_disque(&p, &e))
+}
+
+/// RENDRE PORTABLE l'installation `inst` (Leandre, 25/11/2026 : « que l'on puisse rendre portable dans le logiciel,
+/// comme ça on garde le coffre, et après copier coller à la main ») : la cle de ce poste (`FICHIER_CLE`, la ou
+/// `Coffre::dossier_cle_du_poste` la trouve) se COPIE dans le dossier de l'installation (le poste garde la sienne), puis
+/// le marqueur se pose (`marquer_portable`) : les coffres s'ouvrent alors avec la meme cle, sur ce poste comme sur un
+/// autre. Le poste sans cle : le marqueur seul, la cle naitra dans le dossier. Le dossier qui porte deja une autre cle ne
+/// s'ecrase pas : refus, rien n'a change. Rend `false` si l'installation etait deja portable (rien ne change).
+pub fn rendre_portable(inst: &Path) -> R<bool> {
+    if inst.join(MARQUEUR_PORTABLE).is_file() {
+        return Ok(false);
+    }
+    if cfg!(target_os = "wasi") {
+        return Err(refus("Dans le navigateur, le logiciel ne se rend pas portable. Rien n'a changé."));
+    }
+    let de = Coffre::dossier_cle_du_poste().join(FICHIER_CLE);
+    let vers = inst.join(FICHIER_CLE);
+    let copiee = match (socle::fichiers::existe_lu(&de)?, socle::fichiers::existe_lu(&vers)?) {
+        (false, _) => false,
+        (true, false) => {
+            copier_la_cle(&de, &vers)?;
+            true
+        }
+        (true, true) if resoudre(&de)? == resoudre(&vers)? => false,
+        (true, true) => {
+            return Err(socle::echec::au_chemin(
+                "Le dossier du logiciel porte déjà une autre clé du poste, d'une installation portable d'avant : elle ne s'écrase pas. Rien n'a changé.",
+                &vers,
+            ))
+        }
+    };
+    marquer_portable(inst).map_err(|e| match copiee {
+        true => socle::fichiers::effacer_apres(e, &vers),
+        false => e,
+    })?;
+    Ok(true)
+}
+
+/// Copie la cle du poste `de` en `vers`, qui n'existe pas : 0600 des l'ouverture et jamais par-dessus une autre, sur le
+/// disque avant de rendre la main ; a moitie ecrite, elle s'efface.
+fn copier_la_cle(de: &Path, vers: &Path) -> R<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut copie = options.open(vers).map_err(|e| oserr(&e, vers))?;
+    let ecrit = std::fs::File::open(de).and_then(|mut source| std::io::copy(&mut source, &mut copie)).and_then(|_| copie.sync_all());
+    drop(copie);
+    ecrit.map_err(|e| socle::fichiers::effacer_apres(oserr(&e, vers), vers))
+}
 
 /// Le dossier portable, s'il y en a un : ce qui est a cote de `logiciel/` quand il porte `PORTABLE.json`.
 pub fn dossier_portable() -> Option<PathBuf> {

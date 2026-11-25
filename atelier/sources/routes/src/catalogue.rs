@@ -215,6 +215,7 @@ routes! {
         PortableCompleter = "portable-completer",
         LogicielOu = "logiciel-ou",
         LogicielDeplacer = "logiciel-deplacer",
+        LogicielRendrePortable = "logiciel-rendre-portable",
         Basculer = "basculer",
         Routes = "routes",
     }
