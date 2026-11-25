@@ -603,7 +603,8 @@ pub fn marquer_portable(inst: &Path) -> R<()> {
     if p.is_file() {
         return Ok(());
     }
-    std::fs::write(&p, CONTENU_PORTABLE).map_err(|e| socle::echec::du_disque(&p, &e))
+    // A moitie ecrit, il s'efface : sa seule presence rend l'installation portable.
+    std::fs::write(&p, CONTENU_PORTABLE).map_err(|e| socle::fichiers::effacer_apres(socle::echec::du_disque(&p, &e), &p))
 }
 
 /// RENDRE PORTABLE l'installation `inst` (Leandre, 25/11/2026 : « que l'on puisse rendre portable dans le logiciel,

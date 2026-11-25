@@ -75,7 +75,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::LogicielRendrePortable,
-        geste: "Rendre le logiciel portable, avec le mot de passe du logiciel : la clé du poste qui ouvre les coffres va dans son dossier.",
+        geste: "Rendre le logiciel portable : la clé du poste qui ouvre les coffres va dans son dossier.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase (ce qu'il reste à faire : copier soi-même le dossier sur une clé USB), dossier",
