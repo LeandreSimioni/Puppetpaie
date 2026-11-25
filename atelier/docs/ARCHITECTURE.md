@@ -1592,8 +1592,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   que la compagnie a posé) ; une pièce d'un envoi, par sa sorte (`de_l_envoi`) ; son dossier, sans condition
   (`FichierDuJournal::dossier`). Le journal n'en garde que le nom : un fichier déposé hors des sorties de son mois ne
   s'y retrouve pas. Que lisent le fichier déposé (par les sorties du mois), une pièce partie
-  (`depart::piece_partie`, qui refait le signalement d'une année ouverte là où le dit `documents::fichier_depose`) et
-  l'Historique.
+  (`depart::piece_partie`) et l'Historique.
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
 - **dossier hors d'un mois** : où se range une pièce produite d'aucun mois : les exercices (`sorties/exercices/`), les

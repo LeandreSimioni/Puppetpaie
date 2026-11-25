@@ -549,7 +549,9 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_ref())?;
     }
     let etiq = le_mois.etiquette();
-    let sortie = documents::PieceDuMois::Dsn.dossier().dans(&ctx.racine, le_mois);
+    // Elle s'ecrit dans les sorties du mois, par leur porte (une annee close a deja refuse plus haut).
+    documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, le_mois)?.ecrire(|sorties| {
+    let sortie = documents::PieceDuMois::Dsn.dossier().sous(sorties);
 
     // LES CORRECTIONS DES MOIS DEJA DECLARES : la DSN de ce mois les porte, datees de leur mois d'origine.
     let regs = &lu.regs;
@@ -671,6 +673,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         }
     }
     Ok(DsnFabriquee { fichiers, avertissements })
+    })
 }
 
 // ------------------------------------------------------------- les documents, a leur envoi
@@ -804,8 +807,10 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     let ecrits = engagement::etats::numeros_des_documents(ctx, mois, &departs)?;
     let an = mois.annee();
     let etiq = mois.etiquette();
-    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
-    let dossier = documents::PieceDuMois::Bulletin.dossier().sous(&sortie);
+    // Ils s'ecrivent dans les sorties du mois, par leur porte (en vrac, ou dans l'archive de l'exercice d'une annee
+    // close : ce qui y est deja ne se refait pas, ce qui est neuf y entre).
+    documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|sortie| {
+    let dossier = documents::PieceDuMois::Bulletin.dossier().sous(sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let part = |p: &Paie| cles.contains(&p.salarie.id);
     let mut a_poser: HashMap<usize, (Option<NumeroDeBulletin>, Option<(NumeroDeCertificat, NumeroDeCertificat)>)> = HashMap::new();
@@ -900,16 +905,16 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     for (i, p) in paies.iter().enumerate().filter(|(i, p)| part(p) && numerotees[*i]) {
         if let (Some(r), true) = (ecrits[i].rectifie.as_ref(), a_poser.get(&i).is_some_and(|x| x.0.is_some())) {
             let cle = cle_de(p);
-            let piece = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::Bulletin, &sortie, &cle, &etiq);
+            let piece = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::Bulletin, sortie, &cle, &etiq);
             let gardee = documents::PieceDuMois::BulletinGarde;
-            let garde = gardee.dossier().sous(&sortie).join(format!("{}{}_{}_{}.pdf", gardee.sorte().prefixe(), cle, etiq, numero_en_nom(r)));
+            let garde = gardee.dossier().sous(sortie).join(format!("{}{}_{}_{}.pdf", gardee.sorte().prefixe(), cle, etiq, numero_en_nom(r)));
             if piece.exists() && !garde.exists() {
                 std::fs::copy(&piece, &garde).map_err(|e| os(&garde, e))?;
             }
         }
     }
     let impression = Impression { paies: &paies, numeros: &numeros, rectificatifs: &rectificatifs, certificats: &certificats };
-    imprimer(ctx, mois, &ent, &impression, cles, false)?;
+    imprimer(ctx, mois, sortie, &ent, &impression, cles, false)?;
     let mut poses: Vec<(usize, (Option<NumeroDeBulletin>, Option<(NumeroDeCertificat, NumeroDeCertificat)>))> = a_poser.into_iter().collect();
     poses.sort_by_key(|(i, _)| *i);
     faits.a_poser = poses
@@ -920,6 +925,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
         })
         .collect::<R<_>>()?;
     Ok(faits)
+    })
 }
 
 /// Ce qu'un envoi de documents imprime : les paies du mois, au meme rang le numero de bulletin de chacune (`None` : elle
@@ -941,10 +947,10 @@ pub(crate) fn archive_du_mois(sorte: SorteDePieceProduite, etiq: &str, fin: &str
 /// LES DOCUMENTS D'UN ENVOI, ECRITS : un `Bulletin_<cle>_<Mois>.pdf` (tous ses bulletins du mois) et un
 /// `CertificatCS_<cle>_<Mois>.pdf` par salarie de `cles`, dans `sorties/<mois>/envoi/`, et l'archive du mois
 /// (`Bulletins_<Mois>.pdf`, `CertificatsCS_<Mois>.pdf` et son recapitulatif), qui porte tous les documents numerotes.
-/// `absents` : seuls les fichiers qui manquent s'ecrivent (une piece partie refaite pour se lire).
-fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, imp: &Impression, cles: &[IdSalarie], absents: bool) -> R<()> {
+/// `absents` : seuls les fichiers qui manquent s'ecrivent (une piece partie refaite pour se lire). `sortie` : les
+/// sorties du mois, que leur porte donne (`SortiesDuMois::ecrire`).
+fn imprimer(ctx: &Contexte, le_mois: Mois, sortie: &Path, ent: &droit::contexte::EntrepriseDuDocument, imp: &Impression, cles: &[IdSalarie], absents: bool) -> R<()> {
     let etiq = le_mois.etiquette();
-    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, le_mois);
     let dossier = documents::PieceDuMois::Bulletin.dossier().sous(&sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let a_ecrire = |f: &Path| !(absents && f.exists());
@@ -1062,7 +1068,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     use envois::journal::Ligne;
     let du_mois = |l: &Ligne| l.mois() == Some(le_mois) && l.accepte();
     let etiq = le_mois.etiquette();
-    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
+    // Ce qui se refait s'ecrit dans les sorties du mois, par leur porte (l'annee est ouverte : en vrac).
+    sorties_du_mois.ecrire(|sortie| {
 
     // LA DSN MENSUELLE : la derniere ligne qui l'a deposee, le reel devant son test.
     let deposee = |mode: Mode| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.mode() == mode);
@@ -1071,15 +1078,15 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         let Some(rang) = deposee else {
             return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
         };
-        let f = documents::PieceDuMois::Dsn.dossier().dans(&ctx.racine, mois).join(nom);
+        let f = documents::PieceDuMois::Dsn.dossier().sous(sortie).join(nom);
         refaire_la_dsn(ctx, &mut m, &lignes, rang, &f)?;
         return Ok(f);
     }
     // LES SIGNALEMENTS (amorcage, arret, reprise, fin de contrat) : leur ligne porte le mois de l'evenement, et le fichier
     // est range dans ce mois. Ce qu'une ligne de DSN nomme se lit selon l'acte, jamais par son prefixe
-    // (`documents::fichier_depose`, comme l'Historique) : un `Bulletin_x.dsn` pose n'est pas un bulletin.
+    // (`documents::FichierDuJournal::Depose`, comme l'Historique) : un `Bulletin_x.dsn` pose n'est pas un bulletin.
     if let Some(rang) = deposee {
-        let f = documents::fichier_depose(&ctx.racine, mois, nom);
+        let f = documents::FichierDuJournal::Depose.dossier().sous(sortie).join(nom);
         refaire_le_signalement(ctx, mois, &lignes[rang], &f)?;
         return Ok(f);
     }
@@ -1236,6 +1243,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         .reclasser(Classe::Refuse));
     }
     Err(absente())
+    })
 }
 
 /// Le contexte de la compagnie au jour `jour`, ce jour-la etant aujourd'hui : celui de la route qui a fabrique une piece.
@@ -1627,7 +1635,8 @@ fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::
         let ent = ctx.pour_un_modele(&ctx.entreprise_du_mois(mois));
         let impression = Impression { paies: &paies, numeros: &numeros, rectificatifs: &rectificatifs, certificats: &certificats };
         if ecrire {
-            imprimer(&ctx, mois, &ent, &impression, &cles, true)?;
+            // Dans les sorties du mois, par leur porte : `piece_partie` ne refait rien dans une annee close.
+            documents::sorties_du_mois::SortiesDuMois::du_mois(&ctx.racine, mois)?.ecrire(|sortie| imprimer(&ctx, mois, sortie, &ent, &impression, &cles, true))?;
         }
         Ok(paies.iter().zip(&numeros).map(|(p, n)| (cle_de(p), n.clone())).collect())
     };
