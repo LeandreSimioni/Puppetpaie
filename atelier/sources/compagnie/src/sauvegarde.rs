@@ -764,6 +764,19 @@ impl SansLaMain {
             SansLaMain::Illisible => format!("La main notée sur le Drive de cette compagnie ne se lit pas : ce poste ne le sauvegarde plus. {} l'y remet.", PRENDRE_LA_MAIN_OU),
         }
     }
+
+    /// LE REFUS D'ECRIRE SANS LA MAIN (Leandre, 25/11/2026 : « Un seul poste a la main. Celui qui ne l'a pas ne fait
+    /// rien : il regarde, c'est tout ») : ce que dit toute route qui ecrirait dans la compagnie.
+    pub fn refus_d_ecrire(&self) -> String {
+        match self {
+            SansLaMain::AutrePoste { depuis } => format!(
+                "Un autre poste tient cette compagnie depuis le {} : {} d'abord. Rien n'est écrit.",
+                depuis.jour_de_paris().jj_mm(),
+                PRENDRE_LA_MAIN_OU
+            ),
+            SansLaMain::Illisible => format!("La main notée sur le Drive de cette compagnie ne se lit pas : {} d'abord. Rien n'est écrit.", PRENDRE_LA_MAIN_OU),
+        }
+    }
 }
 
 /// « PRENDRE LA MAIN », ET OU LE TROUVER, tel que chaque phrase qui le propose le dit.

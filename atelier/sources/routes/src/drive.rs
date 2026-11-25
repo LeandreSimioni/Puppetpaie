@@ -69,7 +69,7 @@ pub const ROUTES: &[Fiche] = &[
             OPERATION,
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::Ecrit,
+        acte: Acte::EcritSansLaMain,
         phrase: 200,
         ecran: Ecran::Geste(Place::Drive),
     },
@@ -160,6 +160,25 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             en_json(prendre_la_main(porte.ctx, charge.mot_de_passe())?)
         }
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
+    }
+}
+
+// ------------------------------------------------------------------ sans la main
+
+/// SANS LA MAIN, LA COMPAGNIE SE REGARDE ET NE S'ECRIT PAS (Leandre, 25/11/2026 : « Un seul poste a la main. Celui qui ne
+/// l'a pas ne fait rien : il regarde, c'est tout »). Quand le dernier passage de la sauvegarde a trouve la main ailleurs
+/// (`Index::sans_la_main`, lu sur le poste, sans reseau), toute route dont l'acte ecrit ou engage refuse
+/// (`Classe::SansLaMain`) ; celle qui lit se sert, et celle que sa fiche dit servie sans la main
+/// (`Acte::EcritSansLaMain`). Pose une fois, la ou toute route prend sa compagnie (`service::contexte_de_la_route`). Un
+/// index qui ne se lit pas : l'erreur remonte pour l'ecriture, rien ne s'ecrit sur une main qu'on ne sait pas.
+pub(crate) fn sans_la_main(racine: &std::path::Path, route: Route) -> R<()> {
+    let Some(fiche) = crate::catalogue::catalogue().into_iter().find(|f| f.route == route) else { return Ok(()) };
+    if fiche.acte.sans_la_main() {
+        return Ok(());
+    }
+    match compagnie::sauvegarde::lire_index(racine).map_err(|e| e.echec)?.and_then(|i| i.sans_la_main) {
+        Some(s) => Err(socle::echec::erreur(Classe::SansLaMain, s.refus_d_ecrire())),
+        None => Ok(()),
     }
 }
 
