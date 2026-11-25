@@ -1077,6 +1077,11 @@ changements! {
 pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
 
 impl Changements {
+    /// Aucun changement : la charge de « Modifier l'engagement » telle que sa carte s'ouvre, avant qu'une case change.
+    pub fn aucun() -> Changements {
+        Changements(Vec::new())
+    }
+
     /// Un de ses changements nomme-t-il le salarie de la carte ?
     pub fn nomment_le_salarie(&self) -> bool {
         self.0.iter().any(|c| matches!(c, Changement::Salarie(Some(_))))

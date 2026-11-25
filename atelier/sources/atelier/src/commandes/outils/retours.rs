@@ -70,7 +70,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
             super::dit(x.flux.as_ref().map(envois::retours::IdDeFlux::texte))
         );
     }
-    for quoi in &dit.a_faire {
+    for quoi in dit.a_faire.iter().chain(&dit.conduites) {
         dire!("\n  A FAIRE : {}", quoi);
     }
     if !r.archives.is_empty() {

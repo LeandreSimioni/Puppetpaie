@@ -93,7 +93,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire l'état de chaque engagement du mois : ses carrés DPAE, Contrat, Documents.",
         charge: &ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part, copier : le geste qui le copie pour un autre salarié), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien) ; un envoi en fond de ce mois en cours se dit « en cours d'envoi » à la place des gestes et des choix de son étape",
+        rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire, le choix de sa DPAE et sa part, copier : le geste qui le copie pour un autre salarié, gestes : ceux de sa carte ouverte, en brouillon retirer et valider, validé retirer, annuler et modifier, à qui l'on ajoute les changements), non_actifs, la boîte des DPAE (dpae_titre, dpae_notes, dpae_envoyer : le geste qui envoie les embauches cochées, dpae_rien) ; un envoi en fond de ce mois en cours se dit « en cours d'envoi » à la place des gestes et des choix de son étape",
         refus: &[ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,

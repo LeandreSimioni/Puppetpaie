@@ -1019,7 +1019,7 @@ pub fn relever_retours(
             match crate::retours::declarations_du_bilan(&contenu) {
                 Ok(ds) => {
                     for d in ds {
-                        suites.dit.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
+                        suites.dit.conduites.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                     }
                 }
                 Err(e) => suites.illisibles.push(crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?),

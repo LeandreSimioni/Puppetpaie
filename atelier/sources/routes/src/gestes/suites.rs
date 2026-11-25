@@ -228,7 +228,7 @@ pub(crate) fn a_dire_du_releve_arrete(racine: &std::path::Path, ou: &str, e: soc
     if let Err(n) = noter_le_releve_arrete(racine, ou, &e) {
         incidents.push(format!("Le relevé arrêté ne s'est pas noté au journal des incidents : {}", n.phrase));
     }
-    envois::suites::ADire { incidents, a_faire: Vec::new() }
+    envois::suites::ADire { incidents, a_faire: Vec::new(), conduites: Vec::new() }
 }
 
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL
