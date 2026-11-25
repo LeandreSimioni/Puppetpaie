@@ -1061,6 +1061,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     // RIEN NE SE REFAIT DANS UNE ANNEE CLOSE : ses pieces sont dans l'archive de son exercice ; une declaration deposee ne
     // se regenere pas (regle 4).
     if let documents::sorties_du_mois::SortiesDuMois::DansLExercice { .. } = sorties_du_mois {
+        // Prendre la piece dans l'archive : une archive presente qui ne se lit pas le dit ici, a ce geste seul.
+        sorties_du_mois.octets(documents::DossierDuMois::Sorties, fichier)?;
         return Err(absente());
     }
     let mut m = Moteur::nouveau(ctx);

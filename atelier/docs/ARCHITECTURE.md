@@ -1622,7 +1622,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   dossier ; dans une année close, c'est une copie du mois tirée de l'archive dans un dossier qui part vide, l'archive
   refermée avant le geste (ce qui y est ne se refait pas), et ce
   qu'il y écrit de neuf ou de changé entre dans l'archive, dont la note de clôture (octets, empreinte, nombre de
-  fichiers) suit. Aucun lecteur ni écrivain ne joint `sorties/<mois>/` lui-même ; seule la clôture le retire.
+  fichiers) suit. Aucun lecteur ni écrivain ne joint `sorties/<mois>/` lui-même ; seule la clôture le retire. Une
+  archive absente ne fait rien refuser : son année n'a plus de pièces. Une archive présente qui ne se lit pas ne ferme
+  aucun écran (la liste des pièces et des mois la voit vide, `noms`, `existe`, `mois_des_sorties`) ; seul le geste qui
+  prend une de ses pièces le dit (`octets`, `fichier`, `ecrire`).
 - **exercices clos** : `config/exercices.json`, lu par sa forme (`lire_exercices`) et écrit par `ecrire_exercices` :
   chaque année close et sa clôture (quand, par qui, l'archive, sa taille, son empreinte, son nombre de fichiers, si
   elle a été forcée, les mois clos sans DSN acceptée), et les clôtures retirées par une réouverture. Il décide où sont

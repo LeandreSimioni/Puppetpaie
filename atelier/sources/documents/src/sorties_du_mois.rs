@@ -121,6 +121,27 @@ fn ouverte(archive: &Path) -> R<zip::ZipArchive<std::fs::File>> {
     zip::ZipArchive::new(f).map_err(|e| illisible(archive, e))
 }
 
+/// L'archive `archive`, ouverte pour prendre une piece : aucune si elle n'existe plus (l'annee n'a plus de pieces) ;
+/// une archive presente qui ne se lit pas se dit, a ce geste.
+fn ouverte_si_la(archive: &Path) -> R<Option<zip::ZipArchive<std::fs::File>>> {
+    match std::fs::File::open(archive) {
+        Ok(f) => zip::ZipArchive::new(f).map(Some).map_err(|e| illisible(archive, e)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(socle::echec::du_disque(archive, &e).reclasser(Classe::Disque)),
+    }
+}
+
+/// LES NOMS DES ENTREES DE L'ARCHIVE `archive`, pour regarder (les pieces d'un mois, les mois qui en ont) : une archive
+/// absente ou qui ne se lit pas n'en a aucun, et ne ferme rien d'autre (Leandre, 25/11/2026 : « je comprends pas
+/// pourquoi le logiciel refuserait quoi que ce soit ») ; seul le geste qui prend une de ses pieces dit qu'elle ne se
+/// lit pas (`ouverte_si_la`).
+fn noms_pour_regarder(archive: &Path) -> Vec<String> {
+    match ouverte(archive) {
+        Ok(z) => z.file_names().map(str::to_string).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Les octets de l'entree `nom` de l'archive ouverte `z` ; aucun si elle n'y est pas.
 fn entree(z: &mut zip::ZipArchive<std::fs::File>, archive: &Path, nom: &str) -> R<Option<Vec<u8>>> {
     let mut f = match z.by_name(nom) {
@@ -195,7 +216,7 @@ impl SortiesDuMois {
             }
             SortiesDuMois::DansLExercice { mois, archive, .. } => {
                 let prefixe = format!("{}/", d.chemin(*mois));
-                for n in ouverte(archive)?.file_names() {
+                for n in noms_pour_regarder(archive) {
                     if let Some(nom) = n.strip_prefix(&prefixe).filter(|r| !r.is_empty() && !r.contains('/')) {
                         out.push(NomDeFichier::lire(nom)?);
                     }
@@ -212,7 +233,7 @@ impl SortiesDuMois {
             SortiesDuMois::EnVrac { racine, .. } => Ok(self.chemin_de(d, nom).dans(racine).is_file()),
             SortiesDuMois::DansLExercice { archive, .. } => {
                 let n = self.chemin_de(d, nom);
-                Ok(ouverte(archive)?.file_names().any(|x| x == n.texte()))
+                Ok(noms_pour_regarder(archive).iter().any(|x| x == n.texte()))
             }
         }
     }
@@ -228,7 +249,10 @@ impl SortiesDuMois {
                     Err(e) => Err(socle::echec::du_disque(&p, &e).reclasser(Classe::Disque)),
                 }
             }
-            SortiesDuMois::DansLExercice { archive, .. } => entree(&mut ouverte(archive)?, archive, self.chemin_de(d, nom).texte()),
+            SortiesDuMois::DansLExercice { archive, .. } => match ouverte_si_la(archive)? {
+                Some(mut z) => entree(&mut z, archive, self.chemin_de(d, nom).texte()),
+                None => Ok(None),
+            },
         }
     }
 
@@ -450,7 +474,7 @@ pub fn mois_des_sorties(racine: &Path) -> R<Vec<Mois>> {
     }
     for (annee, clos) in lire_exercices(racine)?.clos() {
         let archive = clos.archive.dans(racine);
-        let noms: Vec<String> = ouverte(&archive)?.file_names().map(str::to_string).collect();
+        let noms = noms_pour_regarder(&archive);
         for m in annee.les_mois() {
             let prefixe = format!("{}/", DossierDuMois::Sorties.chemin(m));
             if noms.iter().any(|n| n.starts_with(&prefixe)) {
