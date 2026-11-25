@@ -1,5 +1,5 @@
 //! La restauration d'une compagnie depuis le Drive : le retour de `sauvegarde.rs`. UN SEUL CHEMIN : la reprise d'une
-//! compagnie a l'accueil (`routes::accueil::drive`) et `moteur restaurer` l'appellent pareil.
+//! compagnie a l'accueil (`routes::accueil::drive`, la route `drive-reprendre`, que `moteur restaurer` sert aussi).
 //!
 //! Aucun depot Git ne porte les donnees de la compagnie (regle 9) : la sauvegarde Drive est la seule copie de `prive/`
 //! hors du poste ; sans retour, ce n'est pas une copie.
@@ -45,7 +45,6 @@ use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive, SorteDErreur};
 use crate::sauvegarde::{ecarte, ecrire_index, inventaire, DossierDuDrive, Index, SAUVEGARDE};
 use crate::sur_le_drive::{DossierVu, GenreDuDossier};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
-use socle::grandeurs::Octets;
 
 /// La marque d'une reprise du Drive pas finie, sous la compagnie qu'elle remplit (`RepriseEnCours`).
 pub const REPRISE_EN_COURS: CheminRelatif = CheminRelatif::du_moteur("config/reprise-en-cours.json");
@@ -90,25 +89,12 @@ pub fn finir_la_reprise(racine: &Path) -> socle::echec::R<()> {
     socle::fichiers::effacer(&REPRISE_EN_COURS.dans(racine))
 }
 
-/// Un fichier redescendu.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Redescendu {
-    pub relatif: CheminRelatif,
-    pub octets: Octets,
-}
-
 /// Le compte rendu d'une restauration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Restauration {
     pub cible: PathBuf,
-    pub racine_drive: String,
-    pub compte: Option<String>,
-    pub redescendus: Vec<Redescendu>,
-    /// Deja la, identiques a la copie du Drive : rien a faire.
-    pub deja_la: usize,
-    pub octets: Octets,
-    /// Dans le Drive, mais de ce que la sauvegarde n'envoie jamais : pas redescendus.
-    pub ecartes: usize,
+    /// Les fichiers redescendus, chacun par son chemin dans la compagnie.
+    pub redescendus: Vec<CheminRelatif>,
     /// CE QUI NE DESCENDRA JAMAIS PAR CETTE VOIE, quelle que soit la tentative : deux dossiers ou deux fichiers de meme
     /// nom au meme endroit du Drive, un nom impossible ici, un document sans empreinte (un document Google), un fichier
     /// dont Google dit lui-meme qu'il ne se donne pas (`envois::drive::SorteDErreur::DuFichier`), un fichier deja la
@@ -125,8 +111,7 @@ pub struct Restauration {
 
 /// POURQUOI UNE RESTAURATION S'EST ARRETEE EN ROUTE, sans tenter les fichiers suivants : chaque cas laisse ce qui est
 /// descendu, et une nouvelle restauration du meme dossier reprend ou elle en est.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArretDeLaRestauration {
     /// Le reseau est tombe (`ErreurGoogle::injoignable`).
     HorsLigne,
@@ -143,24 +128,6 @@ pub enum ArretDeLaRestauration {
 }
 
 impl Restauration {
-    pub fn resume(&self) -> String {
-        let mut t = format!("Restauration : {} fichier(s) redescendu(s), {}, {} deja la.", self.redescendus.len(), self.octets, self.deja_la);
-        if let Some(a) = self.arret {
-            t.push_str(match a {
-                ArretDeLaRestauration::HorsLigne => " Hors connexion en route : relancer la restauration reprend ou elle en est.",
-                ArretDeLaRestauration::AutorisationPerdue => " L'autorisation Google ne vaut plus : relier le Drive, puis relancer la restauration.",
-                ArretDeLaRestauration::VerrouPerdu => " Un autre geste a pris la main sur ce dossier : arretee.",
-                ArretDeLaRestauration::RefusDeGoogle => " Google a refuse de continuer (voir a retenter) : relancer la restauration plus tard reprend ou elle en est.",
-            });
-        } else if !self.a_retenter.is_empty() {
-            t.push_str(&format!(" {} fichier(s) a retenter : relancer la restauration les retente.", self.a_retenter.len()));
-        }
-        if !self.incidents.is_empty() {
-            t.push_str(&format!(" {} fichier(s) qui ne descendront pas ainsi.", self.incidents.len()));
-        }
-        t
-    }
-
     /// LA RESTAURATION A-T-ELLE TOUT REDESCENDU ? Chaque fichier est la, sauf ceux qui ne descendront jamais par cette
     /// voie (`incidents`) : aucun arret en route, aucun fichier a retenter.
     pub fn complete(&self) -> bool {
@@ -172,27 +139,10 @@ impl Restauration {
     /// sinon il etait la, et c'est peut-etre le coffre vivant d'une compagnie.
     pub fn origine_du_coffre(&self, coffre: &Coffre) -> OrigineDuCoffre {
         let chemin = coffre.chemin();
-        if self.redescendus.iter().any(|f| f.relatif.dans(&self.cible) == chemin) || crate::installation::en_reprise(&self.cible) {
+        if self.redescendus.iter().any(|f| f.dans(&self.cible) == chemin) || crate::installation::en_reprise(&self.cible) {
             OrigineDuCoffre::DuDrive
         } else {
             OrigineDuCoffre::DejaLa
-        }
-    }
-
-    /// Ce que `moteur restaurer --json` rend : le compte rendu, et ce qu'il reste a faire a la main (`a_faire`).
-    pub fn dite(&self, a_faire: Vec<String>) -> RestaurationDite {
-        RestaurationDite {
-            resume: self.resume(),
-            cible: self.cible.clone(),
-            racine_drive: self.racine_drive.clone(),
-            redescendus: self.redescendus.iter().map(|f| f.relatif.clone()).collect(),
-            deja_la: self.deja_la,
-            octets: self.octets,
-            ecartes: self.ecartes,
-            incidents: self.incidents.clone(),
-            a_retenter: self.a_retenter.clone(),
-            arret: self.arret,
-            a_faire,
         }
     }
 }
@@ -205,24 +155,6 @@ pub enum OrigineDuCoffre {
     DuDrive,
     /// Il etait la avant elle.
     DejaLa,
-}
-
-/// Le compte rendu d'une restauration, tel que `moteur restaurer --json` l'ecrit (`Restauration::dite`).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct RestaurationDite {
-    pub resume: String,
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    pub cible: PathBuf,
-    pub racine_drive: String,
-    pub redescendus: Vec<CheminRelatif>,
-    pub deja_la: usize,
-    pub octets: Octets,
-    pub ecartes: usize,
-    pub incidents: Vec<String>,
-    pub a_retenter: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arret: Option<ArretDeLaRestauration>,
-    pub a_faire: Vec<String>,
 }
 
 /// CE QU'UN REFUS « DOSSIER NON VIDE » PORTE A PART : le dossier ou la compagnie devait revenir, et chaque fichier deja
@@ -274,7 +206,7 @@ fn le_dossier(client: &mut dyn Drive, parent: &IdDrive, nom: &str, chemin: &str)
 }
 
 /// UNE RESTAURATION A LA FOIS PAR DOSSIER, d'un processus a l'autre (la fenetre sert ses routes en parallele, et `moteur
-/// route` ou `moteur restaurer` sont d'autres processus) : un fichier cache a cote du dossier cible
+/// route` est un autre processus) : un fichier cache a cote du dossier cible
 /// (`.restauration-<dossier>.verrou`, que `installation::est_cache` ecarte ; `socle::verrou`), pris avant de restaurer
 /// ou d'abandonner une reprise, rendu a la fin du geste. `restaurer` l'exige et le rafraichit a chaque fichier : une
 /// longue restauration ne passe pas pour abandonnee, et celle qui l'a perdu s'arrete.
@@ -325,15 +257,9 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
     if !cible.is_dir() {
         return Err(ErreurGoogle::from(socle::echec::erreur(socle::echec::Classe::Refuse, "Le dossier où la compagnie doit revenir n'existe pas (abandonné, ou supprimé) : rien n'est redescendu.")));
     }
-    let compte = client.compte();
     let mut resultat = Restauration {
         cible: cible.to_path_buf(),
-        racine_drive: racine_drive.to_string(),
-        compte: compte.clone(),
         redescendus: Vec::new(),
-        deja_la: 0,
-        octets: Octets::ZERO,
-        ecartes: 0,
         incidents: Vec::new(),
         a_retenter: Vec::new(),
         arret: None,
@@ -379,7 +305,6 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
             };
             let relatif = dans(&dossier, n);
             if ecarte(&relatif) {
-                resultat.ecartes += 1;
                 continue;
             }
             match fichiers.le_seul(nom) {
@@ -428,7 +353,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
     }
     if !ecarts.is_empty() {
         // La phrase dit le cas en mots ; le dossier et les fichiers, pour qui veut les voir, vont a part. Ce qui se fait
-        // ensuite, chaque appelant le dit (une reprise a l'accueil s'abandonne ; `moteur restaurer` se relance ailleurs).
+        // ensuite, chaque appelant le dit (une reprise neuve efface son dossier ; une reprise continuee s'abandonne).
         let phrase = format!(
             "Le dossier où la compagnie doit revenir n'est pas vide : {} fichier(s) y sont déjà, et ne sont pas la copie du Drive. Rien n'a été redescendu, rien n'a été effacé.",
             ecarts.len()
@@ -437,7 +362,6 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         let echec = socle::echec::Echec { a_part: Some(socle::echec::APart::forme(a_part)), ..socle::echec::erreur(socle::echec::Classe::DossierNonVide, phrase) };
         return Err(ErreurGoogle::from(echec));
     }
-    resultat.deja_la = deja.len();
 
     // 3. Ce qui manque, verifie avant d'etre ecrit.
     let mut verifies = deja;
@@ -508,9 +432,7 @@ pub fn restaurer(cible: &Path, depuis: &DossierVu, racine_drive: &str, client: &
         }
         match ecrire_sans_remplacer(cible, &chemin, &contenu) {
             Ok(true) => {
-                let octets = Octets::de(&contenu);
-                resultat.octets += octets;
-                resultat.redescendus.push(Redescendu { relatif: relatif.clone(), octets });
+                resultat.redescendus.push(relatif.clone());
                 verifies.insert(relatif.clone());
             }
             Ok(false) => resultat.incidents.push(format!("{} : il est apparu ici pendant la restauration, il est garde tel quel.", relatif)),
@@ -709,8 +631,8 @@ pub fn a_faire(coffre: &Coffre, origine: OrigineDuCoffre) -> Vec<String> {
 // ------------------------------------------------------------ la main, au bout d'une reprise
 
 /// LA MAIN SUR LE DOSSIER DU DRIVE QU'UNE REPRISE ALLEE AU BOUT GARDE (« Reprendre » la prend d'office, Leandre,
-/// 25/11/2026, #594) : ce que `prendre_la_main` en a fait. La reprise a l'accueil (`routes::accueil::drive`) et
-/// `moteur restaurer` passent par elle.
+/// 25/11/2026, #594) : ce que `prendre_la_main` en a fait. La reprise a l'accueil (`routes::accueil::drive`) passe
+/// par elle.
 #[derive(Debug)]
 pub enum MainDeLaReprise {
     /// Rien a prendre : le dossier repris est l'ancienne sauvegarde commune (la premiere sauvegarde de la compagnie fera

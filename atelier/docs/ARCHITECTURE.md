@@ -594,7 +594,7 @@ un libellé, chacun sa forme.
 | main sur le Drive d'une compagnie : le seul poste qui sauvegarde dans son dossier, et depuis quand | `compagnie::sauvegarde::LaMain` | `compagnie/src/sauvegarde.rs` |
 | ce poste n'a pas la main (un autre poste la tient depuis une date, ou elle ne se lit pas), tel que le dernier passage l'a noté dans l'index | `compagnie::sauvegarde::SansLaMain` | `compagnie/src/sauvegarde.rs` |
 | geste « Prendre la main » que le bandeau propose à côté de ce qui persiste de la sauvegarde | `routes::veille::PrendreLaMain` | `routes/src/veille.rs` |
-| main sur le dossier du Drive qu'une reprise allée au bout garde (rien à prendre, déjà la sienne, prise, pas prise et pourquoi), à l'accueil comme par `moteur restaurer` | `compagnie::restauration::MainDeLaReprise` | `compagnie/src/restauration.rs` |
+| main sur le dossier du Drive qu'une reprise allée au bout garde (rien à prendre, déjà la sienne, prise, pas prise et pourquoi), à l'accueil (`drive-reprendre`, que `moteur restaurer` sert sous un nom de commande) | `compagnie::restauration::MainDeLaReprise` | `compagnie/src/restauration.rs` |
 | sous-dossier du Drive (son nom, son identifiant, sa marque) | `envois::drive::SousDossier` | `envois/src/drive.rs` |
 | dossier du Drive demandé par son identifiant : en place avec sa marque, ou retiré (corbeille, disparu) | `envois::drive::DossierEnPlace` | `envois/src/drive.rs` |
 | dossier sous la racine du Drive, tel que la vue le montre ; ce qu'il est : `GenreDuDossier` | `compagnie::sur_le_drive::DossierVu` | `compagnie/src/sur_le_drive.rs` |
@@ -1004,7 +1004,7 @@ un libellé, chacun sa forme.
   `sur_le_drive` lit en ses types (ce qui ne s'en lit pas se dit, sans fermer la vue).
 - **dossier vu** : un dossier sous la racine du Drive, tel que la vue le montre (`sur_le_drive::voir`) : le dossier d'une
   compagnie, l'ancienne sauvegarde commune (`sauvegarde`), ou un dossier d'une ancienne version ; ce que la vue du Drive,
-  la reprise à l'accueil, la suppression et `moteur restaurer` lisent.
+  la reprise à l'accueil et la suppression lisent.
 - **entrée mise de côté au tri d'un import** : une entrée d'archive dont le nom ne fait pas un chemin sous l'archive
   (`..`, `:`, un chemin absolu, rien qui reste), un fichier du disque dont le nom n'est pas un `NomDeFichier`, ou une
   entrée, d'archive ou du disque, qui ne se lit pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le
