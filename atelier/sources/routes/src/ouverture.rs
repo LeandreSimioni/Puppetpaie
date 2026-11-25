@@ -1391,8 +1391,10 @@ pub(crate) struct RubriqueDeLaPage {
     non_appliques: Vec<&'static str>,
     source: String,
     dit: Option<String>,
-    /// Les mots entre les cases de sa ligne : « quantité à taux € », ou « base € à taux % » pour un pourcentage.
-    mots: [&'static str; 2],
+    /// Les mots autour des nombres de sa ligne (Leandre, 25/11/2026 : « d'abord la quantité, ensuite quoi, et ensuite le
+    /// taux. Comme ça suit la phrase ») : apres le premier, avant le second, apres le second (« 10 Heure de travail à
+    /// 20,00 € », « 1 512,40 € Majoration à 10 % ») ; le nombre seul d'une ligne au montant prend le dernier.
+    mots: [&'static str; 3],
     /// LES CLES QU'UNE LIGNE DE CETTE RUBRIQUE DIT, toutes et seules (`engagement::ligne::FormeSaisie`), chacune sa
     /// forme : la page les ecrit, `null` pour une case vide, et fait cocher ses jours dans le calendrier.
     cles: Vec<CleDeLaLigne>,
@@ -1401,18 +1403,20 @@ pub(crate) struct RubriqueDeLaPage {
     quantite: Option<&'static str>,
 }
 
-/// Une cle d'une ligne de paie telle que la page la saisit : son nom, sa forme (`Forme::de_la_cle`) et sa place
-/// (`engagement::ligne::Cle::place` : le territoire d'un repas ou d'une nuitee sous « Avancé »).
+/// Une cle d'une ligne de paie telle que la page la saisit : son nom, sa forme (`Forme::de_la_cle`), sa place
+/// (`engagement::ligne::Cle::place` : le territoire d'un repas ou d'une nuitee sous « Avancé ») et le rang de sa colonne
+/// parmi celles des lignes (`engagement::ligne::Cle::colonne`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct CleDeLaLigne {
     cle: &'static str,
     libelle: &'static str,
     forme: Forme,
     place: engagement::carte::PlaceDeLaCase,
+    colonne: usize,
 }
 
 /// Ce que l'ecran ecrit au-dessus de la case d'une cle d'une ligne de paie.
-fn libelle_de_la_cle(c: engagement::ligne::Cle) -> &'static str {
+pub(crate) fn libelle_de_la_cle(c: engagement::ligne::Cle) -> &'static str {
     use engagement::ligne::Cle as C;
     match c {
         C::Rubrique => "Rubrique",
@@ -1436,7 +1440,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         Some(f) => f.cles(),
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
-    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), libelle: libelle_de_la_cle(*c), forme: Forme::de_la_cle(*c), place: c.place() }).collect();
+    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), libelle: libelle_de_la_cle(*c), forme: Forme::de_la_cle(*c), place: c.place(), colonne: c.colonne() }).collect();
     let non_appliques: Vec<&'static str> = [
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
@@ -1503,7 +1507,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         non_appliques,
         source: r.source.clone(),
         dit: r.dit.clone(),
-        mots: if r.saisie.contains(&droit::catalogue::CaseSaisie::TauxMajoration) { ["€ à", "%"] } else { ["à", "€"] },
+        mots: if r.saisie.contains(&droit::catalogue::CaseSaisie::TauxMajoration) { ["€", "à", "%"] } else { ["", "à", "€"] },
     })
 }
 

@@ -1702,8 +1702,127 @@ pub(crate) struct CarteRendue {
     cases: Vec<engagement::carte::CaseOuverte>,
     choix: BTreeMap<&'static str, Vec<crate::ouverture::Choix>>,
     prerempli: Prerempli,
+    /// Ses lignes de paie telles que la route les rend sous leurs cases (`lignes_rendues`), dans l'ordre de la carte.
+    lignes: Vec<LigneRendue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     faute: Option<String>,
+}
+
+/// UNE LIGNE DE PAIE DE LA CARTE, TELLE QUE LA ROUTE LA REND sous ses cases (`ligne` : sa place sur la carte) : ce
+/// qu'elle paie, sous la colonne « Montant » quand ses cases le disent, et ses jours du mois, un par un (`ParJour`).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LigneRendue {
+    ligne: engagement::ligne::RangDeLigne,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    par_jour: Option<ParJour>,
+}
+
+/// LES JOURS DU MOIS D'UNE LIGNE, UN PAR UN, sous la fleche « par jour » (Leandre, 25/11/2026) : repliee, son resume
+/// (« 4 · 3 · 3 », une ligne qui se compte jour par jour) ; ouverte, une rangee par jour dans les colonnes de la ligne,
+/// puis son total. Ouvrir ou fermer la fleche ne decide rien.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ParJour {
+    resume: Option<String>,
+    jours: Vec<JourRendu>,
+    total: Option<TotalRendu>,
+}
+
+/// UN JOUR D'UNE LIGNE, chaque chose sous la colonne de la ligne qui porte sa cle : sa date sous les jours (`dates`), sa
+/// quantite sous la quantite (une case, qui se modifie), l'unite sous la rubrique, le taux sous le taux, son lieu sous
+/// le lieu (une case, que le lieu de la ligne pre-remplit), son montant sous le montant. `jour` : le jour qu'elle est.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct JourRendu {
+    jour: Jour,
+    dates: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quantite: Option<CaseDuJour<engagement::ligne::QuantiteDeLigne>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rubrique: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    taux: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lieu: Option<CaseDuJour<String>>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant: Option<Montant>,
+}
+
+/// UNE CASE D'UN JOUR D'UNE LIGNE (sa quantite, son lieu) : son libelle, sa forme (`Forme::de_la_cle`), sa valeur, et
+/// ce qui la pre-remplit vide (le lieu de la ligne).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct CaseDuJour<V> {
+    libelle: &'static str,
+    forme: Forme,
+    valeur: Option<V>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prerempli: Option<V>,
+}
+
+/// LE TOTAL DES JOURS D'UNE LIGNE, sous ses colonnes : sa quantite (`quantite`, dite sans son unite), son unite
+/// (`rubrique`) et son montant.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TotalRendu {
+    libelle: &'static str,
+    quantite: String,
+    rubrique: &'static str,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant: Option<Montant>,
+}
+
+/// LES LIGNES DE PAIE DE LA SAISIE `e`, TELLES QUE LA ROUTE LES REND (`LigneRendue`) : chacune son montant quand ses cases
+/// le disent, et, quand elle a des jours du mois et qu'elle se compte jour par jour ou dit son lieu, chacun de ses jours
+/// (`engagement::LignePaie::quantites_des_jours` : une ligne ecrite avant, sa quantite repartie comme elle s'ecrira).
+fn lignes_rendues(ctx: &Contexte, e: &SaisieCarte) -> R<Vec<LigneRendue>> {
+    use engagement::ligne::{Cle, FormeSaisie, RangDeLigne};
+    let mut out = Vec::new();
+    for (rang, l) in RangDeLigne::de_chacun(e.lignes.iter().flatten()) {
+        let jour = match l.premier_jour() {
+            Some(j) => j,
+            None => ctx.lue_au,
+        };
+        let r = catalogue::rubrique(&ctx.racine, l.rubrique(), &jour)?;
+        let montant = l.montant_dit(r.unite).map(Montant::au_centime);
+        let cles = match FormeSaisie::de(&r)? {
+            Some(f) => f.cles(),
+            None => &[],
+        };
+        let quantites = l.quantites_des_jours(r.unite);
+        let avec_lieu = cles.contains(&Cle::Lieu);
+        let par_jour = if l.dates().is_empty() || !cles.contains(&Cle::Dates) || (quantites.is_none() && !avec_lieu) {
+            None
+        } else {
+            let taux = l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite);
+            let du_jour: Vec<Option<engagement::ligne::QuantiteDeLigne>> = match &quantites {
+                Some(q) => q.clone(),
+                None => vec![None; l.dates().len()],
+            };
+            let lieu_de_la_ligne = l.lieu().map(String::from);
+            let jours = l
+                .dates()
+                .iter()
+                .zip(&du_jour)
+                .map(|(d, q)| JourRendu {
+                    jour: d.jour(),
+                    dates: d.jour().en_bref(),
+                    quantite: quantites.as_ref().map(|_| CaseDuJour { libelle: crate::ouverture::libelle_de_la_cle(Cle::Quantite), forme: Forme::de_la_cle(Cle::Quantite), valeur: *q, prerempli: None }),
+                    rubrique: q.map(engagement::ligne::QuantiteDeLigne::unite_dite),
+                    taux: q.and(taux).map(|u| format!("à {}", socle::texte::euros(u))),
+                    lieu: avec_lieu.then(|| CaseDuJour { libelle: crate::ouverture::libelle_de_la_cle(Cle::Lieu), forme: Forme::de_la_cle(Cle::Lieu), valeur: d.lieu(), prerempli: lieu_de_la_ligne.clone() }),
+                    montant: q.zip(taux).map(|(q, u)| engagement::ligne::PaiementDeLigne::de(q, u).montant().au_centime()),
+                })
+                .collect();
+            let dites: Option<Vec<engagement::ligne::QuantiteDeLigne>> = quantites.as_ref().and_then(|q| q.iter().copied().collect());
+            let resume = dites.as_ref().map(|q| q.iter().map(|x| x.dit()).collect::<Vec<_>>().join(" · "));
+            let total = match (dites, l.quantite(r.unite)) {
+                (Some(_), Some(q)) => Some(TotalRendu { libelle: "Total", quantite: q.dit(), rubrique: q.unite_dite(), montant }),
+                _ => None,
+            };
+            Some(ParJour { resume, jours, total })
+        };
+        out.push(LigneRendue { ligne: rang, montant, par_jour });
+    }
+    Ok(out)
 }
 
 /// CE QUE LA ROUTE POSE DANS UNE CASE QUE LA CARTE NE DIT PAS, le seul pre-remplissage d'une carte : ce que le moteur
@@ -1830,19 +1949,28 @@ fn metier_du_dernier_contrat_illisible(ctx: &Contexte, e: &SaisieCarte, fautes: 
 /// que les cases de toute carte, et le dit (`faute`), avec ce qui ne se pre-remplit pas.
 fn carte_rendue(ctx: &Contexte, e: &SaisieCarte, sait: CeQueLeMoteurSait) -> CarteRendue {
     let Some(n) = e.nature else {
-        return CarteRendue { cases: Vec::new(), choix: BTreeMap::new(), prerempli: Prerempli::default(), faute: None };
+        return CarteRendue { cases: Vec::new(), choix: BTreeMap::new(), prerempli: Prerempli::default(), lignes: Vec::new(), faute: None };
     };
-    let CeQueLeMoteurSait { contrat, rupture, temps, prerempli, ne_se_preremplit } = sait;
+    let CeQueLeMoteurSait { contrat, rupture, temps, prerempli, mut ne_se_preremplit } = sait;
+    // Des lignes qui ne se rendent pas ne ferment pas la carte : elle le dit (`faute`), ses lignes restent leurs cases.
+    let lignes = match lignes_rendues(ctx, e) {
+        Ok(l) => l,
+        Err(m) => {
+            ne_se_preremplit.push(m.phrase);
+            Vec::new()
+        }
+    };
     let dite = |avant: Option<String>| -> Option<String> {
         let toutes: Vec<String> = avant.into_iter().chain(ne_se_preremplit.iter().cloned()).collect();
         (!toutes.is_empty()).then(|| toutes.join(" "))
     };
     match carte_lue(ctx, e, n, contrat, rupture, temps) {
-        Ok((cases, choix)) => CarteRendue { cases, choix, prerempli, faute: dite(None) },
+        Ok((cases, choix)) => CarteRendue { cases, choix, prerempli, lignes, faute: dite(None) },
         Err(faute) => CarteRendue {
             cases: engagement::carte::CarteValide::cases_toujours_ouvertes(n),
             choix: BTreeMap::new(),
             prerempli,
+            lignes,
             faute: dite(Some(faute.phrase)),
         },
     }

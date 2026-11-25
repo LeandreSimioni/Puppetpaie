@@ -683,6 +683,26 @@ impl QuantiteDeLigne {
         chaque_quantite!(self, q => q.est_nul())
     }
 
+    /// SON UNITE, TELLE QU'ELLE LA DIT (« heures », « 1 cachet ») : ce qu'une rangee d'un jour montre sous sa rubrique.
+    pub fn unite_dite(self) -> &'static str {
+        let pluriel = self.au_pluriel();
+        match (self, pluriel) {
+            (QuantiteDeLigne::Heures(_), true) => "heures",
+            (QuantiteDeLigne::Heures(_), false) => "heure",
+            (QuantiteDeLigne::Cachets(_), true) => "cachets",
+            (QuantiteDeLigne::Cachets(_), false) => "cachet",
+            (QuantiteDeLigne::Jours(_), true) => "jours",
+            (QuantiteDeLigne::Jours(_), false) => "jour",
+            (QuantiteDeLigne::Services(_), true) => "services",
+            (QuantiteDeLigne::Services(_), false) => "service",
+            (QuantiteDeLigne::Semaines(_), true) => "semaines",
+            (QuantiteDeLigne::Semaines(_), false) => "semaine",
+            (QuantiteDeLigne::PartDuMois(_), _) => "mois",
+            (QuantiteDeLigne::Unites(_), true) => "unités",
+            (QuantiteDeLigne::Unites(_), false) => "unité",
+        }
+    }
+
     /// TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 »).
     pub fn dit(self) -> String {
         chaque_quantite!(self, q => socle::texte::virgule(q))
@@ -1270,6 +1290,38 @@ impl LignePaie {
         l.avec_les_jours(dates, planning).avec_la_quantite(quantite)
     }
 
+    /// LA QUANTITE DE CHACUN DE SES JOURS DU MOIS, dans l'ordre de ses dates, d'une ligne d'unite `unite` qui se compte
+    /// jour par jour : celle que chaque jour dit ; une ligne dont les jours n'en disent pas toutes (ecrite avant), sa
+    /// quantite repartie sur eux, le reste sur les premiers, comme elle s'ecrira (`par_jour_qui_suit`) ; aucune sans
+    /// quantite. `None` : une ligne qui ne se compte pas jour par jour.
+    pub fn quantites_des_jours(&self, unite: Unite) -> Option<Vec<Option<QuantiteDeLigne>>> {
+        if !QuantiteDeLigne::se_compte_par_jour(unite) {
+            return None;
+        }
+        let dite = self.quantite_dite()?;
+        let n = self.dates().len();
+        let des_jours: Option<Vec<QuantiteDeLigne>> = self.dates().iter().map(DateDeLigne::quantite).collect();
+        Some(match (des_jours, dite) {
+            (Some(q), _) => q.into_iter().map(Some).collect(),
+            (None, Some(q)) => q.repartie(n).into_iter().map(Some).collect(),
+            (None, None) => vec![None; n],
+        })
+    }
+
+    /// CE QU'ELLE PAIE, quand ce qui le dit est rempli : quantite x taux (ou sa base x son pourcentage), tels que ses
+    /// cases les disent dans l'unite `unite` de sa rubrique ; `None` : une case vide, ou une ligne au montant, dont la
+    /// case est le montant.
+    pub fn montant_dit(&self, unite: Unite) -> Option<Montant> {
+        if matches!(self, LignePaie::Montant(_) | LignePaie::AvantageEnNature(_)) {
+            return None;
+        }
+        match (self.quantite(unite), self.base(unite), self.taux()) {
+            (Some(q), _, Some(TauxDeLigne::ParUnite(u))) => Some(PaiementDeLigne::de(q, u).montant()),
+            (None, Some(b), Some(TauxDeLigne::PartDeLaBase(c))) => Some(PaiementDeLigne::Base(b, c).montant()),
+            _ => None,
+        }
+    }
+
     /// La quantite qu'elle dit dans sa case, vide ou dite ; `None` : une ligne dont la quantite n'est pas une case.
     fn quantite_dite(&self) -> Option<Option<QuantiteDeLigne>> {
         match self {
@@ -1488,6 +1540,29 @@ impl Cle {
         }
     }
 
+    /// LE RANG DE SA COLONNE parmi celles des lignes d'une carte, quelle que soit la forme de chacune (Leandre,
+    /// 25/11/2026 : « Les dates, ça doit être le premier truc », « C'est rubrique et après c'est direct la quantité »,
+    /// puis « d'abord la quantité, ensuite quoi, et ensuite le taux », « mettre le lieu à la fin de la ligne ») : les
+    /// jours, la quantite (ou la base), la rubrique, le taux (ou le pourcentage), les heures par unite, le lieu, puis ce
+    /// que dit une ligne de frais ou un avantage, et le montant au bout.
+    pub fn colonne(self) -> usize {
+        match self {
+            Cle::Dates => 0,
+            Cle::Planning => 1,
+            Cle::Quantite => 2,
+            Cle::Base => 3,
+            Cle::Rubrique => 4,
+            Cle::Taux => 5,
+            Cle::TauxMajoration => 6,
+            Cle::Heures => 7,
+            Cle::Lieu => 8,
+            Cle::Territoire => 9,
+            Cle::Cases => 10,
+            Cle::Genre => 11,
+            Cle::Montant => 12,
+        }
+    }
+
     /// SA PLACE SUR LA LIGNE : le territoire d'un repas ou d'une nuitee (hors de la metropole, une cle que seule une
     /// ligne de frais a limite porte, `FormeSaisie::Frais`) est sous « Avancé » ; les autres cles de sa forme sont de base.
     pub fn place(self) -> crate::carte::PlaceDeLaCase {
@@ -1548,13 +1623,13 @@ impl FormeSaisie {
     pub fn cles(self) -> &'static [Cle] {
         use Cle::*;
         match self {
-            FormeSaisie::Unites => &[Rubrique, Quantite, Taux, Lieu, Dates, Planning],
-            FormeSaisie::UnitesEtHeures => &[Rubrique, Quantite, Taux, Heures, Lieu, Dates, Planning],
+            FormeSaisie::Unites => &[Dates, Planning, Quantite, Rubrique, Taux, Lieu],
+            FormeSaisie::UnitesEtHeures => &[Dates, Planning, Quantite, Rubrique, Taux, Heures, Lieu],
             // Une ligne de frais n'a pas de case de lieu (`gardees`) : le lieu d'un repas ou d'une nuitee hors de la
             // metropole, qui change sa limite, est son territoire.
-            FormeSaisie::Frais => &[Rubrique, Quantite, Taux, Territoire, Cases, Dates, Planning],
-            FormeSaisie::FraisSansLimite => &[Rubrique, Quantite, Taux, Dates, Planning],
-            FormeSaisie::Pourcentage => &[Rubrique, Base, TauxMajoration],
+            FormeSaisie::Frais => &[Dates, Planning, Quantite, Rubrique, Taux, Territoire, Cases],
+            FormeSaisie::FraisSansLimite => &[Dates, Planning, Quantite, Rubrique, Taux],
+            FormeSaisie::Pourcentage => &[Base, Rubrique, TauxMajoration],
             FormeSaisie::Montant => &[Rubrique, Montant],
             FormeSaisie::AvantageEnNature => &[Rubrique, Montant, Genre],
         }
