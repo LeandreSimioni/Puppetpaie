@@ -155,6 +155,7 @@ routes! {
         EnregistrerFiche = "enregistrer-fiche",
         ActiverFiche = "activer-fiche",
         SupprimerSalarie = "supprimer-salarie",
+        DemanderTaux = "demander-taux",
         FicheDemander = "fiche-demander",
         FichesRelever = "fiches-relever",
         FicheOublierDemande = "fiche-oublier-demande",

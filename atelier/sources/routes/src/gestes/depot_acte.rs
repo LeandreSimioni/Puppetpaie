@@ -567,7 +567,7 @@ pub(crate) fn deposer_dpae_avec(
         Mode::Reel => Some(Preuve { donnee: Some(forme.clone()), motdepasse: preuve.and_then(|p| p.motdepasse.clone()) }),
         Mode::Test => None,
     };
-    fait.suites.extend(deposer_les_amorcages(ctx, le_mois, &embauches, mode, meme.as_ref().or(preuve), qui, contournement));
+    fait.suites.extend(deposer_les_amorcages(ctx, le_mois, &embauches, mode, meme.as_ref().or(preuve), qui, contournement, AVEC_LA_DPAE));
     Ok(fait)
 }
 
@@ -578,8 +578,12 @@ pub(crate) fn deposer_dpae_avec(
 /// bilan de son test : le test de ces octets se fait d'abord s'il n'est pas fait (un depot de test ne conserve rien,
 /// regle 10), et s'il n'est pas encore releve, les retours de la journee se relevent une fois. La DGFiP repond sous cinq
 /// jours ouvres (compte rendu de nature 94). Il ne fait jamais echouer la DPAE, deja partie : une demande qui ne part pas
-/// reste a faire, et se dit. Rend ce qu'est devenue chaque demande, en une phrase.
-fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree], mode: Mode, preuve: Option<&Preuve>, qui: &str, contournement: &str) -> Vec<String> {
+/// reste a faire, et se dit ; en reel, elle se note aussi au journal des incidents (`noter_la_demande_restee`). Rend ce
+/// qu'est devenue chaque demande, en une phrase.
+///
+/// UN SEUL CHEMIN, DEUX PORTES : le depot de la DPAE (`avec` : `AVEC_LA_DPAE`), et la route `demander-taux`, qui le
+/// reprend pour un salarie avec les embauches de sa derniere DPAE partie (`avec` : rien).
+pub(crate) fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree], mode: Mode, preuve: Option<&Preuve>, qui: &str, contournement: &str, avec: &str) -> Vec<String> {
     use compagnie::amorcage_demande as ad;
     let en = match mode {
         Mode::Reel => "",
@@ -616,6 +620,9 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
     let fichiers = match ecrits {
         Ok(f) => f,
         Err(e) => {
+            for l in &retenues {
+                noter_la_demande_restee(ctx, mode, &l.salarie, mois, &e.phrase);
+            }
             dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", en, e.phrase));
             return dit;
         }
@@ -663,24 +670,64 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
                         (Some(_), _) => "son test n'a pas encore de réponse",
                         (None, true) => "son test n'a pas été fait",
                     };
+                    noter_la_demande_restee(ctx, mode, &l.salarie, mois, raison);
                     match en_attente.iter_mut().find(|(x, _)| *x == raison) {
                         Some((_, v)) => v.push(qui_demande),
                         None => en_attente.push((raison, vec![qui_demande])),
                     }
                 }
                 // Le test qui ne se relit pas se dit, avec ce qui a retenu la demande.
-                Err(m) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {} Elle reste à faire.", qui_demande, m.phrase)),
+                Err(m) => {
+                    noter_la_demande_restee(ctx, mode, &l.salarie, mois, &m.phrase);
+                    dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {} Elle reste à faire.", qui_demande, m.phrase));
+                }
             },
-            Err(e) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase)),
+            Err(e) => {
+                noter_la_demande_restee(ctx, mode, &l.salarie, mois, &e.phrase);
+                dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase));
+            }
         }
     }
     for (raison, qui) in &en_attente {
         dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {}. Elle reste à faire.", noms(qui), raison));
     }
     if !parties.is_empty() {
-        dit.insert(0, format!("Taux de PAS demandé{} avec la DPAE pour {}.", en, noms(&parties)));
+        dit.insert(0, format!("Taux de PAS demandé{}{} pour {}.", en, avec, noms(&parties)));
     }
     dit
+}
+
+/// Ce que dit la demande de taux partie avec la DPAE.
+const AVEC_LA_DPAE: &str = " avec la DPAE";
+
+/// UNE DEMANDE DE TAUX RETENUE QUI NE PART PAS, EN REEL, se note au journal des incidents : l'editeur l'apprend (le
+/// salarie par sa cle, jamais son nom ni son NIR, le mois, la raison). En test, rien ne se note. Une note qui ne s'ecrit
+/// pas ne fait rien echouer (la DPAE est partie, et la demande se dit dans la reponse) : elle se dit au journal du moteur.
+fn noter_la_demande_restee(ctx: &Contexte, mode: Mode, salarie: &IdSalarie, mois: Mois, raison: &str) {
+    if mode != Mode::Reel {
+        return;
+    }
+    let resume = format!("La demande de taux de prélèvement à la source n'est pas partie : {}", raison);
+    let note = compagnie::incidents::Note {
+        nature: compagnie::incidents::DSN,
+        resume: &resume,
+        ou: "demande-de-taux",
+        quoi: "demande de taux restée à faire",
+        detail: DemandeDeTauxRestee { salarie, mois, raison },
+        trace: None,
+        sans_contexte: false,
+    };
+    if let Err(e) = compagnie::incidents::noter(&ctx.racine, &note) {
+        eprintln!("La demande de taux restée à faire ne se note pas au journal des incidents : {}", e.en_lignes());
+    }
+}
+
+/// Ce que l'incident d'une demande de taux restee a faire porte a l'editeur.
+#[derive(serde::Serialize)]
+struct DemandeDeTauxRestee<'a> {
+    salarie: &'a IdSalarie,
+    mois: Mois,
+    raison: &'a str,
 }
 
 /// Les engagements valides de `mois` que nomment les embauches d'une DPAE (`salarie`, `numero`), vus comme des embauches.

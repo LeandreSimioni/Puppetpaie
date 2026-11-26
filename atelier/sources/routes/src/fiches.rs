@@ -147,6 +147,23 @@ pub const ROUTES: &[Fiche] = &[
         ecran: Ecran::Geste(Place::Fiches),
     },
     Fiche {
+        route: Route::DemanderTaux,
+        geste: "Demander le taux de PAS d'un salarié, quand il n'est pas parti avec sa DPAE.",
+        charge: &ChargeDemanderTaux::CHARGE,
+        exemple: r#"{"salarie":"FULLER","mode":"test"}"#,
+        rend: "phrase : ce qu'est devenue la demande (partie, en test ou en réel ; non demandée, et pourquoi ; restée à faire, et pourquoi)",
+        refus: &[
+            Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
+            MANQUE,
+            FORME,
+        ],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
+        acte: Acte::Engage,
+        phrase: 400,
+        // La fiche d'un salarie enregistre la rend en geste, sous « Avancé » de son en-tete (`rendue::entete_du_salarie`).
+        ecran: Ecran::GesteAvance(Place::Fiches),
+    },
+    Fiche {
         route: Route::FicheDemander,
         geste: "Demander à une personne, par courriel, de remplir sa fiche.",
         charge: &ChargeFicheDemander::CHARGE,
@@ -262,6 +279,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::Couts => en_json(couts(ctx, charge.lire()?)?),
         Route::ActiverFiche => en_json(activer_fiche_route(ctx, charge.lire()?)?),
         Route::SupprimerSalarie => en_json(supprimer_salarie(ctx, charge.lire()?)?),
+        Route::DemanderTaux => en_json(demander_taux(ctx, charge.lire()?, charge.mot_de_passe())?),
         Route::SauvegardeMaintenant => {
             let super::SansCharge {} = charge.lire()?;
             let faite: SauvegardeFaite = sauvegarde_maintenant(ctx)?;
@@ -332,7 +350,7 @@ macro_rules! dites {
         })*
     };
 }
-dites!(FicheActivee, SalarieSupprime, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche);
+dites!(FicheActivee, SalarieSupprime, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche, TauxDemande);
 
 /// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`gestes::ouverture`).
 fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
@@ -977,6 +995,68 @@ fn supprimer_salarie(ctx: &Contexte, c: ChargeSupprimerSalarie) -> R<SalarieSupp
         false => socle::phrase!("{} : fiche supprimée, et la demande de fiche abandonnée.", qui),
     };
     Ok(SalarieSupprime { phrase, etat: etat_relu(ctx)? })
+}
+
+// ---------------------------------------------------------- demander-taux
+
+charge! {
+    motdepasse = dit("Mot de passe du logiciel", "pour un dépôt réel : le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
+    /// La charge de `demander-taux` : le salarie, et le mode (absent : un test) ; le mot de passe du logiciel tape pour le
+    /// reel, l'enveloppe le prend (`Charge::mot_de_passe`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    pub(crate) struct ChargeDemanderTaux {
+        salarie: IdSalarie = dit("Salarié", "la clé du salarié dont on demande le taux"),
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mode: Option<socle::mode::Mode> = dit("Test ou réel", "le réel demande le mot de passe du logiciel, tapé par un humain au moment de l'acte"),
+    }
+}
+
+/// Le geste de `demander-taux`, tel que la demande du mot de passe le dit (la fiche du salarie la rend a la page).
+pub(crate) const GESTE_DEMANDER_TAUX: &str = "déposer en réel la demande de taux de prélèvement à la source";
+
+/// Ce que rend `demander-taux`.
+#[derive(Debug, serde::Serialize)]
+struct TauxDemande {
+    phrase: Phrase,
+}
+
+/// `demander-taux` : LE CHEMIN DE LA DPAE, pour un salarie dont la demande de taux n'est pas partie avec elle. Les embauches
+/// de lui que sa derniere DPAE reelle partie declare (acceptee, et pas refusee au bilan : regle 5) reprennent
+/// `depot_acte::deposer_les_amorcages`, tel que le depot de la DPAE l'appelle : les paies qui attendent un taux
+/// (`amorcage_demande::a_combler`), la demande ecrite, son test, puis le reel. Le reel se fait sous la preuve du mot de
+/// passe du logiciel, verifiee ici une fois, comme `deposer` ; ce qui est ecarte se dit par sa raison et ne depose rien.
+fn demander_taux(ctx: &Contexte, c: ChargeDemanderTaux, motdepasse: Option<&socle::secret::Secret>) -> R<TauxDemande> {
+    let ChargeDemanderTaux { salarie, mode } = c;
+    // Une demande que la charge ne demande pas reelle est un test (la charge, ci-dessus).
+    let mode = match mode {
+        Some(m) => m,
+        None => socle::mode::Mode::Test,
+    };
+    let qui = ctx.nomme(&salarie);
+    let lignes = journal::lu(&ctx.racine)?.lignes;
+    let derniere = journal::filtrer(&lignes, Some(documents::Acte::Dpae), None, Some(socle::mode::Mode::Reel))
+        .filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l))
+        .filter_map(|l| l.mois().zip(l.dpae()))
+        .map(|(m, e)| (m, e.detail.embauches.iter().filter(|x| x.salarie == salarie).cloned().collect::<Vec<_>>()))
+        .filter(|(_, e)| !e.is_empty())
+        .last();
+    let Some((mois, embauches)) = derniere else {
+        return Ok(TauxDemande { phrase: socle::phrase!("Taux de PAS non demandé pour {} : aucune DPAE n'est partie pour cette personne, et la demande part avec elle.", qui) });
+    };
+    let preuve = match mode {
+        socle::mode::Mode::Reel => {
+            let tapee = Preuve::du_mot_de_passe(motdepasse.cloned());
+            let forme = verifier_preuve(ctx, Some(&tapee), &crate::coffre::demande(&ctx.racine, GESTE_DEMANDER_TAUX)?)?;
+            Some(Preuve { donnee: Some(forme), motdepasse: tapee.motdepasse })
+        }
+        socle::mode::Mode::Test => None,
+    };
+    let dit = crate::gestes::depot_acte::deposer_les_amorcages(ctx, mois, &embauches, mode, preuve.as_ref(), INTERFACE, "", "");
+    let phrase = match dit.is_empty() {
+        true => socle::phrase!("Taux de PAS non demandé pour {} : aucune de ses paies n'attend de taux.", qui),
+        false => socle::phrase!("{}", dit.join(" ")),
+    };
+    Ok(TauxDemande { phrase })
 }
 
 // ----------------------------------------------------- fiche-oublier-demande
