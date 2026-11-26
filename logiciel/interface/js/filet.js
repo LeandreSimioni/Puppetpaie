@@ -29,7 +29,7 @@ function ecranCourant() {
   // L'accueil des compagnies n'a pas d'onglets : la page dit son nom (`data-ecran`).
   const page = document.querySelector("main[data-ecran]");
   if (page) return page.dataset.ecran;
-  const b =document.querySelector(".onglets button.actif");
+  const b = document.querySelector(".onglets button.actif");
   const nom = b ? b.textContent.trim() : "";
   const mois = document.getElementById("mois");
   return nom === "Engagements" && mois && mois.value ? `${nom} > ${mois.value}` : nom;
