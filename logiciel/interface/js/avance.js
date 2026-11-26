@@ -61,7 +61,12 @@ function accorderLaListe(select) {
   const tape = select.previousElementSibling;
   if (!tape || !tape.classList.contains("liste-tape")) return;
   const o = select.options[select.selectedIndex];
-  if (!LISTE_OUVERTE || LISTE_OUVERTE.tape !== tape) tape.value = o ? o.text : "";
+  if (!LISTE_OUVERTE || LISTE_OUVERTE.tape !== tape) {
+    // La zone qu'on vient de prendre (tout son texte choisi) le reste quand ses choix se relisent : la frappe remplace.
+    const toutChoisi = document.activeElement === tape && tape.selectionStart === 0 && tape.selectionEnd === tape.value.length;
+    tape.value = o ? o.text : "";
+    if (toutChoisi) tape.select();
+  }
   tape.disabled = select.disabled;
   ["faute", "suspect"].forEach((c) => tape.classList.toggle(c, select.classList.contains(c)));
 }

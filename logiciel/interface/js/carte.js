@@ -344,12 +344,26 @@ async function changer(div, changements) {
   div._aCompleter = r.a_completer;
   // Un engagement auquel il manque un fait s'enregistre aussi : sa carte dit ce qui manque, et la ligne d'état le rappelle.
   noteSaisie(r.enregistre_dit + (r.a_completer ? " — " + ETAT.aides.a_completer : ""));
-  // Le curseur dans la carte (une case qu'on tape, qu'on colle) : elle ne se redessine pas sous les doigts, seuls sa
-  // paie et ses états se repeignent ; l'aperçu qui suit la redessinera quand on l'aura quittée.
-  if (div.contains(document.activeElement) || CALENDRIER_OUVERT) { peindreLaPaie(div); peindreLesEtats(div); }
+  // Le curseur dans une case de texte de la carte (qu'on tape, qu'on colle) : elle ne se redessine pas sous les doigts,
+  // seuls sa paie et ses états se repeignent, et elle se redessine quand le curseur la quitte (`redessinerEnQuittant`).
+  // Un bouton ou une liste choisie qui garde le curseur ne retient rien.
+  const a = document.activeElement;
+  if (div.contains(a) && a.matches("input:not(.liste-tape), textarea")) {
+    div._aRedessiner = true;
+    peindreLaPaie(div);
+    peindreLesEtats(div);
+  } else if (CALENDRIER_OUVERT) { peindreLaPaie(div); peindreLesEtats(div); }
   else dessinerCarte(div);
   await apresUneEcriture(mois);
 }
+
+/** Une carte qui ne s'est pas redessinée sous le curseur (`changer`) se redessine quand il la quitte. */
+document.addEventListener("focusout", (ev) => {
+  const div = ev.target.closest && ev.target.closest("#engagements .engagement");
+  if (!div || !div._aRedessiner || div.contains(ev.relatedTarget) || CALENDRIER_OUVERT) return;
+  div._aRedessiner = false;
+  if (div.isConnected) dessinerCarte(div);
+});
 
 /** Après une écriture : ce qui se lit sur la saisie enregistrée se relit (l'historique des mois, les étapes, les
  *  imprévus, l'aperçu). */
