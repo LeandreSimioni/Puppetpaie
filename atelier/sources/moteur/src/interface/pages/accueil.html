@@ -473,6 +473,9 @@
 <script src="/js/avance.js?v={{EMPREINTE}}"></script>
 <script src="/js/filet.js?v={{EMPREINTE}}"></script>
 <script>
+  // Les reponses de l'editeur aux messages ecrits d'ici, sur le bouton, comme dans une compagnie (`js/filet.js`) : la
+  // route `signalements`, servie sans compagnie, les releve (`routes::filet::route_sans_compagnie`).
+  dessinerPastilleReponses();
   document.getElementById("avance-accueil").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("voile").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("voile-mdp").addEventListener("mousedown", (e) => e.stopPropagation());
