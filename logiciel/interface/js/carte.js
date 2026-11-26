@@ -344,7 +344,10 @@ async function changer(div, changements) {
   div._aCompleter = r.a_completer;
   // Un engagement auquel il manque un fait s'enregistre aussi : sa carte dit ce qui manque, et la ligne d'état le rappelle.
   noteSaisie(r.enregistre_dit + (r.a_completer ? " — " + ETAT.aides.a_completer : ""));
-  dessinerCarte(div);
+  // Le curseur dans la carte (une case qu'on tape, qu'on colle) : elle ne se redessine pas sous les doigts, seuls sa
+  // paie et ses états se repeignent ; l'aperçu qui suit la redessinera quand on l'aura quittée.
+  if (div.contains(document.activeElement) || CALENDRIER_OUVERT) { peindreLaPaie(div); peindreLesEtats(div); }
+  else dessinerCarte(div);
   await apresUneEcriture(mois);
 }
 

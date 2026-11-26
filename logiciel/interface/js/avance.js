@@ -77,6 +77,8 @@ function ouvrirLaListe(tape, filtre) {
     el.setAttribute("role", "listbox");
     el.onmousedown = (ev) => ev.preventDefault();
     el.onclick = (ev) => {
+      // La liste est dans le `<label>` de sa case : sans cela, le clic l'active et la zone rouvre la liste.
+      ev.preventDefault();
       const r = ev.target.closest("[data-rang]");
       if (r && LISTE_OUVERTE) choisirDansLaListe(LISTE_OUVERTE.rangs[+r.dataset.rang]);
     };
@@ -102,9 +104,12 @@ function ouvrirLaListe(tape, filtre) {
   const choisi = l.rangs.findIndex((o) => o.selected);
   l.actif = !l.rangs.length ? null : q || choisi < 0 ? 0 : choisi;
   const r = tape.getBoundingClientRect();
-  l.el.style.top = `${r.bottom + 2}px`;
   l.el.style.left = `${r.left}px`;
   l.el.style.minWidth = `${r.width}px`;
+  // Sous sa zone, ou au-dessus quand la fenêtre n'a plus la place dessous.
+  l.el.style.top = `${r.bottom + 2}px`;
+  const h = l.el.offsetHeight;
+  if (r.bottom + 2 + h > window.innerHeight && r.top - 2 - h >= 0) l.el.style.top = `${r.top - 2 - h}px`;
   marquerLActif();
 }
 
