@@ -1324,7 +1324,9 @@ struct Droits {
     phrase: Phrase,
     mois: Mois,
     phrases: Vec<String>,
-    case: crate::fiches::CaseDeLaFiche<&'static str>,
+    /// Aucun engagement d'intermittent connu : pas de case, il n'y a personne a choisir.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    case: Option<crate::fiches::CaseDeLaFiche<&'static str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     salarie: Option<DroitsDUnSalarie>,
 }
@@ -1349,8 +1351,10 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         None => cle.to_string(),
     };
     let offerts: Vec<crate::ouverture::Choix> = cles.iter().map(|k| crate::ouverture::Choix::de(k, nom_de(k))).collect();
-    let case = crate::fiches::CaseDeLaFiche::de_la_boite(cle!(ChargeDroits, salarie), SALARIE_DES_DROITS, Forme::ChoixRendu, "", c.salarie.as_ref().and_then(socle::ecriture::ValeurDeCase::de))
-        .offrant(offerts);
+    let case = (!offerts.is_empty()).then(|| {
+        crate::fiches::CaseDeLaFiche::de_la_boite(cle!(ChargeDroits, salarie), SALARIE_DES_DROITS, Forme::ChoixRendu, "", c.salarie.as_ref().and_then(socle::ecriture::ValeurDeCase::de))
+            .offrant(offerts)
+    });
     let mut salarie = None;
     if let Some(cle) = &c.salarie {
         let anniv = anniversaire_configure(ctx, cle)?;

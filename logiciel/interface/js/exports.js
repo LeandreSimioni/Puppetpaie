@@ -534,7 +534,7 @@ async function dessinerDroits(charge) {
   try { d = await api("droits", charge); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
   const s = d.salarie;
-  cible.innerHTML = `<div class="e-cases" data-droits-cases>${caseDeRoute(d.case)}</div>${!s ? "" : `
+  cible.innerHTML = `${d.case ? `<div class="e-cases" data-droits-cases>${caseDeRoute(d.case)}</div>` : ""}${!s ? "" : `
       <div class="droits-salarie">
         <h3>${echapper(s.nom)} <span class="discret">— ${echapper(s.fenetre)}</span></h3>
         <table>${s.lignes.map(([quoi, valeur]) => `<tr><td>${echapper(quoi)}</td><td>${echapper(valeur)}</td></tr>`).join("")}</table>
@@ -545,5 +545,5 @@ async function dessinerDroits(charge) {
         </table>
       </div>`}<p class="discret">${echapper(d.phrase)}</p>`;
   const bloc = cible.querySelector("[data-droits-cases]");
-  bloc.onchange = () => dessinerDroits(lireLesCases(bloc));
+  if (bloc) bloc.onchange = () => dessinerDroits(lireLesCases(bloc));
 }
