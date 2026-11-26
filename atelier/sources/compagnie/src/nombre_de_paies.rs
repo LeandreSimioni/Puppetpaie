@@ -76,8 +76,10 @@ fn retenir(racine: &Path, annee: Annee, paies: usize, poste: &NumeroDePoste) -> 
     incidents::ecrire_config(racine, &c)
 }
 
-/// Pourquoi rien ne part de cette compagnie, ou `None` si elle peut envoyer.
-fn empechement(racine: &Path) -> R<Option<&'static str>> {
+/// Pourquoi rien de ce qui compte l'usage du logiciel ne part de cette compagnie (le nombre de paies ici, le signal de
+/// vie, `signal_de_vie`), ou `None` si elle peut envoyer. Le bridage n'y est pas : un logiciel en demo est une
+/// installation, que le signal de vie compte ; seul le nombre de paies l'ecarte (`envoyer_si_du`).
+pub(crate) fn empechement(racine: &Path) -> R<Option<&'static str>> {
     // Le binaire de l'atelier ne porte jamais de compagnie reelle (regle 9) : il n'a aucune paie a compter, et il peut
     // parler au filet sous le numero du poste de l'editeur (`incidents::identite_de_l_atelier`), dont il ecraserait le
     // compte.
@@ -88,8 +90,6 @@ fn empechement(racine: &Path) -> R<Option<&'static str>> {
         Some("compagnie fictive")
     } else if crate::installation::est_copie(racine) {
         Some("copie de developpement")
-    } else if crate::bridage::est_bride() {
-        Some("logiciel bride")
     } else if !incidents::envoi(racine)? {
         Some("envoi coupe")
     } else {
@@ -113,6 +113,9 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
         Ok(Some(r)) => return bilan(None, false, None, r, ""),
         Ok(None) => {}
         Err(e) => return bilan(None, false, None, "", &e.phrase),
+    }
+    if crate::bridage::est_bride() {
+        return bilan(None, false, None, "logiciel bride", "");
     }
     let annee = match annee_due(ctx.aujourdhui) {
         Ok(Some(a)) => a,

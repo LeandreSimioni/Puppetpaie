@@ -35,6 +35,7 @@ pub mod problemes;
 pub mod recuperation;
 pub mod restauration;
 pub mod sauvegarde;
+pub mod signal_de_vie;
 pub mod sur_le_drive;
 pub mod taux_pas;
 

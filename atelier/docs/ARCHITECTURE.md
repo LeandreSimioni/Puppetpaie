@@ -574,6 +574,7 @@ un libellé, chacun sa forme.
 | canal d'un incident de la page | `CanalDeLaPage` | `compagnie/src/incidents.rs` |
 | origine d'un appel | `OrigineDeLAppel` | `compagnie/src/diagnostic.rs` |
 | numéro de poste | `NumeroDePoste` | `compagnie/src/incidents.rs` |
+| signal de vie d'un poste (son seul numéro, parti chez l'éditeur au plus une fois par jour d'ouverture, sous l'interrupteur des incidents, pour compter les postes qui se servent du logiciel) : ce qu'un passage en a fait (parti, pourquoi pas, l'erreur qui fera recommencer) | `compagnie::signal_de_vie::BilanDeVie` | `compagnie/src/signal_de_vie.rs` |
 | origine de l'identité du poste | `OrigineDeLIdentite` | `compagnie/src/editeur.rs` |
 | secret | `Secret` | `socle/src/secret.rs` |
 | numéro de retour | `NumeroDeRetour` | `compagnie/src/editeur.rs` |
