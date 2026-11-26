@@ -1293,7 +1293,7 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
                 Some(crate::apercu_dsn::Recapitulatif::Lu(r)) => Some(socle::phrase!("{}", r.phrase)),
                 _ => None,
             };
-            [x.remplacement.as_ref().map(|r| socle::phrase!("{}", r.etat.phrase)), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
+            [x.remplacement.as_ref().and_then(|r| r.etat.phrase.as_ref()).map(|p| socle::phrase!("{}", p)), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
         }
         DepotApercu::Dpae(Dit { apercu: x, .. }) => vec![x.repetition.phrase.clone()],
     };
