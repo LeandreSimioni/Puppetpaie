@@ -218,14 +218,15 @@ fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLu
 }
 
 /// CE QUI PART D'UN DEPOT REEL (`envois_en_fond::partir`) : `quoi`, a sa place `place`, et le depot du fichier `chemin`,
-/// rouvert s'il n'est pas alle au bout ; le fichier s'y designe par le chemin meme qui part (`depots::resoudre` le lit tel
-/// quel).
-fn ce_qui_part(chemin: &Path, sorte: crate::depots::Quoi, place: crate::envois_en_fond::PlaceDeLEnvoi, quoi: String) -> crate::envois_en_fond::EnvoiQuiPart {
-    let d = crate::depots::Designation { quoi: sorte, ..crate::depots::Designation::du_fichier(chemin.to_path_buf()) };
-    crate::envois_en_fond::EnvoiQuiPart { quoi, place, refaire: Some(crate::etapes::refaire_le_depot(d)), avertissements: Vec::new() }
+/// rouvert s'il n'est pas alle au bout ; le fichier s'y designe par le chemin absolu de celui qui part : une charge de
+/// `deposer` lit un chemin absolu tel quel (`depots::resoudre`), quel que soit le dossier d'ou l'on a ouvert la compagnie.
+fn ce_qui_part(chemin: &Path, sorte: crate::depots::Quoi, place: crate::envois_en_fond::PlaceDeLEnvoi, quoi: String) -> R<crate::envois_en_fond::EnvoiQuiPart> {
+    let d = crate::depots::Designation { quoi: sorte, ..crate::depots::Designation::du_fichier(compagnie::installation::absolu(chemin)?) };
+    Ok(crate::envois_en_fond::EnvoiQuiPart { quoi, place, refaire: Some(crate::etapes::refaire_le_depot(d)), avertissements: Vec::new() })
 }
 
-/// Depose une DSN. La seule sortie du moteur qui declare quelque chose.
+/// Depose une DSN. La seule sortie du moteur qui declare quelque chose. `fichier` est deja resolu (`depots::designee`,
+/// ou le chemin que le moteur vient d'ecrire) : il se lit tel quel.
 ///
 /// L'ORDRE COMPTE : 1. lire le fichier ; 2. verifier que le mode demande colle a la nature codee dedans ;
 /// 3. exiger la preuve (reel) ; 4. exiger la REPETITION (reel, `contournement` pour la sortie de secours) ;
@@ -263,7 +264,7 @@ pub fn deposer_dsn_dans(
             format!("L'environnement '{}' est la plate-forme d'essai de l'editeur : rien n'y est declare. Un depot REEL ne part que sur 'production' ; pour essayer, un depot de test. Rien n'est parti.", environnement),
         ));
     }
-    let chemin = crate::depots::resoudre(&ctx.racine, fichier)?;
+    let chemin = fichier.to_path_buf();
     let octets = crate::depots::lire_octets(&chemin)?;
     let apercu = declarations::dsn_lue::lire(&octets, None)?;
     // 2. le mode contre le fichier ; `presence_prouvee` : c'est ICI qu'on la prouve, jamais le transport.
@@ -428,7 +429,7 @@ pub fn deposer_dsn_dans(
         } else {
             ("DSN", crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dsn, part: crate::envois_en_fond::CeQuiPartDeLEtape::Dsn(nic.cloned()) })
         };
-        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dsn, place, format!("{} {}", quoi, socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
+        crate::envois_en_fond::partir(ctx, || ce_qui_part(&chemin, crate::depots::Quoi::Dsn, place, format!("{} {}", quoi, socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee)))))?;
     }
     let parti = ordre_test.and_then(|ordre_test| {
         let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
@@ -482,7 +483,7 @@ pub(crate) fn deposer_dpae_avec(
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     let porte = branchement.ouvrir_le_depot(Acte::Dpae)?;
-    let chemin = crate::depots::resoudre(&ctx.racine, fichier)?;
+    let chemin = fichier.to_path_buf();
     let apercu = crate::depots::apercu_depot_dpae(ctx, &chemin)?;
     let octets = crate::depots::lire_octets(&chemin)?;
     let le_mois = apercu.mois.ok_or_else(|| erreur(Classe::Refuse, "Ce fichier ne déclare aucune embauche datée : il ne dit pas son mois. Rien n'est parti."))?;
@@ -556,7 +557,7 @@ pub(crate) fn deposer_dpae_avec(
     if mode == Mode::Reel {
         let part = crate::envois_en_fond::CeQuiPartDeLEtape::Contrats(embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect());
         let place = crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dpae, part };
-        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dpae, place, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
+        crate::envois_en_fond::partir(ctx, || ce_qui_part(&chemin, crate::depots::Quoi::Dpae, place, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee)))))?;
     }
     let fait = envois::depot_acte::deposer_dpae(ctx, &porte, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
     let faites = crate::gestes::suites::faire(ctx, suites)?;

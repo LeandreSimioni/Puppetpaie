@@ -102,20 +102,30 @@ pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&Nic>, princip
     let du_mois = crate::journal::filtrer(lignes, Some(Acte::Dsn), Some(mois), Some(Mode::Reel)).filter(|l| !l.signalement());
     let l = de_l_etablissement(du_mois, nic, principal).into_iter().filter(|l| l.accepte()).last()?;
     let e = l.dsn()?;
-    let (mut bilan_ok, mut aer, mut anomalies) = (false, false, Vec::new());
+    let (mut aer, mut anomalies) = (false, Vec::new());
     for r in &e.retours {
-        bilan_ok |= r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some(Verdict::Ok);
         aer |= r.nature_retour == NatureDuRetour::AerSpectacle;
         if r.ko() {
             anomalies.extend(r.anomalies().into_iter().flatten().cloned());
         }
     }
-    // UN DEPOT REPRIS DES RETOURS (`reprise_journal`) : sa piece EST le bilan de la plate-forme, et la ligne
-    // en garde le verdict (`detail.etat_declaration`) -- tant qu'aucun bilan n'est range en face, c'est lui qui dit.
-    let sans_bilan = !e.retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite);
-    let repris_ok = sans_bilan && e.detail.reconstruit && e.detail.etat_declaration == Some(Verdict::Ok);
     let refusee = refuse_par_un_retour(l);
-    Some(EtatDsnDuMois { quand: e.quand.clone(), fichier: e.fichier.clone(), flux: e.flux.clone(), passee: (bilan_ok || repris_ok) && !refusee, refusee, anomalies, aer_recue: aer })
+    Some(EtatDsnDuMois { quand: e.quand.clone(), fichier: e.fichier.clone(), flux: e.flux.clone(), passee: bilan_conforme(l) && !refusee, refusee, anomalies, aer_recue: aer })
+}
+
+/// UN ENVOI QUI A SON BILAN, CONFORME : une DSN ou une DPAE dont le bilan dit OK (`compte_rendu_du_depot` ; l'accuse ne
+/// compte pas, regle 5). UN DEPOT REPRIS DES RETOURS (`reprise_journal`) : sa piece EST le bilan de la plate-forme, et la
+/// ligne en garde le verdict (`detail.etat_declaration`) -- tant qu'aucun bilan n'est range en face, c'est lui qui dit.
+/// Tout autre envoi n'a pas de bilan.
+pub fn bilan_conforme(ligne: &Ligne) -> bool {
+    match ligne {
+        Ligne::Dsn(e) => {
+            let sans_bilan = !e.retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite);
+            compte_rendu_du_depot(&e.retours) == CompteRenduDuTest::Ok || (sans_bilan && e.detail.reconstruit && e.detail.etat_declaration == Some(Verdict::Ok))
+        }
+        Ligne::Dpae(e) => compte_rendu_du_depot(&e.retours) == CompteRenduDuTest::Ok,
+        Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
+    }
 }
 
 /// Deux graphies du meme nom (la cle d'une fiche, le nom d'un certificat) : leurs lettres et chiffres, en capitales.
@@ -684,7 +694,7 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
 /// conforme » (regle 5 ; `retours::NatureDuRetour` : « 10 - Accuse d'enregistrement electronique »). Un test dont seul
 /// l'accuse est la ne doit pas s'afficher « testee — conforme » quand l'essai precedent du meme contenu a pris
 /// B1-208-11.
-pub fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> CompteRenduDuTest {
+fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> CompteRenduDuTest {
     let mut ok = false;
     for r in retours {
         if r.ko() {

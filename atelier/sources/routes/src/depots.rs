@@ -827,12 +827,14 @@ pub struct DitALEcriture {
 /// qui dit la meme chose : le test vaut pour le reel, regle 10) ; partie en reel, celle qui est partie, sauf si elle est
 /// a corriger. La DPAE du mois (`quoi` : dpae, `mois`, `engagements`) : celle de ces embauches, ou de celles qui restent
 /// a declarer (`dpae`, meme reprise) ; une fois partie, il n'en reste aucune a declarer, et c'est celle qui est partie
-/// (`partie`), jamais refaite (regle 4). `fichier` : un signalement ecrit.
+/// (`partie`), jamais refaite (regle 4). `fichier` : un signalement ecrit, resolu ici (`resoudre`). Le chemin rendu est
+/// resolu : ce qui suit le lit tel quel.
 pub fn designee(ctx: &Contexte, d: &Designation) -> R<(PathBuf, DitALEcriture)> {
     // Un signalement se nomme par son fichier, la declaration du mois par son mois : les deux ne designent pas la meme.
     let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.as_os_str().is_empty()));
     let Some(le_mois) = le_mois else {
-        return fichier.map(|f| (f.to_path_buf(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::manque("fichier"));
+        let f = fichier.ok_or_else(|| socle::fichiers::manque("fichier"))?;
+        return Ok((resoudre(&ctx.racine, f)?, DitALEcriture::default()));
     };
     if fichier.is_some() {
         return Err(socle::echec::a_la_cle(
@@ -920,7 +922,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     // LA PHRASE DU DEPOT : ou en est son test, ou ce qu'ont dit les retours du reel s'ils sont deja la (le simulateur repond
     // dans le geste) ; puis ses suites.
     let tranche = if mode == Mode::Test {
-        let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
+        let b = bilan_du_fichier(ctx, quoi, &fichier)?;
         socle::phrase!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
         suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
@@ -939,13 +941,6 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
         crate::envois_en_fond::a_suivre(ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) });
     }
     Ok(Deposee { phrase, fait })
-}
-
-impl Designation {
-    /// La meme designation, pour `quoi`.
-    fn avec(self, quoi: Quoi) -> Designation {
-        Designation { quoi, ..self }
-    }
 }
 
 // ------------------------------------------------------------------ suivre-depot
@@ -971,10 +966,10 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let (passe, refuse);
     // UN ENVOI QUI N'EST PAS LA MENSUELLE (un signalement : arret, fin de contrat, demande de taux) se juge sur sa propre
     // ligne et se nomme par sa nature ; la mensuelle, sur l'etat de la DSN du mois.
-    let signalement = if dpae { None } else { du_flux(Quoi::Dsn.acte()).and_then(|l| l.nature_dsn().filter(|n| *n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle).map(|n| (l, n))) };
+    let signalement = if dpae { None } else { du_flux(Quoi::Dsn.acte()).filter(|l| l.signalement()).and_then(|l| l.nature_dsn().map(|n| (l, n))) };
     if let Some((ligne, _)) = signalement {
         refuse = !ligne.accepte() || etats::refuse_par_un_retour(ligne);
-        passe = !refuse && etats::compte_rendu_du_depot(ligne.retours_organisme()) == envois::retours::CompteRenduDuTest::Ok;
+        passe = !refuse && etats::bilan_conforme(ligne);
     } else if dpae {
         let etat = etats::etat_des_embauches(&lignes);
         // Une embauche que l'etat ne connait pas (une ligne non acceptee) n'est ni passee ni refusee.
@@ -998,11 +993,11 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let (phrase, etat) = if let Some((_, nature)) = signalement {
         let nom = nature.libelle();
         if passe {
-            (socle::phrase!("{} : retour de l'organisme reçu, conforme.", nom), socle::ecran::EtatDEcran::Fait)
+            (socle::phrase!("{} — retour conforme reçu.", nom), socle::ecran::EtatDEcran::Fait)
         } else if refuse {
-            (socle::phrase!("{} : refusé par l'organisme — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
+            (socle::phrase!("{} — refus, voir l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
         } else {
-            (socle::phrase!("{} : attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
+            (socle::phrase!("{} — en attente du retour.", nom), socle::ecran::EtatDEcran::EnAttente)
         }
     } else if passe {
         (socle::phrase!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
@@ -1021,7 +1016,8 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
 /// (`a_dire` : ce qui n'a pas pu se faire, le test reste ce qu'il est et on le redira au passage suivant ; ce qu'un
 /// retour laisse a faire).
 fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
-    let mut repetition = bilan_de_la_repetition(ctx, &d)?;
+    let fichier = fichier_du_test(ctx, &d)?;
+    let mut repetition = bilan_du_fichier(ctx, d.quoi, &fichier)?;
     let mut a_dire = ADire::default();
     if repetition.etat == etats::EtatDuTest::EnTest {
         let plage = releve_retours::PlageDuReleve::derniere_journee()?;
@@ -1036,7 +1032,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
             Ok((_, dit)) => dit,
             Err(e) => crate::gestes::suites::a_dire_du_releve_arrete(&ctx.racine, "bilan-repetition", e),
         };
-        repetition = bilan_de_la_repetition(ctx, &d)?;
+        repetition = bilan_du_fichier(ctx, d.quoi, &fichier)?;
     }
     pastilles_du_test(&mut repetition);
     Ok(BilanDuTest { repetition, a_dire })
@@ -1074,17 +1070,18 @@ fn existe(t: &str) -> bool {
 /// LE FICHIER D'UNE CHARGE (le signalement de `deposer`, `depot-apercu`, `bilan-repetition`), et le seul endroit qui le
 /// trouve : un chemin absolu se lit tel quel ; un chemin relatif se lit depuis la compagnie, par la porte des sorties
 /// d'un mois (`SortiesDuMois::a_ouvrir` : la piece d'un mois d'une annee close se lit dans l'archive de son exercice),
-/// jamais depuis le dossier ou l'on a lance la commande ; celui que le moteur a ecrit sous une racine relative la porte
-/// deja en tete, et se lit tel quel. Un fichier qui n'y est pas se dit introuvable (`FichierAbsent`). Rend le chemin,
-/// normalisé. La declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un chemin.
-pub(crate) fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
+/// jamais depuis le dossier ou l'on a lance la commande. Il se resout une fois, a la porte de la route
+/// (`designee`, `fichier_du_test`) ; ce qui suit prend le chemin resolu. Un fichier qui n'y est pas se dit introuvable
+/// (`FichierAbsent`). Rend le chemin, normalisé. La declaration d'un mois se designe par le mois de la charge
+/// (`Designation::mois`), jamais par un chemin.
+pub fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
     let t = chemin.to_string_lossy();
     if t.chars().all(socle::texte::blanc) {
         return Err(erreur(Classe::FichierAbsent, "Aucun fichier indique."));
     }
     let p = normaliser(&t);
     let tel_quel = Path::new(&p);
-    let candidat = if tel_quel.is_absolute() || p.starts_with('/') || (racine.is_relative() && tel_quel.starts_with(racine)) {
+    let candidat = if tel_quel.is_absolute() || p.starts_with('/') {
         tel_quel.to_path_buf()
     } else {
         // Un chemin qui n'est pas un chemin relatif a la compagnie (`..`, un lecteur) ne mene a aucune piece d'un mois :
@@ -1149,9 +1146,10 @@ pub(crate) struct ApercuDpae {
     pub(crate) repetition: Repetition,
 }
 
-/// `apercu_depot_dpae` : ce que le fichier DPAE declare, enregistrement par enregistrement.
+/// `apercu_depot_dpae` : ce que le fichier DPAE declare, enregistrement par enregistrement. `fichier` est deja resolu
+/// (`designee`).
 pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae> {
-    let chemin = resoudre(&ctx.racine, fichier)?;
+    let chemin = fichier.to_path_buf();
     let contenu = lire_octets(&chemin)?;
     let texte: String = contenu.iter().map(|&b| b as char).collect();
     let enrs = declarations::dpae::relire(&texte)?;
@@ -1335,15 +1333,19 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
     Ok(a)
 }
 
-/// Ou en est le test de ce qui est parti pour la designation (`partie`), ou du signalement nomme.
-fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
-    let fichier = match d.mois {
-        Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m)))?,
-        None => d.fichier.clone().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::manque("fichier"))?,
-    };
-    let chemin = resoudre(&ctx.racine, &fichier)?;
-    let empreinte = empreinte_du_fichier(&chemin)?;
-    let nom = NomDeFichier::du(&chemin)?;
+/// Le fichier dont on suit le test : ce qui est parti pour la designation (`partie`), ou le signalement nomme, resolu
+/// ici (`resoudre`).
+fn fichier_du_test(ctx: &Contexte, d: &Designation) -> R<PathBuf> {
+    match d.mois {
+        Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m))),
+        None => resoudre(&ctx.racine, d.fichier.as_deref().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::manque("fichier"))?),
+    }
+}
+
+/// Ou en est le test du fichier `chemin` (resolu), pour `quoi`.
+fn bilan_du_fichier(ctx: &Contexte, quoi: Quoi, chemin: &Path) -> R<Repetition> {
+    let empreinte = empreinte_du_fichier(chemin)?;
+    let nom = NomDeFichier::du(chemin)?;
     let lignes = crate::etapes::Moteur::nouveau(ctx).lignes()?;
-    Ok(etats::repetition(&lignes, d.quoi.acte(), &empreinte, &nom))
+    Ok(etats::repetition(&lignes, quoi.acte(), &empreinte, &nom))
 }
