@@ -88,11 +88,9 @@ async function dessinerEditeurDeModele(cible, ici, redessiner) {
     return;
   }
   const ecrit = lu.articles.some((p) => p.ecrire);
-  const choix = (classe, premier, si, actif) => `
-    <select class="${classe}" ${actif ? "" : "disabled"}>
-      <option value="">${premier}</option>
-      ${lu.champs.map((c) => `<option value="${echapper(c.marqueur)}" ${c.marqueur === si ? "selected" : ""}>${echapper(c.quoi)}</option>`).join("")}
-    </select>`;
+  const choix = (classe, premier, si, actif) => listeQuiSeCherche(`class="${classe}" ${actif ? "" : "disabled"}`,
+    `<option value="">${premier}</option>`
+    + lu.champs.map((c) => `<option value="${echapper(c.marqueur)}" ${c.marqueur === si ? "selected" : ""}>${echapper(c.quoi)}</option>`).join(""));
   // Un alinéa de la base, qui se lit seulement.
   const alineaLu = (a) => `
     <div class="modele-alinea">
@@ -124,9 +122,7 @@ async function dessinerEditeurDeModele(cible, ici, redessiner) {
     <p class="discret">${echapper(lu.en_francais)}</p>
     ${lu.gestes.length ? `<div class="modele-gestes" data-modele-gestes>${boutonsDesGestes(lu.gestes)}</div>` : ""}
     <div class="modele-gestes">
-      <select class="modele-engagement">
-        ${lu.engagements.map((e, i) => `<option value="${i}">${echapper(e.nom)}</option>`).join("")}
-      </select>
+      ${listeQuiSeCherche('class="modele-engagement"', lu.engagements.map((e, i) => `<option value="${i}">${echapper(e.nom)}</option>`).join(""))}
       <button type="button" class="lien" data-apercu>${echapper(lu.apercu.libelle)}</button>
     </div>
     ${ecrit ? choix("modele-inserer", "Insérer une donnée", null, true) : ""}
@@ -191,5 +187,6 @@ async function dessinerEditeurDeModele(cible, ici, redessiner) {
       dernier.selectionStart = dernier.selectionEnd = a + marque.length;
     }
     inserer.value = "";
+    accorderLaListe(inserer);
   };
 }

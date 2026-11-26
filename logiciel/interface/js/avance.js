@@ -33,6 +33,192 @@ function optionsDuChoix(v, choix, prerempli) {
   return `<option value="">${echapper(libelleDuVide)}</option>${corps}${garde.map(option).join("")}`;
 }
 
+/** UNE LISTE QUI SE CHERCHE EN TAPANT, le seul dessin d'une liste où l'on choisit : devant le `<select>` (ses
+ *  `attributs`, ses `options`), qui reste la case lue et ne se montre pas, une zone où l'on tape. Taper cherche dans le
+ *  libellé entier, sans tenir compte des accents ni des majuscules ; les flèches parcourent, Entrée ou un clic choisit,
+ *  Échap referme sans rien changer ; les groupes restent des titres. Choisir règle le `<select>` et déclenche son
+ *  `change` : ce qui lit la case ne change pas, et l'on ne choisit qu'une valeur offerte. Rien ne se décide ici. */
+function listeQuiSeCherche(attributs, options) {
+  return `<input type="text" class="liste-tape" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false"><select data-cherchee ${attributs}>${options}</select>`;
+}
+
+/** Ce qui prend le curseur pour la case `x` : la zone où l'on tape d'une liste qui se cherche, sinon la case. */
+const zoneDeLaCase = (x) => (x.matches && x.matches("select[data-cherchee]") ? x.previousElementSibling : x);
+
+/** Un libellé tel qu'on le cherche : sans accents ni majuscules. */
+const commeCherche = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** La liste ouverte sous sa zone : `{ tape, select, el, rangs, actif, filtre }`. Une à la fois. */
+let LISTE_OUVERTE = null;
+
+/** Le `<select>` d'une zone où l'on tape. */
+const selectDeLaListe = (tape) => (tape.nextElementSibling && tape.nextElementSibling.matches("select[data-cherchee]")
+  ? tape.nextElementSibling : null);
+
+/** La zone montre ce que le `<select>` porte (son option choisie, le libellé de la case vide compris), et prend son
+ *  état (désactivé, en faute) ; pas pendant qu'on y tape. */
+function accorderLaListe(select) {
+  const tape = select.previousElementSibling;
+  if (!tape || !tape.classList.contains("liste-tape")) return;
+  const o = select.options[select.selectedIndex];
+  if (!LISTE_OUVERTE || LISTE_OUVERTE.tape !== tape) {
+    // La zone qu'on vient de prendre (tout son texte choisi) le reste quand ses choix se relisent : la frappe remplace.
+    const toutChoisi = document.activeElement === tape && tape.selectionStart === 0 && tape.selectionEnd === tape.value.length;
+    tape.value = o ? o.text : "";
+    if (toutChoisi) tape.select();
+  }
+  tape.disabled = select.disabled;
+  ["faute", "suspect"].forEach((c) => tape.classList.toggle(c, select.classList.contains(c)));
+}
+
+/** Ouvre (ou repeint) la liste de `tape`, ses options dont le libellé contient `filtre`. */
+function ouvrirLaListe(tape, filtre) {
+  const select = selectDeLaListe(tape);
+  if (!select || select.disabled) return;
+  if (!LISTE_OUVERTE || LISTE_OUVERTE.tape !== tape) {
+    fermerLaListe();
+    const el = document.createElement("div");
+    el.className = "liste-ouverte";
+    el.setAttribute("role", "listbox");
+    el.onmousedown = (ev) => ev.preventDefault();
+    el.onclick = (ev) => {
+      // La liste est dans le `<label>` de sa case : sans cela, le clic l'active et la zone rouvre la liste.
+      ev.preventDefault();
+      const r = ev.target.closest("[data-rang]");
+      if (r && LISTE_OUVERTE) choisirDansLaListe(LISTE_OUVERTE.rangs[+r.dataset.rang]);
+    };
+    // Posée à côté de sa case, et non à part : un clic dans la liste reste un clic dans la boîte ou la carte.
+    select.after(el);
+    LISTE_OUVERTE = { tape, select, el };
+    tape.setAttribute("aria-expanded", "true");
+  }
+  const l = LISTE_OUVERTE;
+  l.filtre = filtre;
+  const q = commeCherche(filtre.trim());
+  l.rangs = [];
+  const rang = (o) => {
+    if (q && (o.value === "" || !commeCherche(o.text).includes(q))) return "";
+    l.rangs.push(o);
+    return `<div class="liste-rang${o.selected ? " choisi" : ""}" data-rang="${l.rangs.length - 1}" role="option">${echapper(o.text) || "&nbsp;"}</div>`;
+  };
+  l.el.innerHTML = [...select.children].map((x) => {
+    if (x.tagName !== "OPTGROUP") return rang(x);
+    const dedans = [...x.children].map(rang).join("");
+    return dedans ? `<div class="liste-groupe">${echapper(x.label)}</div>${dedans}` : "";
+  }).join("");
+  const choisi = l.rangs.findIndex((o) => o.selected);
+  l.actif = !l.rangs.length ? null : q || choisi < 0 ? 0 : choisi;
+  const r = tape.getBoundingClientRect();
+  l.el.style.left = `${r.left}px`;
+  l.el.style.minWidth = `${r.width}px`;
+  // Sous sa zone, ou au-dessus quand la fenêtre n'a plus la place dessous.
+  l.el.style.top = `${r.bottom + 2}px`;
+  const h = l.el.offsetHeight;
+  if (r.bottom + 2 + h > window.innerHeight && r.top - 2 - h >= 0) l.el.style.top = `${r.top - 2 - h}px`;
+  marquerLActif();
+}
+
+/** Le rang actif de la liste ouverte, marqué et montré. */
+function marquerLActif() {
+  const l = LISTE_OUVERTE;
+  l.el.querySelectorAll(".liste-rang.actif").forEach((x) => x.classList.remove("actif"));
+  const x = l.actif == null ? null : l.el.querySelector(`[data-rang="${l.actif}"]`);
+  if (!x) return;
+  x.classList.add("actif");
+  // Montré dans la liste seule, sans faire défiler la page.
+  if (x.offsetTop < l.el.scrollTop) l.el.scrollTop = x.offsetTop;
+  else if (x.offsetTop + x.offsetHeight > l.el.scrollTop + l.el.clientHeight) l.el.scrollTop = x.offsetTop + x.offsetHeight - l.el.clientHeight;
+}
+
+/** Referme la liste ouverte ; sa zone reprend ce que le `<select>` porte. */
+function fermerLaListe() {
+  const l = LISTE_OUVERTE;
+  if (!l) return;
+  LISTE_OUVERTE = null;
+  l.el.remove();
+  l.tape.setAttribute("aria-expanded", "false");
+  accorderLaListe(l.select);
+}
+
+/** Choisit l'option `o` de la liste ouverte : le `<select>` la prend et le dit (`change`), s'il ne la portait pas. */
+function choisirDansLaListe(o) {
+  const select = LISTE_OUVERTE.select;
+  const change = select.value !== o.value;
+  select.value = o.value;
+  fermerLaListe();
+  if (change) select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+// Ce qu'on fait dans la zone où l'on tape ne regarde qu'elle : la frappe cherche (`input`), et ni la frappe ni sa
+// validation (`change`) ne vont plus loin ; c'est le `<select>` qui dit le choix.
+window.addEventListener("input", (ev) => {
+  if (!ev.target.classList || !ev.target.classList.contains("liste-tape")) return;
+  ev.stopImmediatePropagation();
+  ouvrirLaListe(ev.target, ev.target.value);
+}, true);
+window.addEventListener("change", (ev) => {
+  if (ev.target.classList && ev.target.classList.contains("liste-tape")) ev.stopImmediatePropagation();
+  else if (ev.target.matches && ev.target.matches("select[data-cherchee]")) accorderLaListe(ev.target);
+}, true);
+window.addEventListener("keydown", (ev) => {
+  const tape = ev.target;
+  if (!tape.classList || !tape.classList.contains("liste-tape")) return;
+  const l = LISTE_OUVERTE && LISTE_OUVERTE.tape === tape ? LISTE_OUVERTE : null;
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    if (!l) ouvrirLaListe(tape, "");
+    else if (l.actif != null) {
+      l.actif = Math.min(l.rangs.length - 1, Math.max(0, l.actif + (ev.key === "ArrowDown" ? 1 : -1)));
+      marquerLActif();
+    }
+  } else if (ev.key === "Enter" && l) {
+    if (l.actif != null) choisirDansLaListe(l.rangs[l.actif]);
+    else fermerLaListe();
+  } else if (ev.key === "Escape" && l) {
+    fermerLaListe();
+  } else return;
+  ev.preventDefault();
+  ev.stopImmediatePropagation();
+}, true);
+// Un clic dans la zone ouvre la liste entière, ou la referme ; la quitter la referme, sans rien changer.
+window.addEventListener("click", (ev) => {
+  const tape = ev.target;
+  if (!tape.classList || !tape.classList.contains("liste-tape")) return;
+  if (LISTE_OUVERTE && LISTE_OUVERTE.tape === tape) fermerLaListe();
+  else ouvrirLaListe(tape, "");
+}, true);
+window.addEventListener("focusin", (ev) => {
+  const tape = ev.target;
+  if (!tape.classList || !tape.classList.contains("liste-tape")) return;
+  tape.select();
+  // Une case dont les choix se relisent quand on y vient (`relireLesChoix` de la carte) l'apprend de son `<select>`.
+  const select = selectDeLaListe(tape);
+  if (select) select.dispatchEvent(new FocusEvent("focus"));
+}, true);
+window.addEventListener("focusout", (ev) => {
+  if (LISTE_OUVERTE && LISTE_OUVERTE.tape === ev.target) fermerLaListe();
+}, true);
+// La liste se pose sous sa zone à l'écran : la page qui défile la referme (pas la liste qui défile en elle-même).
+window.addEventListener("scroll", (ev) => {
+  if (LISTE_OUVERTE && ev.target !== LISTE_OUVERTE.el) fermerLaListe();
+}, true);
+// Chaque `<select>` d'une liste qui se cherche, posé, regarni ou changé d'état, se montre dans sa zone ; sa liste
+// ouverte suit ses options.
+new MutationObserver((ms) => {
+  const vus = new Set();
+  ms.forEach((m) => {
+    const t = m.target instanceof Element ? m.target.closest("select[data-cherchee]") : null;
+    if (t) vus.add(t);
+    m.addedNodes.forEach((n) => {
+      if (!(n instanceof Element)) return;
+      if (n.matches("select[data-cherchee]")) vus.add(n);
+      n.querySelectorAll("select[data-cherchee]").forEach((s) => vus.add(s));
+    });
+  });
+  if (LISTE_OUVERTE && !LISTE_OUVERTE.tape.isConnected) fermerLaListe();
+  vus.forEach(accorderLaListe);
+  if (LISTE_OUVERTE && vus.has(LISTE_OUVERTE.select)) ouvrirLaListe(LISTE_OUVERTE.tape, LISTE_OUVERTE.filtre);
+}).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "disabled"] });
+
 /** Une valeur composée, en lecture : ses parties dites, « clé : valeur », ou une ligne par élément d'une liste. */
 function objetEnClair(v) {
   if (v == null) return "—";
@@ -178,11 +364,11 @@ const CASES = {
   get plusieurs_choix_rendus() { return CASES.plusieurs_choix; },
   // Une période (un mois, une année, toutes les années) : une liste déroulante des périodes que la route offre, les
   // mois sous leur année.
-  periode: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
+  periode: { html: (v, o) => listeQuiSeCherche("data-case", optionsDuChoix(v, o.choix)), lire: (x) => x.value || null },
   // Un choix vide que le moteur pré-remplit (`o.prerempli` : le métier que la paie applique) montre ce qu'il prend dans
   // sa case vide ; choisir une valeur de la liste l'écrit, celle qui est montrée comprise ; le vide n'écrit aucune valeur : la carte n'en dit pas, et le pré-rempli se montre.
-  choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix, o.prerempli)}</select>`, lire: (x) => x.value || null },
-  choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix, o.prerempli)}</select>`, lire: (x) => x.value || null },
+  choix: { html: (v, o) => listeQuiSeCherche("data-case", optionsDuChoix(v, o.choix, o.prerempli)), lire: (x) => x.value || null },
+  choix_rendu: { html: (v, o) => listeQuiSeCherche("data-case", optionsDuChoix(v, o.choix, o.prerempli)), lire: (x) => x.value || null },
   // Une valeur composée que le moteur décrit par son sens : elle se lit, elle ne se saisit pas d'une case.
   objet: { html: (v) => `<span class="case-objet" data-case>${echapper(objetEnClair(v))}</span>`, lire: () => undefined },
   // UNE VALEUR FAITE DE PARTIES (`partiesDe`, `lireLesParties`). Vide de tout ce qu'elle dit, la valeur est vide.
@@ -235,7 +421,7 @@ const CASES = {
   },
   // UN OUI-NON QUI SE CHOISIT DANS UNE LISTE (« true », « false ») : il écrit vrai ou faux.
   choix_oui_non: {
-    html: (v, o) => `<select data-case>${optionsDuChoix(v == null ? null : String(v), o.choix, null)}</select>`,
+    html: (v, o) => listeQuiSeCherche("data-case", optionsDuChoix(v == null ? null : String(v), o.choix, null)),
     lire: (x) => (x.value === "" ? null : x.value === "true"),
   },
   // DU HTML COLLÉ (la signature des courriels), tel que le moteur le rend, nettoyé ; vide, son exemple. Le navigateur
@@ -1120,10 +1306,12 @@ function montrerEnGrand(src, alt) {
 }
 
 /** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (`routeQuiRend`). Sa charge : le mois de l'écran quand sa fiche le
- *  prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
+ *  prend (`mois`), celui de l'onglet Engagements ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran.
+ *  Pendant que la route répond, `cible` dit qu'elle lit : l'écran d'avant ne reste pas affiché. */
 async function dessinerLEcranRendu(cible, f) {
   const mois = f.charge.some((c) => c.nom === "mois" && c.forme === "mois") && typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE
     ? { mois: MOIS_AFFICHE } : {};
+  cible.innerHTML = `<p class="discret">Lecture…</p>`;
   let r;
   try { r = await api(f.nom, mois); }
   catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
@@ -1251,7 +1439,7 @@ function poserLaFiche(cible, f) {
     cible.dataset.posee = "1";
     cible.dataset.dessin = dessinDeLaFiche(f);
     const tapees = new Map(controles());
-    const actif = controles().find(([, x]) => x === document.activeElement || x.contains(document.activeElement));
+    const actif = controles().find(([, x]) => zoneDeLaCase(x) === document.activeElement || x.contains(document.activeElement));
     const avanceOuvert = cible.querySelector(":scope > details.e-avance[open]");
     cible.innerHTML = casesDeLaFiche(f, cible.depart);
     if (avanceOuvert) cible.querySelector(":scope > details.e-avance").open = true;
@@ -1264,7 +1452,7 @@ function poserLaFiche(cible, f) {
     });
     brancherLesCases(cible);
     const garde = actif ? controles().find(([k]) => k === actif[0]) : null;
-    if (garde) garde[1].focus();
+    if (garde) zoneDeLaCase(garde[1]).focus();
   } else {
     f.cases.forEach((c) => {
       const d = cible.querySelector(`.case[data-cle="${CSS.escape(c.cle)}"] > [data-dits]`);

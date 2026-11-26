@@ -117,6 +117,7 @@ routes! {
         GoogleAutoriser = "google-autoriser",
         GoogleOublier = "google-oublier",
         DriveEtat = "drive-etat",
+        DriveActualiser = "drive-actualiser",
         DriveSupprimer = "drive-supprimer",
         DrivePrendreLaMain = "drive-prendre-la-main",
         DriveCompagnies = "drive-compagnies",
@@ -314,7 +315,7 @@ impl Place {
     /// Le nom que l'ecran montre (la page le porte en `data-place`).
     pub fn nom(self) -> &'static str {
         match self {
-            Place::Paie => "Paie",
+            Place::Paie => "Engagements",
             Place::Fiches => "Configuration › Entreprise, Salariés, Spectacles",
             Place::Metiers => "Configuration › Métiers",
             Place::Organismes => "Configuration › Organismes et contrats",

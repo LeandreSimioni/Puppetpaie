@@ -1315,6 +1315,10 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
         Ok(s) => r.sauvegarde = Some(s),
         Err(e) => r.incidents.push(format!("Sauvegarde : {}", nomme(&ctx.racine, &e.echec))),
     }
+    // La sauvegarde a change le Drive (la date, le volume, la main) : ce que le moteur en garde pour la session se relit.
+    if let Err(e) = crate::drive::relire_si_garde(&ctx.racine) {
+        r.incidents.push(format!("Le Drive : {}", nomme(&ctx.racine, &e)));
+    }
     r.finir_l_etape();
     Ok(())
 }

@@ -5,7 +5,7 @@
    HISTORIQUE
    =======================================================================
    TOUS LES ENVOIS ET TOUS LES RETOURS SE LISENT ICI, en un seul endroit.
-   La page Paie est
+   La page Engagements est
    l'endroit où l'on FAIT le mois ; l'Historique, celui où l'on VOIT ce qu'il a
    produit, envoyé et reçu.
 
@@ -105,7 +105,7 @@ async function dessinerMoisHistorique(d) {
   brancherLesGestes(vue.querySelector("[data-gestes]"), h.gestes, { titre: m.titre }, async () => {});
   const reprendre = vue.querySelector("[data-reprendre]");
   if (reprendre) reprendre.onclick = async () => {
-    // Quitter d'abord ce qui porte une saisie non enregistrée : l'onglet Paie, ensuite, ne redemande rien.
+    // Quitter d'abord ce qui porte une saisie non enregistrée : l'onglet Engagements, ensuite, ne redemande rien.
     if (!(await quitterLEcran())) return;
     document.querySelector('.onglets button[data-vue="paie"]').click();
     await chargerMois(mois);

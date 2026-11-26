@@ -41,14 +41,11 @@ async function dessinerExports() {
     <div class="champs">
       <div class="champ">
         <label for="x-famille">${echapper(p.ecran.quoi)}</label>
-        <select id="x-famille">
-          ${choisir}
-          ${fams.map((f, i) => opt(String(i), f.libelle)).join("")}
-        </select>
+        ${listeQuiSeCherche('id="x-famille"', `${choisir}${fams.map((f, i) => opt(String(i), f.libelle)).join("")}`)}
       </div>
       <div class="champ cachee" id="x-etat-champ">
         <label for="x-etat">${echapper(p.ecran.lequel)}</label>
-        <select id="x-etat"></select>
+        ${listeQuiSeCherche('id="x-etat"', "")}
       </div>
     </div>
     <div id="x-suite"></div>`;
@@ -159,17 +156,13 @@ function dessinerQuestions(opt) {
         forme: "periode", valeur: forme.periode_proposee, choix: forme.periodes_offertes })}</div>` : ""}
       ${q.has("regroupement") ? `<div class="champ">
         <label for="x-par">${echapper(e.regroupement_libelle)}</label>
-        <select id="x-par">
-          ${forme.regroupements_offerts.map((r) => opt(r.code, r.libelle, r.code === forme.regroupement_propose)).join("")}
-        </select>
+        ${listeQuiSeCherche('id="x-par"', forme.regroupements_offerts.map((r) => opt(r.code, r.libelle, r.code === forme.regroupement_propose)).join(""))}
         <div class="aide">${echapper(forme.regroupement_dit)}</div>
       </div>` : ""}
       ${q.has("logiciel") ? `<div class="champ pleine">
         <label for="x-logiciel">${echapper(e.logiciel_libelle)}</label>
-        <select id="x-logiciel">
-          ${p.compta.logiciels.map((l) => opt(l.logiciel, l.libelle, l.logiciel === p.compta.logiciel)).join("")}
-          ${opt("", e.aucun_logiciel, !p.compta.logiciel)}
-        </select>
+        ${listeQuiSeCherche('id="x-logiciel"', p.compta.logiciels.map((l) => opt(l.logiciel, l.libelle, l.logiciel === p.compta.logiciel)).join("")
+          + opt("", e.aucun_logiciel, !p.compta.logiciel))}
         <div class="aide" id="x-logiciel-aide"></div>
         <label class="choix" id="x-analytique-champ">
           <input type="checkbox" id="x-analytique"${p.compta.analytique ? " checked" : ""}>
@@ -180,9 +173,7 @@ function dessinerQuestions(opt) {
       </div>` : ""}
       ${q.has("format") ? `<div class="champ" id="x-format-champ">
         <label for="x-format">${echapper(e.format_libelle)}</label>
-        <select id="x-format">
-          ${forme.formats_offerts.map((f) => opt(f.code, f.libelle, f.code === forme.format_propose)).join("")}
-        </select>
+        ${listeQuiSeCherche('id="x-format"', forme.formats_offerts.map((f) => opt(f.code, f.libelle, f.code === forme.format_propose)).join(""))}
       </div>` : ""}
       ${q.has("coordonnees") ? `<div class="champ pleine">
         <label class="coche" title="${echapper(e.coordonnees)}">
@@ -517,18 +508,24 @@ async function lancerExportCompta(annee) {
 
 /* ------------------------------- les heures et cachets des intermittents */
 
-/** LA CARTE DES DROITS : à son ouverture, ce que le moteur compte pour chaque intermittent (route `droits`) — ses
- *  lignes, la phrase qui dit où il en est, ses notes, le tableau du mois. La page met en forme, elle ne compte rien. */
+/** LA CARTE DES DROITS : à son ouverture, la case du salarié que la route `droits` rend (ses choix compris) ; choisir
+ *  un salarié rappelle la route avec lui, qui rend ce qu'elle compte pour lui — ses lignes, la phrase qui dit où il en
+ *  est, ses notes, le tableau du mois. La page met en forme, elle ne compte rien. */
 function brancherDroits() {
   const carte = document.getElementById("carte-droits");
   if (!carte) return;
-  carte.ontoggle = async () => {
-    if (!carte.open) return;
-    const cible = document.getElementById("droits");
-    let d;
-    try { d = await api("droits"); }
-    catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-    cible.innerHTML = d.salaries.map((s) => `
+  carte.ontoggle = () => { if (carte.open) dessinerDroits({}); };
+}
+
+/** Pose ce que `droits` rend pour la charge `charge` dans la carte des droits. */
+async function dessinerDroits(charge) {
+  const cible = document.getElementById("droits");
+  cible.innerHTML = `<p class="discret">Lecture…</p>`;
+  let d;
+  try { d = await api("droits", charge); }
+  catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
+  const s = d.salarie;
+  cible.innerHTML = `${d.case ? `<div class="e-cases" data-droits-cases>${caseDeRoute(d.case)}</div>` : ""}${!s ? "" : `
       <div class="droits-salarie">
         <h3>${echapper(s.nom)} <span class="discret">— ${echapper(s.fenetre)}</span></h3>
         <table>${s.lignes.map(([quoi, valeur]) => `<tr><td>${echapper(quoi)}</td><td>${echapper(valeur)}</td></tr>`).join("")}</table>
@@ -537,6 +534,7 @@ function brancherDroits() {
         <table><tr><th></th>${s.colonnes.titres.map((t) => `<th>${echapper(t)}</th>`).join("")}</tr>
           ${s.colonnes.lignes.map((l) => `<tr><td>${echapper(l.quoi)}</td>${l.valeurs.map((v) => `<td>${echapper(v)}</td>`).join("")}</tr>`).join("")}
         </table>
-      </div>`).join("") + `<p class="discret">${echapper(d.phrase)}</p>`;
-  };
+      </div>`}<p class="discret">${echapper(d.phrase)}</p>`;
+  const bloc = cible.querySelector("[data-droits-cases]");
+  if (bloc) bloc.onchange = () => dessinerDroits(lireLesCases(bloc));
 }

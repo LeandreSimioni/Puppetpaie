@@ -129,7 +129,7 @@ function caseDeLaCarte(div, d, choix) {
 
 /** Ce que la route `convention-du-metier` a rendu, par mois et par métier, sous le code de chaque rubrique : elle ne
  *  s'appelle qu'une fois pour eux, jamais à chaque frappe. `null` : sa réponse est attendue. Il s'oublie quand un mois
- *  se lit (pas quand il se repeint après une écriture) et au retour sur Paie (`oublierLesBulles`) : la convention ou
+ *  se lit (pas quand il se repeint après une écriture) et au retour sur Engagements (`oublierLesBulles`) : la convention ou
  *  l'annexe ont pu changer. */
 const CONVENTION_DU_METIER = new Map();
 
@@ -344,9 +344,26 @@ async function changer(div, changements) {
   div._aCompleter = r.a_completer;
   // Un engagement auquel il manque un fait s'enregistre aussi : sa carte dit ce qui manque, et la ligne d'état le rappelle.
   noteSaisie(r.enregistre_dit + (r.a_completer ? " — " + ETAT.aides.a_completer : ""));
-  dessinerCarte(div);
+  // Le curseur dans une case de texte de la carte (qu'on tape, qu'on colle) : elle ne se redessine pas sous les doigts,
+  // seuls sa paie et ses états se repeignent, et elle se redessine quand le curseur la quitte (`redessinerEnQuittant`).
+  // Un bouton ou une liste choisie qui garde le curseur ne retient rien.
+  const a = document.activeElement;
+  if (div.contains(a) && a.matches("input:not(.liste-tape), textarea")) {
+    div._aRedessiner = true;
+    peindreLaPaie(div);
+    peindreLesEtats(div);
+  } else if (CALENDRIER_OUVERT) { peindreLaPaie(div); peindreLesEtats(div); }
+  else dessinerCarte(div);
   await apresUneEcriture(mois);
 }
+
+/** Une carte qui ne s'est pas redessinée sous le curseur (`changer`) se redessine quand il la quitte. */
+document.addEventListener("focusout", (ev) => {
+  const div = ev.target.closest && ev.target.closest("#engagements .engagement");
+  if (!div || !div._aRedessiner || div.contains(ev.relatedTarget) || CALENDRIER_OUVERT) return;
+  div._aRedessiner = false;
+  if (div.isConnected) dessinerCarte(div);
+});
 
 /** Après une écriture : ce qui se lit sur la saisie enregistrée se relit (l'historique des mois, les étapes, les
  *  imprévus, l'aperçu). */
@@ -535,14 +552,14 @@ function dessinerLaLigne(div) {
       <div class="carte-actes">${bandeauEtats(ligne, false)}</div>
       <div class="carte-net" title="net payé">${p ? echapper(netPaye(p.net_paye)) : ""}</div>
       ${versionsDe(ligne)}
-      <span class="carte-modifier"><button class="lien carte-imprevu" title="Imprévu" aria-label="Un imprévu">&hellip;</button></span>
+      <span class="carte-modifier"><button class="lien carte-imprevu" title="${echapper(ligne.copier.libelle)}" aria-label="${echapper(ligne.copier.libelle)}">&hellip;</button></span>
     </div>
     <div class="e-imprevus"></div>`;
   poserLesChevrons(div);
   const resume = div.querySelector(".e-resume");
   rendreOuvrable(resume, () => ouvrirEnModification(div), "Voir l'engagement");
   const porte = div.querySelector(".carte-imprevu");
-  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuImprevu(porte, { div, copier: ligne.copier }); };
+  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuDeLaLigne(porte, ligne.copier); };
   const frise = div.querySelector(".carte-versions");
   if (frise) frise.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); boiteFrise(ligne); };
   peindreImprevusDesCartes();
@@ -560,8 +577,13 @@ function peindreLesEtats(div) {
   // sa phrase se dit à la place des gestes ; pas encore lu, rien.
   const g = ligne ? ligne.gestes : !div.dataset.engagement ? NOUVELLE_CARTE.gestes : null;
   const bouton = (a, classe) => (a ? `<button class="${classeDuGeste(a)} ${classe}">${echapper(a.libelle)}</button>` : "");
+  // Validé et ouvert (`reduire` rendu) : « Réduire » tant qu'aucune case n'a changé (`_modif` vide), puis « Annuler »
+  // et « Modifier l'engagement ».
+  const rien = !!(g && g.reduire) && !(div._modif && div._modif.length);
+  const annuler = g ? (rien ? g.reduire : g.annuler) : null;
   const gestes = g
-    ? [bouton(g.retirer, "retirer-engagement"), bouton(g.annuler, "v-annuler"), bouton(g.modifier, "v-modifier"), bouton(g.valider, "v-valider")].join("")
+    ? [bouton(g.retirer, "retirer-engagement"), bouton(annuler, "v-annuler"), rien ? "" : bouton(g.modifier, "v-modifier"),
+      bouton(g.valider, "v-valider")].join("")
     : div.dataset.engagement && ETATS_REFUS ? `<span class="encart erreur">${echapper(ETATS_REFUS)}</span>` : "";
   const valide = !!(ligne && ligne.valide);
   const pieces = valide ? ligne.carres.filter((c) => c.lien).map((c) =>
@@ -574,7 +596,7 @@ function peindreLesEtats(div) {
   const sur = (s, f) => { const b = cible.querySelector(s); if (b) b.onclick = (ev) => { ev.preventDefault(); f(ev); }; };
   sur(".v-valider", () => validerLaCarte(g.valider));
   sur(".v-modifier", () => modifierLaCarte(div, g.modifier));
-  sur(".v-annuler", () => annulerLaCarte(g.annuler));
+  sur(".v-annuler", () => annulerLaCarte(annuler));
   sur(".retirer-engagement", () => retirerLaCarte(g.retirer));
   sur(".e-imprevu-btn", (ev) => { ev.stopPropagation(); menuImprevu(ev.currentTarget, { div }); });
   sur(".carte-versions", (ev) => { ev.stopPropagation(); boiteFrise(ligne); });
@@ -689,7 +711,7 @@ function ouvrirLaFin(div, champ) {
   if (repli) repli.open = true;
   const x = cas.querySelector("[data-case]");
   cas.scrollIntoView({ block: "center" });
-  if (x && x.focus) x.focus();
+  if (x && x.focus) zoneDeLaCase(x).focus();
   return true;
 }
 

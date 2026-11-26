@@ -1,11 +1,16 @@
 //! LE DRIVE, VU D'UNE COMPAGNIE (Configuration › Le Drive) : ce que le compte Google lie porte sous `PuppetPaie/`
-//! (`drive-etat` : chaque dossier, ce qu'il est, sa derniere sauvegarde, son volume), et en supprimer un
+//! (`drive-etat` : chaque dossier, ce qu'il est, sa derniere sauvegarde, son volume, tels que le moteur les garde pour la
+//! session, `DriveLu` ; `drive-actualiser` les relit), et en supprimer un
 //! (`drive-supprimer` : avec le mot de passe du logiciel, comme un acte reel ; le dossier va a la corbeille de Google), et
 //! prendre la main sur le dossier de cette compagnie (`drive-prendre-la-main`, `compagnie::sauvegarde::LaMain`).
 //! La vue elle-meme est `compagnie::sur_le_drive` ; reprendre une compagnie du Drive se fait a l'accueil
 //! (`accueil::drive`).
 
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
 use serde::Serialize;
+use socle::memoire::tenu;
 
 use compagnie::sur_le_drive::{DossierVu, GenreDuDossier};
 use envois::drive::{Drive, IdDrive};
@@ -27,20 +32,33 @@ const SUPPRIMER: Affiche = Affiche::new("Supprimer…");
 /// Le geste, tel que la demande du mot de passe le dit.
 const GESTE_MAIN: &str = "prendre la main sur le Drive de cette compagnie";
 const PRENDRE_LA_MAIN: Affiche = Affiche::new("Prendre la main…");
+const ACTUALISER: Affiche = Affiche::new("Actualiser");
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DriveEtat,
-        geste: "Dire chaque dossier du Drive lié, sa dernière sauvegarde, son volume.",
+        geste: "Dire chaque dossier du Drive lié, tel que le moteur l'a lu pour la session.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "phrase, encarts, rangs : chaque dossier sous PuppetPaie (le dossier de cette compagnie, celui d'une autre, l'ancienne sauvegarde commune, un dossier d'une ancienne version), sa dernière sauvegarde, son volume, et le geste qui le supprime quand le mot de passe du logiciel est posé (sinon un encart dit pourquoi) ; ce qui ne se lit pas se dit en encart",
+        rend: "phrase, encarts, rangs : d'abord le Drive lu (le compte, l'heure de la lecture, le geste « Actualiser »), puis chaque dossier sous PuppetPaie (le dossier de cette compagnie, celui d'une autre, l'ancienne sauvegarde commune, un dossier d'une ancienne version), sa dernière sauvegarde, son volume, et le geste qui le supprime quand le mot de passe du logiciel est posé (sinon un encart dit pourquoi) ; ce qui ne se lit pas se dit en encart. Le Drive se lit une fois pour la session (en fond à l'ouverture de la compagnie) : une lecture en cours se fait attendre",
         refus: &[OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::Rendu(Place::Drive),
+    },
+    Fiche {
+        route: Route::DriveActualiser,
+        geste: "Relire le Drive lié maintenant : drive-etat montre ensuite cette lecture.",
+        charge: &SansCharge::CHARGE,
+        exemple: r#"{}"#,
+        rend: "phrase : le Drive relu, combien de dossiers, et l'heure de la lecture (ou ce qui ne se lit pas)",
+        refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
+        acte: Acte::Lit,
+        phrase: 200,
+        ecran: Ecran::Geste(Place::Drive),
     },
     Fiche {
         route: Route::DriveSupprimer,
@@ -101,6 +119,7 @@ charge! {
 enum GesteDuDrive {
     Supprimer(ChargeSupprimer),
     PrendreLaMain(SansCharge),
+    Actualiser(SansCharge),
 }
 
 type EcranDuDrive = EcranRendu<GesteDuDrive>;
@@ -118,6 +137,18 @@ struct DriveDit {
 struct DossierSupprime {
     phrase: Phrase,
     dossier: String,
+}
+
+/// Ce que rend `drive-actualiser` : la phrase de l'ecran du Drive relu.
+#[derive(Debug, Serialize)]
+struct DriveRelu {
+    phrase: Phrase,
+}
+
+impl Dite for DriveRelu {
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
+    }
 }
 
 impl Dite for DriveDit {
@@ -165,7 +196,11 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         Route::DriveEtat => {
             let SansCharge {} = charge.lire()?;
-            en_json(etat(porte.ctx)?)
+            en_json(etat(porte.ctx, false)?)
+        }
+        Route::DriveActualiser => {
+            let SansCharge {} = charge.lire()?;
+            en_json(DriveRelu { phrase: etat(porte.ctx, true)?.phrase })
         }
         Route::DriveSupprimer => {
             let c: ChargeSupprimer = charge.lire()?;
@@ -316,7 +351,7 @@ fn prendre_la_main(racine: &std::path::Path, mdp: Option<&socle::secret::Secret>
     } else {
         Phrase::fixe("Ce poste tient la main sur le Drive de cette compagnie, qu'aucun poste ne tenait : sa sauvegarde suit.")
     };
-    Ok(MainPrise { ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()), ..MainPrise::dite(phrase) })
+    Ok(MainPrise { ensuite: Some(crate::veille::SauvegardeQuiSuit::du_drive()), ..MainPrise::dite(relu_apres(racine, phrase)) })
 }
 
 /// RECUPERER LE DRIVE PUIS PRENDRE LA MAIN (`prendre_la_main`, quand un autre poste la tient ou qu'elle ne se lit pas) :
@@ -366,16 +401,103 @@ fn recuperer_puis_prendre(
     if let Some(r) = reste {
         phrase = format!("{} {}", phrase, r);
     }
-    Ok(MainPrise { apres: Some(crate::ecran::ApresLeGeste::Rouvrir), incidents, ..MainPrise::dite(socle::phrase!("{}", phrase)) })
+    Ok(MainPrise { apres: Some(crate::ecran::ApresLeGeste::Rouvrir), incidents, ..MainPrise::dite(relu_apres(racine, socle::phrase!("{}", phrase))) })
+}
+
+// ------------------------------------------------------------------ le Drive lu, garde pour la session
+
+/// LE DRIVE TEL QU'UNE LECTURE L'A VU : le compte lie, ce que `sur_le_drive::voir` a rendu (ou ce qui ne s'est pas lu,
+/// en mots) et l'heure de la lecture. Le moteur le garde pour la session (`LUS`) : lire le Drive coute trois appels a
+/// Google, quelques secondes, et l'ecran du Drive le montre aussitot.
+#[derive(Debug, Clone)]
+pub(crate) struct DriveLu {
+    compte: String,
+    vus: Result<Vec<DossierVu>, String>,
+    quand: socle::paris::Moment,
+}
+
+/// Le Drive d'une compagnie, tel que le moteur le garde : aucun tant qu'il ne l'a pas lu.
+type DriveGarde = Arc<Mutex<Option<DriveLu>>>;
+
+/// LE DRIVE LU DE CHAQUE COMPAGNIE DE CE PROCESSUS, par dossier (`envois_en_fond::cle`) : lu en fond a l'ouverture de la
+/// compagnie (`lire_pour_la_session`), relu par « Actualiser » (`drive-actualiser`), apres un geste qui change le Drive
+/// et a la fin d'une sauvegarde (`relire_si_garde`). Le verrou d'une compagnie se tient le temps d'une lecture : qui
+/// regarde pendant ce temps attend qu'elle arrive. En ligne de commande, chaque appel est un processus : il lit.
+static LUS: Mutex<Vec<(PathBuf, DriveGarde)>> = Mutex::new(Vec::new());
+
+/// Le Drive que le moteur garde pour la compagnie `racine`.
+fn garde(racine: &Path) -> R<DriveGarde> {
+    let c = crate::envois_en_fond::cle(racine)?;
+    let mut tous = tenu(&LUS);
+    match tous.iter().find(|(k, _)| *k == c) {
+        Some((_, g)) => Ok(g.clone()),
+        None => {
+            let g = DriveGarde::default();
+            tous.push((c, g.clone()));
+            Ok(g)
+        }
+    }
+}
+
+/// LIRE LE DRIVE DE `compte` : les trois appels (la cle d'acces, la racine du Drive, le dossier `PuppetPaie/`), et
+/// l'heure.
+fn lire(racine: &Path, compte: String) -> DriveLu {
+    let vus = crate::coffre::client_drive(racine).and_then(|mut c| compagnie::sur_le_drive::voir(&mut c, compagnie::sauvegarde::RACINE_DRIVE)).map_err(|e| e.echec.phrase);
+    DriveLu { compte, vus, quand: socle::temps::secondes() }
+}
+
+/// LE DRIVE DE `racine` POUR LE COMPTE `compte` : la lecture gardee ; aucune, celle d'un autre compte, ou `relire`, il se
+/// lit maintenant, et cette lecture se garde.
+fn le_drive(racine: &Path, compte: String, relire: bool) -> R<DriveLu> {
+    let g = garde(racine)?;
+    let mut lu = tenu(&g);
+    if let Some(l) = lu.as_ref().filter(|l| !relire && l.compte == compte) {
+        return Ok(l.clone());
+    }
+    let l = lire(racine, compte);
+    *lu = Some(l.clone());
+    Ok(l)
+}
+
+/// LIRE LE DRIVE EN FOND, A L'OUVERTURE DE LA COMPAGNIE (la veille de la fenetre, `interface::veille`) : une fois, et le
+/// garder pour la session ; une lecture deja gardee (la compagnie qui se rouvre) se remplace. Une compagnie fictive, ou
+/// sans compte Google lie : rien a lire. Un jeton illisible : rien a lire non plus, `drive-etat` le dit quand on regarde.
+/// Le Drive qui ne se lit pas se garde tel quel (`DriveLu::vus`). Un marqueur illisible ou un dossier qui ne se nomme pas
+/// remontent a qui l'a lancee.
+pub fn lire_pour_la_session(racine: &Path) -> R<()> {
+    if compagnie::bridage::branchement(racine)?.joue() {
+        return Ok(());
+    }
+    match crate::coffre::compte_autorise(racine) {
+        Ok(Some(c)) => le_drive(racine, c, true).map(|_| ()),
+        Ok(None) | Err(_) => Ok(()),
+    }
+}
+
+/// LE DRIVE A CHANGE (un dossier mis a la corbeille, la main prise, une sauvegarde au bout) : la lecture gardee, s'il y
+/// en a une, se refait maintenant ; aucune, rien.
+pub(crate) fn relire_si_garde(racine: &Path) -> R<()> {
+    let g = garde(racine)?;
+    let mut lu = tenu(&g);
+    if let Some(compte) = lu.as_ref().map(|l| l.compte.clone()) {
+        *lu = Some(lire(racine, compte));
+    }
+    Ok(())
+}
+
+/// Le geste « Actualiser », que le rang du Drive lu porte.
+fn geste_actualiser() -> GesteDeRoute<GesteDuDrive, SansCharge, SansCharge> {
+    GesteDeRoute::avec_cases(Route::DriveActualiser, GesteDuDrive::Actualiser(SansCharge {}), ACTUALISER, Vec::new(), SansCharge {}, SansCharge {})
 }
 
 // ------------------------------------------------------------------ drive-etat
 
-/// L'ECRAN DU DRIVE : un rang par dossier sous `PuppetPaie/`, et son geste « Supprimer… » quand le mot de passe du
-/// logiciel est pose (sa demande ; sans lui, le geste ne se propose pas et un encart dit pourquoi). Doux : une compagnie
-/// fictive, un Drive non lie, un Drive qui ne se lit pas, une identite ou un coffre illisibles se disent en encart, et
-/// rien ne se refuse.
-fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
+/// L'ECRAN DU DRIVE : d'abord le Drive lu (le compte, l'heure de la lecture, et « Actualiser »), puis un rang par dossier
+/// sous `PuppetPaie/`, et son geste « Supprimer… » quand le mot de passe du logiciel est pose (sa demande ; sans lui, le
+/// geste ne se propose pas et un encart dit pourquoi). Le Drive est celui que le moteur garde pour la session
+/// (`le_drive`) ; `relire` (`drive-actualiser`) le relit d'abord. Doux : une compagnie fictive, un Drive non lie, un Drive
+/// qui ne se lit pas, une identite ou un coffre illisibles se disent en encart, et rien ne se refuse.
+fn etat(ctx: &droit::contexte::Contexte, relire: bool) -> R<DriveDit> {
     let mut encarts = vec![Encart::de(EtatDEcran::Information, "", "Ce que votre compte Google porte dans son dossier PuppetPaie : un dossier par compagnie, et ce qu'ont laissé les anciennes versions.")];
     let fini = |encarts: Vec<Encart>, phrase: Phrase| DriveDit { phrase, ecran: EcranRendu { encarts, rangs: Vec::new(), cases: Vec::new(), historique: Vec::new(), enregistrer: None } };
     if compagnie::bridage::branchement(&ctx.racine)?.joue() {
@@ -394,12 +516,24 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
             return Ok(fini(encarts, Phrase::fixe("Le jeton du compte Google ne se lit pas.")));
         }
     };
-    let vus = crate::coffre::client_drive(&ctx.racine).and_then(|mut c| compagnie::sur_le_drive::voir(&mut c, compagnie::sauvegarde::RACINE_DRIVE));
+    let DriveLu { compte, vus, quand } = le_drive(&ctx.racine, compte, relire)?;
+    let lu = format!("Lu {}.", crate::veille::heure_du_passage(quand));
+    // LE DRIVE LU, en tete : le compte, l'heure de la lecture, et le geste qui le relit.
+    let rang_du_drive = |pastille: Pastille| RangDeLEcran {
+        titre: format!("Le Drive de {}", compte),
+        dit: vec![lu.clone()],
+        pastille,
+        etat: None,
+        montre: None,
+        gestes: vec![geste_actualiser()],
+    };
     let vus = match vus {
         Ok(v) => v,
         Err(e) => {
-            encarts.push(Encart::de(EtatDEcran::Refuse, "Le Drive ne se lit pas", e.echec.phrase));
-            return Ok(fini(encarts, socle::phrase!("Le Drive de {} ne se lit pas.", compte)));
+            encarts.push(Encart::de(EtatDEcran::Refuse, "Le Drive ne se lit pas", e));
+            let phrase = socle::phrase!("Le Drive de {} ne se lit pas. {}", compte, lu);
+            let rangs = vec![rang_du_drive(Pastille::de(EtatDEcran::Refuse, "ne se lit pas"))];
+            return Ok(DriveDit { phrase, ecran: EcranRendu { encarts, rangs, cases: Vec::new(), historique: Vec::new(), enregistrer: None } });
         }
     };
     // Ce qui ne se lit pas ici se dit en encart ; le reste de l'ecran se montre.
@@ -440,7 +574,7 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
     if vus.is_empty() {
         encarts.push(Encart::de(EtatDEcran::Information, "Rien encore dans le Drive", "La prochaine sauvegarde y crée le dossier de cette compagnie."));
     }
-    let mut rangs = Vec::new();
+    let mut rangs = vec![rang_du_drive(Pastille::de(EtatDEcran::Information, &format!("{} dossier(s)", vus.len())))];
     for vu in &vus {
         let le_sien = compagnie::sur_le_drive::est_celui_de(vu, la_sienne.as_ref());
         let mut dit = vec![ce_qu_il_est(vu, la_sienne.as_ref()).to_string(), derniere_dite(vu)];
@@ -482,7 +616,7 @@ fn etat(ctx: &droit::contexte::Contexte) -> R<DriveDit> {
         }
         rangs.push(RangDeLEcran { titre: vu.nom.clone(), dit, pastille, etat: None, montre: None, gestes });
     }
-    let phrase = socle::phrase!("Le Drive de {} : {} dossier(s).", compte, vus.len());
+    let phrase = socle::phrase!("Le Drive de {} : {} dossier(s). {}", compte, vus.len(), lu);
     Ok(DriveDit { phrase, ecran: EcranRendu { encarts, rangs, cases: Vec::new(), historique: Vec::new(), enregistrer: None } })
 }
 
@@ -500,5 +634,15 @@ fn supprimer(ctx: &droit::contexte::Contexte, dossier: &IdDrive, mdp: Option<&so
     let vus = compagnie::sur_le_drive::voir(corbeille.drive(), racine_drive).map_err(|e| e.echec)?;
     let vu = compagnie::sur_le_drive::le_dossier(vus, dossier, racine_drive).map_err(|e| e.echec)?;
     corbeille.mettre(&vu.id).map_err(|e| e.echec)?;
-    Ok(DossierSupprime { phrase: socle::phrase!("« {} » est dans la corbeille de Google : on l'en sort pendant 30 jours.", vu.nom), dossier: vu.nom })
+    let phrase = relu_apres(&ctx.racine, socle::phrase!("« {} » est dans la corbeille de Google : on l'en sort pendant 30 jours.", vu.nom));
+    Ok(DossierSupprime { phrase, dossier: vu.nom })
+}
+
+/// LA PHRASE D'UN GESTE QUI A CHANGE LE DRIVE, une fois relu ce que le moteur en garde (`relire_si_garde`) : ce qui ne se
+/// relit pas s'y ajoute (le geste, lui, est fait).
+fn relu_apres(racine: &Path, phrase: Phrase) -> Phrase {
+    match relire_si_garde(racine) {
+        Ok(()) => phrase,
+        Err(e) => socle::phrase!("{} Le Drive ne se relit pas : {}", phrase, e.phrase),
+    }
 }

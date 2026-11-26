@@ -149,15 +149,17 @@ charge! {
 }
 
 /// LES GESTES DE LA CARTE D'UN ENGAGEMENT, tels que la ligne de l'engagement les rend (`etat-par-engagement`) : en
-/// brouillon, le valider ou le retirer ; valide, ouvert pour etre modifie, le modifier (ses changements s'ajoutent a la
-/// charge rendue), relire le mois sans rien ecrire, ou le retirer. Un engagement valide n'a pas de geste qui le valide.
+/// brouillon, le valider ou le retirer ; valide, ouvert pour etre modifie, le retirer et, tant qu'aucune case n'a
+/// change, le reduire (`reduire` : relire le mois, rien ne s'ecrit, la carte se referme) ; des qu'une case a change,
+/// relire le mois sans rien ecrire (`annuler`) ou le modifier (`modifier` : ses changements s'ajoutent a la charge
+/// rendue). Un engagement valide n'a pas de geste qui le valide.
 /// Une carte neuve, que rien n'a encore ecrite (`nouvelle_carte` de la route `saisie`), n'a qu'un geste, « Retirer cet
 /// engagement » : comme « Annuler », il relit le mois, qui ne la montre pas, et rien ne s'ecrit (`annuler`).
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub(crate) enum GestesDeLaCarte {
     Brouillon { retirer: Action, valider: Action },
-    Valide { retirer: Action, annuler: Action, modifier: Action },
+    Valide { retirer: Action, reduire: Action, annuler: Action, modifier: Action },
     Neuve { annuler: Action },
 }
 
@@ -177,6 +179,7 @@ impl GestesDeLaCarte {
         let charge = ChargeModifier { mois, engagement: engagement.clone(), changements: Changements::aucun(), confirme: false };
         GestesDeLaCarte::Valide {
             retirer,
+            reduire: action(Route::Saisie, ChargeMois { mois }, None, "Réduire".into()).secondaire(),
             annuler: action(Route::Saisie, ChargeMois { mois }, None, "Annuler".into()).secondaire(),
             modifier: action(Route::ModifierEngagement, charge, None, "Modifier l'engagement".into()).principale(),
         }

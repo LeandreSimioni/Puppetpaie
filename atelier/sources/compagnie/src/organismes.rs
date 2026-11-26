@@ -62,7 +62,7 @@ fn permanents_ouverts(ctx: &Contexte, p: &Periode) -> R<bool> {
     Ok(engagement::permanents::Permanents::de(ctx, p)?.ouverts())
 }
 
-/// La periode que l'ecran regarde : le mois `mois` de la charge (celui de l'onglet Paie), sinon celui du jour.
+/// La periode que l'ecran regarde : le mois `mois` de la charge (celui de l'onglet Engagements), sinon celui du jour.
 fn periode(ctx: &Contexte, mois: Option<Mois>) -> Periode {
     let mois = match mois {
         Some(m) => m,

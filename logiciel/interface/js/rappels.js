@@ -310,7 +310,8 @@ async function allerAuManque(champ, onglet, nom, cle) {
   let essais = 0;
   const viser = () => {
     // Une case de route porte sa clé sur son libellé : le curseur va dans sa case.
-    const c = trouver()?.querySelector("[data-case]") || trouver();
+    const x = trouver()?.querySelector("[data-case]");
+    const c = (x && zoneDeLaCase(x)) || trouver();
     if (!c) { if (++essais < 20) setTimeout(viser, 100); return; }
     const tiroir = c.closest("details");
     if (tiroir) tiroir.open = true;
@@ -431,7 +432,7 @@ function boutonRappel(r, i) {
 }
 
 /* Le geste d'un rappel mène ailleurs : tout écran qui porte une saisie non enregistrée se quitte d'abord (la boîte, et
- * ce qui est dessous), avant d'ouvrir l'onglet Paie, dont le gestionnaire ne redemande alors rien. */
+ * ce qui est dessous), avant d'ouvrir l'onglet Engagements, dont le gestionnaire ne redemande alors rien. */
 async function agirSurRappel(r) {
   if (!(await quitterLEcran())) return;
   fermerBoite();

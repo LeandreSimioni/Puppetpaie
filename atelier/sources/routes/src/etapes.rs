@@ -1498,7 +1498,7 @@ impl<'a> LigneDePage<'a> {
                 Route::CopierEngagement,
                 crate::mois::ChargeCarteProposee { mois, engagement: l.engagement.clone() },
                 Some(Route::EnregistrerSaisie),
-                "Copier pour un autre salarié".into(),
+                "Copier l'engagement".into(),
             ),
             engagement: &l.engagement,
             salarie: v.salarie.as_ref(),
@@ -1701,7 +1701,9 @@ pub(crate) struct Remplacement {
     admis: bool,
     saisie_modifiee: Option<bool>,
     pub(crate) a_envoyer: bool,
-    pub(crate) phrase: String,
+    /// Absente quand il n'y a rien a dire : rien de depose en reel, ou rien ne change apres la limite.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) phrase: Option<String>,
     corrigee_par_la_suivante: bool,
 }
 
@@ -2220,7 +2222,7 @@ impl<'a> Moteur<'a> {
             admis,
             saisie_modifiee: None,
             a_envoyer: false,
-            phrase: String::new(),
+            phrase: None,
             // Apres la limite : la DSN suivante corrige chaque contrat dont la paie validee a change.
             corrigee_par_la_suivante: false,
         };
@@ -2268,24 +2270,24 @@ impl<'a> Moteur<'a> {
         if corriges > 0 {
             let pluriel = if corriges > 1 { "s" } else { "" };
             out.corrigee_par_la_suivante = true;
-            out.phrase = format!(
+            out.phrase = Some(format!(
                 "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({}) — {} contrat{} corrigé{} par la DSN suivante",
                 quand, jour, corriges, pluriel, pluriel
-            );
+            ));
             return Ok(out);
         }
         if modifiee {
             if admis {
                 out.a_envoyer = true;
-                out.phrase = format!("Paie modifiée depuis la DSN du {} — annule-et-remplace à envoyer, jusqu'au {}", quand, jour);
+                out.phrase = Some(format!("Paie modifiée depuis la DSN du {} — annule-et-remplace à envoyer, jusqu'au {}", quand, jour));
             } else {
-                out.phrase = format!(
+                out.phrase = Some(format!(
                     "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({}) — la correction part dans la DSN suivante",
                     quand, jour
-                );
+                ));
             }
         } else if admis {
-            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {}", out.prochain_ordre, jour);
+            out.phrase = Some(format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {}", out.prochain_ordre, jour));
         }
         Ok(out)
     }

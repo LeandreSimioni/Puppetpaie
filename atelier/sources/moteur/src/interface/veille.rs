@@ -241,6 +241,15 @@ impl Veille {
             self.du.store(true, Ordering::SeqCst);
             return;
         }
+        // LE DRIVE SE LIT UNE FOIS POUR LA SESSION, sur son propre fil : l'ecran du Drive le montre ensuite aussitot, sans
+        // attendre le passage (`routes::drive::lire_pour_la_session`). Un fil qui ne demarre pas : l'ecran du Drive le
+        // lit quand on le regarde.
+        let racine = self.racine.clone();
+        routes::fil_de_routes(move || {
+            if let Err(e) = routes::drive::lire_pour_la_session(&racine) {
+                compagnie::diagnostic::noter_moteur(&format!("La lecture du Drive à l'ouverture n'a pas eu lieu : {}", e.phrase));
+            }
+        });
         let v = self.clone();
         routes::fil_de_routes(move || {
             // La mise a jour ne se cherche pas ici, a l'ouverture d'une compagnie : c'est le logiciel qui la cherche pour
