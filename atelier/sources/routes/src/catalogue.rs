@@ -983,6 +983,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
         eprintln!("option inconnue : {} (moteur routes [NOM] [--avance] [--json] ; --racine et --date sont de moteur route)", o);
         return ExitCode::from(2);
     }
+    // Les referentiels : ceux de l'installation du programme, comme a `moteur route` ; les natures d'une carte s'y lisent.
+    if let Err(e) = compagnie::installation::fixer_le_code() {
+        eprintln!("{}", e.en_lignes());
+        return ExitCode::FAILURE;
+    }
     let json = args.iter().any(|a| a == "--json");
     let avance = args.iter().any(|a| a == "--avance");
     let nom = args.iter().find(|a| !a.starts_with("--"));
@@ -996,7 +1001,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
         match ecrite {
             Ok(t) => dire_sans_ligne!("{}", t),
             Err(e) => {
-                eprintln!("{}", e.phrase);
+                eprintln!("{}", e.en_lignes());
                 return ExitCode::FAILURE;
             }
         }
@@ -1009,7 +1014,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
                 ExitCode::SUCCESS
             }
             Err(e) => {
-                eprintln!("{}", e.phrase);
+                eprintln!("{}", e.en_lignes());
                 ExitCode::FAILURE
             }
         };
