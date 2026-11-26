@@ -1,7 +1,8 @@
 /* « Un probleme, une idee ? », les captures, le filet. */
 "use strict";
 
-/* SIGNALER UN PROBLÈME. Le bouton du bandeau, sur tous les écrans.
+/* SIGNALER UN PROBLÈME. Le bouton de la page (`#signaler` : le bandeau d'une compagnie, sous les tuiles de l'accueil des
+ * compagnies), sur tous les écrans ; la même boîte sur les deux pages.
  *
  * PAS SEULEMENT UN PROBLÈME : on peut aussi
  * émettre une envie, une idée : le bouton s'appelle « Un problème, une
@@ -25,7 +26,10 @@ function retenirSignalements(r) {
 }
 
 function ecranCourant() {
-  const b = document.querySelector(".onglets button.actif");
+  // L'accueil des compagnies n'a pas d'onglets : la page dit son nom (`data-ecran`).
+  const page = document.querySelector("main[data-ecran]");
+  if (page) return page.dataset.ecran;
+  const b =document.querySelector(".onglets button.actif");
   const nom = b ? b.textContent.trim() : "";
   const mois = document.getElementById("mois");
   return nom === "Engagements" && mois && mois.value ? `${nom} > ${mois.value}` : nom;

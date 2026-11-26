@@ -1,0 +1,56 @@
+/* « UN PROBLEME, UNE IDEE ? », sur l'accueil des compagnies comme dans la page d'une compagnie (les deux pages lient
+   cette feuille et `js/filet.js`) : le bouton, la boite, ses captures, la pastille de la boite reduite. Une couleur que
+   l'accueil ne pose pas a sa valeur de la charte (`interface.css`) en repli d'affichage. */
+
+/* Le bouton : un lien discret, la boite en dessous. */
+button.signaler { border: none; background: none; color: var(--discret, #7A8794); font-size: 12px; font-weight: normal;
+                  width: auto; margin: 0; padding: 4px 8px; cursor: pointer; text-decoration: underline dotted; }
+button.signaler:hover { color: var(--texte, #2C3E50); }
+#sg-texte { width: 100%; box-sizing: border-box; font: inherit; }
+.sg-vignettes { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
+.sg-vignettes:empty { display: none; }
+.sg-vignette { position: relative; }
+.sg-vignette img { display: block; max-width: 140px; max-height: 90px;
+                   border: 1px solid var(--discret, #7A8794); border-radius: 3px; }
+/* La place d'une capture qui se dessine encore : la boîte revient tout de suite, l'image suit. */
+.sg-vignette.sg-en-cours { display: flex; align-items: center; justify-content: center; width: 140px; height: 90px;
+                           border: 1px dashed var(--discret, #7A8794); border-radius: 3px; font-size: 12px;
+                           color: var(--discret, #7A8794); }
+.sg-retirer { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; margin: 0;
+              padding: 0; border: none; border-radius: 50%; line-height: 20px;
+              background: var(--texte, #2C3E50); color: var(--carte, #FFFFFF); cursor: pointer; font-size: 13px; }
+#sg-ajout { margin: 8px 0 0; font-size: 12px; }
+#sg-ajout .lien { font-size: inherit; display: inline; width: auto; margin: 0; padding: 0; border: none; background: none;
+                  font-weight: normal; color: var(--action, #2E6A57); text-decoration: underline; cursor: pointer; }
+#sg-ajout input[type="file"] { display: none; }
+.sg-voir { margin-right: auto; font-size: 12px; color: var(--discret, #7A8794); }
+#sg-pre { margin-top: 12px; max-height: 40vh; overflow: auto; }
+/* LE BOUTON PAR-DESSUS LE VOILE : celui de la page est sous le
+   voile, et le clic qui le visait tombait sur le voile, qui fermait la
+   fenêtre ouverte. Celui-ci est DANS le voile : il ne ferme rien. */
+button.signaler.sur-voile { position: absolute; top: 10px; right: 16px;
+                            color: #fff; background: rgba(0,0,0,.35); border-radius: 4px; }
+button.signaler.sur-voile:hover { color: #fff; background: rgba(0,0,0,.55); }
+.voile:has(#sg-boite) #signaler-voile { display: none; }
+/* UN SEUL « Un problème, une idée ? » A LA FOIS : le voile
+   ouvert, celui de la page (sous le voile, inaccessible) se tait ; celui du
+   voile le remplace, au même coin. */
+body:has(#voile:not(.cachee) #signaler-voile) #signaler { visibility: hidden; }
+/* La boite reduite : une pastille en bas a droite, au-dessus de tout, des boites ouvertes aussi : une fenêtre rouverte
+   ne doit pas la cacher. */
+.sg-pastille { position: fixed; right: 16px; bottom: 16px; z-index: 54; width: auto; margin: 0;
+               padding: 8px 14px; border: none; border-radius: 18px; cursor: pointer;
+               background: var(--action, #2E6A57); color: #fff; font: inherit; font-size: 13px;
+               box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+.sg-nouvelles { font-weight: 600; color: var(--action, #2E6A57); text-decoration: none; }
+.sg-titre-messages { margin: 20px 0 6px; font-size: 13px; }
+.sg-messages { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.sg-messages li { padding: 8px 0; border-top: 1px solid var(--bord, #e3e3e3); }
+.sg-messages li.nouveau { border-left: 3px solid var(--action, #2E6A57); padding-left: 8px; }
+.sg-reponse { margin: 6px 0 0; padding: 8px 10px; border-radius: 4px; white-space: pre-line;
+              background: rgba(46, 106, 87, .08); }
+/* Où en est le message qu'on vient d'envoyer. */
+.sg-envoi { font-weight: 600; }
+.sg-envoi.envoye { color: var(--succes, #4A7C46); }
+.sg-envoi.envoye::before { content: "✓ "; }
+.sg-envoi.alerte { color: var(--alerte, #C77B27); }
