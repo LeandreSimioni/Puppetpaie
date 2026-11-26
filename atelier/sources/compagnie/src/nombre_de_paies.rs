@@ -76,6 +76,9 @@ fn retenir(racine: &Path, annee: Annee, paies: usize, poste: &NumeroDePoste) -> 
     incidents::ecrire_config(racine, &c)
 }
 
+/// La raison d'`empechement` quand l'interrupteur de l'envoi est coupe.
+pub(crate) const ENVOI_COUPE: &str = "envoi coupe";
+
 /// Pourquoi rien de ce qui compte l'usage du logiciel ne part de cette compagnie (le nombre de paies ici, le signal de
 /// vie, `signal_de_vie`), ou `None` si elle peut envoyer. Le bridage n'y est pas : un logiciel en demo est une
 /// installation, que le signal de vie compte ; seul le nombre de paies l'ecarte (`envoyer_si_du`).
@@ -91,7 +94,7 @@ pub(crate) fn empechement(racine: &Path) -> R<Option<&'static str>> {
     } else if crate::installation::est_copie(racine) {
         Some("copie de developpement")
     } else if !incidents::envoi(racine)? {
-        Some("envoi coupe")
+        Some(ENVOI_COUPE)
     } else {
         None
     })

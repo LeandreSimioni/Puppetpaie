@@ -31,13 +31,17 @@ use crate::incidents::{self, Canal, NumeroDePoste};
 /// ouverte (`config/diagnostic.json`), et un poste qui en tient plusieurs envoie celui de chacune.
 static PARTIS: Mutex<Option<(Jour, Vec<NumeroDePoste>)>> = Mutex::new(None);
 
-/// Ce que l'ecran « Ce qui est parti chez l'editeur » dit du signal de vie, selon l'interrupteur (`incidents::envoi`).
-pub fn ce_qui_part(envoi: bool) -> &'static str {
-    if envoi {
-        "Chaque jour d'ouverture : le numéro de ce poste, pour que l'éditeur sache combien de postes se servent du logiciel."
-    } else {
-        "Chaque jour d'ouverture, le numéro de ce poste partirait, pour que l'éditeur sache combien de postes se servent du logiciel : l'envoi est coupé, rien ne part."
-    }
+/// Ce que l'ecran « Ce qui est parti chez l'editeur » dit du signal de vie de la compagnie de `racine`, selon ce qui
+/// l'empeche (`nombre_de_paies::empechement`, le meme qu'a l'envoi) : l'interrupteur coupe, ou une compagnie qui ne
+/// compte pas (fictive, copie de developpement).
+pub fn ce_qui_part(racine: &std::path::Path) -> socle::echec::R<&'static str> {
+    Ok(match crate::nombre_de_paies::empechement(racine)? {
+        None => "Chaque jour d'ouverture : le numéro de ce poste, pour que l'éditeur sache combien de postes se servent du logiciel.",
+        Some(crate::nombre_de_paies::ENVOI_COUPE) => {
+            "Chaque jour d'ouverture, le numéro de ce poste partirait, pour que l'éditeur sache combien de postes se servent du logiciel : l'envoi est coupé, rien ne part."
+        }
+        Some(_) => "Depuis cette compagnie d'essai, rien ne part : seule une compagnie réelle est comptée par l'éditeur.",
+    })
 }
 
 /// A l'ouverture et a chaque passage de la veille : envoie le signal de vie du poste s'il n'est pas deja parti ce jour

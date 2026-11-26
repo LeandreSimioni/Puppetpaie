@@ -657,7 +657,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
         en_attente: en_attente_total,
         dernier_envoi,
         paies_annuelles: annees,
-        phrases: vec![compagnie::signal_de_vie::ce_qui_part(envoi).to_string()],
+        phrases: vec![compagnie::signal_de_vie::ce_qui_part(racine)?.to_string()],
         groupes: liste,
         bilan: None,
         couleur: None,
