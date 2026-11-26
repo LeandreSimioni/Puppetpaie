@@ -101,6 +101,21 @@
     return e;
   }
 
+  // Le lien qui ouvre la messagerie vers l'adresse de la réponse.
+  function versLAdresse() {
+    var a = element("a", null, lien.adresse);
+    a.href = "mailto:" + encodeURIComponent(lien.adresse).replace(/%40/g, "@");
+    return a;
+  }
+
+  // Une phrase où l'adresse de la réponse est un lien : `avant`, l'adresse, `apres`.
+  function phraseAvecLAdresse(nom, avant, apres) {
+    var e = element(nom, null, avant);
+    e.appendChild(versLAdresse());
+    e.appendChild(document.createTextNode(apres));
+    return e;
+  }
+
   function dessinerQuestion(q) {
     var id = "q-" + q.cle;
     var bloc = element(q.forme === "choix" ? "fieldset" : "div", "question");
@@ -269,8 +284,8 @@
     var boite = $("copie");
     boite.textContent = "";
     var fait = function (ok) {
-      boite.appendChild(element("p", null, (ok ? "Ta réponse est copiée. " : "Copie ta réponse ci-dessous. ") +
-        "Envoie-la par courriel à " + lien.adresse + ", avec pour objet « " + lien.objet + " »."));
+      boite.appendChild(phraseAvecLAdresse("p", (ok ? "Ta réponse est copiée. " : "Copie ta réponse ci-dessous. ") +
+        "Envoie-la par courriel à ", ", avec pour objet « " + lien.objet + " »."));
       boite.appendChild(element("pre", null, corps));
       boite.classList.remove("cache");
     };
@@ -302,7 +317,11 @@
       zone.appendChild(c.bloc);
     });
     montrerLesConditions();
-    $("chapeau").textContent = "Ta réponse ira à " + lien.adresse + ". Cette page ne garde rien : elle prépare le courriel, que tu envoies toi-même, de ta messagerie.";
+    var chapeau = $("chapeau");
+    chapeau.textContent = "";
+    chapeau.appendChild(document.createTextNode("Ta réponse ira à "));
+    chapeau.appendChild(versLAdresse());
+    chapeau.appendChild(document.createTextNode(". Cette page ne garde rien : elle prépare le courriel, que tu envoies toi-même, de ta messagerie."));
     $("formulaire").classList.remove("cache");
     // L'adresse où part la réponse se dit sur les deux boutons : un lien forgé vers une autre adresse se voit.
     $("envoyer").textContent = "Envoyer à " + lien.adresse;
