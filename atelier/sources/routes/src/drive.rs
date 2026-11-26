@@ -38,7 +38,7 @@ const ACTUALISER: Affiche = Affiche::new("Actualiser");
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::DriveEtat,
-        geste: "Dire chaque dossier du Drive lié, sa dernière sauvegarde, son volume, tels que le moteur les a lus pour la session.",
+        geste: "Dire chaque dossier du Drive lié, tel que le moteur l'a lu pour la session.",
         charge: &SansCharge::CHARGE,
         exemple: r#"{}"#,
         rend: "phrase, encarts, rangs : d'abord le Drive lu (le compte, l'heure de la lecture, le geste « Actualiser »), puis chaque dossier sous PuppetPaie (le dossier de cette compagnie, celui d'une autre, l'ancienne sauvegarde commune, un dossier d'une ancienne version), sa dernière sauvegarde, son volume, et le geste qui le supprime quand le mot de passe du logiciel est posé (sinon un encart dit pourquoi) ; ce qui ne se lit pas se dit en encart. Le Drive se lit une fois pour la session (en fond à l'ouverture de la compagnie) : une lecture en cours se fait attendre",
