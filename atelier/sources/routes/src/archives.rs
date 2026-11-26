@@ -108,10 +108,10 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::Droits,
-        geste: "Dire les heures et cachets cumulés de chaque intermittent (annexes 8 et 10).",
+        geste: "Dire les heures et cachets cumulés d'un intermittent (annexes 8 et 10).",
         charge: &ChargeDroits::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "salaries (chacun : nom, fenetre, lignes [quoi, valeur], phrase, notes, colonnes du tableau), phrase (ce que vaut ce compte)",
+        rend: "case (le salarié à choisir, parmi ceux dont un engagement est connu), salarie (celui choisi : nom, fenetre, lignes [quoi, valeur], phrase, notes, colonnes du tableau ; aucun sans choix), phrase (ce que vaut ce compte)",
         refus: &[OPERATION, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -1278,12 +1278,17 @@ struct CascEnvoyee {
 // ------------------------------------------------------------------ les droits des intermittents, l'archive d'un mois
 
 charge! {
-    /// La charge de `droits` : le mois du tableau (aucun : celui du jour).
+    /// La charge de `droits` : le salarie dont on compte les heures (aucun : rien ne se compte, la route rend la liste),
+    /// le mois du tableau (aucun : celui du jour).
     #[derive(Debug)]
     struct ChargeDroits {
+        salarie: Option<droit::contexte::IdSalarie> = dit("Salarié", "la clé de sa fiche, parmi les choix que rend la route ; absent : rien ne se compte").rendue(),
         mois: Option<Mois> = dit("Mois", "le mois du tableau (le mois, l'année civile), AAAA-MM ; absent : celui du jour"),
     }
 }
+
+/// Le libelle de la case du salarie que `droits` rend.
+const SALARIE_DES_DROITS: Affiche = Affiche::new("Salarié");
 
 /// Une rangee du tableau du mois : ce qu'elle compte, et sa valeur dans chaque colonne.
 #[derive(Debug, Serialize)]
@@ -1312,19 +1317,23 @@ struct DroitsDUnSalarie {
     colonnes: TableauDesDroits,
 }
 
-/// Ce que rend `droits` : le mois, ce que vaut ce compte, chaque intermittent.
+/// Ce que rend `droits` : le mois, ce que vaut ce compte, la case qui fait choisir l'intermittent (ceux dont un
+/// engagement est connu), et ce qui se compte pour celui qu'on a choisi (aucun : rien).
 #[derive(Debug, Serialize)]
 struct Droits {
     phrase: Phrase,
     mois: Mois,
     phrases: Vec<String>,
-    salaries: Vec<DroitsDUnSalarie>,
+    case: crate::fiches::CaseDeLaFiche<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    salarie: Option<DroitsDUnSalarie>,
 }
 
-/// LES HEURES ET CACHETS DES INTERMITTENTS au regard des annexes 8 et 10 (`droit::cumul` : la fenetre, le plafond des
-/// cachets d'un mois, l'enseignement plafonne, le seuil, lus du bareme) : pour chaque salarie dont un engagement est connu
-/// (importe ou valide), sa position dans sa fenetre et le tableau du mois. Le compte ne porte que les engagements de cette
-/// compagnie : la phrase le dit.
+/// LES HEURES ET CACHETS D'UN INTERMITTENT au regard des annexes 8 et 10 (`droit::cumul` : la fenetre, le plafond des
+/// cachets d'un mois, l'enseignement plafonne, le seuil, lus du bareme) : la case qui fait choisir le salarie, parmi ceux
+/// dont un engagement est connu (importe ou valide) ; pour celui qu'on a choisi, sa position dans sa fenetre (depuis sa
+/// date anniversaire si sa fiche la porte, sinon les 12 mois jusqu'a aujourd'hui) et le tableau du mois. Le compte ne
+/// porte que les engagements de cette compagnie : la phrase le dit.
 fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     use droit::cumul::{anniversaire_configure, position_droits, tableau_cumul};
     // Le mois dit ; sans lui, celui du jour (la fiche le dit).
@@ -1334,10 +1343,18 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     };
     let engs = engagement::cumul::lire_engagements(ctx, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
     let cles: BTreeSet<&droit::contexte::IdSalarie> = engs.iter().map(|e| &e.salarie).collect();
-    let mut salaries = Vec::new();
-    for cle in cles {
+    // Un engagement dont la fiche n'est plus la se dit par sa cle.
+    let nom_de = |cle: &droit::contexte::IdSalarie| match ctx.salaries.get(cle) {
+        Some(f) => crate::nom_a_l_ecran(f, cle),
+        None => cle.to_string(),
+    };
+    let offerts: Vec<crate::ouverture::Choix> = cles.iter().map(|k| crate::ouverture::Choix::de(k, nom_de(k))).collect();
+    let case = crate::fiches::CaseDeLaFiche::de_la_boite(cle!(ChargeDroits, salarie), SALARIE_DES_DROITS, Forme::ChoixRendu, "", c.salarie.as_ref().and_then(socle::ecriture::ValeurDeCase::de))
+        .offrant(offerts);
+    let mut salarie = None;
+    if let Some(cle) = &c.salarie {
         let anniv = anniversaire_configure(ctx, cle)?;
-        let p = position_droits(ctx, cle, &engs, anniv, None)?;
+        let p = position_droits(ctx, cle, &engs, anniv, Some(ctx.aujourdhui))?;
         let c = &p.constantes;
         use socle::grandeurs::ecrit::sans_zero::dit;
         let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
@@ -1363,7 +1380,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         let phrase = if p.atteint()? {
             socle::phrase!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - c.seuil_heures))
         } else {
-            socle::phrase!("Il manque {} h, soit environ {} cachets.", dit(p.manque()?), dit(p.cachets_manquants()?))
+            socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_retenues()), dit(c.seuil_heures))
         };
         let mut notes = Vec::new();
         if !p.cachets_perdus().est_nul() {
@@ -1381,7 +1398,11 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
             notes.push("Date de naissance absente de la fiche : le plafond bas de l'enseignement s'applique, peut-être à tort.".to_string());
         }
         if anniv.is_none() {
-            notes.push("Fenêtre déduite du dernier contrat déclaré : la date anniversaire que France Travail notifie (anniversaire_droits, dans la fiche du salarié) prime sur ce calcul.".to_string());
+            let case = declarations::champs::champ(droit::fiche::NomDeFiche::Salarie, droit::fiche::CaseSalarie::AnniversaireDroits)?
+                .map(|ch| ch.libelle)
+                .filter(|l| !l.is_empty())
+                .ok_or_else(|| socle::fichiers::absent("anniversaire_droits (champs-base.json)"))?;
+            notes.push(format!("Sans « {} » dans sa fiche, on compte les 12 mois jusqu'à aujourd'hui ; la date que France Travail lui notifie prime.", case));
         }
         let colonnes = tableau_cumul(ctx, cle, mois, &engs)?;
         let rangee = |quoi: &'static str, valeur: &dyn Fn(&droit::cumul::Colonne) -> String| Rangee { quoi, valeurs: colonnes.iter().map(valeur).collect() };
@@ -1395,18 +1416,13 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
                 rangee("Salaire brut", &|x| socle::texte::euros(x.brut)),
             ],
         };
-        // Un engagement dont la fiche n'est plus la se dit par sa cle.
-        let nom = match ctx.salaries.get(cle) {
-            Some(f) => crate::nom_a_l_ecran(f, cle),
-            None => cle.to_string(),
-        };
-        salaries.push(DroitsDUnSalarie { cle: cle.clone(), nom, fenetre: p.libelle_fenetre.clone(), lignes, phrase, notes, colonnes: tableau });
+        salarie = Some(DroitsDUnSalarie { cle: cle.clone(), nom: nom_de(cle), fenetre: p.libelle_fenetre.clone(), lignes, phrase, notes, colonnes: tableau });
     }
-    let phrase = Phrase::fixe(if salaries.is_empty() {
+    let phrase = Phrase::fixe(if cles.is_empty() {
         "Aucun engagement d'intermittent n'est encore validé ni importé."
     } else {
         "Ce compte ne porte que les engagements de cette compagnie : le relevé de France Travail seul fait foi, et le seuil se compte sur tous les employeurs. Ces totaux sont un plancher."
     });
-    let phrases = salaries.iter().map(|s| format!("{} ({}) : {}", s.nom, s.fenetre, s.phrase)).collect();
-    Ok(Droits { phrase, mois, phrases, salaries })
+    let phrases = salarie.iter().map(|s| format!("{} ({}) : {}", s.nom, s.fenetre, s.phrase)).collect();
+    Ok(Droits { phrase, mois, phrases, case, salarie })
 }
