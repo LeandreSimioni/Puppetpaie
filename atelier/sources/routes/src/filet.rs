@@ -42,7 +42,7 @@ const CHARGE_INCIDENT_NAVIGATEUR: ChargeDuType = ChargeDuType {
         ChampDuType::du_type::<_, String>("ou_dans_la_page", dit("Écran", "l'écran de la page où c'est arrivé")),
     ],
 };
-const DIAGNOSTIC_REND: &str = "envoi (vrai : actif), total, en_attente, groupes (ce qui part, mot pour mot), pastille";
+const DIAGNOSTIC_REND: &str = "envoi (vrai : actif), total, en_attente, groupes (ce qui part, mot pour mot), phrases (le signal de vie du poste, en mots), pastille";
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Signaler);
@@ -396,6 +396,8 @@ struct Diagnostic {
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     dernier_envoi: Option<Moment>,
     paies_annuelles: Vec<AnneePartie>,
+    /// Ce qui part d'autre que les incidents, en mots : le signal de vie du poste (`signal_de_vie::ce_qui_part`).
+    phrases: Vec<String>,
     groupes: Vec<Groupe>,
     pastille: Pastille,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -655,6 +657,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
         en_attente: en_attente_total,
         dernier_envoi,
         paies_annuelles: annees,
+        phrases: vec![compagnie::signal_de_vie::ce_qui_part(racine)?.to_string()],
         groupes: liste,
         bilan: None,
         couleur: None,

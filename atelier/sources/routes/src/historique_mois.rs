@@ -209,7 +209,8 @@ struct Envoi {
     flux: Option<IdDeFlux>,
     destinataire: Option<String>,
     identite: String,
-    accepte: bool,
+    /// Ou en est l'envoi, comme son fait le dit (`etat_de_la_ligne`) : refuse, en attente du bilan, accepte, ou parti.
+    pastille: Pastille,
     resume: String,
     retours: Vec<RetourLu>,
     /// Ce qui se dit d'un depot qui attend ses retours (par son flux) et n'en a aucun ; rien sinon.
@@ -316,12 +317,39 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
 }
 
 /// LE FAIT QU'UNE LIGNE DU JOURNAL DIT, en une phrase (`envois::etats::fait` : son acte, quand il est parti, et ce qui en
-/// est revenu), dans le ton de ce qui en est revenu : refuse au depot ou par un retour, en rouge ; sinon, fait. Le cadre
+/// est revenu), dans le ton de ce qui en est revenu (`etat_de_la_ligne`) : refuse, en attente du bilan, ou fait. Le cadre
 /// du mois (`etapes::OuEnEstLeMois`) le dit de sa derniere ligne.
 pub(crate) fn fait_du_journal(ctx: &Contexte, l: &Ligne, lignes: &[Ligne]) -> crate::Encart {
     let phrase = etats::fait(&acte(ctx, l), l, &etats::contrats_recus(lignes), &etats::avenants_par_contrat(lignes));
-    let ton = if !l.accepte() || etats::refuse_par_un_retour(l) { socle::ecran::EtatDEcran::Refuse } else { socle::ecran::EtatDEcran::Fait };
-    crate::Encart::de(ton, String::new(), phrase)
+    crate::Encart::de(etat_de_la_ligne(l), String::new(), phrase)
+}
+
+/// OU EN EST UN ENVOI, une fois : refuse au depot (l'accuse) ou par un retour (le bilan), en rouge ; une DSN ou une DPAE
+/// dont le bilan conforme est la (`etats::bilan_conforme`), faite ; sans lui, en attente (l'accuse seul ne tranche pas,
+/// regle 5) ; tout autre envoi, qui n'a pas de bilan, fait.
+fn etat_de_la_ligne(l: &Ligne) -> socle::ecran::EtatDEcran {
+    if !l.accepte() || etats::refuse_par_un_retour(l) {
+        socle::ecran::EtatDEcran::Refuse
+    } else if !a_un_bilan(l) || etats::bilan_conforme(l) {
+        socle::ecran::EtatDEcran::Fait
+    } else {
+        socle::ecran::EtatDEcran::EnAttente
+    }
+}
+
+/// Un envoi qu'un bilan tranche : une DSN, une DPAE.
+fn a_un_bilan(l: &Ligne) -> bool {
+    matches!(l, Ligne::Dsn(_) | Ligne::Dpae(_))
+}
+
+/// La pastille d'un envoi de l'historique, de son etat (`etat_de_la_ligne`).
+fn pastille_de_la_ligne(l: &Ligne) -> Pastille {
+    match etat_de_la_ligne(l) {
+        socle::ecran::EtatDEcran::Refuse => Pastille::de(socle::ecran::EtatDEcran::Refuse, "refusé"),
+        socle::ecran::EtatDEcran::EnAttente => Pastille::de(socle::ecran::EtatDEcran::EnAttente, "en attente du bilan"),
+        e if a_un_bilan(l) => Pastille::de(e, "accepté"),
+        e => Pastille::de(e, "parti"),
+    }
 }
 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
@@ -1212,7 +1240,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
             flux: l.flux().cloned(),
             destinataire: dit(l.destinataire()).map(String::from),
             identite: identite(ctx, l),
-            accepte: l.accepte(),
+            pastille: pastille_de_la_ligne(l),
             resume: etats::resume(Some(l), &recus, &avenants),
             retours_dit: (l.flux().is_some() && retours.is_empty()).then_some("Aucun retour"),
             retours,

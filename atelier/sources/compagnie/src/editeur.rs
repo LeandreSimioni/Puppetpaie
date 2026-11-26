@@ -211,6 +211,13 @@ pub struct Paies {
     pub paies: usize,
 }
 
+/// `POST /vie` : le serveur a note que ce poste s'est servi du logiciel ce jour-la (`signal_de_vie`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Vie {
+    pub ok: bool,
+}
+
 /// Le corps d'un refus du serveur (un statut hors 2xx).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -484,6 +491,11 @@ impl Client {
     /// d'autre.
     pub fn compter_paies(&self, annee: Annee, paies: usize) -> Result<Paies, ErreurFilet> {
         self.post_du_poste("paies", CompteDesPaies { annee, paies }, DELAI)
+    }
+
+    /// Le signal de vie du poste (`signal_de_vie`) : le numero du poste, rien d'autre.
+    pub fn signaler_la_vie(&self) -> Result<Vie, ErreurFilet> {
+        self.post_du_poste("vie", Rien {}, DELAI)
     }
 
     /// Un message au developpeur (`problemes::Corps`) : un texte, des incidents et des captures ; le delai est plus long.

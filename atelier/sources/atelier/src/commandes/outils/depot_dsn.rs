@@ -32,7 +32,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     // Un mois tape (`AAAA-MM`) designe la DSN du mois, comme la route (`depots::designee`) ; tout autre texte, un fichier.
     let designee = match fichier.designe_un_mois() {
         Some(m) => routes::depots::designee(&cadre.ctx, &routes::depots::Designation::du_mois(routes::depots::Quoi::Dsn, m))?.0,
-        None => std::path::PathBuf::from(fichier.texte()),
+        None => routes::depots::resoudre(&cadre.ctx.racine, std::path::Path::new(fichier.texte()))?,
     };
     // Un depot de test n'engage rien : il lui faut seulement le secret de l'organisme, donc le coffre ouvert.
     cadre.ouvrir_le_coffre();

@@ -1180,7 +1180,9 @@ pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::s
 fn designation(d: &Declaration) -> R<Designation> {
     match (d.genre, d.mois, &d.fichier) {
         (Genre::Dsn, Some(m), _) => Ok(Designation::du_mois(Quoi::Dsn, m)),
-        (_, _, Some(f)) => Ok(Designation::du_fichier(f.clone())),
+        // Le chemin du signalement porte deja la racine de la compagnie : absolu, `depots::resoudre` le lit tel quel,
+        // quel que soit le dossier d'ou l'on a ouvert l'installation.
+        (_, _, Some(f)) => Ok(Designation::du_fichier(compagnie::installation::absolu(f)?)),
         _ => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une déclaration prête sans mois ni fichier.")),
     }
 }

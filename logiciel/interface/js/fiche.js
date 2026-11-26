@@ -79,6 +79,7 @@ async function ouvrirLaFicheRendue(fiche) {
         ${s ? `<button type="button" class="secondaire petit" data-exporter>${echapper(s.exporter)}</button>` : ""}
         ${s && s.gestes.length ? `<span data-gestes-salarie>${boutonsDesGestes(s.gestes)}</span>` : ""}
       </div>
+      ${s && s.taux.length ? `<div data-gestes-taux>${boutonsRanges(s.taux)}</div>` : ""}
       ${r.cout ? `<div class="cout-annee" data-cote="${echapper(r.cout.cote)}" data-cout-de="${echapper(r.cout.de)}"></div>` : ""}
       ${s ? `<div class="fiche-imprevus" id="fiche-imprevus"></div><div class="fiche-conseils" id="fiche-conseils"></div>` : ""}
       ${inv ? `<div class="encart invitation">
@@ -130,6 +131,9 @@ async function ouvrirLaFicheRendue(fiche) {
     form.querySelector("[data-exporter]").onclick = () => exporterSalarie(s.cle);
     dessinerImprevusDuSalarie(s.cle);
     dessinerConseilsDuSalarie(s.cle);
+    // Ce que la route rend sous « Avancé » (demander le taux de PAS) : la phrase de sa réponse se dit, la fiche reste.
+    const taux = form.querySelector("[data-gestes-taux]");
+    if (taux) brancherLesGestes(taux, s.taux, { titre: r.titre }, async () => {});
     // Les gestes que la route rend dans l'en-tête (supprimer un salarié que rien ne lie) : leur boîte dit ce qui
     // s'efface ; fait, la fiche n'est plus, la liste se redessine sans elle.
     const gestes = form.querySelector("[data-gestes-salarie]");

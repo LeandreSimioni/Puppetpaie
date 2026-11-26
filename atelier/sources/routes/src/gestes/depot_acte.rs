@@ -218,14 +218,15 @@ fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLu
 }
 
 /// CE QUI PART D'UN DEPOT REEL (`envois_en_fond::partir`) : `quoi`, a sa place `place`, et le depot du fichier `chemin`,
-/// rouvert s'il n'est pas alle au bout ; le fichier s'y designe par le chemin meme qui part (`depots::resoudre` le lit tel
-/// quel).
-fn ce_qui_part(chemin: &Path, sorte: crate::depots::Quoi, place: crate::envois_en_fond::PlaceDeLEnvoi, quoi: String) -> crate::envois_en_fond::EnvoiQuiPart {
-    let d = crate::depots::Designation { quoi: sorte, ..crate::depots::Designation::du_fichier(chemin.to_path_buf()) };
-    crate::envois_en_fond::EnvoiQuiPart { quoi, place, refaire: Some(crate::etapes::refaire_le_depot(d)), avertissements: Vec::new() }
+/// rouvert s'il n'est pas alle au bout ; le fichier s'y designe par le chemin absolu de celui qui part : une charge de
+/// `deposer` lit un chemin absolu tel quel (`depots::resoudre`), quel que soit le dossier d'ou l'on a ouvert la compagnie.
+fn ce_qui_part(chemin: &Path, sorte: crate::depots::Quoi, place: crate::envois_en_fond::PlaceDeLEnvoi, quoi: String) -> R<crate::envois_en_fond::EnvoiQuiPart> {
+    let d = crate::depots::Designation { quoi: sorte, ..crate::depots::Designation::du_fichier(compagnie::installation::absolu(chemin)?) };
+    Ok(crate::envois_en_fond::EnvoiQuiPart { quoi, place, refaire: Some(crate::etapes::refaire_le_depot(d)), avertissements: Vec::new() })
 }
 
-/// Depose une DSN. La seule sortie du moteur qui declare quelque chose.
+/// Depose une DSN. La seule sortie du moteur qui declare quelque chose. `fichier` est deja resolu (`depots::designee`,
+/// ou le chemin que le moteur vient d'ecrire) : il se lit tel quel.
 ///
 /// L'ORDRE COMPTE : 1. lire le fichier ; 2. verifier que le mode demande colle a la nature codee dedans ;
 /// 3. exiger la preuve (reel) ; 4. exiger la REPETITION (reel, `contournement` pour la sortie de secours) ;
@@ -263,7 +264,7 @@ pub fn deposer_dsn_dans(
             format!("L'environnement '{}' est la plate-forme d'essai de l'editeur : rien n'y est declare. Un depot REEL ne part que sur 'production' ; pour essayer, un depot de test. Rien n'est parti.", environnement),
         ));
     }
-    let chemin = crate::depots::resoudre(&ctx.racine, fichier)?;
+    let chemin = fichier.to_path_buf();
     let octets = crate::depots::lire_octets(&chemin)?;
     let apercu = declarations::dsn_lue::lire(&octets, None)?;
     // 2. le mode contre le fichier ; `presence_prouvee` : c'est ICI qu'on la prouve, jamais le transport.
@@ -428,7 +429,7 @@ pub fn deposer_dsn_dans(
         } else {
             ("DSN", crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dsn, part: crate::envois_en_fond::CeQuiPartDeLEtape::Dsn(nic.cloned()) })
         };
-        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dsn, place, format!("{} {}", quoi, socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
+        crate::envois_en_fond::partir(ctx, || ce_qui_part(&chemin, crate::depots::Quoi::Dsn, place, format!("{} {}", quoi, socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee)))))?;
     }
     let parti = ordre_test.and_then(|ordre_test| {
         let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
@@ -482,7 +483,7 @@ pub(crate) fn deposer_dpae_avec(
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     let porte = branchement.ouvrir_le_depot(Acte::Dpae)?;
-    let chemin = crate::depots::resoudre(&ctx.racine, fichier)?;
+    let chemin = fichier.to_path_buf();
     let apercu = crate::depots::apercu_depot_dpae(ctx, &chemin)?;
     let octets = crate::depots::lire_octets(&chemin)?;
     let le_mois = apercu.mois.ok_or_else(|| erreur(Classe::Refuse, "Ce fichier ne déclare aucune embauche datée : il ne dit pas son mois. Rien n'est parti."))?;
@@ -556,7 +557,7 @@ pub(crate) fn deposer_dpae_avec(
     if mode == Mode::Reel {
         let part = crate::envois_en_fond::CeQuiPartDeLEtape::Contrats(embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect());
         let place = crate::envois_en_fond::PlaceDeLEnvoi::Etape { mois: le_mois, etape: crate::etapes::QuelleEtape::Dpae, part };
-        crate::envois_en_fond::partir(ctx, || Ok(ce_qui_part(&chemin, crate::depots::Quoi::Dpae, place, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee))))))?;
+        crate::envois_en_fond::partir(ctx, || ce_qui_part(&chemin, crate::depots::Quoi::Dpae, place, format!("DPAE {}", socle::texte::de(&le_mois.libelle(socle::mois::Graphie::Accentuee)))))?;
     }
     let fait = envois::depot_acte::deposer_dpae(ctx, &porte, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
     let faites = crate::gestes::suites::faire(ctx, suites)?;
@@ -567,31 +568,37 @@ pub(crate) fn deposer_dpae_avec(
         Mode::Reel => Some(Preuve { donnee: Some(forme.clone()), motdepasse: preuve.and_then(|p| p.motdepasse.clone()) }),
         Mode::Test => None,
     };
-    fait.suites.extend(deposer_les_amorcages(ctx, le_mois, &embauches, mode, meme.as_ref().or(preuve), qui, contournement));
+    fait.suites.extend(deposer_les_amorcages(ctx, le_mois, paies_des_embauches(ctx, le_mois, &embauches), mode, meme.as_ref().or(preuve), qui, contournement, AVEC_LA_DPAE));
     Ok(fait)
 }
 
-/// LA DEMANDE DE TAUX DE PAS PART AVEC LA DPAE : pour chaque embauche de la DPAE de `mois` dont le salarie n'a pas de
-/// taux valide au jour de son versement, et dont aucune demande n'attend sa reponse (`amorcage_demande::a_combler`), le
-/// signalement d'amorcage (nature 08, motif 01) s'ecrit dans le geste, a la suite des signalements deja partis, et part
+/// LA DEMANDE DE TAUX DE PAS PART AVEC LA DPAE : pour chaque paie de `paies` (les embauches de la DPAE de `mois`) dont le
+/// salarie n'a pas de taux valide au jour de son versement, et dont aucune demande n'attend sa reponse
+/// (`amorcage_demande::a_combler`), le signalement d'amorcage (nature 08, motif 01) s'ecrit dans les sorties de `mois`,
+/// dans le geste, a la suite des signalements deja partis, et part
 /// dans le meme mode, sous la meme preuve, par le chemin de tout signalement (`deposer_dsn`). En reel, il part sur le
 /// bilan de son test : le test de ces octets se fait d'abord s'il n'est pas fait (un depot de test ne conserve rien,
 /// regle 10), et s'il n'est pas encore releve, les retours de la journee se relevent une fois. La DGFiP repond sous cinq
 /// jours ouvres (compte rendu de nature 94). Il ne fait jamais echouer la DPAE, deja partie : une demande qui ne part pas
-/// reste a faire, et se dit. Rend ce qu'est devenue chaque demande, en une phrase.
-fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree], mode: Mode, preuve: Option<&Preuve>, qui: &str, contournement: &str) -> Vec<String> {
+/// reste a faire, et se dit ; en reel, elle se note aussi au journal des incidents (`noter_la_demande_restee`). Rend ce
+/// qu'est devenue chaque demande, en une phrase.
+///
+/// UN SEUL CHEMIN, DEUX PORTES : le depot de la DPAE (`paies_des_embauches`, `avec` : `AVEC_LA_DPAE`), et la route
+/// `demander-taux`, qui le reprend pour un salarie avec ses paies a venir (`paies_a_venir_du_salarie`, `mois` : celui du
+/// present ; `avec` : rien). Des paies qui ne se lisent pas, ou un tri (`a_combler`) qui refuse, se disent et, en reel,
+/// se notent sans salarie : aucune demande n'etait encore retenue.
+pub(crate) fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, paies: R<Vec<engagement::calcul::Paie>>, mode: Mode, preuve: Option<&Preuve>, qui: &str, contournement: &str, avec: &str) -> Vec<String> {
     use compagnie::amorcage_demande as ad;
     let en = match mode {
         Mode::Reel => "",
         Mode::Test => " en test",
     };
-    let paies = match paies_des_embauches(ctx, mois, embauches) {
-        Ok(p) => p,
-        Err(e) => return vec![format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", en, e.phrase)],
-    };
-    let lignes = match ad::a_combler(ctx, &paies, declarations::amorcage::EMBAUCHE, false) {
-        Ok(l) => l,
-        Err(e) => return vec![format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", en, e.phrase)],
+    let (paies, lignes) = match paies.and_then(|paies| ad::a_combler(ctx, &paies, declarations::amorcage::EMBAUCHE, false).map(|l| (paies, l))) {
+        Ok(x) => x,
+        Err(e) => {
+            noter_la_demande_restee(ctx, mode, None, mois, &e.phrase);
+            return vec![format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", en, e.phrase)];
+        }
     };
     let (retenues, ecartees): (Vec<ad::Ligne>, Vec<ad::Ligne>) = lignes.into_iter().partition(|l| l.pourquoi_pas.is_empty());
     // UNE PHRASE PAR RAISON, pas par salarie : la phrase du depot tient dans sa place quel que soit le nombre d'embauches.
@@ -616,6 +623,9 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
     let fichiers = match ecrits {
         Ok(f) => f,
         Err(e) => {
+            for l in &retenues {
+                noter_la_demande_restee(ctx, mode, Some(&l.salarie), mois, &e.phrase);
+            }
             dit.push(format!("La demande de taux de prélèvement à la source n'est pas partie{} : {}", en, e.phrase));
             return dit;
         }
@@ -663,24 +673,66 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
                         (Some(_), _) => "son test n'a pas encore de réponse",
                         (None, true) => "son test n'a pas été fait",
                     };
+                    noter_la_demande_restee(ctx, mode, Some(&l.salarie), mois, raison);
                     match en_attente.iter_mut().find(|(x, _)| *x == raison) {
                         Some((_, v)) => v.push(qui_demande),
                         None => en_attente.push((raison, vec![qui_demande])),
                     }
                 }
                 // Le test qui ne se relit pas se dit, avec ce qui a retenu la demande.
-                Err(m) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {} Elle reste à faire.", qui_demande, m.phrase)),
+                Err(m) => {
+                    noter_la_demande_restee(ctx, mode, Some(&l.salarie), mois, &m.phrase);
+                    dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {} Elle reste à faire.", qui_demande, m.phrase));
+                }
             },
-            Err(e) => dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase)),
+            Err(e) => {
+                noter_la_demande_restee(ctx, mode, Some(&l.salarie), mois, &e.phrase);
+                dit.push(format!("La demande de taux de prélèvement à la source de {} n'est pas partie{} : {} Elle reste à demander.", qui_demande, en, e.phrase));
+            }
         }
     }
     for (raison, qui) in &en_attente {
         dit.push(format!("La demande de taux de prélèvement à la source de {} n'a pas pu partir : {}. Elle reste à faire.", noms(qui), raison));
     }
     if !parties.is_empty() {
-        dit.insert(0, format!("Taux de PAS demandé{} avec la DPAE pour {}.", en, noms(&parties)));
+        dit.insert(0, format!("Taux de PAS demandé{}{} pour {}.", en, avec, noms(&parties)));
     }
     dit
+}
+
+/// Ce que dit la demande de taux partie avec la DPAE.
+const AVEC_LA_DPAE: &str = " avec la DPAE";
+
+/// UNE DEMANDE DE TAUX QUI NE PART PAS, EN REEL, est un defaut du logiciel (Leandre : une demande qui ne peut pas partir
+/// doit lui arriver en incident) et se note au journal des incidents : le salarie par sa cle, jamais son nom ni son NIR
+/// (aucun quand rien n'etait encore retenu), le mois, la raison. En test, rien ne se note. Une note qui ne s'ecrit pas ne
+/// fait rien echouer (la DPAE est partie, et la demande se dit dans la reponse) : elle se dit au journal du moteur.
+fn noter_la_demande_restee(ctx: &Contexte, mode: Mode, salarie: Option<&IdSalarie>, mois: Mois, raison: &str) {
+    if mode != Mode::Reel {
+        return;
+    }
+    let resume = format!("La demande de taux de prélèvement à la source n'est pas partie : {}", raison);
+    let note = compagnie::incidents::Note {
+        nature: compagnie::incidents::LOGICIEL,
+        resume: &resume,
+        ou: "demande-de-taux",
+        quoi: "demande de taux restée à faire",
+        detail: DemandeDeTauxRestee { salarie, mois, raison },
+        trace: None,
+        sans_contexte: false,
+    };
+    if let Err(e) = compagnie::incidents::noter(&ctx.racine, &note) {
+        eprintln!("La demande de taux restée à faire ne se note pas au journal des incidents : {}", e.en_lignes());
+    }
+}
+
+/// Ce que l'incident d'une demande de taux restee a faire porte a l'editeur.
+#[derive(serde::Serialize)]
+struct DemandeDeTauxRestee<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    salarie: Option<&'a IdSalarie>,
+    mois: Mois,
+    raison: &'a str,
 }
 
 /// Les engagements valides de `mois` que nomment les embauches d'une DPAE (`salarie`, `numero`), vus comme des embauches.
@@ -698,6 +750,25 @@ fn paies_des_embauches(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree
         let p = engagement::embauche(ctx, &e).map_err(o)?;
         if declaree(&p) {
             paies.push(p);
+        }
+    }
+    Ok(paies)
+}
+
+/// LES PAIES A VENIR DE `salarie`, vues comme des embauches (`engagement::embauche`, comme `paies_des_embauches`) : ses
+/// engagements valides du mois du present et des mois d'apres que la saisie a touches, quelle que soit la DPAE qui les a
+/// declares (faite ici, ailleurs, ou importee). Les engagements des autres salaries ne se lisent pas.
+pub(crate) fn paies_a_venir_du_salarie(ctx: &Contexte, salarie: &IdSalarie) -> R<Vec<engagement::calcul::Paie>> {
+    let o = |m: Echec| m.reclasser(Classe::Refuse);
+    let departs = envois::journal::lu(&ctx.racine).map_err(o)?.departs;
+    let present = engagement::etats::mois_present(ctx);
+    let sien = |v: &engagement::etats::Valide| v.objet().brut.saisie.carte.salarie.as_ref() == Some(salarie);
+    let mut paies = Vec::new();
+    for mois in engagement::stock::mois_saisis(&ctx.racine).map_err(o)?.into_iter().filter(|m| *m >= present) {
+        let saisie = engagement::etats::validees_du_mois_parmi(ctx, mois, &departs, &sien).map_err(o)?;
+        let engagements = saisie.map(|(data, _)| engagement::engagements_de_la_saisie(ctx, &data)).transpose().map_err(o)?;
+        for e in engagements.into_iter().flatten().filter(|e| e.salarie == *salarie) {
+            paies.push(engagement::embauche(ctx, &e).map_err(o)?);
         }
     }
     Ok(paies)

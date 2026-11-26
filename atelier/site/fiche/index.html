@@ -53,6 +53,9 @@ button.second:hover{border-color:var(--bleu);color:var(--bleu);background:var(--
 .manque,.copie,.avis{margin:1rem 0 0;padding:.8rem 1rem;border-left:3px solid var(--bleu);background:var(--voile)}
 .copie pre{white-space:pre-wrap;word-break:break-word;font:inherit;font-size:.9rem;margin:.6rem 0 0}
 .pied{margin:3rem 0 0;font-size:.8rem;color:var(--gris)}
+.pied.signature{margin-top:.6rem;padding-top:.8rem;border-top:1px solid var(--filet)}
+a{color:var(--bleu);text-underline-offset:2px}
+.pied a{color:inherit}
 :focus-visible{outline:2px solid var(--bleu);outline-offset:3px}
 </style>
 <main>
@@ -69,7 +72,8 @@ button.second:hover{border-color:var(--bleu);color:var(--bleu);background:var(--
     <div id="copie" class="copie cache" role="status"></div>
   </form>
   <noscript><p class="avis">Cette page a besoin de JavaScript. Sans lui, réponds directement au courriel que tu as reçu.</p></noscript>
-  <p class="pied">PuppetPaie, le logiciel de paie de ton employeur. Rien de ce que tu écris ici ne quitte ton appareil avant que tu l'envoies.</p>
+  <p class="pied">Rien de ce que tu écris ici ne quitte ton appareil avant que tu ne l'envoies.</p>
+  <p class="pied signature">Ton employeur utilise <a href="https://puppetpaie.fr/">PuppetPaie</a>, le logiciel de paie libre et gratuit, codé et maintenu par la <a href="https://ueueue.eu/">Compagnie UEUEUE</a>.</p>
 </main>
 <script src="fiche.js"></script>
 </html>

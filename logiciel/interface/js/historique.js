@@ -124,6 +124,7 @@ function dessinerEnvoi(e, ecran) {
     <details class="envoi ${test ? "test" : "reel"}" ${test ? "" : "open"}>
       <summary><b>${echapper(e.acte)}</b>
         ${test ? `<span class="pastille">${echapper(e.mode)}</span>` : ""}
+        ${pastilleDeLEtat(e.pastille)}
         <span class="discret">— ${echapper(e.resume)}</span></summary>
       ${id ? `<div class="envoi-id">${echapper(id)}</div>` : ""}
       ${retours}

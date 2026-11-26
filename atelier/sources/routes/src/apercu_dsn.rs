@@ -29,7 +29,7 @@ use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 
-use crate::depots::{lire_octets, resoudre};
+use crate::depots::lire_octets;
 use socle::fichiers::NomDeFichier;
 use crate::etapes::Moteur;
 use socle::ecran::Pastille;
@@ -443,9 +443,10 @@ fn description(nom: &str, a: &DsnLue) -> String {
     d
 }
 
-/// `apercu_depot_dsn` : ce qui partirait, en clair, sans rien envoyer ni demander.
+/// `apercu_depot_dsn` : ce qui partirait, en clair, sans rien envoyer ni demander. `fichier` est deja resolu
+/// (`depots::designee`).
 pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<ApercuDsn> {
-    let chemin = resoudre(&ctx.racine, fichier)?;
+    let chemin = fichier.to_path_buf();
     let contenu = lire_octets(&chemin)?;
     let a = declarations::dsn_lue::lire(&contenu, None)?;
     let mut m = Moteur::nouveau(ctx);

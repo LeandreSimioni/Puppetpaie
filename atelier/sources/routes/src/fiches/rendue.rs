@@ -101,16 +101,23 @@ pub(crate) enum CoutDeLaFiche {
 /// CE QUI SE FAIT DEPUIS LA FICHE D'UN SALARIE ENREGISTRE (son en-tete) : sa cle, dont la page montre les imprevus (route
 /// `imprevus`) et les droits (route `conseils-salarie`), et le libelle du geste qui mene a ses documents (Exports, ce
 /// salarie choisi), et ses gestes : « Supprimer ce salarié » (`supprimer-salarie`), offert seulement quand rien ne le lie
-/// a la compagnie (`super::ce_qui_lie`), sa boite disant ce qui s'efface ; sinon aucun, et il s'archive.
+/// a la compagnie (`super::ce_qui_lie`), sa boite disant ce qui s'efface ; sinon aucun, et il s'archive. Et, sous
+/// « Avancé » (sa route l'est), « Demander le taux » (`demander-taux`), sa boite disant qu'il ne sert que si la demande
+/// n'est pas partie avec la DPAE, sous la demande du mot de passe du logiciel.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SalarieDeLEntete {
     cle: IdSalarie,
     exporter: &'static str,
     gestes: Vec<GesteDeRoute<super::ChargeSupprimerSalarie>>,
+    taux: Vec<GesteDeRoute<super::ChargeDemanderTaux>>,
 }
 
 /// Le libelle du geste qui supprime un salarie que rien ne lie.
 const SUPPRIMER_LE_SALARIE: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Supprimer ce salarié");
+
+/// Le libelle du geste qui demande le taux de PAS d'un salarie, et ce que sa boite dit.
+const DEMANDER_LE_TAUX: crate::catalogue::Affiche = crate::catalogue::Affiche::new("Demander le taux");
+const DEMANDER_LE_TAUX_DIT: &str = "Normalement, la demande de taux part toute seule avec la DPAE : ce bouton ne sert que si elle n'est pas partie.";
 
 /// LA FICHE D'UN SALARIE NEUF A FAIRE REMPLIR PAR LA PERSONNE (son en-tete) : le titre de l'encart, ce que la demande
 /// fait, le geste qui l'envoie (`fiche-demander`, ses cases : le courriel, montrant d'abord celui de la fiche, et le
@@ -208,8 +215,16 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
         }
         Ok(None) | Err(_) => Vec::new(),
     };
+    // De meme, une demande du mot de passe qui ne se lit pas ne ferme pas la fiche : le geste n'est pas offert.
+    let taux = match crate::coffre::demande(&ctx.racine, super::GESTE_DEMANDER_TAUX) {
+        Ok(demande) => {
+            let charge = super::ChargeDemanderTaux { salarie: cle.clone(), mode: socle::mode::Mode::Reel };
+            vec![GesteDeRoute::sans_cases(crate::catalogue::Route::DemanderTaux, charge, DEMANDER_LE_TAUX).disant(vec![DEMANDER_LE_TAUX_DIT.to_string()]).exigeant(Some(demande))]
+        }
+        Err(_) => Vec::new(),
+    };
     Ok(EnteteDeLaFiche {
-        salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents", gestes }),
+        salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents", gestes, taux }),
         ..EnteteDeLaFiche::de(titre, matricule, None, Some(CoutDeLaFiche::Salarie { de: cle.clone() }))
     })
 }
