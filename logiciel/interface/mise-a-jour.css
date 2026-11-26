@@ -1,7 +1,15 @@
 /* LE PIED DE LA PAGE, sur l'accueil des compagnies comme dans la page d'une compagnie (les deux pages lient cette
-   feuille) : une bande sous ce qui se lit (`main`, `.accueil`), jamais par-dessus. L'indicateur de la mise a jour a
+   feuille) : une bande sous ce qui se lit (`main`), jamais par-dessus. L'indicateur de la mise a jour a
    gauche, l'auteur a droite, sur la meme ligne et sans fond a eux : le fond est celui de la page. Quand la place
    manque, l'auteur passe sous l'indicateur et ses mots reviennent a la ligne, rien ne se coupe. */
+
+/* LE PIED RESTE EN BAS DE LA FENETRE, ce qui se lit defile au-dessus de lui : le corps tient la fenetre, `main` prend la
+   place qui reste et porte sa propre barre de defilement. Rien ne se coupe : le corps ne defile que si ce qui ne defile
+   pas (le bandeau d'une compagnie, le pied) ne tient pas dans la fenetre. */
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; overflow: auto; }
+main { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
 .pied {
   flex: none;
   display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 2px 16px;

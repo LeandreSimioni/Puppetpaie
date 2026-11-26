@@ -35,10 +35,10 @@
 </style>
 
 <style>
-  html, body { overflow:auto; }
-  /* Le corps tient au moins l'ecran : le pied (mise-a-jour.css) se pose en bas, sous ce qui se lit. */
-  body { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; height:auto; min-height:100vh; }
-  .accueil { flex:1 0 auto; width:100%; max-width:1000px; margin:0 auto; padding:34px 24px 28px; }
+  /* Le corps tient la fenetre, `main` defile, le pied reste en bas (`mise-a-jour.css`, comme dans une compagnie). Ici
+     rien ne se centre : `main` prend toute la largeur, sa barre au bord de la fenetre, et la colonne se centre dedans. */
+  body { align-items:stretch; justify-content:flex-start; }
+  .accueil { width:100%; max-width:1000px; margin:0 auto; padding:34px 24px 28px; }
   .accueil h1 svg { height:60px; }
   .accueil .sous { margin-bottom:20px; }
   .accueil .version { color:var(--discret); font-size:11px; margin:0 0 2px; }
@@ -134,14 +134,15 @@
   .a-garder li { padding:4px 0; }
   .a-garder label { display:flex; gap:9px; align-items:center; cursor:pointer; }
   .a-garder input { width:auto; margin:0; }
-  /* Ecrire au developpeur, sous les tuiles. */
+  /* Sous les tuiles : « Un problème, une idée ? » (le bouton de `filet.css`), puis « Avancé ». */
   .ecrire { margin-top:26px; border-top:1px solid var(--bord); padding-top:12px; }
   .ecrire > summary { cursor:pointer; color:var(--discret); font-size:13px; }
   .ecrire > summary:hover { color:var(--texte); }
-  .ecrire form { max-width:520px; margin-top:10px; }
-  .ecrire textarea { width:100%; padding:9px 10px; font:inherit; border:1px solid var(--bord); border-radius:4px; resize:vertical; }
+  /* Le bouton par-dessus le voile (`filet.css`) laisse la place aux trois boutons de la fenetre, en haut a droite. */
+  button.signaler.sur-voile { top:44px; }
   .ecrire button { width:auto; padding:8px 18px; }
-  .ecrire .dit { margin-top:8px; }
+  /* La boite du message (`js/filet.js`) : sa case de texte comme celles de l'accueil. */
+  #sg-texte { padding:9px 10px; border:1px solid var(--bord); border-radius:4px; resize:vertical; }
   /* Ou est le logiciel, sous les tuiles : l'ecran que la route rend. */
   .logiciel-ou { margin-top:26px; border-top:1px solid var(--bord); padding-top:14px; }
   .logiciel-ou .dit { min-height:1.2em; margin:0 0 8px; font-size:12.5px; }
@@ -180,6 +181,10 @@
   .boite-mdp .barre button.second { background:#fff; color:var(--texte); border-color:var(--bord); font-weight:normal; }
 </style>
 <link rel="stylesheet" href="/mise-a-jour.css?v={{EMPREINTE}}">
+<link rel="stylesheet" href="/filet.css?v={{EMPREINTE}}">
+<!-- CE QUI SE LIT DEFILE, le pied reste en bas (`main`, `mise-a-jour.css`). `data-ecran` : ou l'on est, que le message
+     au developpeur emporte (`js/filet.js`, `ecranCourant`). -->
+<main data-ecran="L'accueil des compagnies">
 <div class="accueil">
   <div class="filet" id="geste"></div>
   <h1><svg viewBox="64.5 -111.3 657.2 195.4" role="img" aria-label="PuppetPaie"><g fill="currentColor" stroke="currentColor"><g transform="translate(-34.5 -160) scale(0.37)"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M301 146 C298 280 305 450 297 618" stroke-width="30.5"/><path d="M340 170 C420 132 504 196 504 298 C504 398 424 466 338 432" stroke-width="30.5"/><g stroke="none"><circle cx="338" cy="432" r="17"/><circle cx="297" cy="618" r="17"/></g></g></g><g transform="translate(176.5 0) scale(1.08)" fill="none" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round"><path transform="rotate(0.63 28 -40)" d="M2 -52 C0 -20 6 -1 22 -1 C36 -1 43 -16 44 -34"/><path transform="rotate(0.63 28 -40)" d="M44 -53 C45 -32 44 -14 46 -1"/><path transform="rotate(-0.83 91 -40)" d="M65 -48.9 C66 -14.9 64 19.1 66 47.1"/><path transform="rotate(-0.83 91 -40)" d="M69 -38.9 C83 -54.9 109 -52.9 109 -25.9 C109 -0.9 85 5.1 69 -6.9"/><path transform="rotate(-1.62 154 -40)" d="M128 -49.3 C129 -15.3 127 18.7 129 46.7"/><path transform="rotate(-1.62 154 -40)" d="M132 -39.3 C146 -55.3 172 -53.3 172 -26.3 C172 -1.3 148 4.7 132 -7.3"/><path transform="rotate(-0.42 215 -40)" d="M193 -26.1 C207 -27.1 219 -27.1 232 -28.1 C234 -45.1 224 -53.1 212 -53.1 C198 -53.1 190 -41.1 190 -25.1 C190 -8.1 200 -0.1 214 -0.1 C224 -0.1 230 -5.1 233 -11.1"/><path transform="rotate(0.69 267 -40)" d="M260 -84.4 C259 -50.4 257 -18.4 262 -4.4 C265 2.6 275 1.6 280 -4.4"/><path transform="rotate(0.69 267 -40)" d="M248 -49.4 C258 -50.4 270 -51.4 280 -51.4"/><path transform="rotate(0.39 329 -40)" d="M303 -48.3 C304 -14.3 302 19.7 304 47.7"/><path transform="rotate(0.39 329 -40)" d="M307 -38.3 C321 -54.3 347 -52.3 347 -25.3 C347 -0.3 323 5.7 307 -6.3"/><path transform="rotate(-1.31 391 -40)" d="M404 -41.4 C399 -51.4 392 -53.4 385 -53.4 C371 -53.4 364 -39.4 364 -25.4 C364 -9.4 373 -0.4 384 -0.4 C396 -0.4 404 -11.4 405 -28.4"/><path transform="rotate(-1.31 391 -40)" d="M406 -53.4 C405 -33.4 406 -15.4 408 -0.4"/><path transform="rotate(0.59 436 -40)" d="M429 -50.9 C428 -32.9 430 -14.9 429 -0.9"/><circle cx="430" cy="-74.93" r="7" stroke="none" fill="currentColor"/><path transform="rotate(-1.85 480 -40)" d="M458 -25.6 C472 -26.6 484 -26.6 497 -27.6 C499 -44.6 489 -52.6 477 -52.6 C463 -52.6 455 -40.6 455 -24.6 C455 -7.6 465 0.4 479 0.4 C489 0.4 495 -4.6 498 -10.6"/></g></g></svg></h1>
@@ -195,18 +200,15 @@
     <p class="dit" id="logiciel-ou-dit"></p>
     <div id="logiciel-ou-ecran" data-place="L'accueil des compagnies"></div>
   </section>
-  <!-- ECRIRE AU DEVELOPPEUR sans ouvrir de compagnie : la meme route que dans une compagnie (`routes::filet::sans_compagnie`). -->
-  <details class="ecrire">
-    <summary>Un problème, une idée ?</summary>
-    <form id="ecrire">
-      <textarea rows="4" placeholder="Votre message au développeur"></textarea>
-      <button type="submit">Envoyer</button>
-      <p class="dit" id="ecrire-dit"></p>
-    </form>
-  </details>
+  <!-- ECRIRE AU DEVELOPPEUR sans ouvrir de compagnie : le bouton et la boite d'une compagnie (`js/filet.js`), les memes
+       routes, servies sans compagnie (`routes::filet::route_sans_compagnie`). -->
+  <div class="ecrire">
+    <button type="button" class="signaler" id="signaler" data-place="Un problème, une idée ?" title="Écrire à l'éditeur">Un problème, une idée ?</button>
+  </div>
   <!-- « AVANCÉ » DE L'ACCUEIL : les routes de l'installation sans écran dessiné, depuis leur fiche (`js/avance.js`). -->
   <details class="ecrire avance-auto" id="avance-accueil" hidden><summary>Avancé</summary><div data-auto="L'accueil des compagnies"></div></details>
 </div>
+</main>
 <script>
   const err = document.getElementById("erreur");
   for (const t of document.querySelectorAll(".tuile[data-id]")) {
@@ -300,16 +302,6 @@
       document.getElementById("venue-erreur").textContent = r.ok ? "" : r.refus.phrase;
     });
   }
-  // Le message part par sa route ; la phrase que le moteur rend se lit telle quelle.
-  const ecrire = document.getElementById("ecrire");
-  ecrire.addEventListener("mousedown", (e) => e.stopPropagation());
-  ecrire.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const texte = ecrire.querySelector("textarea");
-    const r = await appel("signalement-envoyer", { texte: texte.value, ecran: "L'accueil des compagnies" });
-    document.getElementById("ecrire-dit").textContent = r.ok ? r.resultat.phrase : r.refus.phrase;
-    if (r.ok) texte.value = "";
-  });
 </script>
 <script>
   /* LE TABLEAU DE BORD DE L'ADMINISTRATEUR. Tout vient du moteur (`administrateur.rs`) : les declarations
@@ -446,7 +438,11 @@
   })();
 </script>
 <!-- LA BOITE D'UN GESTE (`js/boites.js`), celle de la page d'une compagnie : un geste d'un ecran rendu l'ouvre. -->
-<div class="voile cachee" id="voile"><div class="boite" id="boite"></div></div>
+<div class="voile cachee" id="voile">
+  <!-- « Un problème, une idée ? » par-dessus une boite ouverte (`js/filet.js`, `filet.css`), comme dans une compagnie. -->
+  <button type="button" class="signaler sur-voile" id="signaler-voile" title="Écrire à l'éditeur">Un problème, une idée ?</button>
+  <div class="boite" id="boite"></div>
+</div>
 <!-- LE MOT DE PASSE DU LOGICIEL (`js/boites.js`, demanderMotDePasse), celui de la page d'une compagnie : un geste rendu
      qui l'exige (`demande`) le fait taper ici. Ses trois lignes sont la demande que la route rend. -->
 <div class="voile cachee" id="voile-mdp">
@@ -475,7 +471,11 @@
 <script src="/js/dates.js?v={{EMPREINTE}}"></script>
 <script src="/js/calendrier.js?v={{EMPREINTE}}"></script>
 <script src="/js/avance.js?v={{EMPREINTE}}"></script>
+<script src="/js/filet.js?v={{EMPREINTE}}"></script>
 <script>
+  // Les reponses de l'editeur aux messages ecrits d'ici, sur le bouton, comme dans une compagnie (`js/filet.js`) : la
+  // route `signalements`, servie sans compagnie, les releve (`routes::filet::route_sans_compagnie`).
+  dessinerPastilleReponses();
   document.getElementById("avance-accueil").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("voile").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("voile-mdp").addEventListener("mousedown", (e) => e.stopPropagation());
