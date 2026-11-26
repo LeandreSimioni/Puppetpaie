@@ -21,7 +21,7 @@ use socle::echec::R;
 const METIERS_REND: &str = "emplois (les métiers proposés) et emplois_autres (ceux des autres conventions)";
 
 /// Ou ces routes se voient a l'ecran (une place par module).
-const ECRAN: Ecran = Ecran::DessineAvance(Place::Metiers);
+const ECRAN: Ecran = Ecran::Dessine(Place::Metiers);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
