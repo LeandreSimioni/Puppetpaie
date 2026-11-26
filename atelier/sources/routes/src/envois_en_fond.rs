@@ -305,7 +305,7 @@ static PAR_COMPAGNIE: Mutex<Vec<(PathBuf, Arc<EnvoisEnFond>)>> = Mutex::new(Vec:
 
 /// La cle d'une compagnie : son dossier resolu ; un dossier qui ne se resout plus (efface, deplace) se nomme par son
 /// chemin, qui le designe encore. Un dossier qui ne se resout pas pour une autre raison se refuse en le disant.
-fn cle(racine: &Path) -> R<PathBuf> {
+pub(crate) fn cle(racine: &Path) -> R<PathBuf> {
     match socle::fichiers::resolu(racine) {
         Ok(c) => Ok(c),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(racine.to_path_buf()),

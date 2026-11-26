@@ -66,9 +66,9 @@ pub struct EtatDeLaVeille {
     pub erreur: Option<String>,
 }
 
-/// « à 16:28 » le jour du passage, « le 23/09 à 16:28 » un autre jour : l'heure d'un passage, au jour de l'horloge de
-/// Paris (celle d'une fictive au banc comprise).
-fn heure_du_passage(quand: socle::paris::Moment) -> String {
+/// « à 16:28 » le jour du passage, « le 23/09 à 16:28 » un autre jour : l'heure d'un passage (ou d'une lecture du Drive,
+/// `drive::DriveLu`), au jour de l'horloge de Paris (celle d'une fictive au banc comprise).
+pub(crate) fn heure_du_passage(quand: socle::paris::Moment) -> String {
     let jour = quand.jour_de_paris();
     let heure = socle::paris::ecrit::heure_minute(quand, ":");
     if socle::temps::secondes().a_la_seconde().jour_de_paris() == jour {

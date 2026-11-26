@@ -117,6 +117,7 @@ routes! {
         GoogleAutoriser = "google-autoriser",
         GoogleOublier = "google-oublier",
         DriveEtat = "drive-etat",
+        DriveActualiser = "drive-actualiser",
         DriveSupprimer = "drive-supprimer",
         DrivePrendreLaMain = "drive-prendre-la-main",
         DriveCompagnies = "drive-compagnies",
