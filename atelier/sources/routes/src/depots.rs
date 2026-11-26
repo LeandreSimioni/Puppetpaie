@@ -43,7 +43,7 @@ use crate::catalogue::{Ecran, Place};
 const QUOI: Legende = dit("DPAE ou DSN", "la déclaration (un signalement est une DSN)");
 const ETABLISSEMENT: Legende = dit("Établissement", "le NIC de l'établissement (DSN), le principal sinon").avancee();
 const ENGAGEMENTS: Legende = dit("Embauches", "seulement ces embauches (DPAE) : [{salarie, numero}]").avancee();
-const SIGNALEMENT: Legende = dit("Signalement", "un signalement écrit, tel que sa route le rend, à la place du mois").avancee();
+const SIGNALEMENT: Legende = dit("Signalement", "un signalement écrit, tel que sa route le rend, à la place du mois ; un chemin relatif se lit depuis la compagnie").avancee();
 /// L'exemple : la DPAE de novembre, que `depot-apercu` ecrit.
 const DPAE_DE_L_EXEMPLE: &str = r#"{"quoi":"dpae","mois":"2026-11"}"#;
 const ILLISIBLE_FICHIER: Refus = Refus { classe: Classe::FichierAbsent, corriger: "le signalement : le fichier que sa route a rendu" };
@@ -1071,29 +1071,33 @@ fn existe(t: &str) -> bool {
     !t.contains('\0') && Path::new(t).exists()
 }
 
-/// Un chemin tape a la main, tel quel s'il existe, sinon sous la compagnie, par la porte des sorties d'un mois
-/// (`SortiesDuMois::a_ouvrir` : la piece d'un mois d'une annee close se lit dans l'archive de son exercice). Rend le
-/// chemin, normalisé. La declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un
-/// chemin.
+/// LE FICHIER D'UNE CHARGE (le signalement de `deposer`, `depot-apercu`, `bilan-repetition`), et le seul endroit qui le
+/// trouve : un chemin absolu se lit tel quel ; un chemin relatif se lit depuis la compagnie, par la porte des sorties
+/// d'un mois (`SortiesDuMois::a_ouvrir` : la piece d'un mois d'une annee close se lit dans l'archive de son exercice),
+/// jamais depuis le dossier ou l'on a lance la commande ; celui que le moteur a ecrit sous une racine relative la porte
+/// deja en tete, et se lit tel quel. Un fichier qui n'y est pas se dit introuvable (`FichierAbsent`). Rend le chemin,
+/// normalisé. La declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un chemin.
 pub(crate) fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
     let t = chemin.to_string_lossy();
     if t.chars().all(socle::texte::blanc) {
         return Err(erreur(Classe::FichierAbsent, "Aucun fichier indique."));
     }
     let p = normaliser(&t);
-    if existe(&p) || p.starts_with('/') {
-        return Ok(PathBuf::from(p));
-    }
-    // Un chemin qui n'est pas un chemin relatif a la compagnie (`..`, un lecteur) ne mene a aucune piece d'un mois : il
-    // se joint tel quel.
-    let candidat = match socle::fichiers::CheminRelatif::du(Path::new(&p)) {
-        Ok(rel) => documents::sorties_du_mois::SortiesDuMois::a_ouvrir(racine, &rel)?,
-        Err(_) => racine.join(&p),
+    let tel_quel = Path::new(&p);
+    let candidat = if tel_quel.is_absolute() || p.starts_with('/') || (racine.is_relative() && tel_quel.starts_with(racine)) {
+        tel_quel.to_path_buf()
+    } else {
+        // Un chemin qui n'est pas un chemin relatif a la compagnie (`..`, un lecteur) ne mene a aucune piece d'un mois :
+        // il se joint tel quel a la compagnie.
+        match socle::fichiers::CheminRelatif::du(tel_quel) {
+            Ok(rel) => documents::sorties_du_mois::SortiesDuMois::a_ouvrir(racine, &rel)?,
+            Err(_) => racine.join(&p),
+        }
     };
-    if candidat.exists() {
+    if existe(&candidat.to_string_lossy()) {
         return Ok(candidat);
     }
-    Ok(PathBuf::from(p))
+    Err(erreur(Classe::FichierAbsent, socle::fichiers::introuvable(&candidat)))
 }
 
 /// `read_bytes`, l'erreur du disque sous sa classe.
