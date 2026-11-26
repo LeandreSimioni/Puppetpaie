@@ -215,10 +215,14 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
         }
         Ok(None) | Err(_) => Vec::new(),
     };
-    let charge = super::ChargeDemanderTaux { salarie: cle.clone(), mode: Some(socle::mode::Mode::Reel) };
-    let taux = vec![GesteDeRoute::sans_cases(crate::catalogue::Route::DemanderTaux, charge, DEMANDER_LE_TAUX)
-        .disant(vec![DEMANDER_LE_TAUX_DIT.to_string()])
-        .exigeant(Some(crate::coffre::demande(&ctx.racine, super::GESTE_DEMANDER_TAUX)?))];
+    // De meme, une demande du mot de passe qui ne se lit pas ne ferme pas la fiche : le geste n'est pas offert.
+    let taux = match crate::coffre::demande(&ctx.racine, super::GESTE_DEMANDER_TAUX) {
+        Ok(demande) => {
+            let charge = super::ChargeDemanderTaux { salarie: cle.clone(), mode: socle::mode::Mode::Reel };
+            vec![GesteDeRoute::sans_cases(crate::catalogue::Route::DemanderTaux, charge, DEMANDER_LE_TAUX).disant(vec![DEMANDER_LE_TAUX_DIT.to_string()]).exigeant(Some(demande))]
+        }
+        Err(_) => Vec::new(),
+    };
     Ok(EnteteDeLaFiche {
         salarie: Some(SalarieDeLEntete { cle: cle.clone(), exporter: "Exporter ses documents", gestes, taux }),
         ..EnteteDeLaFiche::de(titre, matricule, None, Some(CoutDeLaFiche::Salarie { de: cle.clone() }))

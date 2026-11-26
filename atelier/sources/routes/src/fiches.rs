@@ -1001,13 +1001,12 @@ fn supprimer_salarie(ctx: &Contexte, c: ChargeSupprimerSalarie) -> R<SalarieSupp
 
 charge! {
     motdepasse = dit("Mot de passe du logiciel", "pour un dépôt réel : le mot de passe du logiciel ; sans lui, le moteur le demande à un humain");
-    /// La charge de `demander-taux` : le salarie, et le mode (absent : un test) ; le mot de passe du logiciel tape pour le
-    /// reel, l'enveloppe le prend (`Charge::mot_de_passe`).
+    /// La charge de `demander-taux` : le salarie, et le mode ; le mot de passe du logiciel tape pour le reel, l'enveloppe le
+    /// prend (`Charge::mot_de_passe`).
     #[derive(Debug, Clone, serde::Serialize)]
     pub(crate) struct ChargeDemanderTaux {
         salarie: IdSalarie = dit("Salarié", "la clé du salarié dont on demande le taux"),
-        #[serde(skip_serializing_if = "Option::is_none")]
-        mode: Option<socle::mode::Mode> = dit("Test ou réel", "le réel demande le mot de passe du logiciel, tapé par un humain au moment de l'acte"),
+        mode: socle::mode::Mode = dit("Test ou réel", "le réel demande le mot de passe du logiciel, tapé par un humain au moment de l'acte"),
     }
 }
 
@@ -1020,29 +1019,16 @@ struct TauxDemande {
     phrase: Phrase,
 }
 
-/// `demander-taux` : LE CHEMIN DE LA DPAE, pour un salarie dont la demande de taux n'est pas partie avec elle. Les embauches
-/// de lui que sa derniere DPAE reelle partie declare (acceptee, et pas refusee au bilan : regle 5) reprennent
-/// `depot_acte::deposer_les_amorcages`, tel que le depot de la DPAE l'appelle : les paies qui attendent un taux
-/// (`amorcage_demande::a_combler`), la demande ecrite, son test, puis le reel. Le reel se fait sous la preuve du mot de
-/// passe du logiciel, verifiee ici une fois, comme `deposer` ; ce qui est ecarte se dit par sa raison et ne depose rien.
+/// `demander-taux` : LE CHEMIN DE LA DPAE, pour un salarie dont la demande de taux n'est pas partie avec elle (ou dont la
+/// DPAE est partie ailleurs : le site de l'Urssaf, une compagnie importee). Ses paies a venir
+/// (`depot_acte::paies_a_venir_du_salarie`) reprennent `depot_acte::deposer_les_amorcages`, tel que le depot de la DPAE
+/// l'appelle : celles qui attendent un taux (`amorcage_demande::a_combler`), la demande ecrite, son test, puis le reel. Le
+/// reel se fait sous la preuve du mot de passe du logiciel, verifiee ici une fois, comme `deposer` ; ce qui est ecarte se
+/// dit par sa raison et ne depose rien. Un salarie inconnu se refuse.
 fn demander_taux(ctx: &Contexte, c: ChargeDemanderTaux, motdepasse: Option<&socle::secret::Secret>) -> R<TauxDemande> {
     let ChargeDemanderTaux { salarie, mode } = c;
-    // Une demande que la charge ne demande pas reelle est un test (la charge, ci-dessus).
-    let mode = match mode {
-        Some(m) => m,
-        None => socle::mode::Mode::Test,
-    };
+    ctx.fiche_de(&salarie)?;
     let qui = ctx.nomme(&salarie);
-    let lignes = journal::lu(&ctx.racine)?.lignes;
-    let derniere = journal::filtrer(&lignes, Some(documents::Acte::Dpae), None, Some(socle::mode::Mode::Reel))
-        .filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l))
-        .filter_map(|l| l.mois().zip(l.dpae()))
-        .map(|(m, e)| (m, e.detail.embauches.iter().filter(|x| x.salarie == salarie).cloned().collect::<Vec<_>>()))
-        .filter(|(_, e)| !e.is_empty())
-        .last();
-    let Some((mois, embauches)) = derniere else {
-        return Ok(TauxDemande { phrase: socle::phrase!("Taux de PAS non demandé pour {} : aucune DPAE n'est partie pour cette personne, et la demande part avec elle.", qui) });
-    };
     let preuve = match mode {
         socle::mode::Mode::Reel => {
             let tapee = Preuve::du_mot_de_passe(motdepasse.cloned());
@@ -1051,7 +1037,9 @@ fn demander_taux(ctx: &Contexte, c: ChargeDemanderTaux, motdepasse: Option<&socl
         }
         socle::mode::Mode::Test => None,
     };
-    let dit = crate::gestes::depot_acte::deposer_les_amorcages(ctx, mois, &embauches, mode, preuve.as_ref(), INTERFACE, "", "");
+    let paies = crate::gestes::depot_acte::paies_a_venir_du_salarie(ctx, &salarie);
+    let mois = engagement::etats::mois_present(ctx);
+    let dit = crate::gestes::depot_acte::deposer_les_amorcages(ctx, mois, paies, mode, preuve.as_ref(), INTERFACE, "", "");
     let phrase = match dit.is_empty() {
         true => socle::phrase!("Taux de PAS non demandé pour {} : aucune de ses paies n'attend de taux.", qui),
         false => socle::phrase!("{}", dit.join(" ")),

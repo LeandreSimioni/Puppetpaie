@@ -131,11 +131,11 @@ async function ouvrirLaFicheRendue(fiche) {
     form.querySelector("[data-exporter]").onclick = () => exporterSalarie(s.cle);
     dessinerImprevusDuSalarie(s.cle);
     dessinerConseilsDuSalarie(s.cle);
-    // Les gestes que la route rend dans l'en-tête (supprimer un salarié que rien ne lie) : leur boîte dit ce qui
-    // s'efface ; fait, la fiche n'est plus, la liste se redessine sans elle.
     // Ce que la route rend sous « Avancé » (demander le taux de PAS) : la phrase de sa réponse se dit, la fiche reste.
     const taux = form.querySelector("[data-gestes-taux]");
     if (taux) brancherLesGestes(taux, s.taux, { titre: r.titre }, async () => {});
+    // Les gestes que la route rend dans l'en-tête (supprimer un salarié que rien ne lie) : leur boîte dit ce qui
+    // s'efface ; fait, la fiche n'est plus, la liste se redessine sans elle.
     const gestes = form.querySelector("[data-gestes-salarie]");
     if (gestes) brancherLesGestes(gestes, s.gestes, { titre: r.titre }, async (rep) => {
       oublierLEcran(cases);
