@@ -684,7 +684,7 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
 /// conforme » (regle 5 ; `retours::NatureDuRetour` : « 10 - Accuse d'enregistrement electronique »). Un test dont seul
 /// l'accuse est la ne doit pas s'afficher « testee — conforme » quand l'essai precedent du meme contenu a pris
 /// B1-208-11.
-fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> CompteRenduDuTest {
+pub fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> CompteRenduDuTest {
     let mut ok = false;
     for r in retours {
         if r.ko() {

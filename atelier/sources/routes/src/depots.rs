@@ -969,7 +969,13 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
     let du_flux = |q: documents::Acte| flux.as_ref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == Some(f)));
     let (passe, refuse);
-    if dpae {
+    // UN ENVOI QUI N'EST PAS LA MENSUELLE (un signalement : arret, fin de contrat, demande de taux) se juge sur sa propre
+    // ligne et se nomme par sa nature ; la mensuelle, sur l'etat de la DSN du mois.
+    let signalement = if dpae { None } else { du_flux(Quoi::Dsn.acte()).and_then(|l| l.nature_dsn().filter(|n| *n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle).map(|n| (l, n))) };
+    if let Some((ligne, _)) = signalement {
+        refuse = !ligne.accepte() || etats::refuse_par_un_retour(ligne);
+        passe = !refuse && etats::compte_rendu_du_depot(ligne.retours_organisme()) == envois::retours::CompteRenduDuTest::Ok;
+    } else if dpae {
         let etat = etats::etat_des_embauches(&lignes);
         // Une embauche que l'etat ne connait pas (une ligne non acceptee) n'est ni passee ni refusee.
         let embauches: Vec<Option<&etats::EtatEmbauche>> = du_flux(Quoi::Dpae.acte())
@@ -989,7 +995,16 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     }
     // Ce que l'ecran en dit, et en quelle couleur, une fois le depot tranche.
     let nom = if dpae { "La DPAE" } else { "La DSN" };
-    let (phrase, etat) = if passe {
+    let (phrase, etat) = if let Some((_, nature)) = signalement {
+        let nom = nature.libelle();
+        if passe {
+            (socle::phrase!("{} : retour de l'organisme reçu, conforme.", nom), socle::ecran::EtatDEcran::Fait)
+        } else if refuse {
+            (socle::phrase!("{} : refusé par l'organisme — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
+        } else {
+            (socle::phrase!("{} : attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
+        }
+    } else if passe {
         (socle::phrase!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
     } else if refuse {
         (socle::phrase!("{} est refusée — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
