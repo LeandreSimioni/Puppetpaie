@@ -13,6 +13,11 @@ Le serveur est celui de la compagnie UEUEUE ; c'est le déploiement de son dép�
 lance « Run workflow ». Rien ne se pose à la main sur le serveur : le déploiement suivant l'effacerait. Si la prise
 échoue, le site déjà en ligne est gardé.
 
+**Le compteur des postes.** La ligne `<!--COMPTEUR-->` d'`index.html` est la place du nombre de postes qui se sont
+servis du logiciel dans les trente derniers jours : le déploiement le demande au serveur du filet (`GET /compte`) et
+y écrit « PuppetPaie s’est ouvert sur N ordinateurs ces trente derniers jours. ». Le filet injoignable, ou aucun poste, la ligne s'efface : on n'écrit pas un
+chiffre qu'on n'a pas lu. La politique de sécurité interdit à la page d'aller le chercher elle-même.
+
 Ce `LISEZ-MOI.md` n'est pas mis en ligne.
 
 ## Ce que le site admet
