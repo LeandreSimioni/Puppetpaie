@@ -222,6 +222,14 @@ pub fn sans_compagnie(o: &super::enveloppe::Options) -> std::path::PathBuf {
 pub(crate) fn route_sans_compagnie(o: &super::enveloppe::Options, nom: Route, charge: &Charge) -> R<Rendu> {
     let racine = sans_compagnie(o);
     std::fs::create_dir_all(&racine).map_err(|e| socle::echec::du_disque(&racine, &e).reclasser(Classe::du_disque(&e)))?;
+    // LES REPONSES DE L'EDITEUR aux messages ecrits sans compagnie : un poste, une personne (Leandre, 26/11/2026). Aucune
+    // ouverture de compagnie ne les releve : elles se relevent quand l'accueil lit ses messages, et seulement s'il en
+    // attend (sinon rien ne part). Un releve qui echoue ne ferme pas la lecture : il se note au journal du moteur.
+    if nom == Route::Signalements {
+        if let Err(e) = compagnie::problemes::relever_reponses(&racine) {
+            compagnie::diagnostic::noter_moteur(&format!("Réponses de l'éditeur, sans compagnie : {}", e));
+        }
+    }
     route_de(&racine, nom, charge)
 }
 

@@ -638,24 +638,15 @@ fn lecture(o: &Options, route: Route, charge: &Charge) -> String {
 fn charge_du_mois(mois: Mois) -> R<Charge> {
     socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&ChargeMois { mois }), "La charge d'un mois ne s'écrit pas.")}
 
-/// La charge de l'apercu de la saisie enregistree : le mois, et aucune modification en cours (`mois::ChargeApercu`).
-#[derive(Serialize)]
-struct ApercuEnregistre {
-    mois: Mois,
-    modifications: [Mois; 0],
-}
-
 /// L'etat de `mois`, refait : ses deux etats (`etapes::les_deux_etats`) et ses lectures (`LECTURES`, puis l'apercu de la
 /// saisie enregistree).
 fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: Empreinte) -> R<EtatDuMois> {
     let charge = charge_du_mois(mois)?;
     let mut lectures: Vec<(Route, String)> = LECTURES.iter().map(|r| (*r, lecture(o, *r, &charge))).collect();
     // L'APERCU : ce que la page demande des qu'un mois s'affiche (`calculerApercu`), sur la saisie qu'elle vient de lire
-    // (`{"mois": mois, "modifications": []}`, le mois enregistre), quand le mois a une saisie ; la page ne le redemande
-    // que quand on modifie la saisie.
+    // sans modification en cours (le mois enregistre : la page envoie `modifications: []`, le garde n'en dit aucune, c'est
+    // la meme charge), quand le mois a une saisie ; la page ne le redemande que quand on modifie la saisie.
     if engagement::stock::a_une_saisie(&ctx.racine, mois)? {
-        let apercu = ApercuEnregistre { mois, modifications: [] };
-        let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.")?;
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let etats = crate::etapes::les_deux_etats(ctx, mois)?;
