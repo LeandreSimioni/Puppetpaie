@@ -56,6 +56,12 @@ const MODIFICATIONS: Legende = dit(
     "les engagements validés ouverts pour être modifiés, pas encore écrits : [{engagement (son identité), changements (comme modifier-engagement)}] ; [] sans aucun. Une carte en saisie se lit telle qu'elle est enregistrée",
 );
 
+/// Les modifications en cours de l'apercu : les memes, et absentes, aucune (le mois tel qu'il est enregistre).
+const MODIFICATIONS_FACULTATIVES: Legende = dit(
+    "Modifications en cours",
+    "[{engagement (son identité), changements (comme modifier-engagement)}, …] : les engagements validés ouverts pour être modifiés, pas encore écrits ; absentes : aucune, le mois tel qu'il est enregistré. Une carte en saisie se lit telle qu'elle est enregistrée",
+);
+
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
 
@@ -78,7 +84,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::Apercu,
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &ChargeApercu::CHARGE,
-        exemple: r#"{"mois":"2026-11","modifications":[]}"#,
+        exemple: r#"{"mois":"2026-11"}"#,
         rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), lignes : chaque ligne de paie à sa place (ligne), son montant, et par_jour pour une ligne qui a des jours du mois (resume replié, « 4 · 3 · 3 » ; jours : une rangée par jour, chaque chose sous la colonne de sa clé, dates, quantite et lieu en cases, rubrique (l'unité), taux, montant, retirer (la croix qui retire ce jour de la ligne) ; total), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide ; avertissements et informations : chacun son texte, et le lien vers le texte qu'il renvoie à vérifier, à part : libellé, adresse), les trois nombres de chaque carte, le mois, ses deux nombres (total_net, total_cout) et ce qu'ils disent (total_net_dit, total_cout_dit)",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
@@ -202,11 +208,12 @@ charge! {
 }
 
 charge! {
-    /// La charge de l'apercu : le mois, et les modifications pas encore ecrites d'engagements valides (`mois_designe`).
+    /// La charge de l'apercu : le mois, et les modifications pas encore ecrites d'engagements valides (`mois_designe`) ;
+    /// absentes, aucune : regarder un mois n'en demande pas.
     #[derive(Debug)]
     struct ChargeApercu {
         mois: Mois = legendes::MOIS,
-        modifications: Vec<ModificationEnCours> = MODIFICATIONS,
+        modifications: Option<Vec<ModificationEnCours>> = MODIFICATIONS_FACULTATIVES,
     }
 }
 
@@ -1451,7 +1458,7 @@ pub(crate) fn refus_du_calcul(ctx: &Contexte, data: &VueDuMois, e: Echec) -> Ech
 /// chaque modification pas encore ecrite d'un engagement valide (`modifications`) : son brouillon (`Brouillon::de_la_carte`
 /// de sa vue) prend ses changements comme `modifier-engagement` les prendra, et se calcule a sa place, en saisie. Rend
 /// ce mois et l'identite de chacun de ses engagements, dans son ordre. Rien ne s'ecrit.
-fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCours>) -> R<(VueDuMois, Vec<Identite>)> {
+fn mois_designe(ctx: &Contexte, mois: Mois, modifications: impl IntoIterator<Item = ModificationEnCours>) -> R<(VueDuMois, Vec<Identite>)> {
     let texte = mois.libelle(Graphie::Accentuee);
     // Un mois qu'aucun engagement ne touche encore se calcule vide.
     let mut v = match engagement::stock::vue_du_mois(&ctx.racine, mois)? {
@@ -2611,7 +2618,7 @@ struct Apercu {
 /// la carte qui en porte un n'a pas de total. Une saisie dont aucun refus ne se rapporte a un engagement refuse.
 fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     let mois = c.mois;
-    let (data, identites) = mois_designe(ctx, c.mois, c.modifications)?;
+    let (data, identites) = mois_designe(ctx, c.mois, c.modifications.into_iter().flatten())?;
     let r = apercu_des_paies(ctx, &data)?;
     let mut paies = Vec::new();
     for (mut paie, engagement) in r.paies.into_iter().zip(identites) {
