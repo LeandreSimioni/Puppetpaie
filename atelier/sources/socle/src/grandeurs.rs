@@ -923,17 +923,6 @@ impl Heures {
     pub fn par_mois(self) -> HeuresParUnite {
         HeuresParUnite(num::court(self.au_centieme().0))
     }
-
-    /// Les cachets qu'il faut pour faire ces heures, a `par_cachet` heures chacun, le dernier entame compte (13 h a 12 h le
-    /// cachet : 2 cachets) ; `None` : un cachet de zero heure n'en fait aucune.
-    pub fn cachets_pour(self, par_cachet: HeuresParUnite) -> Option<Cachets> {
-        if par_cachet.0.is_zero() {
-            return None;
-        }
-        let mut c = num::div(self.0, par_cachet.0).ceil();
-        c.rescale(0);
-        Some(Cachets(c))
-    }
 }
 
 /// Une quantite fois son montant unitaire : un montant.

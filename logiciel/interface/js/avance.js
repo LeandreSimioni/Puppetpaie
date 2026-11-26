@@ -1301,10 +1301,12 @@ function montrerEnGrand(src, alt) {
 }
 
 /** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (`routeQuiRend`). Sa charge : le mois de l'écran quand sa fiche le
- *  prend (`mois`), celui de l'onglet Engagements ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
+ *  prend (`mois`), celui de l'onglet Engagements ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran.
+ *  Pendant que la route répond, `cible` dit qu'elle lit : l'écran d'avant ne reste pas affiché. */
 async function dessinerLEcranRendu(cible, f) {
   const mois = f.charge.some((c) => c.nom === "mois" && c.forme === "mois") && typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE
     ? { mois: MOIS_AFFICHE } : {};
+  cible.innerHTML = `<p class="discret">Lecture…</p>`;
   let r;
   try { r = await api(f.nom, mois); }
   catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }

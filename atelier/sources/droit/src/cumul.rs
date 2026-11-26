@@ -187,11 +187,6 @@ impl Position {
     pub fn jours_restants(&self, aujourdhui: Jour) -> Duree<EnJours> {
         Duree::ecoulee(&aujourdhui, &self.periode.fin())
     }
-
-    /// Les cachets qu'il manque pour le seuil, le dernier entame compte ; un cachet de zero heure refuse.
-    pub fn cachets_manquants(&self) -> R<Cachets> {
-        self.manque()?.cachets_pour(self.constantes.heures_par_cachet).ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))
-    }
 }
 
 
