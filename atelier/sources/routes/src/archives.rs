@@ -1380,7 +1380,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         let phrase = if p.atteint()? {
             socle::phrase!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - c.seuil_heures))
         } else {
-            socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_retenues()), dit(c.seuil_heures))
+            socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_ouverture()?), dit(c.seuil_heures))
         };
         let mut notes = Vec::new();
         if !p.cachets_perdus().est_nul() {
