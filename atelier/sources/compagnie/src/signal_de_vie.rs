@@ -7,7 +7,8 @@
 //! machine, ni nombre.
 //!
 //! QUAND : a l'ouverture ou au passage de la veille (`ouverture::ouverture`, avec les incidents et le nombre de paies),
-//! au plus une fois par jour (l'horloge du moteur) et par processus du moteur : le dernier jour parti se retient dans le
+//! au plus une fois par jour (l'horloge du moteur), par numero et par processus du moteur : le numero est celui de la
+//! compagnie ouverte, et un poste qui en tient plusieurs envoie celui de chacune ; ce qui est parti se retient dans le
 //! processus, jamais dans un fichier de la compagnie. Un envoi qui echoue (hors ligne, serveur en panne) ne retient
 //! rien : le passage suivant le refait.
 //!
@@ -24,10 +25,11 @@ use std::sync::Mutex;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 
-use crate::incidents::{self, Canal};
+use crate::incidents::{self, Canal, NumeroDePoste};
 
-/// Le dernier jour dont le signal est parti depuis ce processus.
-static DERNIER_JOUR: Mutex<Option<Jour>> = Mutex::new(None);
+/// Le jour, et les numeros dont le signal est parti ce jour depuis ce processus : le numero est celui de la compagnie
+/// ouverte (`config/diagnostic.json`), et un poste qui en tient plusieurs envoie celui de chacune.
+static PARTIS: Mutex<Option<(Jour, Vec<NumeroDePoste>)>> = Mutex::new(None);
 
 /// Ce que l'ecran « Ce qui est parti chez l'editeur » dit du signal de vie, selon l'interrupteur (`incidents::envoi`).
 pub fn ce_qui_part(envoi: bool) -> &'static str {
@@ -53,19 +55,26 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDeVie {
         Err(e) => return bilan(false, "", &e.phrase),
     }
     // Le verrou est tenu jusqu'a la fin : deux passages du meme jour ne partent pas ensemble. Un verrou empoisonne garde
-    // sa valeur : le jour retenu reste juste.
-    let mut dernier = DERNIER_JOUR.lock().unwrap_or_else(|p| p.into_inner());
-    if *dernier == Some(ctx.aujourdhui) {
-        return bilan(false, "deja parti ce jour", "");
+    // sa valeur : ce qui est retenu reste juste.
+    let mut partis = match PARTIS.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    if partis.as_ref().is_some_and(|(jour, _)| *jour != ctx.aujourdhui) {
+        *partis = None;
     }
     let client = match incidents::canal(&ctx.racine) {
         Ok(Canal::Pret(c)) => c,
         Ok(Canal::Panne(e)) => return bilan(false, "", &e.dite()),
         Err(e) => return bilan(false, "", &e.phrase),
     };
+    let numero = client.poste.0.clone();
+    if partis.as_ref().is_some_and(|(_, v)| v.contains(&numero)) {
+        return bilan(false, "deja parti ce jour", "");
+    }
     match client.signaler_la_vie() {
         Ok(crate::editeur::Vie { ok: true }) => {
-            *dernier = Some(ctx.aujourdhui);
+            partis.get_or_insert_with(|| (ctx.aujourdhui, Vec::new())).1.push(numero);
             bilan(true, "", "")
         }
         Ok(crate::editeur::Vie { ok: false }) => bilan(false, "", "le serveur n'a pas noté le signal"),

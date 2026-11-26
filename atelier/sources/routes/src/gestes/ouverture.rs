@@ -1115,9 +1115,11 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
             r.incidents.push(format!("Nombre de paies chez l'éditeur : {}", e));
         }
         // LE SIGNAL DE VIE DU POSTE, une fois par jour : `signal_de_vie` decide seul (ni fictive, ni copie de
-        // developpement, ni envoi coupe ; un logiciel bride envoie) et retient le jour dans le processus.
+        // developpement, ni envoi coupe ; un logiciel bride envoie) et retient le jour dans le processus. Il ne sert qu'au
+        // compte de l'editeur : un envoi qui echoue (hors ligne) ne dit rien a la compagnie, il se note au journal du
+        // moteur, et le passage suivant le refait.
         if let Some(e) = compagnie::signal_de_vie::envoyer_si_du(ctx).erreur {
-            r.incidents.push(format!("Signal de vie chez l'éditeur : {}", e));
+            compagnie::diagnostic::noter_moteur(&format!("Signal de vie chez l'éditeur : {}", e));
         }
         // Les messages « Un probleme, une idee ? » que l'envoi en fond n'a pas fait partir (serveur injoignable...).
         if let Some(e) = compagnie::problemes::partir(&ctx.racine).erreur {

@@ -212,8 +212,11 @@ function suivreLesEtapes() {
     // sans attendre la fin du reste ; le bandeau, lui, se repeint à la fin, comme toujours.
     if (RELEVE_VUE_EN_COURS && !e.en_cours && (e.sauvegarde_en_cours || e.envoi_en_cours)) {
       try {
-        await rafraichirApresVeille((await fenetre("veille")).etat);
+        const v = (await fenetre("veille")).etat;
         suiviRepris("veille");
+        await rafraichirApresVeille(v);
+        // Ce passage est peint : la fin de la sauvegarde ne le repeint pas une seconde fois.
+        if (VEILLE && v?.dernier) VEILLE = { ...VEILLE, dernier: v.dernier };
       } catch (x) { direLeRefusDuSuivi("veille", x.message); }
     }
     RELEVE_VUE_EN_COURS = e.en_cours;

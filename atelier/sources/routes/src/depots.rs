@@ -1095,7 +1095,7 @@ pub fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
         return Ok(candidat);
     }
     // La phrase en mots, le chemin a part : un nom de piece porte des tirets bas, que l'ecran ne montre pas.
-    Err(socle::echec::au_chemin("Ce fichier n'est pas dans la compagnie. Rien n'est parti.", &candidat).reclasser(Classe::FichierAbsent))
+    Err(socle::echec::au_chemin("Ce fichier n'est pas dans la compagnie.", &candidat).reclasser(Classe::FichierAbsent))
 }
 
 /// `read_bytes`, l'erreur du disque sous sa classe.
