@@ -129,7 +129,7 @@ function caseDeLaCarte(div, d, choix) {
 
 /** Ce que la route `convention-du-metier` a rendu, par mois et par métier, sous le code de chaque rubrique : elle ne
  *  s'appelle qu'une fois pour eux, jamais à chaque frappe. `null` : sa réponse est attendue. Il s'oublie quand un mois
- *  se lit (pas quand il se repeint après une écriture) et au retour sur Paie (`oublierLesBulles`) : la convention ou
+ *  se lit (pas quand il se repeint après une écriture) et au retour sur Engagements (`oublierLesBulles`) : la convention ou
  *  l'annexe ont pu changer. */
 const CONVENTION_DU_METIER = new Map();
 
@@ -535,14 +535,14 @@ function dessinerLaLigne(div) {
       <div class="carte-actes">${bandeauEtats(ligne, false)}</div>
       <div class="carte-net" title="net payé">${p ? echapper(netPaye(p.net_paye)) : ""}</div>
       ${versionsDe(ligne)}
-      <span class="carte-modifier"><button class="lien carte-imprevu" title="Imprévu" aria-label="Un imprévu">&hellip;</button></span>
+      <span class="carte-modifier"><button class="lien carte-imprevu" title="${echapper(ligne.copier.libelle)}" aria-label="${echapper(ligne.copier.libelle)}">&hellip;</button></span>
     </div>
     <div class="e-imprevus"></div>`;
   poserLesChevrons(div);
   const resume = div.querySelector(".e-resume");
   rendreOuvrable(resume, () => ouvrirEnModification(div), "Voir l'engagement");
   const porte = div.querySelector(".carte-imprevu");
-  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuImprevu(porte, { div, copier: ligne.copier }); };
+  porte.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); menuDeLaLigne(porte, ligne.copier); };
   const frise = div.querySelector(".carte-versions");
   if (frise) frise.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); boiteFrise(ligne); };
   peindreImprevusDesCartes();

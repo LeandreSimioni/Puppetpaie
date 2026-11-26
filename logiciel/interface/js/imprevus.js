@@ -240,32 +240,42 @@ function fermerMenuImprevu() {
 
 /** Le petit menu de la porte, ancré sous le bouton : ses choix sont ceux que `imprevus` rend (`porte`), chacun la
  *  lecture qui rend sa boîte (son `code`, `boiteDUnImprevu`). `ou` : la carte, ou `{salarie}` depuis le dossier du
- *  salarié ; sur la ligne d'un engagement, `copier` : le geste que sa ligne rend (`copierLEngagement`). */
+ *  salarié. */
 async function menuImprevu(ancre, ou) {
   fermerMenuImprevu();
   let n;
   try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
   const rupture = ou.div ? ruptureOuverte(ou.div) : null;
-  const menu = document.createElement("div");
-  menu.className = "menu-imprevu";
-  menu.setAttribute("role", "menu");
-  menu.innerHTML = `
+  const menu = poserLeMenu(ancre, `
     ${n.porte.map((c) => `<button type="button" data-choix="${echapper(c.code)}">${echapper(c.libelle)}
       <span class="discret">${echapper(c.dit)}</span></button>`).join("")}
-    ${rupture ? `<button type="button" data-choix="rupture">${echapper(rupture)}</button>` : ""}
-    ${ou.copier ? `<button type="button" data-choix="copier">${echapper(ou.copier.libelle)}</button>` : ""}`;
-  document.body.appendChild(menu);
-  const r = ancre.getBoundingClientRect();
-  menu.style.top = `${window.scrollY + r.bottom + 4}px`;
-  menu.style.left = `${Math.max(8, window.scrollX + r.right - menu.offsetWidth)}px`;
-  MENU_IMPREVU = menu;
+    ${rupture ? `<button type="button" data-choix="rupture">${echapper(rupture)}</button>` : ""}`);
   n.porte.forEach((c) => {
     menu.querySelector(`[data-choix="${c.code}"]`).onclick = () => { fermerMenuImprevu(); boiteDUnImprevu(c.code, ou); };
   });
   const r2 = menu.querySelector('[data-choix="rupture"]');
   if (r2) r2.onclick = () => { fermerMenuImprevu(); ouvrirLaFin(ou.div); };
-  const r3 = menu.querySelector('[data-choix="copier"]');
-  if (r3) r3.onclick = () => { fermerMenuImprevu(); copierLEngagement(ou.copier); };
+}
+
+/** Le menu des « … » de la ligne d'un engagement : un seul choix, la copie (`copier`, le geste que sa ligne rend ;
+ *  `copierLEngagement`). Les imprévus sont sous « Imprévu… » de la carte ouverte. */
+function menuDeLaLigne(ancre, copier) {
+  fermerMenuImprevu();
+  const menu = poserLeMenu(ancre, `<button type="button" data-choix="copier">${echapper(copier.libelle)}</button>`);
+  menu.querySelector('[data-choix="copier"]').onclick = () => { fermerMenuImprevu(); copierLEngagement(copier); };
+}
+
+/** Un petit menu (`html`, ses boutons), ancré sous `ancre`, refermé par un clic dehors ou Échap. */
+function poserLeMenu(ancre, html) {
+  const menu = document.createElement("div");
+  menu.className = "menu-imprevu";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const r = ancre.getBoundingClientRect();
+  menu.style.top = `${window.scrollY + r.bottom + 4}px`;
+  menu.style.left = `${Math.max(8, window.scrollX + r.right - menu.offsetWidth)}px`;
+  MENU_IMPREVU = menu;
   setTimeout(() => {
     const dehors = (ev) => {
       if (MENU_IMPREVU && !MENU_IMPREVU.contains(ev.target)) {
@@ -277,6 +287,7 @@ async function menuImprevu(ancre, ou) {
   }, 0);
   menu.onkeydown = (ev) => { if (ev.key === "Escape") fermerMenuImprevu(); };
   menu.querySelector("button").focus();
+  return menu;
 }
 
 /* -------------------------------------------- sous la carte : ses imprévus

@@ -1120,7 +1120,7 @@ function montrerEnGrand(src, alt) {
 }
 
 /** DESSINE DANS `cible` L'ÉCRAN QUE LA ROUTE `f` REND (`routeQuiRend`). Sa charge : le mois de l'écran quand sa fiche le
- *  prend (`mois`), celui de l'onglet Paie ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
+ *  prend (`mois`), celui de l'onglet Engagements ; sans lui, la route prend le sien. Un refus se dit à la place de l'écran. */
 async function dessinerLEcranRendu(cible, f) {
   const mois = f.charge.some((c) => c.nom === "mois" && c.forme === "mois") && typeof MOIS_AFFICHE === "string" && MOIS_AFFICHE
     ? { mois: MOIS_AFFICHE } : {};

@@ -1498,7 +1498,7 @@ impl<'a> LigneDePage<'a> {
                 Route::CopierEngagement,
                 crate::mois::ChargeCarteProposee { mois, engagement: l.engagement.clone() },
                 Some(Route::EnregistrerSaisie),
-                "Copier pour un autre salarié".into(),
+                "Copier l'engagement".into(),
             ),
             engagement: &l.engagement,
             salarie: v.salarie.as_ref(),

@@ -2302,7 +2302,7 @@ dont chaque partie ne s'écrit que s'il en a : ce qu'il dit en tête (ses encart
 (`GesteDeRoute`, chacun sa boîte) ; ses cases (`routes::fiches::CaseDeLaFiche`, sous la clé de l'écran) et l'historique
 de ses cases datées ; et le geste qui enregistre ses cases (`routes::ecran::EnregistrerLEcran` : la route, sa charge, et
 le champ où vont les cases, chacune sous sa clé), dont la route rend l'écran enregistré. Sa lecture reçoit le mois de
-l'onglet Paie quand sa fiche prend un `mois`. Un fichier que la personne choisit sur son poste est une forme de case
+l'onglet Engagements quand sa fiche prend un `mois`. Un fichier que la personne choisit sur son poste est une forme de case
 (`Forme::Fichier`, les types qu'elle admet dans la fiche) : il part en base64, comme la ligne de commande le donne.
 Configuration › Signature & tampon a des rangs (route `identite`, l'image par `identite-image`). **Un geste peut
 nommer son aperçu** (`apercu` du `GesteDeRoute`, une lecture, `Ecran::Lecture`) : à chaque case changée de sa boîte, le

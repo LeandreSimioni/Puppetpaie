@@ -431,7 +431,7 @@ function boutonRappel(r, i) {
 }
 
 /* Le geste d'un rappel mène ailleurs : tout écran qui porte une saisie non enregistrée se quitte d'abord (la boîte, et
- * ce qui est dessous), avant d'ouvrir l'onglet Paie, dont le gestionnaire ne redemande alors rien. */
+ * ce qui est dessous), avant d'ouvrir l'onglet Engagements, dont le gestionnaire ne redemande alors rien. */
 async function agirSurRappel(r) {
   if (!(await quitterLEcran())) return;
   fermerBoite();

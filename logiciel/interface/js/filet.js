@@ -28,7 +28,7 @@ function ecranCourant() {
   const b = document.querySelector(".onglets button.actif");
   const nom = b ? b.textContent.trim() : "";
   const mois = document.getElementById("mois");
-  return nom === "Paie" && mois && mois.value ? `${nom} > ${mois.value}` : nom;
+  return nom === "Engagements" && mois && mois.value ? `${nom} > ${mois.value}` : nom;
 }
 
 function boiteSignalement() {
