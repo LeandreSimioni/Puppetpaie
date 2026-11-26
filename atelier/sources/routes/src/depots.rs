@@ -1077,7 +1077,7 @@ fn existe(t: &str) -> bool {
 pub fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
     let t = chemin.to_string_lossy();
     if t.chars().all(socle::texte::blanc) {
-        return Err(erreur(Classe::FichierAbsent, "Aucun fichier indique."));
+        return Err(erreur(Classe::FichierAbsent, "Aucun fichier indiqué."));
     }
     let p = normaliser(&t);
     let tel_quel = Path::new(&p);
@@ -1094,7 +1094,8 @@ pub fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
     if existe(&candidat.to_string_lossy()) {
         return Ok(candidat);
     }
-    Err(erreur(Classe::FichierAbsent, socle::fichiers::introuvable(&candidat)))
+    // La phrase en mots, le chemin a part : un nom de piece porte des tirets bas, que l'ecran ne montre pas.
+    Err(socle::echec::au_chemin("Ce fichier n'est pas dans la compagnie. Rien n'est parti.", &candidat).reclasser(Classe::FichierAbsent))
 }
 
 /// `read_bytes`, l'erreur du disque sous sa classe.

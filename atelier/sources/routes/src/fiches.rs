@@ -159,7 +159,8 @@ pub const ROUTES: &[Fiche] = &[
         ],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
-        phrase: 400,
+        // Elle reprend le refus du depot et ce que le releve a a dire, tels qu'ils sont.
+        phrase: 800,
         // La fiche d'un salarie enregistre la rend en geste, sous « Avancé » de son en-tete (`rendue::entete_du_salarie`).
         ecran: Ecran::GesteAvance(Place::Fiches),
     },
