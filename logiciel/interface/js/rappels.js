@@ -310,7 +310,8 @@ async function allerAuManque(champ, onglet, nom, cle) {
   let essais = 0;
   const viser = () => {
     // Une case de route porte sa clé sur son libellé : le curseur va dans sa case.
-    const c = trouver()?.querySelector("[data-case]") || trouver();
+    const x = trouver()?.querySelector("[data-case]");
+    const c = (x && zoneDeLaCase(x)) || trouver();
     if (!c) { if (++essais < 20) setTimeout(viser, 100); return; }
     const tiroir = c.closest("details");
     if (tiroir) tiroir.open = true;

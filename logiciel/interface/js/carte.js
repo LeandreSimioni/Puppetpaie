@@ -694,7 +694,7 @@ function ouvrirLaFin(div, champ) {
   if (repli) repli.open = true;
   const x = cas.querySelector("[data-case]");
   cas.scrollIntoView({ block: "center" });
-  if (x && x.focus) x.focus();
+  if (x && x.focus) zoneDeLaCase(x).focus();
   return true;
 }
 

@@ -230,6 +230,21 @@ button.secondaire { background: var(--carte); }
 button.discret { border: none; color: var(--discret); padding: 4px 8px; }
 button:disabled { opacity: .45; cursor: default; }
 input:disabled, select:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
+/* UNE LISTE QUI SE CHERCHE EN TAPANT (`listeQuiSeCherche`, js/avance.js) : la zone où l'on tape a l'air d'une liste
+   déroulante ; le <select> qu'elle règle ne se montre pas ; ses choix s'ouvrent dessous. */
+select[data-cherchee] { display: none; }
+.liste-tape { cursor: pointer; padding-right: 22px;
+  background: var(--carte) no-repeat right 8px center / 8px 5px
+    linear-gradient(135deg, transparent 50%, var(--discret) 50%); }
+.liste-tape:focus { cursor: text; }
+.liste-ouverte { position: fixed; z-index: 70; max-height: 18rem; overflow-y: auto; padding: 4px;
+  background: var(--carte); border: 1px solid var(--bord); border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.15); font-size: 13px; color: var(--texte); }
+.liste-ouverte:empty { display: none; }
+.liste-rang { padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+.liste-rang.choisi { font-weight: bold; }
+.liste-rang.actif, .liste-rang:hover { background: var(--fond); }
+.liste-groupe { padding: 6px 10px 2px; font-size: 11px; font-weight: bold; color: var(--discret); }
 /* Un acte en cours : le bouton reste lisible et dit ce qui se passe. */
 button.occupe:disabled { opacity: .8; cursor: progress; }
 button.occupe::before { content: ""; display: inline-block; width: .8em; height: .8em;
@@ -360,6 +375,7 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .ligne-paie .colonne { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12px; color: var(--discret); }
 .ligne-paie .colonne > [data-case] { flex: 1; min-width: 0; color: var(--texte); }
 .ligne-paie .colonne input[type="text"], .ligne-paie .colonne select { width: 100%; min-width: 0; }
+.ligne-paie .colonne > .liste-tape { flex: 1; min-width: 0; }
 .ligne-paie .colonne-libelle { display: none; }
 .ligne-paie .mot { flex: none; font-size: 12px; }
 .ligne-paie .retirer-ligne { border: 0; color: var(--erreur); font-size: 18px; justify-self: center; }
@@ -1598,7 +1614,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 .modele-entete { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .modele-gestes, .modele-gestes [data-gestes] { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .modele-gestes { margin: 6px 0; }
-.modele-gestes .modele-engagement { width: auto; }
+.modele-gestes .liste-tape { display: inline-block; width: auto; }
 .modele-paragraphe { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--bord); }
 .modele-titre { flex: 1; font-weight: bold; }
 .modele-alinea { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }
@@ -1610,7 +1626,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 .modele-paragraphe .case-rangees .rangee { flex-wrap: nowrap; align-items: flex-start; margin: 4px 0; }
 .modele-paragraphe .case-rangees .rangee > .case-parties { flex: 1; display: flex; flex-wrap: nowrap; gap: 8px; align-items: flex-start; }
 .modele-paragraphe .case-parties .partie:has(select) { flex: 0 0 auto; }
-.modele-paragraphe .case-parties .partie select { max-width: 220px; }
+.modele-paragraphe .case-parties .partie select,
+.modele-paragraphe .case-parties .partie .liste-tape { max-width: 220px; }
 .modele-paragraphe .case-parties .partie:has(textarea) { flex: 1 1 auto; }
 .modele-paragraphe .case-parties .partie textarea { font: inherit; }
 

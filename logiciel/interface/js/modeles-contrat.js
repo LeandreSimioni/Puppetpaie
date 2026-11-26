@@ -124,9 +124,7 @@ async function dessinerEditeurDeModele(cible, ici, redessiner) {
     <p class="discret">${echapper(lu.en_francais)}</p>
     ${lu.gestes.length ? `<div class="modele-gestes" data-modele-gestes>${boutonsDesGestes(lu.gestes)}</div>` : ""}
     <div class="modele-gestes">
-      <select class="modele-engagement">
-        ${lu.engagements.map((e, i) => `<option value="${i}">${echapper(e.nom)}</option>`).join("")}
-      </select>
+      ${listeQuiSeCherche('class="modele-engagement"', lu.engagements.map((e, i) => `<option value="${i}">${echapper(e.nom)}</option>`).join(""))}
       <button type="button" class="lien" data-apercu>${echapper(lu.apercu.libelle)}</button>
     </div>
     ${ecrit ? choix("modele-inserer", "Insérer une donnée", null, true) : ""}
