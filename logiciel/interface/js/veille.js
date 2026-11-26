@@ -195,6 +195,7 @@ function dessinerVeille(v) {
  *  fini, le bandeau se repeint d'un coup (`suivreVeille`). Un seul suivi à la fois. */
 let SUIVI_ETAPES = null;
 let RELEVE_DEMANDE = false;     // « relever maintenant » attend sa réponse : le suivi tient jusque-là
+let RELEVE_VUE_EN_COURS = false; // la relève tournait au tour d'avant du suivi
 function suivreLesEtapes() {
   if (SUIVI_ETAPES || SERVEUR_PERDU) return;
   SUIVI_ETAPES = setTimeout(async () => {
@@ -207,6 +208,15 @@ function suivreLesEtapes() {
     if (!e) return;
     // La fermeture attend un envoi : le bandeau se relit une fois pour le dire.
     if (e.fermeture && !VEILLE?.dit?.fermeture) { suivreVeille(); return; }
+    // LA RELÈVE FINIE PENDANT QUE LA SAUVEGARDE (ou un envoi) CONTINUE : ce qu'elle a changé se repeint tout de suite,
+    // sans attendre la fin du reste ; le bandeau, lui, se repeint à la fin, comme toujours.
+    if (RELEVE_VUE_EN_COURS && !e.en_cours && (e.sauvegarde_en_cours || e.envoi_en_cours)) {
+      try {
+        await rafraichirApresVeille((await fenetre("veille")).etat);
+        suiviRepris("veille");
+      } catch (x) { direLeRefusDuSuivi("veille", x.message); }
+    }
+    RELEVE_VUE_EN_COURS = e.en_cours;
     if (e.en_cours || e.sauvegarde_en_cours || e.envoi_en_cours || RELEVE_DEMANDE) {
       const el = document.querySelector("#veille-texte .veille-etape");
       if (el && e.etape) el.textContent = e.etape;
