@@ -41,14 +41,11 @@ async function dessinerExports() {
     <div class="champs">
       <div class="champ">
         <label for="x-famille">${echapper(p.ecran.quoi)}</label>
-        <select id="x-famille">
-          ${choisir}
-          ${fams.map((f, i) => opt(String(i), f.libelle)).join("")}
-        </select>
+        ${listeQuiSeCherche('id="x-famille"', `${choisir}${fams.map((f, i) => opt(String(i), f.libelle)).join("")}`)}
       </div>
       <div class="champ cachee" id="x-etat-champ">
         <label for="x-etat">${echapper(p.ecran.lequel)}</label>
-        <select id="x-etat"></select>
+        ${listeQuiSeCherche('id="x-etat"', "")}
       </div>
     </div>
     <div id="x-suite"></div>`;
@@ -159,17 +156,13 @@ function dessinerQuestions(opt) {
         forme: "periode", valeur: forme.periode_proposee, choix: forme.periodes_offertes })}</div>` : ""}
       ${q.has("regroupement") ? `<div class="champ">
         <label for="x-par">${echapper(e.regroupement_libelle)}</label>
-        <select id="x-par">
-          ${forme.regroupements_offerts.map((r) => opt(r.code, r.libelle, r.code === forme.regroupement_propose)).join("")}
-        </select>
+        ${listeQuiSeCherche('id="x-par"', forme.regroupements_offerts.map((r) => opt(r.code, r.libelle, r.code === forme.regroupement_propose)).join(""))}
         <div class="aide">${echapper(forme.regroupement_dit)}</div>
       </div>` : ""}
       ${q.has("logiciel") ? `<div class="champ pleine">
         <label for="x-logiciel">${echapper(e.logiciel_libelle)}</label>
-        <select id="x-logiciel">
-          ${p.compta.logiciels.map((l) => opt(l.logiciel, l.libelle, l.logiciel === p.compta.logiciel)).join("")}
-          ${opt("", e.aucun_logiciel, !p.compta.logiciel)}
-        </select>
+        ${listeQuiSeCherche('id="x-logiciel"', p.compta.logiciels.map((l) => opt(l.logiciel, l.libelle, l.logiciel === p.compta.logiciel)).join("")
+          + opt("", e.aucun_logiciel, !p.compta.logiciel))}
         <div class="aide" id="x-logiciel-aide"></div>
         <label class="choix" id="x-analytique-champ">
           <input type="checkbox" id="x-analytique"${p.compta.analytique ? " checked" : ""}>
@@ -180,9 +173,7 @@ function dessinerQuestions(opt) {
       </div>` : ""}
       ${q.has("format") ? `<div class="champ" id="x-format-champ">
         <label for="x-format">${echapper(e.format_libelle)}</label>
-        <select id="x-format">
-          ${forme.formats_offerts.map((f) => opt(f.code, f.libelle, f.code === forme.format_propose)).join("")}
-        </select>
+        ${listeQuiSeCherche('id="x-format"', forme.formats_offerts.map((f) => opt(f.code, f.libelle, f.code === forme.format_propose)).join(""))}
       </div>` : ""}
       ${q.has("coordonnees") ? `<div class="champ pleine">
         <label class="coche" title="${echapper(e.coordonnees)}">
