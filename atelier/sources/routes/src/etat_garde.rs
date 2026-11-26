@@ -644,8 +644,8 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: Empreinte
     let charge = charge_du_mois(mois)?;
     let mut lectures: Vec<(Route, String)> = LECTURES.iter().map(|r| (*r, lecture(o, *r, &charge))).collect();
     // L'APERCU : ce que la page demande des qu'un mois s'affiche (`calculerApercu`), sur la saisie qu'elle vient de lire
-    // (`{"mois": mois}`, sans modification en cours : le mois enregistre), quand le mois a une saisie ; la page ne le
-    // redemande que quand on modifie la saisie.
+    // sans modification en cours (le mois enregistre : la page envoie `modifications: []`, le garde n'en dit aucune, c'est
+    // la meme charge), quand le mois a une saisie ; la page ne le redemande que quand on modifie la saisie.
     if engagement::stock::a_une_saisie(&ctx.racine, mois)? {
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
