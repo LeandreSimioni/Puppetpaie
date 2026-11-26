@@ -560,8 +560,13 @@ function peindreLesEtats(div) {
   // sa phrase se dit à la place des gestes ; pas encore lu, rien.
   const g = ligne ? ligne.gestes : !div.dataset.engagement ? NOUVELLE_CARTE.gestes : null;
   const bouton = (a, classe) => (a ? `<button class="${classeDuGeste(a)} ${classe}">${echapper(a.libelle)}</button>` : "");
+  // Validé et ouvert (`reduire` rendu) : « Réduire » tant qu'aucune case n'a changé (`_modif` vide), puis « Annuler »
+  // et « Modifier l'engagement ».
+  const rien = !!(g && g.reduire) && !(div._modif && div._modif.length);
+  const annuler = g ? (rien ? g.reduire : g.annuler) : null;
   const gestes = g
-    ? [bouton(g.retirer, "retirer-engagement"), bouton(g.annuler, "v-annuler"), bouton(g.modifier, "v-modifier"), bouton(g.valider, "v-valider")].join("")
+    ? [bouton(g.retirer, "retirer-engagement"), bouton(annuler, "v-annuler"), rien ? "" : bouton(g.modifier, "v-modifier"),
+      bouton(g.valider, "v-valider")].join("")
     : div.dataset.engagement && ETATS_REFUS ? `<span class="encart erreur">${echapper(ETATS_REFUS)}</span>` : "";
   const valide = !!(ligne && ligne.valide);
   const pieces = valide ? ligne.carres.filter((c) => c.lien).map((c) =>
@@ -574,7 +579,7 @@ function peindreLesEtats(div) {
   const sur = (s, f) => { const b = cible.querySelector(s); if (b) b.onclick = (ev) => { ev.preventDefault(); f(ev); }; };
   sur(".v-valider", () => validerLaCarte(g.valider));
   sur(".v-modifier", () => modifierLaCarte(div, g.modifier));
-  sur(".v-annuler", () => annulerLaCarte(g.annuler));
+  sur(".v-annuler", () => annulerLaCarte(annuler));
   sur(".retirer-engagement", () => retirerLaCarte(g.retirer));
   sur(".e-imprevu-btn", (ev) => { ev.stopPropagation(); menuImprevu(ev.currentTarget, { div }); });
   sur(".carte-versions", (ev) => { ev.stopPropagation(); boiteFrise(ligne); });
