@@ -19,66 +19,71 @@
 @font-face{font-family:"Libre Franklin";font-style:italic;font-weight:100 900;
   font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable-italic.woff2") format("woff2")}
 
+/* La charte de l'accueil (index.html) : le papier blanc, le bleu du logo, le texte en Garamond, les titres en petites
+   capitales grises, le pied en une ligne. En tête, la marotte €P du logiciel, qui se trace au feutre (CSS, sans script). */
 :root{
-  --papier:#FAFAF9; --toile:#F1F1F0; --encre:#141413; --gris:#55534F;
-  --filet:#E1E1DF; --carmin:#9B1B30; --rayon:4px;
-  --fs-display:clamp(2.2rem,7vw,3.6rem);
-  --fs-h2:clamp(1.45rem,3.4vw,2.1rem);
-  --marge:clamp(1rem,4vw,4.5rem);
-  color-scheme:light dark;
+  --papier:#FFFFFF; --encre:#141413; --gris:#8A8782; --filet:#E6E5E2;
+  --carmin:#9B1B30; --logo:#2350c4; --voile:#F6F6F4; --rayon:4px;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root{
-  --papier:#0D0D0C; --toile:#171716; --encre:#F0EFED; --gris:#95928E;
-  --filet:#2A2A28; --carmin:#C90F2A;
-}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--papier);color:var(--encre);
-     font:400 1.0625rem/1.5 "Libre Franklin",system-ui,sans-serif}
-main{max-width:800px;margin:0 auto;padding:clamp(3rem,9vw,6rem) var(--marge) 0}
-h1,h2{font-family:"EB Garamond",Georgia,serif;font-weight:500;line-height:1.15}
-h1{font-size:var(--fs-display);margin:0 0 .3em;text-align:center}
-h2{font-size:var(--fs-h2);margin:2.6em 0 .6em}
-h2::before{content:"";display:block;width:34px;height:2px;
-           background:var(--carmin);margin-bottom:.7em}
-.date{color:var(--gris);font-size:.78rem;text-align:center;
-      letter-spacing:.12em;text-transform:uppercase;margin:0 0 3rem}
-p,li{max-width:64ch}
-ul{padding-left:1.1em}
-li{margin:.45em 0}
-a{color:var(--encre);text-decoration-color:var(--carmin);
-  text-underline-offset:.18em}
+     font:400 1rem/1.5 "Libre Franklin",system-ui,sans-serif}
+main{max-width:800px;margin:0 auto;padding:clamp(2.5rem,8vh,4.5rem) 16px 3rem}
+/* La marotte €P, qui ramène à l'accueil : chaque trait se trace l'un après l'autre (pathLength 1), puis les points
+   se posent. « Réduire les animations » : elle s'affiche tracée. */
+.logo{display:block;width:max-content;margin:0 auto 1.6rem;color:var(--logo)}
+.logo svg{display:block;width:clamp(72px,14vw,104px);height:auto;overflow:visible}
+.logo .trait{fill:none;stroke:currentColor;stroke-width:30.5;stroke-linecap:round;stroke-linejoin:round;
+             stroke-dasharray:1;stroke-dashoffset:1;animation:tracer .45s ease-in-out forwards}
+.logo .point{fill:currentColor;transform-box:fill-box;transform-origin:center;transform:scale(0);
+             animation:poser .18s ease-out forwards}
+.logo .t1{animation-delay:.15s}.logo .t2{animation-delay:.6s}.logo .t3{animation-delay:.85s}
+.logo .t4{animation-delay:1.15s}.logo .t5{animation-delay:1.6s}
+.logo .p1{animation-delay:.8s}.logo .p2{animation-delay:1.05s}.logo .p3{animation-delay:.55s}
+.logo .p4{animation-delay:2.05s}.logo .p5{animation-delay:1.55s}
+@keyframes tracer{to{stroke-dashoffset:0}}
+@keyframes poser{to{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.logo .trait,.logo .point{animation:none;stroke-dashoffset:0;transform:none}}
+h1{font:400 clamp(1.9rem,6vw,2.6rem)/1.15 "EB Garamond",Georgia,serif;margin:0 0 .5rem;text-align:center}
+h2{margin:2.8rem 0 .8rem;font:500 .72rem/1.4 "Libre Franklin",sans-serif;
+   letter-spacing:.22em;text-transform:uppercase;color:var(--gris)}
+main p,main li{font:400 1.15rem/1.55 "EB Garamond",Georgia,serif}
+main p{margin:0 0 .9rem}
+ul{padding-left:1.1em;margin:0 0 .9rem}
+li{margin:.35em 0}
+main p.date{margin:0 0 3rem;text-align:center;font:500 .72rem/1.5 "Libre Franklin",sans-serif;
+            letter-spacing:.22em;text-transform:uppercase;color:var(--gris)}
+a{color:var(--encre);text-decoration-color:var(--carmin);text-underline-offset:.2em}
 a:hover{color:var(--carmin)}
-:focus-visible{outline:2px solid var(--carmin);outline-offset:3px;
-               border-radius:var(--rayon)}
-.encadre{background:var(--toile);border:1px solid var(--filet);
-         border-radius:var(--rayon);padding:1.1rem 1.3rem;margin:1.6rem 0}
+.encadre{border-left:2px solid var(--carmin);padding:.1rem 0 .1rem 1.1rem;margin:1.6rem 0}
 .encadre p{margin:0}
-code{font-size:.92em;background:var(--toile);border:1px solid var(--filet);
-     border-radius:var(--rayon);padding:.1em .35em;word-break:break-all}
-.marque{display:block;width:max-content;margin:0 auto 1.4rem;
-        color:var(--encre);text-decoration:none}
-footer{margin-top:5rem;border-top:2px solid var(--carmin);background:var(--toile)}
-.pied{max-width:800px;margin:0 auto;padding:1.8rem var(--marge);
-      font-size:.78rem;color:var(--gris);
-      display:flex;flex-wrap:wrap;gap:.6rem 1.6rem;justify-content:space-between}
-.pied a{color:var(--gris)}
+code{font:.82em/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--voile);border:1px solid var(--filet);
+     border-radius:var(--rayon);padding:.05em .35em;word-break:break-all}
+main p.pied{margin:4.5rem 0 0;text-align:center;font:400 .75rem/1.5 "Libre Franklin",sans-serif;color:var(--gris)}
+.pied a{color:var(--gris);text-decoration-color:var(--filet)}
+.pied a:hover{color:var(--carmin)}
+:focus-visible{outline:2px solid var(--carmin);outline-offset:3px;border-radius:var(--rayon)}
 </style>
 
 <main>
-  <a class="marque" href="/" aria-label="PuppetPaie">
-    <svg viewBox="0 0 128 120" width="58" height="54" aria-hidden="true">
-      <path fill="currentColor" fill-rule="evenodd"
-            d="M0,4 H34 A26,26 0 0 1 34,56 H14 V104 H0 Z
-               M14,17 H33 A13,13 0 0 1 33,43 H14 Z"/>
-      <path fill="var(--carmin)" fill-rule="evenodd"
-            d="M68,4 H102 A26,26 0 0 1 102,56 H82 V104 H68 Z
-               M82,17 H101 A13,13 0 0 1 101,43 H82 Z"/>
-      <rect x="0" y="114" width="128" height="3" fill="var(--carmin)"/>
+  <a class="logo" href="/" aria-label="PuppetPaie, retour à l'accueil">
+    <svg viewBox="40 125 515 515" aria-hidden="true">
+      <path class="trait t1" pathLength="1" d="M262 164 C186 156 124 218 126 300 C128 382 188 446 266 438"/>
+      <path class="trait t2" pathLength="1" d="M214 269 C176 265 130 264 92 268"/>
+      <path class="trait t3" pathLength="1" d="M208 334 C172 331 134 329 98 332"/>
+      <path class="trait t4" pathLength="1" d="M301 146 C298 280 305 450 297 618"/>
+      <path class="trait t5" pathLength="1" d="M340 170 C420 132 504 196 504 298 C504 398 424 466 338 432"/>
+      <circle class="point p1" cx="92" cy="268" r="17"/>
+      <circle class="point p2" cx="98" cy="332" r="17"/>
+      <circle class="point p3" cx="266" cy="438" r="17"/>
+      <circle class="point p4" cx="338" cy="432" r="17"/>
+      <circle class="point p5" cx="297" cy="618" r="17"/>
     </svg>
   </a>
 
   <h1>Politique de confidentialité</h1>
-  <p class="date">PuppetPaie · 9 septembre 2026, mise à jour le 2 novembre 2026</p>
+  <p class="date">PuppetPaie · 9 septembre 2026, mise à jour le 26 novembre 2026</p>
 
   <p>PuppetPaie est un logiciel de paie édité par la Compagnie UEUEUE,
      association loi 1901, 87 rue des Caillots, 93100 Montreuil, France.
@@ -191,12 +196,7 @@ footer{margin-top:5rem;border-top:2px solid var(--carmin);background:var(--toile
   <h2>Modifications</h2>
   <p>Toute modification de cette politique sera publiée sur cette page, avec sa
      date.</p>
-</main>
 
-<footer>
-  <div class="pied">
-    <span><a href="/">PuppetPaie</a> · Compagnie UEUEUE</span>
-    <span><a href="/utilisation/">Conditions d'utilisation</a></span>
-  </div>
-</footer>
+  <p class="pied"><a href="/">Accueil</a> · <a href="/utilisation/">Conditions d’utilisation</a> · <a href="https://ueueue.eu/">Compagnie UEUEUE</a></p>
+</main>
 </html>
