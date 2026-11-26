@@ -57,9 +57,13 @@
   const tirable = (t) => t instanceof Element && !!t.closest(TIRE) && !t.closest(CLIQUABLE)
     && getComputedStyle(t).cursor !== "pointer";
 
+  // La barre de defilement d'un element qui defile (le `main` de l'accueil) lui envoie son appui : elle fait defiler,
+  // elle ne tire pas la fenetre.
+  const surSaBarre = (e) => e.target instanceof Element && (e.offsetX >= e.target.clientWidth || e.offsetY >= e.target.clientHeight);
+
   let appui = null;
   document.addEventListener("mousedown", (e) => {
-    appui = e.button === 0 && e.detail < 2 && tirable(e.target) ? { x: e.screenX, y: e.screenY } : null;
+    appui = e.button === 0 && e.detail < 2 && tirable(e.target) && !surSaBarre(e) ? { x: e.screenX, y: e.screenY } : null;
   });
   document.addEventListener("mousemove", (e) => {
     if (!appui) return;

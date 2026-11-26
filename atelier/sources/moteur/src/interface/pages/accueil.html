@@ -138,7 +138,8 @@
   .ecrire { margin-top:26px; border-top:1px solid var(--bord); padding-top:12px; }
   .ecrire > summary { cursor:pointer; color:var(--discret); font-size:13px; }
   .ecrire > summary:hover { color:var(--texte); }
-  .ecrire textarea { width:100%; padding:9px 10px; font:inherit; border:1px solid var(--bord); border-radius:4px; resize:vertical; }
+  /* Le bouton par-dessus le voile (`filet.css`) laisse la place aux trois boutons de la fenetre, en haut a droite. */
+  button.signaler.sur-voile { top:44px; }
   .ecrire button { width:auto; padding:8px 18px; }
   /* La boite du message (`js/filet.js`) : sa case de texte comme celles de l'accueil. */
   #sg-texte { padding:9px 10px; border:1px solid var(--bord); border-radius:4px; resize:vertical; }
@@ -472,8 +473,6 @@
 <script src="/js/avance.js?v={{EMPREINTE}}"></script>
 <script src="/js/filet.js?v={{EMPREINTE}}"></script>
 <script>
-  // Les reponses de l'editeur aux messages ecrits d'ici, sur le bouton, comme dans une compagnie (`js/filet.js`).
-  dessinerPastilleReponses();
   document.getElementById("avance-accueil").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("voile").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("voile-mdp").addEventListener("mousedown", (e) => e.stopPropagation());

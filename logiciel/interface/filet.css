@@ -16,14 +16,15 @@ button.signaler:hover { color: var(--texte, #2C3E50); }
 .sg-vignette.sg-en-cours { display: flex; align-items: center; justify-content: center; width: 140px; height: 90px;
                            border: 1px dashed var(--discret, #7A8794); border-radius: 3px; font-size: 12px;
                            color: var(--discret, #7A8794); }
-.sg-retirer { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; margin: 0;
+/* `button.` : plus fort que les règles des boutons d'une boîte de la page qui la porte (l'accueil en a). */
+button.sg-retirer { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; margin: 0;
               padding: 0; border: none; border-radius: 50%; line-height: 20px;
               background: var(--texte, #2C3E50); color: var(--carte, #FFFFFF); cursor: pointer; font-size: 13px; }
 #sg-ajout { margin: 8px 0 0; font-size: 12px; }
 #sg-ajout .lien { font-size: inherit; display: inline; width: auto; margin: 0; padding: 0; border: none; background: none;
                   font-weight: normal; color: var(--action, #2E6A57); text-decoration: underline; cursor: pointer; }
 #sg-ajout input[type="file"] { display: none; }
-.sg-voir { margin-right: auto; font-size: 12px; color: var(--discret, #7A8794); }
+button.sg-voir { margin-right: auto; font-size: 12px; color: var(--discret, #7A8794); }
 #sg-pre { margin-top: 12px; max-height: 40vh; overflow: auto; }
 /* LE BOUTON PAR-DESSUS LE VOILE : celui de la page est sous le
    voile, et le clic qui le visait tombait sur le voile, qui fermait la
