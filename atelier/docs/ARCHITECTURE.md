@@ -1278,7 +1278,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | rangées qui se saisissent dans un tableau rendu (la case de la charge dont elles sont les rangées, le bouton qui en ajoute une, celui qui en retire une ; chaque colonne dit les parties qu'elle tient, chaque rangée son rang : les lignes prévues dans le tableau des paies de `droits-des-pieces`) | `socle::ecran::SaisieDuTableau` | `socle/src/ecran.rs` |
 | ce que le lecteur des AEM déposées dit d'un fichier du dossier lu (son nom, la phrase : un enregistrement illisible, une case laissée vide) | `import::dsn_aem::NoteDUneAem` | `import/src/dsn_aem.rs` |
 | pièce déposée sur l'écran des droits d'un intermittent (le fichier posé dans `mes-pieces/`, sa nature, ses employeurs, ce que la route en lit ; ce que dit chaque fichier se range sous lui, `DitDesPieces`, `CeQuiSeDitDUnFichier`) | `PieceDite` | `routes/src/accueil/droits_des_pieces.rs` |
-| bloc de l'écran des droits d'un intermittent, dans l'ordre que la route `droits-des-pieces` lui donne (une case de sa charge, le résumé de la personne, le tableau des paies et ses lignes prévues, le dépôt des pièces, les pièces déposées ; pas un rang d'un `EcranRendu`, qui n'a ni tableau ni dépôt) | `BlocDesDroits` | `routes/src/accueil/droits_des_pieces.rs` |
+| bloc de l'écran des droits d'un intermittent, dans l'ordre que la route `droits-des-pieces` lui donne (une case de sa charge, le bilan de la personne, le tableau des paies, le résumé de son compte et ses lignes prévues, le dépôt des pièces, les pièces déposées ; pas un rang d'un `EcranRendu`, qui n'a ni tableau ni dépôt) | `BlocDesDroits` | `routes/src/accueil/droits_des_pieces.rs` |
 | quand, sur une carte fermée (celle d'un engagement validé, celle d'une paie importée : ses jours du mois en clair et au plus court, un seul compositeur ; une période quand ils ne sont pas lus ; s'ils sont épars ; au survol, ce qu'ils sont ; le mois abrégé) | `socle::ecran::QuandDeLaCarte` | `socle/src/ecran.rs` |
 | carte fermée d'une paie importée (quand, et au survol ses dates ; si ses jours sont épars ; le mois abrégé ; qui, le mot « importé », ce qu'il est ; ses pastilles ; le montant qu'elle dit et ce qu'il est) | `ResumeDeLaCarte` | `import/src/mois.rs` |
 | pastille d'un acte d'une carte importée (son titre : DPAE, Contrat, Documents ; son état, `EtatDeCarte` : sa couleur, son mot court, sa phrase au survol ; pas une `socle::ecran::Pastille`, qui n'a que sa couleur et ses mots) | `PastilleDeLaCarte` | `import/src/mois.rs` |
@@ -2939,8 +2939,8 @@ salaire de référence, et l'estimation se tait quand une paie mêle l'enseignem
 porte une personne, les lignes prévues se comptent seules. Le bilan se compte à la dernière fin de contrat ; ce qui
 reste à faire et le jour butoir, à partir d'aujourd'hui quand cette fin est passée (le même compte, à une autre fin).
 La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : les cases de sa
-charge, chacune tirée de la déclaration de son champ, le résumé, le tableau des paies où les lignes prévues se
-saisissent, le dépôt, les pièces) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,
+charge, chacune tirée de la déclaration de son champ, le bilan, le tableau des paies où les lignes prévues se
+saisissent, le résumé, le dépôt, les pièces) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,
 le moteur tournant dans l'onglet par le worker de la démo, et pose les bulletins déposés dans `mes-pieces/`. Pendant
 que le moteur se charge, elle pose ce que la route rend sans charge, figé dans `premier-ecran.json` (un test de
 structure le tient égal à la route) ; le moteur prêt, « Calculer » fait le premier calcul.

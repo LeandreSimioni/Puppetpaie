@@ -425,11 +425,18 @@ var dire = null;
 
   // LE RÉSUMÉ de la personne : son nom, son bilan, sa fenêtre, ce qui manque et le jour butoir, le compte des heures,
   // l'allocation estimée et visée (chacune son détail replié), les notes.
+  // LE BILAN de la personne, au-dessus du tableau : son nom, quand la route le dit (les pièces portent plusieurs
+  // personnes), et son bilan.
+  function bilan(p) {
+    var r = el("section", "bloc");
+    if (p.nom) r.append(el("h2", null, p.nom));
+    r.append(el("p", "phrase", p.bilan));
+    return r;
+  }
+
   function resume(p) {
     var r = el("section", "bloc");
-    // Le nom, quand la route le dit (les pièces portent plusieurs personnes).
-    if (p.nom) r.append(el("h2", null, p.nom));
-    r.append(el("p", "phrase", p.bilan), el("p", "aide", p.fenetre));
+    r.append(el("p", "aide", p.fenetre));
     if (p.butoir) {
       var b = el("div", "butoir");
       b.append(el("p", null, p.butoir.phrase), el("p", null, p.butoir.pourquoi), el("p", "reference", p.butoir.reference));
@@ -630,6 +637,7 @@ var dire = null;
     ecran.replaceChildren();
     dernier.ecran.forEach(function (b) {
       if (b.est === "case") ecran.append(dessinerCase(b));
+      else if (b.est === "bilan") ecran.append(bilan(b));
       else if (b.est === "resume") ecran.append(resume(b));
       else if (b.est === "paies") ecran.append(paies(b));
       else if (b.est === "depot") ecran.append(depot(b));

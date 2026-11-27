@@ -72,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), les paies, le résumé, l'allocation visée (une case, quand une allocation s'estime), la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie, dans l'ordre des fins : période (la fin d'une ligne prévue), cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). resume (la personne choisie, ou les lignes prévues seules sans pièce) : nir, nom (seulement quand les pièces portent plusieurs personnes), fenetre, lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
+    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le bilan, les paies, le résumé, l'allocation visée (une case, quand une allocation s'estime), la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie, dans l'ordre des fins : période (la fin d'une ligne prévue), cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). bilan (au-dessus des paies) : nom (seulement quand les pièces portent plusieurs personnes), bilan (à la dernière fin de contrat). resume (sous les paies ; la personne choisie, ou les lignes prévues seules sans pièce) : nir, fenetre, lignes [quoi, valeur],heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -197,7 +197,7 @@ const DEPOSER_AIDE: &str = "Glissez-les ici, ou cliquez pour les choisir.";
 /// L'ECRAN DES DROITS, BLOC PAR BLOC, dans l'ordre ou il se lit ; chaque case porte ce que la charge y dit, ses nombres
 /// tels qu'on les lit (`a_lire`).
 /// - Avec un calcul (`calcul` : la personne, le tableau de ses paies, les paies dont la date d'embauche se choisit) : la
-///   personne quand elle se choisit ; le tableau des paies, ou les lignes prevues se saisissent ; le resume ;
+///   personne quand elle se choisit ; son bilan ; le tableau des paies, ou les lignes prevues se saisissent ; le resume ;
 ///   l'allocation visee quand une allocation s'estime ou que la charge en dit une ; la date anniversaire ; le depot ; les dates
 ///   d'embauche quand la route en demande ou que la charge en dit ; les pieces deposees.
 /// - Sans calcul : la personne quand elle se choisit ; la date anniversaire ; le depot ; le tableau des paies, vide, ou
@@ -207,7 +207,7 @@ const DEPOSER_AIDE: &str = "Glissez-les ici, ou cliquez pour les choisir.";
 fn ecran(
     c: &ChargeDroitsDesPieces,
     personnes: Option<(Vec<crate::ouverture::Choix>, Vec<String>)>,
-    calcul: Option<(DroitsDUnePersonne, TableauRendu, Vec<crate::ouverture::Choix>)>,
+    calcul: Option<(BilanDit, DroitsDUnePersonne, TableauRendu, Vec<crate::ouverture::Choix>)>,
     sans_personne: bool,
     dossier: PathBuf,
     pieces: DitDesPieces,
@@ -229,9 +229,11 @@ fn ecran(
     let champ_des_lignes = champ(nom)?;
     let lignes = crate::fiches::CaseDeLaFiche::de_rangees(nom, champ_des_lignes.libelle, c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties);
     match calcul {
-        Some((personne, tableau, embauches)) => {
-            // Le detail du compte suit le tableau des paies (Léandre, 27/11/2026) ; la phrase de l'ecran le resume en haut.
+        Some((tete, personne, tableau, embauches)) => {
+            // Le bilan au-dessus du tableau des paies, le detail du compte (la fenetre jusqu'au seuil, l'allocation)
+            // dessous (Léandre, 27/11/2026).
             let visee_offerte = !personne.estimations.is_empty();
+            ecran.push(BlocDesDroits::Bilan(tete));
             ecran.push(BlocDesDroits::Paies(PaiesDites { tableau, lignes }));
             ecran.push(BlocDesDroits::Resume(Box::new(personne)));
             if visee_offerte || c.allocation_visee.is_some() {
@@ -1008,16 +1010,22 @@ struct ButoirDit {
     reference: String,
 }
 
-/// Ce que la route dit de la personne choisie.
+/// LE BILAN DE LA PERSONNE CHOISIE, au-dessus du tableau des paies : son nom, quand les pieces portent plusieurs
+/// personnes (celle qui est devant la page n'a pas a lire le sien, Leandre, 27/11/2026), et son bilan a la derniere fin
+/// de contrat.
+#[derive(Debug, Serialize)]
+struct BilanDit {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nom: Option<String>,
+    bilan: String,
+}
+
+/// Ce que la route dit de la personne choisie, sous le tableau des paies.
 #[derive(Debug, Serialize)]
 struct DroitsDUnePersonne {
     /// Son numero ; aucun : les lignes prevues seules, sans piece (`LIGNES_SEULES`).
     #[serde(skip_serializing_if = "Option::is_none")]
     nir: Option<Nir>,
-    /// Son nom, quand les pieces portent plusieurs personnes (celle qui est devant la page n'a pas a lire le sien,
-    /// Leandre, 27/11/2026) ; aucun sinon.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    nom: Option<String>,
     fenetre: String,
     lignes: Vec<(String, String)>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
@@ -1026,9 +1034,8 @@ struct DroitsDUnePersonne {
     manque: Heures,
     #[serde(skip_serializing_if = "Option::is_none")]
     butoir: Option<ButoirDit>,
-    /// Le bilan a la derniere fin de contrat ; `phrase`, `manque`, `heures_exigees` et `butoir` : ce qui reste a faire,
-    /// compte a partir d'aujourd'hui quand cette fin est passee.
-    bilan: String,
+    /// `phrase`, `manque`, `heures_exigees` et `butoir` : ce qui reste a faire, compte a partir d'aujourd'hui quand la
+    /// derniere fin de contrat est passee (le bilan a cette fin : `BilanDit`).
     phrase: String,
     notes: Vec<String>,
     estimations: Vec<EstimationDite>,
@@ -1049,6 +1056,7 @@ struct DroitsDesPieces {
 #[serde(tag = "est", rename_all = "snake_case")]
 enum BlocDesDroits {
     Case(crate::fiches::CaseDeLaFiche<&'static str>),
+    Bilan(BilanDit),
     Resume(Box<DroitsDUnePersonne>),
     Paies(PaiesDites),
     Depot(DepotDit),
@@ -1154,9 +1162,9 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
         None => None,
     };
     let phrase = match (&calcul, personnes.len()) {
-        (Some((p, _, _)), _) => match &p.nom {
-            Some(nom) => socle::phrase!("{} : {} {}", nom, p.bilan, p.phrase),
-            None => socle::phrase!("{} {}", p.bilan, p.phrase),
+        (Some((t, p, _, _)), _) => match &t.nom {
+            Some(nom) => socle::phrase!("{} : {} {}", nom, t.bilan, p.phrase),
+            None => socle::phrase!("{} {}", t.bilan, p.phrase),
         },
         (None, 0) => Phrase::fixe("Aucune pièce ne se compte encore : posez vos bulletins, de tous vos employeurs, ou remplissez des lignes prévues."),
         (None, n) => socle::phrase!("Les pièces portent {} personnes : choisissez-en une, ses droits se comptent seuls.", n),
@@ -1224,7 +1232,7 @@ fn plafond_le_plus_bas(fin: Jour, artiste: bool) -> Result<Montant, PlafondIncon
 /// butoir, son allocation estimee, et ce que vise la charge ; le tableau de ses paies ; et les paies dont la date
 /// d'embauche se choisit (celles dont la route la demande, et celles que la charge en dit deja). `nom` : celui qui se
 /// dit, quand les pieces portent plusieurs personnes.
-fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>, nom: Option<String>, c: &ChargeDroitsDesPieces) -> R<(DroitsDUnePersonne, TableauRendu, Vec<crate::ouverture::Choix>)> {
+fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>, nom: Option<String>, c: &ChargeDroitsDesPieces) -> R<(BilanDit, DroitsDUnePersonne, TableauRendu, Vec<crate::ouverture::Choix>)> {
     let aujourdhui = droit::contexte::aujourdhui()?;
     let constantes = Constantes::lire(inst, &aujourdhui)?;
     let t = droit::allocation::allocation()?;
@@ -1320,19 +1328,17 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     let paies = tableau_des_paies(&comptees, lignes_prevues);
     let personne = DroitsDUnePersonne {
         nir: nir.cloned(),
-        nom,
         fenetre: aff.position.libelle_fenetre.clone(),
         lignes: lignes_du_compte,
         heures_exigees: a_partir.heures_exigees,
         manque: a_partir.manque,
         butoir: butoir_dit,
-        bilan,
         phrase,
         notes,
         estimations,
         visee,
     };
-    Ok((personne, paies, embauches))
+    Ok((BilanDit { nom, bilan }, personne, paies, embauches))
 }
 
 /// Le libelle d'une paie parmi les choix des dates d'embauche : son nom, ses dates, son employeur (une ligne prevue, qui
