@@ -322,8 +322,9 @@ var dire = null;
 
   // Le bouton qui retire la rangée `n` de la case `cle` (`libelle`, celui de la route ; son nom, avec le rang). Les rangs
   // envoyés qui la suivent reculent d'un cran, pour que chaque rangée rendue retrouve la sienne.
-  function boutonRetirer(cle, libelle, n) {
-    var b = el("button", "lien", libelle);
+  function boutonRetirer(cle, libelle, n, signe) {
+    var b = el("button", signe ? "croix" : "lien", signe || libelle);
+    if (signe) b.title = libelle;
     b.type = "button";
     b.setAttribute("aria-label", libelle + " " + (n + 1));
     b.addEventListener("click", function () {
@@ -514,21 +515,25 @@ var dire = null;
       if (!col.parties || !col.parties.length) { if (/^Pour /.test(col.libelle)) k.push("vise"); }
       return k.length ? k.join(" ") : null;
     };
-    // Les heures d'une rangée lue : ses heures, et celles d'enseignement ou de formation qu'elle porte, nommées.
+    // Les deux petites colonnes « ens. » et « form. », juste après les heures : les chiffres des heures restent les uns
+    // sous les autres (Léandre, 27/11/2026).
+    var GENRES = [["enseignement", "ens.", "Heures d'enseignement"], ["formation", "form.", "Heures de formation"]];
+    var lu = function (cellules, g) { return iGenre[g] === undefined ? "" : cellules[iGenre[g]]; };
+    // Les heures d'une rangée lue : ses heures, et celles d'enseignement ou de formation qu'elle porte.
     var heuresLues = function (cellules) {
-      var t2 = [cellules[iHeures] || ""];
-      [["enseignement", "enseignement"], ["formation", "formation"]].forEach(function (g) {
-        var v = iGenre[g[0]] === undefined ? "" : cellules[iGenre[g[0]]];
-        if (v) t2.push(v + " " + g[1]);
-      });
-      return t2.filter(Boolean).join(" + ");
+      return [cellules[iHeures] || "", lu(cellules, "enseignement"), lu(cellules, "formation")].filter(Boolean).join(" + ");
     };
-    // Les heures d'une ligne prévue : une case, et deux petites cases à cocher. Ce qui est tapé part sous `heures`,
-    // `enseignement` ou `formation` de la charge, selon la case cochée ; la page ne compte rien.
+    var celluleDeGenre = function (contenu, titre) {
+      var td = el("td", "genre");
+      td.title = titre;
+      if (contenu) td.append(contenu);
+      return td;
+    };
+    // Les heures d'une ligne prévue : une case, et les deux cases à cocher de ses petites colonnes. Ce qui est tapé part
+    // sous `heures`, `enseignement` ou `formation` de la charge, selon la case cochée ; la page ne compte rien.
     var casesDHeures = function (rang, n) {
       var genre = genres.get(rang) || (rang.enseignement !== "" ? "enseignement" : rang.formation !== "" ? "formation" : "heures");
       var valeur = rang[genre];
-      var boite = el("span", "heures-saisies");
       var i = champ("nombre", null, valeur, function (v) {
         rang.heures = ""; rang.enseignement = ""; rang.formation = "";
         rang[genre] = v;
@@ -536,10 +541,7 @@ var dire = null;
         calculer();
       }, "case-" + cle + "-" + n + "-heures");
       i.setAttribute("aria-label", "Heures " + (n + 1));
-      boite.append(i);
-      [["enseignement", "ens."], ["formation", "form."]].forEach(function (g) {
-        var l = el("label", "genre");
-        l.title = g[0] === "enseignement" ? "Heures d'enseignement" : "Heures de formation";
+      var cases = GENRES.map(function (g) {
         var x = el("input");
         x.type = "checkbox";
         x.id = "case-" + cle + "-" + n + "-" + g[0];
@@ -553,17 +555,21 @@ var dire = null;
           redessiner();
           if (v !== "") calculer();
         });
-        l.append(x, document.createTextNode(" " + g[1]));
-        boite.append(l);
+        x.setAttribute("aria-label", g[2] + " " + (n + 1));
+        return celluleDeGenre(x, g[2]);
       });
-      return boite;
+      return { heures: i, cases: cases };
     };
     var s = el("section", "bloc");
     if (t.titre) s.append(el("h3", null, t.titre));
     (c.dit || []).forEach(function (d) { s.append(el("p", "aide", d)); });
     var table = el("table", "saisie");
     var tr = el("tr");
-    t.colonnes.filter(montree).forEach(function (col) { tr.append(el("th", classe(col), col.libelle)); });
+    t.colonnes.forEach(function (col, i) {
+      if (!montree(col)) return;
+      tr.append(el("th", classe(col), col.libelle));
+      if (i === iHeures) GENRES.forEach(function (g) { var th = el("th", "genre", g[1]); th.title = g[2]; tr.append(th); });
+    });
     tr.append(el("th"));
     var tete = el("thead");
     tete.append(tr);
@@ -577,7 +583,11 @@ var dire = null;
         if (!montree(col)) return;
         var td = el("td", classe(col));
         if (i === iHeures) {
-          td.append(casesDHeures(rangs[n], n));
+          var h = casesDHeures(rangs[n], n);
+          td.append(h.heures);
+          r.append(td);
+          h.cases.forEach(function (c2) { r.append(c2); });
+          return;
         } else if (col.parties && col.parties.length) {
           col.parties.filter(function (k) { return parties[k].ouverte; }).forEach(function (k) {
             var p = parties[k];
@@ -598,7 +608,7 @@ var dire = null;
         r.append(td);
       });
       var fin = el("td");
-      if (n < rangs.length - 1) fin.append(boutonRetirer(cle, t.saisie.retirer, n));
+      if (n < rangs.length - 1) fin.append(boutonRetirer(cle, t.saisie.retirer, n, "×"));
       r.append(fin);
       corps.append(r);
     };
@@ -613,6 +623,7 @@ var dire = null;
       g.cellules.forEach(function (v, i) {
         if (!montree(t.colonnes[i])) return;
         r.append(el("td", classe(t.colonnes[i]), i === iHeures ? heuresLues(g.cellules) : v));
+        if (i === iHeures) GENRES.forEach(function (gg) { r.append(celluleDeGenre(lu(g.cellules, gg[0]) ? document.createTextNode("✓") : null, gg[2])); });
       });
       r.append(el("td"));
       corps.append(r);
