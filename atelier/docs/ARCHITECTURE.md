@@ -1489,7 +1489,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
-| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne` ; la table livrée qui la fonde, `allocation-intermittents.json`, est sa forme, `Allocation`) ; et ce qu'une allocation visée demande au salaire de référence ; les diviseurs de ses parties A et B, ceux de l'annexe ou ceux d'une fenêtre allongée | `Estimation` ; `Visee` ; `Diviseurs` | `droit/src/allocation.rs` |
+| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne`) ; et ce qu'une allocation visée demande au salaire de référence ; les diviseurs de ses parties A et B, ceux de l'annexe ou ceux d'une fenêtre allongée | `Estimation` ; `Visee` ; `Diviseurs` | `droit/src/allocation.rs` |
 | affiliation d'un intermittent à une fin de contrat (art. 3, art. 9 §1 a et b : sa position dans la fenêtre de 365 jours, allongée de 30 jours en 30 jours à la réadmission, les heures exigées, ce qui manque ; les valeurs de la réadmission, `Readmission`, et la limite du salaire de référence, `LimiteDuSalaire`, sont des formes de `allocation-intermittents.json`) ; et le jour butoir, le dernier où, sans contrat de plus, il n'en faut pas davantage | `Affiliation` ; `Butoir` | `droit/src/allocation.rs` |
 | table livrée de l'allocation des intermittents, entière (`allocation-intermittents.json`) | `Allocation` | `droit/src/allocation.rs` |
 | allocation journalière minimale des annexes VIII et X (art. 14) | `AjMinimale` | `droit/src/allocation.rs` |
@@ -1500,7 +1500,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) | `LignePrevue` | `routes/src/accueil/droits_des_pieces.rs` |
 | date de début du contrat d'une paie, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
 | employeur d'une pièce d'un intermittent, qui range ses contrats (son Siren, sa raison sociale, ou la pièce seule) ; et le compte des pièces seules | `CleDEmployeur` ; `Seules` | `routes/src/accueil/droits_des_pieces.rs` |
-| pièce d'un intermittent lue (de qui, chez quel employeur, le contrat qu'elle atteste) | `Attestee` | `routes/src/accueil/droits_des_pieces.rs` |
+| pièce d'un intermittent lue, avant son registre (de qui, chez quel employeur, son nom, sa naissance, le contrat qu'elle atteste, d'où vient son plafond) ; elle entre dans le registre de son employeur, `import::attestes::Atteste`, qui ne garde ni l'employeur, ni le nom de la pièce, ni le plafond | `Attestee` | `routes/src/accueil/droits_des_pieces.rs` |
 | d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, ou à calculer du contrat d'un bulletin) ; pourquoi il ne se connaît pas ; une paie qui compte entière sous la plus basse limite possible | `SourceDuPlafond` ; `PlafondInconnu` ; `SousLePlusBas` | `routes/src/accueil/droits_des_pieces.rs` |
 | paie d'un intermittent comptée depuis ses pièces ou un contrat prévu : ce que sa pièce dit (un compteur qu'elle tait reste vide), son employeur, d'où vient son plafond ; elle devient une ligne déclarée (`droit::cumul::Declare`) quand elle dit ce que la ligne demande | `PaieComptee` | `routes/src/accueil/droits_des_pieces.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
@@ -2883,8 +2883,8 @@ cachets le même jour. À défaut, les jours valent le nombre de dates jouées
 Ces trois valeurs partent dans la DSN (bloc
 `S21.G00.53` : unité 12 journée, 37 cachets, 35 heures), les cachets et les heures
 dans les droits (`cumul.rs`). Aucune de ces destinations ne les recalcule. Un engagement qui porte des
-lignes de paie et **zéro jour** est refusé : l'unité 12 ouvre les droits du
-salarié, et un mois payé en compte au moins un. Un mois du contrat sans paye
+lignes de paie et **zéro jour** est refusé : les jours (l'unité 12) se déclarent
+en DSN, et un mois payé en compte au moins un. Un mois du contrat sans paye
 (`lignes: []`) et un contrat mensuel, qui compte en heures, en sont exclus.
 
 ## Les droits (annexes 8 et 10), et d'où viennent les contrats
@@ -2915,9 +2915,11 @@ leur mois. Les conseils (`routes/src/gestes/conseils.rs`) et la position des dro
 ou déposées) dans `mes-pieces/` de l'installation ; les lecteurs de l'import les lisent, par NIR, et le registre de
 l'import (`import::attestes::Registre::vide`, un par employeur : deux employeurs ne font jamais un contrat) ne garde
 chaque contrat qu'une fois ; la charge peut y ajouter des contrats prévus, qui se comptent pareil et ne s'écrivent pas.
-Le compte est celui de la route `droits` (`droit::cumul::position`, qui ne prend que la racine où lire le catalogue, et
-`archives::comptes_de_la_position`), à la dernière fin de contrat, sur 365 jours, allongés de 30 jours en 30 jours à la
-réadmission (`droit::allocation::affiliation`, art. 9 §1 b ; la date anniversaire dite dit la réadmission) ; le jour
+Le compte est un seul, `droit::allocation::affiliation_des_droits` : celui de la route `droits` d'une compagnie (par
+`droit::cumul::position_droits`), de ses conseils, de la colonne « Droits » du bulletin, et de celle-ci ; il se dit par
+`archives::comptes_de_la_position` : à la dernière fin de contrat (sinon aujourd'hui), sur 365 jours, allongés de 30
+jours en 30 jours à la réadmission (`droit::allocation::affiliation`, art. 9 §1 b ; la date anniversaire, dite ou dans
+la fiche, dit la réadmission : la fin de contrat précédente est douze mois avant) ; le jour
 butoir (`droit::allocation::butoir`) est le dernier où, sans contrat de plus, il n'en faut pas davantage, et la route
 dit pourquoi. L'allocation journalière s'estime par annexe (`allocation-intermittents.json` : art. 14 et 16), chaque paie
 sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon `droit::plafond` ; un plafond qui ne

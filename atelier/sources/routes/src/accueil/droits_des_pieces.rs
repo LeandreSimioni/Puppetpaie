@@ -179,12 +179,14 @@ struct Attestee {
 /// D'OU VIENT LE PLAFOND D'UNE PAIE (le plafond de la Securite sociale de sa periode, `droit::plafond`), pour la limite du
 /// salaire de reference (annexes, art. 11 §3) : celui que le bulletin imprime ; celui que le moteur calcule depuis le
 /// contrat (`contrat`, entier quand la piece le dit : il dit si l'engagement d'un artiste est court) et la periode de la
-/// paie ; ou, pour un bulletin qui ne l'imprime pas, celui du contrat dont la route demande le debut (`debuts`).
+/// paie. Le contrat ne se demande que quand la periode ne suffit pas : un artiste dont la paie fait moins de cinq jours
+/// (`plafond_de`). La periode d'un bulletin est celle qu'il paie (R. 3243-1, 5°) : elle peut etre le mois entier quand le
+/// contrat est plus court ; le plafond s'y calcule alors au mois, plus haut que celui du contrat, et la limite de la paie
+/// est trop haute (INFERENCE : la periode payee d'un intermittent est celle de son contrat).
 #[derive(Clone, Debug)]
 enum SourceDuPlafond {
     Imprime(Montant),
     DuContrat { contrat: Option<Periode>, paie: Periode },
-    DuBulletin { paie: Periode },
 }
 
 /// POURQUOI LE PLAFOND D'UNE PAIE NE SE CONNAIT PAS : la phrase, et si la date de debut de son contrat le dirait.
@@ -195,11 +197,12 @@ struct PlafondInconnu {
 
 impl SourceDuPlafond {
     /// La meme, avec la date de debut `debut` que la charge dit du contrat de la paie (`debuts`) : le contrat va de ce
-    /// debut a la fin de la paie, et la paie n'en prend que ce qui est dans sa periode (INFERENCE : la paie d'un
-    /// intermittent finit avec son contrat) ; un debut apres la fin de la paie ne dit rien, et la note le dit.
+    /// debut a la fin de la paie, et la paie n'en prend que ce qui est dans sa periode (INFERENCE : le debut ne se demande
+    /// que pour une paie de moins de cinq jours, qui n'est pas un mois entier ; elle finit avec son contrat) ; un debut
+    /// apres la fin de la paie ne dit rien, et la note le dit.
     fn avec_le_debut(&self, debut: Jour) -> Option<SourceDuPlafond> {
         let paie = match self {
-            SourceDuPlafond::DuContrat { contrat: None, paie } | SourceDuPlafond::DuBulletin { paie } => *paie,
+            SourceDuPlafond::DuContrat { contrat: None, paie } => *paie,
             SourceDuPlafond::Imprime(_) | SourceDuPlafond::DuContrat { contrat: Some(_), .. } => return Some(self.clone()),
         };
         let contrat = Periode::du_au(debut, paie.fin()).ok()?;
@@ -225,23 +228,34 @@ fn cle_d_employeur(siren: Option<Siren>, raison_sociale: Option<&String>) -> Opt
     }
 }
 
-/// LES PIECES QUI NE DISENT PAS UN EMPLOYEUR SEUL : chacune le sien (`CleDEmployeur::Seule`), et sa phrase.
+/// LES CONTRATS DES PIECES QUI NE DISENT PAS UN EMPLOYEUR SEUL : chacun le sien (`CleDEmployeur::Seule`, son rang), et
+/// une phrase par piece (`dites`, les pieces deja dites).
 #[derive(Default)]
-struct Seules(usize);
+struct Seules {
+    rang: usize,
+    dites: std::collections::BTreeSet<String>,
+}
 
 impl Seules {
-    /// La cle de la piece `piece` : celle que dit `lue`, sinon une a elle seule, dite dans `phrases`.
-    fn cle(&mut self, lue: Option<CleDEmployeur>, piece: &str, phrases: &mut Vec<String>) -> CleDEmployeur {
-        match lue {
-            Some(c) => c,
-            None => {
-                self.0 += 1;
-                phrases.push(format!("{} : la pièce ne dit pas un employeur seul ; son contrat compte à part, il ne se rapproche d'aucune autre pièce.", piece));
-                CleDEmployeur::Seule(self.0)
-            }
+    /// La cle d'un contrat de la piece `piece` : celle que dit `lue`, sinon une a lui seul ; la piece se dit une fois dans
+    /// `phrases`, avec `pourquoi` et l'effet.
+    fn cle(&mut self, lue: Option<CleDEmployeur>, piece: &str, pourquoi: &str, phrases: &mut Vec<String>) -> CleDEmployeur {
+        if let Some(c) = lue {
+            return c;
         }
+        self.rang += 1;
+        if self.dites.insert(piece.to_string()) {
+            phrases.push(format!(
+                "{} : {} ; son contrat compte à part, sans se rapprocher d'aucune autre pièce : ses heures peuvent compter deux fois si une autre pièce dit le même contrat, et le seuil paraître atteint à tort.",
+                piece, pourquoi
+            ));
+        }
+        CleDEmployeur::Seule(self.rang)
     }
 }
+
+/// Pourquoi une piece n'a pas d'employeur.
+const SANS_EMPLOYEUR: &str = "elle ne dit pas son employeur (ni Siret ni raison sociale)";
 
 /// Le nom d'une personne, tel qu'une piece l'imprime.
 fn nom_de(identite: &declarations::identite::IdentiteDeclaree) -> Option<String> {
@@ -265,7 +279,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
     let mut bulletins: Vec<(String, usize, NomDeFichier, import::bulletin_lu::BulletinLu, Nir)> = Vec::new();
     let aem_dir = travail.join("aem");
     // Les AEM deposees, par leur copie : le nom du fichier pose, et l'employeur s'il est seul.
-    let mut aem_employeurs: BTreeMap<String, (String, Option<CleDEmployeur>)> = BTreeMap::new();
+    let mut aem_employeurs: BTreeMap<String, (String, Option<CleDEmployeur>, usize)> = BTreeMap::new();
     let mut seules = Seules::default();
     for f in &tri.fichiers {
         let nom = f.chemin.texte().to_string();
@@ -277,7 +291,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                 std::fs::copy(&f.disque, &cible).map_err(|e| socle::echec::du_disque(&cible, &e).reclasser(Classe::Disque))?;
                 let e = import::dsn_aem::employeur_aem(&f.disque)?;
                 let siren = (e.sirens.len() == 1).then(|| e.sirens.iter().next().cloned()).flatten();
-                aem_employeurs.insert(copie.texte().to_string(), (nom.clone(), cle_d_employeur(siren, None)));
+                aem_employeurs.insert(copie.texte().to_string(), (nom.clone(), cle_d_employeur(siren, None), e.sirens.len()));
                 phrases.push(format!("{} : AEM déposée, lue.", nom));
             }
             Sorte::PdfTexte => {
@@ -292,7 +306,15 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                             }
                             continue;
                         };
-                        let (Some(nir), Some(periode)) = (a.identite.nir.clone(), a.periode) else { continue };
+                        let (Some(nir), Some(periode)) = (a.identite.nir.clone(), a.periode) else {
+                            let manque = match (a.identite.nir.is_some(), a.periode.is_some()) {
+                                (false, false) => "ni numéro de sécurité sociale ni période",
+                                (false, true) => "pas de numéro de sécurité sociale",
+                                (true, _) => "pas de période",
+                            };
+                            phrases.push(format!("{}, page {} : l'AEM n'imprime {} : elle ne se compte pas.", nom, p.page, manque));
+                            continue;
+                        };
                         let (ligne, _) = contrat_de_l_aem(&a, None, &copie)?;
                         // Le contrat entier, quand l'AEM imprime son embauche et sa fin : il dit si l'engagement est court.
                         // Une embauche apres la fin : les dates de l'AEM sont incoherentes, la route le dit, et le
@@ -309,7 +331,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                         };
                         let lue = cle_d_employeur(a.employeur.siret.as_ref().map(droit::fiche::Siret::siren), a.employeur.raison_sociale.as_ref());
                         let piece = format!("{}, page {}", nom, p.page);
-                        let employeur = seules.cle(lue, &piece, &mut phrases);
+                        let employeur = seules.cle(lue, &piece, SANS_EMPLOYEUR, &mut phrases);
                         attestees.push(Attestee {
                             piece,
                             nir,
@@ -363,11 +385,15 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
         let (contrats, illisibles, fautes) = import::dsn_aem::lire_aem(&aem_dir)?;
         phrases.extend(illisibles.into_iter().chain(fautes));
         for c in contrats {
-            let (piece, lue) = match aem_employeurs.get(c.fichier.texte()) {
-                Some((nom, e)) => (nom.clone(), e.clone()),
-                None => (c.fichier.texte().to_string(), None),
+            let (piece, lue, sirens) = match aem_employeurs.get(c.fichier.texte()) {
+                Some((nom, e, n)) => (nom.clone(), e.clone(), *n),
+                None => (c.fichier.texte().to_string(), None, 0),
             };
-            let employeur = seules.cle(lue, &piece, &mut phrases);
+            let pourquoi = match sirens {
+                0 | 1 => SANS_EMPLOYEUR.to_string(),
+                n => format!("l'AEM porte {} employeurs (Siren), et la route ne lit pas lequel est celui de chaque contrat", n),
+            };
+            let employeur = seules.cle(lue, &piece, &pourquoi, &mut phrases);
             attestees.push(Attestee {
                 piece,
                 nir: c.nir.clone(),
@@ -404,7 +430,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
         let raison = b.entreprise.employeur.raison_sociale.clone();
         let lue = cle_d_employeur(b.entreprise.employeur.siret.as_ref().map(droit::fiche::Siret::siren), raison.as_ref());
         let piece = format!("{}, page {}", nom, page);
-        let employeur = seules.cle(lue, &piece, &mut phrases);
+        let employeur = seules.cle(lue, &piece, SANS_EMPLOYEUR, &mut phrases);
         attestees.push(Attestee {
             piece,
             nir: nir.clone(),
@@ -418,7 +444,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
             bloc: BlocDImport::Bulletins,
             plafond: match plafond_imprime(b) {
                 Some(m) => SourceDuPlafond::Imprime(m),
-                None => SourceDuPlafond::DuBulletin { paie: b.periode },
+                None => SourceDuPlafond::DuContrat { contrat: None, paie: b.periode },
             },
         });
     }
@@ -504,7 +530,8 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
             ));
             continue;
         }
-        registre.ajouter(&a.nir, a.ligne.clone(), a.periode, a.source, a.bloc)?;
+        // Ce que l'ajout fait des contrats qu'il remplace se dit, comme a l'import (`importation::bulletins`).
+        notes.extend(registre.ajouter(&a.nir, a.ligne.clone(), a.periode, a.source, a.bloc)?.into_iter().map(|r| format!("{} : {}.", a.piece, r)));
     }
     let mut out = Vec::new();
     for (cle, (registre, raison)) in registres {
@@ -515,15 +542,24 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
             (None, CleDEmployeur::Seule(_)) => "employeur non lu".to_string(),
         };
         for (_, ligne, _) in registre.retenus {
-            let Some(periode) = ligne.periode.and_then(|p| p.fermee()) else { continue };
             let a = &ligne.contrat;
-            // La piece d'ou vient le contrat retenu (sa copie, sa page, ses dates) : son plafond.
-            let Some(x) = siennes().find(|x| x.periode == periode && x.ligne.contrat.fichier == a.fichier && x.ligne.contrat.page == a.page) else {
-                return Err(socle::fichiers::absent("la pièce d'un contrat retenu"));
+            let Some(periode) = ligne.periode.and_then(|p| p.fermee()) else {
+                notes.push(format!("Un contrat chez {} ({}) n'a pas de fin : il ne se compte pas.", employeur, import::attestes::en_mots(a.heures, a.cachets, a.jours, a.brut)));
+                continue;
+            };
+            // La piece d'ou vient le contrat retenu (sa copie, sa page, ses dates) : son nom et son plafond ; une piece
+            // qui ne se retrouve pas se dit, et son plafond se calcule sur la periode.
+            let (id, plafond) = match siennes().find(|x| x.periode == periode && x.ligne.contrat.fichier == a.fichier && x.ligne.contrat.page == a.page) {
+                Some(x) => (x.piece.clone(), x.plafond.clone()),
+                None => {
+                    let id = format!("contrat du {} au {} chez {}", periode.debut().jj_mm_aaaa(), periode.fin().jj_mm_aaaa(), employeur);
+                    notes.push(format!("La pièce du {} ne se retrouve pas : son plafond se calcule sur ses dates. Le signaler au développeur.", id));
+                    (id, SourceDuPlafond::DuContrat { contrat: None, paie: periode })
+                }
             };
             out.push(PaieComptee {
-                id: x.piece.clone(),
-                plafond: x.plafond.clone(),
+                id,
+                plafond,
                 employeur: employeur.clone(),
                 periode,
                 piece: piece_dite(a.atteste_par),
@@ -817,7 +853,6 @@ fn plafond_de(s: &SourceDuPlafond, artiste: bool) -> Result<Montant, PlafondInco
     let inconnu = |raison: &str, le_debut_le_dit: bool| PlafondInconnu { raison: raison.to_string(), le_debut_le_dit };
     let (contrat, paie) = match s {
         SourceDuPlafond::Imprime(m) => return Ok(*m),
-        SourceDuPlafond::DuBulletin { .. } => return Err(inconnu("le bulletin n'imprime pas son plafond", true)),
         SourceDuPlafond::DuContrat { contrat, paie } => (contrat, paie),
     };
     let court = match contrat {
@@ -833,12 +868,20 @@ fn plafond_de(s: &SourceDuPlafond, artiste: bool) -> Result<Montant, PlafondInco
     r.map_err(|e| PlafondInconnu { raison: e.phrase.to_string(), le_debut_le_dit: false })
 }
 
-/// LE PLUS BAS PLAFOND QU'UNE PAIE QUI FINIT LE `fin` PEUT AVOIR : celui d'un contrat d'un jour, ce jour (`plafond_de`,
-/// donc `droit::plafond`) ; pour un artiste, douze fois le plafond horaire, pour un technicien, le plafond du mois au
-/// prorata d'un jour.
+/// LE PLUS BAS PLAFOND QU'UNE PAIE QUI FINIT LE `fin` PEUT AVOIR, par `droit::plafond` : le plafond du mois au prorata
+/// d'un jour (un contrat d'un jour, ou un jour paye d'un contrat plus long) ; pour un artiste, aussi celui d'un
+/// engagement court d'une journee de travail (douze fois le plafond horaire, arrete du 24/01/1975, art. 3, al. 2) : le
+/// plus petit des deux.
 fn plafond_le_plus_bas(fin: Jour, artiste: bool) -> Result<Montant, PlafondInconnu> {
-    let jour = Periode::du_au(fin, fin).map_err(|e| PlafondInconnu { raison: e.phrase.to_string(), le_debut_le_dit: false })?;
-    plafond_de(&SourceDuPlafond::DuContrat { contrat: Some(jour), paie: jour }, artiste)
+    use droit::plafond::{plafond_de_la_periode, plafond_urssaf, JoursSansRemuneration};
+    let inconnu = |e: socle::echec::Echec| PlafondInconnu { raison: e.phrase.to_string(), le_debut_le_dit: false };
+    let jour = Periode::du_au(fin, fin).map_err(inconnu)?;
+    let au_prorata = plafond_de_la_periode(&jour, &JoursSansRemuneration::aucun(), None, &pss).map_err(inconnu)?;
+    if !artiste {
+        return Ok(au_prorata);
+    }
+    let court = plafond_urssaf(&jour, true, &pss, &[fin]).map_err(inconnu)?;
+    Ok(au_prorata.min(court))
 }
 
 /// Ce que la route dit de la personne `nir` : ses paies, son affiliation, le jour butoir, son allocation estimee, et ce
@@ -892,7 +935,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: &Nir, nom: St
         if comptees.iter().any(|p| p.id == d.paie) {
             debuts.insert(d.paie.clone(), d.debut);
         } else {
-            notes.push(format!("« {} » (Débuts des contrats) n'est aucune paie des pièces : ce début ne dit rien.", d.paie));
+            notes.push(format!("« {} » (Débuts des contrats) n'est le nom d'aucune paie, des pièces ni des contrats prévus : ce début ne dit rien.", d.paie));
         }
     }
     let mut demandes: BTreeMap<String, String> = BTreeMap::new();
