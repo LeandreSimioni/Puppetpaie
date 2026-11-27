@@ -379,6 +379,24 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     assert!(phrases_fautives.is_empty(), "des phrases que rendent les routes ne sont pas faites pour l'écran (un fichier, un chemin, un terme de code) : récris-les en mots, dans le moteur :\n{}", phrases_fautives.join("\n"));
 }
 
+/// LE PREMIER ECRAN DE LA PAGE DES DROITS (`atelier/site/droits/premier-ecran.json`), que la page pose avant que le
+/// moteur soit charge, est ce que la route `droits-des-pieces` rend sans charge ni piece, au dossier du depot pres : il
+/// y est vide (`null`), la page ne posant les bulletins qu'une fois que la route a nomme le sien.
+#[test]
+fn le_premier_ecran_des_droits_est_ce_que_la_route_rend_sans_charge() {
+    let inst = crate::outils::installation(&dossier_de_test("structure", "premier-ecran"), "2026.10.22");
+    let c = ajouter_venant(&inst, "Demo", Venue::Neuve).unwrap().racine;
+    let mut rendu = crate::outils::reussi(&route(&c, "droits-des-pieces", json!({}), "2026-11-02")).clone();
+    let depots = rendu["ecran"].as_array().unwrap().iter().filter(|b| b["est"] == json!("depot")).count();
+    assert_eq!(depots, 1, "un seul depot dans l'ecran sans charge : {}", rendu);
+    for b in rendu["ecran"].as_array_mut().unwrap().iter_mut().filter(|b| b["est"] == json!("depot")) {
+        b["dossier"] = Value::Null;
+    }
+    let fichier = espace().join("../site/droits/premier-ecran.json");
+    let fige: Value = serde_json::from_str(&std::fs::read_to_string(&fichier).unwrap()).unwrap();
+    assert_eq!(rendu, fige, "{} n'est plus ce que la route rend sans charge : recopie-y sa reponse (`resultat`), le dossier du depot a null", fichier.display());
+}
+
 
 /// L'exemple de `drive-reprendre`, sur un faux Drive local (rien ne sort de la machine), apres celui de `drive-lier`
 /// (le jeton de l'accueil) : sous `PuppetPaie`, le dossier d'une compagnie (`cie-essai`, sa marque) dont la sauvegarde

@@ -21,7 +21,7 @@ use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, Lig
 use envois::etats;
 use socle::date::{Jour, Periode};
 use socle::echec::R;
-use socle::ecran::{ColonneRendue, EtatDEcran, QuandDeLaCarte, RangeeRendue, SorteDeRangee};
+use socle::ecran::{ColonneRendue, EtatDEcran, QuandDeLaCarte, RangeeRendue, SorteDeRangee, TableauRendu};
 use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::Cachets;
@@ -264,7 +264,9 @@ pub struct CarteImportee {
     non_lu: Option<NonLuDeLaCarte>,
     cases: Vec<CaseLue>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    lignes: Option<LignesDeLaCarte>,
+    /// Les lignes du bulletin, en tableau : ses colonnes (a droite pour un nombre), et chaque ligne ses cellules dites
+    /// (vide : ce que le bulletin n'imprime pas).
+    lignes: Option<TableauRendu>,
     /// Son debut et son nom, qui rangent les cartes du mois.
     #[serde(skip)]
     debut: Option<Jour>,
@@ -331,14 +333,6 @@ struct CaseLue {
     non_lu: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pourquoi: Option<String>,
-}
-
-/// LES LIGNES DU BULLETIN, en tableau : ses colonnes (a droite pour un nombre), et chaque ligne ses cellules dites (vide :
-/// ce que le bulletin n'imprime pas).
-#[derive(Debug, Clone, Serialize)]
-struct LignesDeLaCarte {
-    colonnes: Vec<ColonneRendue>,
-    rangees: Vec<RangeeRendue>,
 }
 
 /// Ce que dit une carte dont la periode est lue sans ses jours, au survol de « quand ».
@@ -632,19 +626,20 @@ fn carte(
     let lignes: Vec<RangeeRendue> = p
         .iter()
         .flat_map(|p| p.lignes.iter())
-        .map(|l: &LigneImprimee| RangeeRendue {
-            sorte: SorteDeRangee::Ligne,
-            cellules: vec![
-                Some(l.libelle.clone()),
-                l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite),
-                l.paiement.map(|x| x.taux().dit()),
-                l.montant.map(socle::texte::euros),
-            ],
+        .map(|l: &LigneImprimee| {
+            RangeeRendue::de(
+                SorteDeRangee::Ligne,
+                vec![
+                    Some(l.libelle.clone()),
+                    l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite),
+                    l.paiement.map(|x| x.taux().dit()),
+                    l.montant.map(socle::texte::euros),
+                ],
+            )
         })
         .collect();
-    let lignes = (!lignes.is_empty()).then(|| LignesDeLaCarte {
-        colonnes: vec![ColonneRendue::de_texte("Ligne du bulletin"), ColonneRendue::de_nombres("Quantité"), ColonneRendue::de_nombres("Taux"), ColonneRendue::de_nombres("Montant")],
-        rangees: lignes,
+    let lignes = (!lignes.is_empty()).then(|| {
+        TableauRendu::de(vec![ColonneRendue::de_texte("Ligne du bulletin"), ColonneRendue::de_nombres("Quantité"), ColonneRendue::de_nombres("Taux"), ColonneRendue::de_nombres("Montant")], lignes)
     });
     Ok(CarteImportee { salarie, resume, non_lu, cases, lignes, debut, nom, bulletin, etats })
 }

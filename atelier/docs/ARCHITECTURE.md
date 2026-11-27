@@ -1272,8 +1272,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | écran qu'une route rend tel qu'on le voit et le saisit (ce qu'il dit en tête, ses encarts ; ses rangs ; ses cases ; l'historique de ses cases datées en mots ; le geste qui enregistre ses cases ; ce qu'il n'a pas ne s'écrit pas ; la route le dit par sa fiche, `catalogue::Ecran::Rendu`, et la page le pose, `poserLEcranRendu` : Configuration › Organismes et contrats, des cases ; Configuration › Signature & tampon et Configuration › Mots de passe, des rangs) | `routes::ecran::EcranRendu` | `routes/src/ecran.rs` |
 | geste qui enregistre les cases d'un écran rendu (sa route, sa charge, le champ de la charge où vont toutes les cases de l'écran, chacune sous sa clé, ou aucun : chacune sous sa clé dans la charge même, celles d'une boîte de saisie ; son libellé ; pas un `GesteDeRoute`, qui fait saisir dans sa boîte des champs de la charge que sa fiche décrit) | `routes::ecran::EnregistrerLEcran` | `routes/src/ecran.rs` |
 | ce qui enregistre la case d'une ligne de « Pour démarrer » (la route `enregistrer-fiche` et la part fixe de sa charge, la fiche et sa clé ; la case part dans les `changements` de la charge, une écriture par fiche ; pas un `EnregistrerLEcran`, qui envoie toutes les cases d'un écran, chacune sous sa clé) | `EnregistrerLaCase` | `routes/src/rappels.rs` |
-| colonne d'un tableau qu'une route rend à l'écran (son en-tête, à droite pour un nombre, discrète pour ce qui précise la ligne : le livre de paie des Exports, les lignes du bulletin d'une carte importée ; pas une colonne d'un état exporté, `documents::tableaux_export::Colonne`, que sa clé d'état et son genre font) | `socle::ecran::ColonneRendue` | `socle/src/ecran.rs` |
-| rangée d'un tableau qu'une route rend à l'écran (ce qu'elle est : une ligne, le sous-total d'un groupe, le total général ; ses cellules déjà dites, une par colonne) | `socle::ecran::RangeeRendue`, `socle::ecran::SorteDeRangee` | `socle/src/ecran.rs` |
+| colonne d'un tableau qu'une route rend à l'écran (son en-tête, à droite pour un nombre, discrète pour ce qui précise la ligne, les parties qu'elle tient dans un tableau qui se saisit : le livre de paie des Exports, les lignes du bulletin d'une carte importée ; pas une colonne d'un état exporté, `documents::tableaux_export::Colonne`, que sa clé d'état et son genre font) | `socle::ecran::ColonneRendue` | `socle/src/ecran.rs` |
+| tableau qu'une route rend à l'écran (son titre s'il en a un, ses colonnes, ses rangées : le livre de paie des Exports, les lignes du bulletin d'une carte importée, les paies de `droits-des-pieces`) | `socle::ecran::TableauRendu` | `socle/src/ecran.rs` |
+| rangée d'un tableau qu'une route rend à l'écran (ce qu'elle est : une ligne, le sous-total d'un groupe, le total général ; ses cellules déjà dites, une par colonne ; dans un tableau qui se saisit, son rang dans la case) | `socle::ecran::RangeeRendue`, `socle::ecran::SorteDeRangee` | `socle/src/ecran.rs` |
+| rangées qui se saisissent dans un tableau rendu (la case de la charge dont elles sont les rangées, le bouton qui en ajoute une, celui qui en retire une ; chaque colonne dit les parties qu'elle tient, chaque rangée son rang : les lignes prévues dans le tableau des paies de `droits-des-pieces`) | `socle::ecran::SaisieDuTableau` | `socle/src/ecran.rs` |
+| ce que le lecteur des AEM déposées dit d'un fichier du dossier lu (son nom, la phrase : un enregistrement illisible, une case laissée vide) | `import::dsn_aem::NoteDUneAem` | `import/src/dsn_aem.rs` |
+| pièce déposée sur l'écran des droits d'un intermittent (le fichier posé dans `mes-pieces/`, sa nature, ses employeurs, ce que la route en lit ; ce que dit chaque fichier se range sous lui, `DitDesPieces`, `CeQuiSeDitDUnFichier`) | `PieceDite` | `routes/src/accueil/droits_des_pieces.rs` |
+| bloc de l'écran des droits d'un intermittent, dans l'ordre que la route `droits-des-pieces` lui donne (une case de sa charge, la réponse, l'allocation visée, le tableau des paies et ses lignes prévues, le dépôt des pièces, les pièces déposées, le détail du calcul ; pas un rang d'un `EcranRendu`, qui n'a ni tableau ni dépôt) | `BlocDesDroits` | `routes/src/accueil/droits_des_pieces.rs` |
 | quand, sur une carte fermée (celle d'un engagement validé, celle d'une paie importée : ses jours du mois en clair et au plus court, un seul compositeur ; une période quand ils ne sont pas lus ; s'ils sont épars ; au survol, ce qu'ils sont ; le mois abrégé) | `socle::ecran::QuandDeLaCarte` | `socle/src/ecran.rs` |
 | carte fermée d'une paie importée (quand, et au survol ses dates ; si ses jours sont épars ; le mois abrégé ; qui, le mot « importé », ce qu'il est ; ses pastilles ; le montant qu'elle dit et ce qu'il est) | `ResumeDeLaCarte` | `import/src/mois.rs` |
 | pastille d'un acte d'une carte importée (son titre : DPAE, Contrat, Documents ; son état, `EtatDeCarte` : sa couleur, son mot court, sa phrase au survol ; pas une `socle::ecran::Pastille`, qui n'a que sa couleur et ses mots) | `PastilleDeLaCarte` | `import/src/mois.rs` |
@@ -1300,6 +1305,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | partie d'une case de fiche faite de cases, ou de chaque rangée d'une liste (son chemin, son libellé, sa forme, son aide, ses choix, si elle est ouverte) | `routes::fiches::PartieDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | largeur d'une case de fiche à l'écran (toute la ligne, ou la moitié) | `declarations::champs::Largeur` | `declarations/src/champs.rs` |
 | case qui ne s'ouvre que si une autre est trop longue (le complément d'adresse, au-delà de ce que la DSN admet) | `declarations::champs::PlusLong` | `declarations/src/champs.rs` |
+| case à cocher fermée pour l'instant, et pourquoi (`fermee` de `champs-base.json` : dans une compagnie réelle, grisée, elle ne se coche pas et le dit au survol, et l'écriture qui la cocherait se refuse avec la même phrase ; une compagnie fictive la garde ouverte) | `declarations::champs::CaseFermee` | `declarations/src/champs.rs` |
 | en-tête d'une fiche rendue (son titre, ce qui le suit, sa note, le coût de l'année qu'elle montre, si « Annuler » ramène à la liste, ce qui se fait depuis la fiche d'un salarié, la demande qui fait remplir celle d'un salarié neuf) | `routes::fiches::EnteteDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | coût de l'année qu'une fiche rendue montre en tête (où le lire dans la route `couts` : le côté et la clé de la fiche, un spectacle par son titre, un salarié par sa clé) | `routes::fiches::CoutDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
@@ -1489,6 +1495,22 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
+| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne`) ; et ce qu'une allocation visée demande au salaire de référence | `Estimation` ; `Visee` | `droit/src/allocation.rs` |
+| affiliation d'un intermittent à une fin de contrat (art. 3, art. 9 §1 a et b : sa position dans la fenêtre de 365 jours, allongée de 30 jours en 30 jours à la réadmission, les heures exigées, ce qui manque ; les valeurs de la réadmission, `Readmission`, et la limite du salaire de référence, `LimiteDuSalaire`, sont des formes de `allocation-intermittents.json`) ; et le jour butoir, le dernier où, sans contrat de plus, aucune ligne ne sort des 365 jours | `Affiliation` ; `Butoir` | `droit/src/allocation.rs` |
+| table livrée de l'allocation des intermittents, entière (`allocation-intermittents.json`) | `Allocation` | `droit/src/allocation.rs` |
+| allocation journalière minimale des annexes VIII et X (art. 14) | `AjMinimale` | `droit/src/allocation.rs` |
+| formule d'une annexe : ses seuils, ses parts, ses diviseurs, son plancher (art. 14) | `Formule` | `droit/src/allocation.rs` |
+| plafond de l'allocation (art. 16 : une part de 1/365e de quatre plafonds annuels) | `PlafondDeLAllocation` | `droit/src/allocation.rs` |
+| réadmission : les heures de plus par période de jours au-delà de la fenêtre (art. 9 §1 b) | `Readmission` | `droit/src/allocation.rs` |
+| limite du salaire de référence : les plafonds d'une paie qu'il compte au plus (art. 11 §3, art. 49) | `LimiteDuSalaire` | `droit/src/allocation.rs` |
+| contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) ; sa nature, une liste fermée (artiste, technicien, enseignement, formation) | `LignePrevue` ; `NatureDUneLigne` | `routes/src/accueil/droits_des_pieces.rs` |
+| date de début du contrat d'une paie des pièces, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas (une ligne prévue ne dit que sa fin) | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
+| les annexes des paies d'un intermittent (l'annexe de base, les heures de chaque annexe dans les 12 mois, celles qui ne se disent pas, d'où chacune se lit) ; l'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), l'égalité, ou ce qui ne se dit pas | `AnnexesDesPaies` ; `AnnexeAppliquee` | `routes/src/accueil/droits_des_pieces.rs` |
+| ce que le calcul des droits d'un intermittent donne à l'écran de `droits-des-pieces` (la réponse, la visée, l'annexe de base, le tableau des paies, les dates d'embauche demandées, le détail) ; la réponse elle-même (les heures, en vert quand elles sont là, jusqu'à quand, l'allocation) ; l'allocation visée telle que l'écran la dit, et calculée (ce qu'il faudrait par cachet ou de l'heure, le brut visé de chaque paie) ; le détail du calcul, replié | `CalculDesDroits` ; `ReponseDite` ; `ViseeDite`, `ViseeCalculee` ; `DetailsDits` | `routes/src/accueil/droits_des_pieces.rs` |
+| employeur d'une pièce d'un intermittent, qui range ses contrats (son Siren, sa raison sociale, ou la pièce seule) ; et le compte des pièces seules | `CleDEmployeur` ; `Seules` | `routes/src/accueil/droits_des_pieces.rs` |
+| pièce d'un intermittent lue, avant son registre (de qui, chez quel employeur, son nom, sa naissance, le contrat qu'elle atteste, d'où vient son plafond) ; elle entre dans le registre de son employeur, `import::attestes::Atteste`, qui ne garde ni l'employeur, ni le nom de la pièce, ni le plafond | `Attestee` | `routes/src/accueil/droits_des_pieces.rs` |
+| d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, à calculer du contrat d'un bulletin, ou inconnu d'une ligne prévue qui ne dit que sa fin) ; pourquoi il ne se connaît pas ; une paie dont le plafond ne se connaît pas, qui compte entière (sa plus basse limite possible, au-dessus de laquelle l'estimation la suppose non limitée) | `SourceDuPlafond` ; `PlafondInconnu` ; `PlafondSuppose` | `routes/src/accueil/droits_des_pieces.rs` |
+| paie d'un intermittent comptée depuis ses pièces ou un contrat prévu : ce que sa pièce dit (un compteur qu'elle tait reste vide), son employeur, d'où vient son plafond ; elle devient une ligne déclarée (`droit::cumul::Declare`) quand elle dit ce que la ligne demande | `PaieComptee` | `routes/src/accueil/droits_des_pieces.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
 | jauge de la salle qu'une grille de cachets vise, et celle des autres jauges qu'elle porte pour mémoire (`autres_jauges`) | `JaugeDeLaGrille` | `droit/src/minima.rs` |
@@ -2867,10 +2889,10 @@ cachets le même jour. À défaut, les jours valent le nombre de dates jouées
 **distinctes**.
 
 Ces trois valeurs partent dans la DSN (bloc
-`S21.G00.53` : unité 12 journée, 37 cachets, 35 heures) et dans les droits
-(`cumul.rs`). Aucune de ces destinations ne les recalcule. Un engagement qui porte des
-lignes de paie et **zéro jour** est refusé : l'unité 12 ouvre les droits du
-salarié, et un mois payé en compte au moins un. Un mois du contrat sans paye
+`S21.G00.53` : unité 12 journée, 37 cachets, 35 heures), les cachets et les heures
+dans les droits (`cumul.rs`). Aucune de ces destinations ne les recalcule. Un engagement qui porte des
+lignes de paie et **zéro jour** est refusé : les jours (l'unité 12) se déclarent
+en DSN, et un mois payé en compte au moins un. Un mois du contrat sans paye
 (`lignes: []`) et un contrat mensuel, qui compte en heures, en sont exclus.
 
 ## Les droits (annexes 8 et 10), et d'où viennent les contrats
@@ -2895,6 +2917,48 @@ Le bulletin se compte lui-même : `documents::bulletin` passe les paies qu'il
 imprime à `Passe::engagements(Some(paies))` (`engagement::cumul`), qui les substitue à celles de
 leur mois. Les conseils (`routes/src/gestes/conseils.rs`) et la position des droits
 (`routes/src/archives.rs`) lisent la même chose.
+
+**Les droits d'un intermittent, sans compagnie** (`droits-des-pieces`, une route de l'installation,
+`routes/src/accueil/droits_des_pieces.rs`) : la personne pose les pièces de tous ses employeurs (bulletins, AEM en PDF
+ou déposées) dans `mes-pieces/` de l'installation ; les lecteurs de l'import les lisent, par NIR, et le registre de
+l'import (`import::attestes::Registre::vide`, un par employeur : deux employeurs ne font jamais un contrat) ne garde
+chaque contrat qu'une fois ; la charge peut y ajouter des contrats prévus, qui se comptent pareil et ne s'écrivent pas
+(une ligne prévue ne dit que sa fin : une ligne déclarée, `droit::cumul::Declare`, se situe par sa fin ; sa nature,
+`NatureDUneLigne`, dit si ses heures sont d'artiste, de technicien, d'enseignement ou de formation). La formation compte pour les 507 heures, pas pour le
+montant, dans la limite de 338 heures enseignement compris (annexes VIII et X, art. 3 §1 :
+`Declare::heures_formation`, `Position::heures_formation_retenues`, le plafond dans `rubriques-base.json`, `annexes`) ;
+une paie d'une compagnie n'en porte pas.
+Le compte est un seul, `droit::allocation::affiliation_des_droits` : celui de la route `droits` d'une compagnie (par
+`droit::cumul::position_droits`), de ses conseils, de la colonne « Droits » du bulletin, et de celle-ci ; il se dit par
+`archives::comptes_de_la_position` : à la dernière fin de contrat (sinon aujourd'hui), sur 365 jours, allongés de 30
+jours en 30 jours à la réadmission (`droit::allocation::affiliation`, art. 9 §1 b ; la date anniversaire de la fiche
+dit la réadmission : la fin de contrat précédente est douze mois avant). La page, elle, ne pose qu'une question, sur
+un an (Léandre, 27/11/2026 : « on fait sur 1 an […] les gens ils veulent savoir si ils ont leurs heures ») : les
+507 heures sur les 365 jours avant la dernière fin de contrat, lignes prévues comprises, sans réadmission ni
+allongement. La réponse vient d'abord (`ReponseDite`) : les heures, en vert quand elles sont là
+(`socle::ecran::couleur_de_l_etat`), puis l'allocation journalière, le chiffre exact, de l'annexe de la personne ; ou
+ce qui manque (compté à partir d'aujourd'hui quand cette fin est passée) et jusqu'à quand : la date anniversaire dite,
+quand elle est à venir ; sinon le jour butoir (`droit::allocation::butoir`, le dernier où, sans contrat de plus, aucune
+paie ne sort des 365 jours), dont le détail dit pourquoi. Chaque paie a son annexe (`AnnexeChomage`) : celle que sa
+pièce dit (la case d'une AEM, le statut ou l'emploi d'un bulletin), la nature d'une ligne prévue, ou ses cachets ;
+sinon celle de base, quand les paies n'en disent qu'une. Les heures des deux annexes s'additionnent pour les 507 heures,
+et l'annexe qui s'applique est celle qui a le plus d'heures dans les 12 mois, toute l'activité comptant sous elle
+(annexes VIII et X, art. 65 §9 ; `AnnexesDesPaies`, `AnnexeAppliquee`) ; à égalité, ou quand les paies dont l'annexe ne
+se dit pas pourraient faire pencher, l'allocation ne s'estime pas et la réponse dit ce qu'elle attend. Elle s'estime par `allocation-intermittents.json`
+(art. 14 et 16), chaque paie sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon
+`droit::plafond` ; un plafond qui ne se connaît pas compte entier, et une paie des pièces qui peut passer sa limite et
+dont le début du contrat le dirait se demande par « Dates d'embauche » ; une ligne prévue ne demande rien). Une
+allocation visée dit ce qu'il faudrait par cachet ou de l'heure, et le tableau des paies gagne une colonne, le brut visé
+de chacune (chaque paie de la fenêtre augmentée dans la même proportion) ; ce qui arrête la hausse va dans le détail. Une
+DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du salaire de référence,
+et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui porte une personne, les
+lignes prévues se comptent seules.
+La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : la réponse,
+l'allocation visée, les cases de sa charge, chacune tirée de la déclaration de son champ, le tableau des paies où les
+lignes prévues se saisissent, le dépôt, les pièces, le détail du calcul, replié) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,
+le moteur tournant dans l'onglet par le worker de la démo, et pose les bulletins déposés dans `mes-pieces/`. Pendant
+que le moteur se charge, elle pose ce que la route rend sans charge, figé dans `premier-ecran.json` (un test de
+structure le tient égal à la route) ; le moteur prêt, « Calculer » fait le premier calcul.
 
 ### Le modèle d'un contrat, et le contrat parti
 
@@ -2934,8 +2998,8 @@ Trois familles, qui parlent à l'employeur :
 | | où | ce qui décide |
 |---|---|---|
 | le conseil du jour (`conseil-du-jour`, « un autre » : `decalage`) | l'accueil (`js/conseils.js`) | `quand` = « toujours », hors `suspendu` ; rang = `jour × pas mod N`, `pas` premier avec N : N jours de suite font le tour sans répétition, rien ne s'écrit |
-| le conseil de saisie (champ `conseil` d'une paie de `apercu`) | sous la carte d'engagement, au plus un | `ordre_saisie` : plus de 208 h d'un technicien, plus de 28 cachets, mois sans allocation (art. 30), 507 heures assurées chez nous, cachet de répétition de la 3090, heures qu'une même somme couvre au minimum horaire, enseignement, suspension, cachets et heures |
-| ce que la compagnie a fait (`conseils-salarie`, `conseils-resume`) | la fiche du salarié ; l'accueil | `cumul::position_droits` sur la fenêtre (depuis `anniversaire_droits`, sinon 12 mois glissants) : heures comptées chez nous et part des 507, cachets perdus d'un mois, ce que les conseils de saisie auraient changé |
+| le conseil de saisie (champ `conseil` d'une paie de `apercu`) | sous la carte d'engagement, au plus un | `ordre_saisie` : plus de 208 h d'un technicien, plus de 28 cachets, mois sans allocation (art. 30), heures de l'affiliation assurées chez nous, cachet de répétition de la 3090, heures qu'une même somme couvre au minimum horaire, enseignement, suspension, cachets et heures |
+| ce que la compagnie a fait (`conseils-salarie`, `conseils-resume`) | la fiche du salarié ; l'accueil | `cumul::position_droits`, l'affiliation à la dernière fin de contrat (la réadmission quand la fiche porte `anniversaire_droits`, sinon les 12 mois qui précèdent cette fin) : heures comptées chez nous et part des heures exigées (507, davantage quand la fenêtre de la réadmission s'allonge), cachets perdus d'un mois, ce que les conseils de saisie auraient changé |
 
 Un conseil de saisie n'est **pas un avis** (`engagement::Avis`) : il ne passe ni dans les avertissements de la paie, ni au
 bulletin ; un engagement validé n'en a pas. Il tient en **une phrase** (`texte`) ; son

@@ -156,6 +156,13 @@ que les routes rendent, **on regarde ce qu'on a perdu**, et pour chaque chose pe
 la route (alors tout le monde la voit) ou si l'on s'en passe. On ne recopie jamais d'office une page dans une route :
 ce serait faire primer la page. Une chose qui manque à l'écran est un manque de la route.
 
+**Les pages de puppetpaie.fr ne sont pas le logiciel** (Léandre, 27/11/2026 : « si on l'utilise en ligne de commande,
+le moteur, après on peut lui mettre quelle forme on veut », « les calculs, ça doit être les mêmes, il ne doit y avoir
+aucun calcul dans la page. Mais sinon, tout le reste, on le sort comme on veut », « il y a juste dans le logiciel que
+je veux pas »). Une page publique du site qui appelle le moteur (`atelier/site/droits/`) prend ses calculs aux routes,
+sans en refaire aucun ; sa mise en page, ses phrases et ce qu'elle montre sont les siens. Le logiciel
+(`logiciel/interface/`, l'accueil) reste sous la règle ci-dessus.
+
 **C'est le type qui décide de l'affichage** (Léandre, 23/11/2026 : « il y a un typage, et le typage, il est affiché
 d'une certaine façon », « si le typage, c'est une liste fermée, c'est pas qu'on écrit dans les consignes comment
 écrire », « les choix qu'on a, c'est vraiment une liste déroulante », pour le LLM « ça doit être le même principe »).

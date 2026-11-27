@@ -86,7 +86,7 @@ use import::reponse::{
 pub const REESSAYER: &str = "Le logiciel s'améliore sans cesse : réessayez ces documents plus tard ; ce qui sera repris s'ajoutera à votre historique.";
 
 /// Ce qu'un bulletin compte du contrat qu'il atteste : ses heures, ses cachets, ses jours, son brut.
-struct Compte {
+pub(crate) struct Compte {
     heures: Heures,
     cachets: Cachets,
     jours: Jours,
@@ -204,7 +204,7 @@ pub(crate) fn compare(t: &str) -> String {
 }
 
 /// Le NIR imprime et sa cle, tels que la lecture du bulletin les a lus (`bulletin_lu::Salarie`), ou ce qui le refuse.
-fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
+pub(crate) fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
     let s = &b.salarie;
     if let Some(faute) = &s.faute_nir {
         return Err(faute.clone());
@@ -1121,7 +1121,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let ecarts = completer(&mut ligne.paie, &l.b, lignes, &copie, l.page, convention_des(&[rang]).as_ref())?;
         // Le contrat que le bulletin atteste ; celui d'un permanent ne compte que son mois : ses heures, ses cachets et
         // ses jours sont ceux de la paie de ce mois (le contrat entier n'en garde pas : `import::ecrite`).
-        let atteste = l.compteurs.as_ref().map_err(|m| m.clone().reformuler(|p| format!("ses compteurs ne se lisent pas ({})", p))).and_then(|c| engagement(l, c, &salarie, &copie));
+        let atteste = l.compteurs.as_ref().map_err(|m| m.clone().reformuler(|p| format!("ses compteurs ne se lisent pas ({})", p))).and_then(|c| contrat_du_bulletin(&l.b, l.page, c, &salarie, &copie));
         if let (Ok((compte, _)), false) = (&atteste, marque_d_intermittent(&l.b)) {
             (ligne.paie.heures, ligne.paie.cachets, ligne.paie.jours) = (Some(compte.heures), Some(compte.cachets), Some(compte.jours));
         }
@@ -2231,16 +2231,18 @@ fn lignes_imprimees(b: &BulletinLu, racine: &Path) -> R<Result<Vec<engagement::i
     Ok(Ok(out))
 }
 
-/// Le contrat qu'un bulletin atteste, tel qu'un engagement importe le porte (`importe.contrat`), et sa cle `_cle_engagement`.
+/// Le contrat qu'un bulletin atteste, tel qu'un engagement importe le porte (`importe.contrat`), et ce qu'il compte : `b`,
+/// lu a la page `page` du fichier dont `copie` est la copie. L'import d'une compagnie le prend, et les droits d'un
+/// intermittent depuis ses pieces (`accueil::droits_des_pieces`).
 /// Les heures se comptent en heures entieres comme celles d'une saisie (`cumul::engagement_de_paie` : arrondi au
 /// pair) ; des jours qui ne sont pas entiers, ou un compteur inconnu, ne font pas de contrat (des cachets sont entiers :
 /// `Cachets`).
-fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeFichier) -> R<(Compte, ContratLu)> {
+pub(crate) fn contrat_du_bulletin(b: &BulletinLu, page: usize, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeFichier) -> R<(Compte, ContratLu)> {
     use socle::echec::refus;
     // LES JOURS TRAVAILLES sont ceux qu'atteste l'attestation employeur mensuelle de l'intermittent (annexes 8 et 10) ;
     // un permanent paye au mois n'en a pas, et son bulletin n'imprime ni dates travaillees ni cumul de jours : son
     // contrat ne compte pas de jours (0), il ne les « ignore » pas.
-    let jours = if c.jours.is_none() && !marque_d_intermittent(&l.b) { Some(Jours::ZERO) } else { c.jours };
+    let jours = if c.jours.is_none() && !marque_d_intermittent(b) { Some(Jours::ZERO) } else { c.jours };
     let (Some(cachets), Some(heures), Some(jours)) = (c.cachets, c.heures, jours) else {
         let manque: Vec<&str> =
             [("cachets", c.cachets.is_none()), ("heures", c.heures.is_none()), ("jours", c.jours.is_none())].iter().filter(|x| x.1).map(|x| x.0).collect();
@@ -2252,7 +2254,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     let (cachets, jours) = (socle::grandeurs::sans_zero(cachets), entier(jours, "jours")?);
     let heures = heures.entieres();
     let enseignement = c.heures_enseignement.map(Heures::entieres);
-    let brut = l.b.brut.au_centime();
+    let brut = b.brut.au_centime();
     let compte = Compte { heures, cachets, jours, brut };
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
     // LA NATURE DU CONTRAT : aucun des bulletins lus ne l'imprime en mention (`bulletins-lecture-base.json`), et rien sur la
@@ -2263,16 +2265,16 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     // Sans aucune, c'est le contrat d'un permanent -- CDI ou CDD de droit commun, que le bulletin ne dit pas et qu'on ne
     // devine pas : sa nature reste a dire, se demande apres l'import (`import::nature`), et le contrat ne se compare ni ne
     // se reprend en attendant (`Importe::nature_rangee` refuse de ranger ce qui a ete verse tant qu'elle reste a dire).
-    let nature = marque_d_intermittent(&l.b).then_some(NatureDeContrat::CdduSpectacle);
+    let nature = marque_d_intermittent(b).then_some(NatureDeContrat::CdduSpectacle);
     let mut a = ContratAtteste::vide(Attestation::Bulletin, nature);
-    a.numero_objet = objet_imprime(&l.b);
+    a.numero_objet = objet_imprime(b);
     (a.heures, a.cachets, a.jours, a.brut) = (Some(heures), Some(cachets), Some(jours), Some(brut));
     a.heures_enseignement = enseignement.filter(|h| *h > Heures::ZERO);
-    a.numero_bulletin = plein(&l.b.numero);
+    a.numero_bulletin = plein(&b.numero);
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
-    a.numero_contrat = l.b.contrat.as_deref().and_then(engagement::numeros::NumeroContrat::d_une_piece);
-    (a.fichier, a.page) = (Some(copie.clone()), Some(l.page as u64));
-    Ok((compte, ContratLu { salarie: salarie.clone(), periode: Some(l.b.periode.into()), numero: None, contrat: a }))
+    a.numero_contrat = b.contrat.as_deref().and_then(engagement::numeros::NumeroContrat::d_une_piece);
+    (a.fichier, a.page) = (Some(copie.clone()), Some(page as u64));
+    Ok((compte, ContratLu { salarie: salarie.clone(), periode: Some(b.periode.into()), numero: None, contrat: a }))
 }
 
 /// Le bulletin porte-t-il une marque d'engagement du spectacle : un numero d'objet, ou une cotisation Congés
@@ -2462,7 +2464,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<Nir, IdSalarie>, a_creer: &[ACree
 /// Le contrat qu'une AEM en PDF atteste, tel qu'un engagement importe le porte (la forme du contrat d'une AEM deposee,
 /// `import::ecrite`), et ce qu'il compte en mots : la periode du mois (`aem_lu::Aem::periode`), ses heures, ses
 /// cachets isoles et groupes, ses jours, son brut et son numero d'objet, tels qu'imprimes.
-fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
+pub(crate) fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
     let (Some(periode), Some(brut)) = (a.periode, a.brut) else {
         return Err(socle::echec::refus("l'AEM ne dit pas tout ce qu'un contrat demande"));
     };

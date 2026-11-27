@@ -30,7 +30,7 @@ use envois::journal;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::fichiers::NomDeFichier;
-use socle::ecran::{ColonneRendue, RangeeRendue, SorteDeRangee};
+use socle::ecran::{ColonneRendue, RangeeRendue, SorteDeRangee, TableauRendu};
 use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
@@ -704,33 +704,26 @@ struct EcranDUnEtat {
     #[serde(skip_serializing_if = "Option::is_none")]
     ouvrir: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    livre: Option<EcranDuLivre>,
+    livre: Option<TableauRendu>,
     #[serde(skip_serializing_if = "Option::is_none")]
     casc: Option<EcranDeLaCasc>,
-}
-
-/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE, tel qu'il se lit : ses colonnes (le mois, le salarie, le spectacle, puis les
-/// montants de `documents::etats_paie::LigneLivre`, dans cet ordre), puis ses rangees dans l'ordre ou elles se lisent
-/// (les lignes de chaque groupe et son sous-total, le total general au bout), chacune ses cellules deja dites, une par
-/// colonne.
-#[derive(Debug, Serialize)]
-struct EcranDuLivre {
-    colonnes: Vec<ColonneRendue>,
-    rangees: Vec<RangeeRendue>,
 }
 
 /// Ce qu'une cellule du livre dit d'un montant que la ligne ne dit pas (les pieces d'une paie importee l'ont tu).
 const MONTANT_TU: &str = "—";
 
-/// Le livre `l`, tel qu'il se lit : chaque cellule dite.
-fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
+/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE `l`, tel qu'il se lit : ses colonnes (le mois, le salarie, le spectacle, puis les
+/// montants de `documents::etats_paie::LigneLivre`, dans cet ordre), puis ses rangees dans l'ordre ou elles se lisent
+/// (les lignes de chaque groupe et son sous-total, le total general au bout), chacune ses cellules deja dites, une par
+/// colonne.
+fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> TableauRendu {
     let mut colonnes = vec![ColonneRendue::de_texte("Mois"), ColonneRendue::de_texte("Salarié"), ColonneRendue::discrete("Spectacle")];
     colonnes.extend(["Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"].map(ColonneRendue::de_nombres));
     let total = |sorte, titre: &str, t: &documents::etats_paie::Totaux| {
         // Un total n'a pas de mois.
         let mut cellules = vec![None, Some(titre.to_string()), Some(t.bulletins_dit())];
         cellules.extend(t.sommes_dites().into_iter().map(Some));
-        RangeeRendue { sorte, cellules }
+        RangeeRendue::de(sorte, cellules)
     };
     let mut rangees = Vec::new();
     for g in &l.groupes {
@@ -742,12 +735,12 @@ fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
                 Some(m) => Some(socle::grandeurs::ecrit::texte::dit(m)),
                 None => Some(MONTANT_TU.to_string()),
             }));
-            rangees.push(RangeeRendue { sorte: SorteDeRangee::Ligne, cellules });
+            rangees.push(RangeeRendue::de(SorteDeRangee::Ligne, cellules));
         }
         rangees.push(total(SorteDeRangee::SousTotal, &g.total_dit, &g.totaux));
     }
     rangees.push(total(SorteDeRangee::TotalGeneral, "TOTAL GÉNÉRAL", &l.totaux));
-    EcranDuLivre { colonnes, rangees }
+    TableauRendu::de(colonnes, rangees)
 }
 
 /// CE QUE L'ECRAN DIT DE LA REGULARISATION CASC-SVP, et ce qui s'y fait : son titre ; les virements (`virement`) ; les
@@ -1333,8 +1326,9 @@ struct Droits {
 
 /// LES HEURES ET CACHETS D'UN INTERMITTENT au regard des annexes 8 et 10 (`droit::cumul` : la fenetre, le plafond des
 /// cachets d'un mois, l'enseignement plafonne, le seuil, lus du bareme) : la case qui fait choisir le salarie, parmi ceux
-/// dont un engagement est connu (importe ou valide) ; pour celui qu'on a choisi, sa position dans sa fenetre (depuis sa
-/// date anniversaire si sa fiche la porte, sinon les 12 mois jusqu'a aujourd'hui) et le tableau du mois. Le compte ne
+/// dont un engagement est connu (importe ou valide) ; pour celui qu'on a choisi, son affiliation (`cumul::position_droits` :
+/// les 365 jours a sa derniere fin de contrat, sinon aujourd'hui, la date anniversaire de sa fiche disant la
+/// readmission) et le tableau du mois. Le compte ne
 /// porte que les engagements de cette compagnie : la phrase le dit.
 fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     use droit::cumul::{anniversaire_configure, position_droits, tableau_cumul};
@@ -1358,55 +1352,29 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     let mut salarie = None;
     if let Some(cle) = &c.salarie {
         let anniv = anniversaire_configure(ctx, cle)?;
-        let p = position_droits(ctx, cle, &engs, anniv, Some(ctx.aujourdhui))?;
-        let c = &p.constantes;
+        let a = position_droits(ctx, cle, &engs, anniv, None)?;
+        let p = &a.position;
         use socle::grandeurs::ecrit::sans_zero::dit;
         let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
-        let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), dit(p.cachets()))];
-        if !p.cachets_perdus().est_nul() {
-            lignes.push((format!("Retenus ({} par mois au plus)", dit(c.cachets_par_mois)), dit(p.cachets_retenus())));
+        let (mut lignes, mut notes) = comptes_de_la_position(&a, "de la fiche")?;
+        // Le reexamen se fait au lendemain de la date anniversaire (annexes VIII et X, art. 9 §1 c).
+        if let Some(anniversaire) = anniv {
+            let jours = socle::date::Duree::ecoulee(&ctx.aujourdhui, &anniversaire);
+            if !jours.nulle() {
+                lignes.push(("Avant la date anniversaire".into(), jours.dite_en_abrege()));
+            }
         }
-        lignes.push((format!("Convertis ({} h par cachet)", dit(c.heures_par_cachet)), h(p.cachets_retenus() * c.heures_par_cachet)));
-        lignes.push(("Heures déclarées".into(), h(p.heures())));
-        lignes.push(("Total d'heures équivalentes".into(), h(p.heures_retenues())));
-        if !p.heures_enseignement().est_nul() {
-            // Deux comptes des qu'il y a de l'enseignement : ces heures ouvrent les droits (plafonnees), sans augmenter l'allocation.
-            lignes.push(("Dont enseignement".into(), h(p.heures_enseignement())));
-            lignes.push((format!("Enseignement retenu (plafond {} h)", dit(p.plafond_enseignement()?)), h(p.heures_enseignement_retenues()?)));
-            lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
-            lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
-        }
-        lignes.push(("Seuil des annexes 8 et 10".into(), h(c.seuil_heures)));
-        let jours = p.jours_restants(ctx.aujourdhui);
-        if anniv.is_some() && !jours.nulle() {
-            lignes.push(("Avant le réexamen".into(), jours.dite_en_abrege()));
-        }
-        let phrase = if p.atteint()? {
-            socle::phrase!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - c.seuil_heures))
+        let phrase = if a.manque.est_nul() {
+            socle::phrase!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - a.heures_exigees))
         } else {
-            socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_ouverture()?), dit(c.seuil_heures))
+            socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_ouverture()?), dit(a.heures_exigees))
         };
-        let mut notes = Vec::new();
-        if !p.cachets_perdus().est_nul() {
-            notes.push(format!(
-                "{} cachet(s) dépassent les {} d'un mois ({}) : joués, payés et déclarés, mais sans effet sur les droits.",
-                dit(p.cachets_perdus()),
-                dit(c.cachets_par_mois),
-                p.mois_plafonnes().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-            ));
-        }
-        if !p.enseignement_perdu()?.est_nul() {
-            notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", dit(p.enseignement_perdu()?)));
-        }
-        if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
-            notes.push("Date de naissance absente de la fiche : le plafond bas de l'enseignement s'applique, peut-être à tort.".to_string());
-        }
         if anniv.is_none() {
             let case = declarations::champs::champ(droit::fiche::NomDeFiche::Salarie, droit::fiche::CaseSalarie::AnniversaireDroits)?
                 .map(|ch| ch.libelle)
                 .filter(|l| !l.is_empty())
                 .ok_or_else(|| socle::fichiers::absent("anniversaire_droits (champs-base.json)"))?;
-            notes.push(format!("Sans « {} » dans sa fiche, on compte les 12 mois jusqu'à aujourd'hui ; la date que France Travail lui notifie prime.", case));
+            notes.push(format!("Sans « {} » dans sa fiche, on compte une première ouverture ; la date que France Travail lui notifie dit la réadmission.", case));
         }
         let colonnes = tableau_cumul(ctx, cle, mois, &engs)?;
         let rangee = |quoi: &'static str, valeur: &dyn Fn(&droit::cumul::Colonne) -> String| Rangee { quoi, valeurs: colonnes.iter().map(valeur).collect() };
@@ -1429,4 +1397,61 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     });
     let phrases = salarie.iter().map(|s| format!("{} ({}) : {}", s.nom, s.fenetre, s.phrase)).collect();
     Ok(Droits { phrase, mois, phrases, case, salarie })
+}
+
+/// CE QUE COMPTE L'AFFILIATION D'UN INTERMITTENT (`droit::allocation::Affiliation`, sa position dans sa fenetre), en
+/// `[quoi, valeur]` jusqu'aux heures exigees (507, davantage a la readmission allongee), et les notes de ce qui ne compte
+/// pas (des cachets au-dela du plafond d'un mois, de l'enseignement au-dela du sien, une date de naissance absente
+/// `naissance_absente_de`) et de la readmission. Les droits des salaries d'une compagnie (`droits`) et
+/// ceux d'un intermittent depuis ses pieces (`accueil::droits_des_pieces`) se disent par elle.
+pub(crate) fn comptes_de_la_position(a: &droit::allocation::Affiliation, naissance_absente_de: &str) -> R<(Vec<(String, String)>, Vec<String>)> {
+    use socle::grandeurs::ecrit::sans_zero::dit;
+    let p = &a.position;
+    let c = &p.constantes;
+    let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
+    let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), dit(p.cachets()))];
+    if !p.cachets_perdus().est_nul() {
+        lignes.push((format!("Retenus ({} par mois au plus)", dit(c.cachets_par_mois)), dit(p.cachets_retenus())));
+    }
+    lignes.push((format!("Convertis ({} h par cachet)", dit(c.heures_par_cachet)), h(p.cachets_retenus() * c.heures_par_cachet)));
+    lignes.push(("Heures déclarées".into(), h(p.heures())));
+    lignes.push(("Total d'heures équivalentes".into(), h(p.heures_retenues())));
+    if !p.heures_enseignement().est_nul() {
+        // Deux comptes des qu'il y a de l'enseignement : ces heures ouvrent les droits (plafonnees), sans augmenter l'allocation.
+        lignes.push(("Dont enseignement".into(), h(p.heures_enseignement())));
+        lignes.push((format!("Enseignement retenu (plafond {} h)", dit(p.plafond_enseignement()?)), h(p.heures_enseignement_retenues()?)));
+    }
+    if !p.heures_formation().est_nul() {
+        // La formation ouvre les droits, plafonnee avec l'enseignement (annexes VIII et X, art. 3 §1), sans compter
+        // dans le montant.
+        lignes.push(("Formation".into(), h(p.heures_formation())));
+        lignes.push((format!("Formation retenue (plafond {} h, enseignement compris)", dit(c.plafond_formation)), h(p.heures_formation_retenues()?)));
+    }
+    if !p.heures_enseignement().est_nul() || !p.heures_formation().est_nul() {
+        lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
+        lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
+    }
+    lignes.push(("Seuil des annexes 8 et 10".into(), h(a.heures_exigees)));
+    let mut notes = Vec::new();
+    if !p.cachets_perdus().est_nul() {
+        notes.push(format!(
+            "{} cachet(s) dépassent les {} d'un mois ({}) : joués, payés et déclarés, mais sans effet sur les droits.",
+            dit(p.cachets_perdus()),
+            dit(c.cachets_par_mois),
+            p.mois_plafonnes().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    if !p.enseignement_perdu()?.est_nul() {
+        notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", dit(p.enseignement_perdu()?)));
+    }
+    if !p.formation_perdue()?.est_nul() {
+        notes.push(format!("{} h de formation dépassent le plafond de {} h, enseignement compris : sans effet sur les droits.", dit(p.formation_perdue()?), dit(c.plafond_formation)));
+    }
+    if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
+        notes.push(format!("Date de naissance absente {} : le plafond bas de l'enseignement s'applique, peut-être à tort.", naissance_absente_de));
+    }
+    if let Some(precedente) = a.precedente {
+        notes.push(format!("Réadmission : seules comptent les paies qui finissent après le {}, la fin de contrat qui a ouvert le droit précédent.", precedente.jj_mm_aaaa()));
+    }
+    Ok((lignes, notes))
 }

@@ -143,6 +143,7 @@ routes! {
         Exporter = "exporter",
         DossierEnvoyer = "dossier-envoyer",
         Droits = "droits",
+        DroitsDesPieces = "droits-des-pieces",
         CascEnvoyer = "casc-envoyer",
         Exercices = "exercices",
         Regularisations = "regularisations",
@@ -929,7 +930,7 @@ fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
-pub const FICHES: [&[Fiche]; 34] = [
+pub const FICHES: [&[Fiche]; 35] = [
     crate::engagement::ROUTES,
     crate::etat_garde::ROUTES,
     crate::mois::ROUTES,
@@ -964,6 +965,7 @@ pub const FICHES: [&[Fiche]; 34] = [
     // (`basculer`) debride l'installation des exemples, ou la compagnie reprise est une fictive.
     crate::accueil::drive::ROUTES,
     crate::accueil::deplacement::ROUTES,
+    crate::accueil::droits_des_pieces::ROUTES,
     crate::accueil::ROUTES,
     ROUTES,
 ];

@@ -1,0 +1,152 @@
+   Recherche...
+
+
+
+
+Le congé maternité de l’intermittente.
+Après les arrêts maladie, traités dans le précédent SNAM infos (n°65), nous allons nous pencher sur le congé maternité et paternité.
+(Voir aussi notre tableau récapitulatif des conditions d’accès au congé maladie/maternité/accident du travail indemnisé.)
+
+Rappel de quelques éléments de base :
+
+     pendant le congé maternité, vous êtes radiée de Pôle Emploi, et c’est la sécu qui prend le relais pour vous indemniser ;
+     mais le droit à un congé maternité indemnisé n’est pas automatique, il y a des conditions à remplir ;
+     il faut déclarer votre grossesse à la caisse primaire d’assurance maladie (CPAM) avant la fin du 3ème mois pour bénéficier d’un
+     suivi et d’une bonne prise en charge ;
+     congé prénatal 6 semaines, postnatal 10 semaines, portés à 8 et 18 semaines à partir du 3ème enfant ;
+     le congé de maternité est obligatoire, il est interdit d’y renoncer ;
+     pendant 8 semaines, dont 6 après l’accouchement, il y a interdiction totale d’emploi ;
+     le congé prénatal peut être réduit à 3 semaines avec l’accord du médecin. Dans ce cas, le droit au congé postnatal est augmenté
+     d’autant.
+
+Il existe des dispositions particulières sur lesquelles nous ne nous attarderons pas.
+
+Conditions d’ouverture
+La circulaire interministérielle du 19 avril 2017, applicable depuis le 1er juillet 2017 est, comme pour la maladie, le document de
+référence. Elle est une suite des préconisations de la mission « bâtir un cadre stabilisé et sécurisé pour les intermittents du
+spectacle » obtenues lors des mobilisations autour du régime d’assurance-chômage de 2014 : une conquête qui améliore nos droits.
+
+Pour les intermittentes du spectacle rémunérées au cachet, les droits aux prestations maternité sont ouverts à partir de 9 cachets
+au cours du dernier trimestre civil précédant la date de repos prénatal ou de début de grossesse, ou 36 cachets au cours des 4
+derniers.
+
+Calcul de l’indemnité
+Pour calculer l’indemnité journalière (IJ) qui sera servie lors du congé, le premier élément à déterminer est la période de référence :
+elle s’étend sur les 12 mois civils qui précédent l’interruption de travail.                                                          
+Second élément entrant dans le calcul de l’IJ : l’ensemble des éléments de rémunération (ER) servant de base au calcul des
+cotisations dues pour les risques maladie, maternité, invalidité et décès, durant la période de référence (PR). Les allocations
+chômage ne sont donc pas concernées, alors que les congés payés versés (et non acquis) durant cette période par la caisse des
+congés spectacles le sont.
+Il n’est pas tenu compte du décalage éventuel de versement de la paye.  Le total des ER est pris en compte dans la limite du
+plafond mensuel de la Sécurité Sociale puis abattu de 21%.
+
+Troisième élément : la détermination d’un diviseur (D), qui va permettre de reconstituer le gain journalier de base (GJB). Pour cela, il
+est nécessaire de connaître le nombre exact de jours indemnisés par Pôle Emploi (JIPE) sur la période et éventuellement le nombre
+de jours indemnisés par la sécurité sociale (JISS). La formule de calcul du diviseur est : D = 365 – JIPE – JISS.
+Celle du gain journalier brut est : GJB = ER : D.
+
+Pensez bien à joindre une attestation des périodes indemnisées par Pôle Emploi à votre dossier ! Vous pouvez la trouver sur
+votre espace personnel Pôle Emploi, en indiquant votre période de référence. Elle permettra à la CPAM de faire cette reconstitution
+du gain journalier de base. L’oubli de la reconstitution du GJB par la CPAM est la cause la plus fréquente d’IJSS mal calulées.
+
+L’indemnité journalière maternité est égale au gain journalier de base. Cette indemnité est soumise à la CSG et à la CSG (6,2%) et
+CDRS (0,5%).
+
+Comme souvent, un exemple pratique permet de mieux comprendre :
+
+   Imaginons une artiste qui effectue 48 cachets à 150 € sur la période de référence. Elle percevra vraisemblablement des congés
+   payés dans cette période, correspondant à 10% de son activité antérieure, que nous supposerons sur la même base de revenus.
+   Nous obtenons un premier résultat : ER1 = 7200 + 720 = 7920 €, auquel il faut appliquer l’abattement de 21%. Donc ER = 7920 x
+   0,79 = 6256,80 €.Elle effectue en moyenne 4 cachets par mois, qui donnent dans le cadre de son indemnisation chômage un
+   décalage mensuel de 6 jours, donc 72 jours dans l’année, plus la franchise congés payés de 6 jours et le délai d’attente de 7
+   jours.
+   Auront été indemnisés par Pôle Emploi : 365 – 72 – 6 – 7= 280 jours.
+   Aucun arrêt de travail n’a entraîné d’indemnisation par la sécurité sociale.
+   Donc D = 365 – 280 = 85.Nous en déduisons que GJB = 6256,80 : 85 = 73,60 €.
+   L’IJ maternité brute est égale au GJB, donc IJ = 73,60 €.
+   Une retenue est effectuée au titre de la CSG et de la CRDS, soit 73,60 x 6,7% = 4,93 €.L’indemnité journalière maternité nette
+   sera de 68,67 € par jour. Elle sera versée dès le premier jour du congé.
+
+Incidence sur la prochaine ouverture de droits chômage
+Dès lors qu’il est indemnisé par la sécurité sociale, le congé de maternité a une incidence sur une prochaine ouverture de droits au
+titre de l’annexe 10, ainsi :
+
+     Les périodes de maternité donnant lieu à une interruption du contrat sont assimilées à du travail à raison de 5 heures par jour ;
+     Les périodes de maternité entre 2 contrats de travail, dès lors qu’elles sont indemnisées par la sécurité sociale ou par l’accord
+     de prévoyance inter-branches, sont assimilées à du travail à raison de 5 heures par jour ;
+     Lorsque des périodes de congé maternité, d’adoption ou d’arrêt maladie au titre d’une affection de longue durée ont été
+     retenues dans les 507 heures, le salaire de référence (SR) est aménagé et correspond au salaire annuel de référence (SAR) = [SR
+     / (jours de la période de référence – nombre de jours correspondant aux périodes visées)] x jours de la période de référence.
+
+   Attention : depuis le retour de la date anniversaire, la période d’indemnisation est au maximum de 12 mois, les périodes de
+   maternité indemnisées augmentent la période de référence pour l’affiliation en vue d’une nouvelle ouverture de droits, mais ne
+   prolongent pas l’indemnisation en cours au-delà de la date anniversaire.
+
+Derniers points dont il faut tenir compte :
+
+     Réinscrivez-vous comme demandeur d’emploi dès le lendemain de la fin du congé ;
+     Veillez à chômer un jour après la fin de votre congé sans quoi votre date de réinscription pourrait être décalée après le contrat
+     en question (nul n’est demandeur d’emploi lorsqu’il travaille).
+     Il faut retravailler au moins un cachet après le congé. C’est seulement après une fin de contrat de travail que Pôle Emploi peut
+     vous ouvrir de nouveaux droits et valider la prise en compte de votre congé.
+     Conservez les attestations de versement des indemnités journalières de la sécurité sociale, vous devrez les fournir à Pôle
+     Emploi
+
+
+
+
+                                                                                                                                       
+Congés de paternité ou d’accueil de l’enfant
+Il est accordé après la naissance de l’enfant et peut donner lieu à des indemnités journalières de la sécurité sociale, qui obéissent à
+des règles de calculs semblables au congé de maternité. Selon la situation du bénéficiaire (qui n’est pas forcément intermittent) il
+peut y avoir des variations, c’est pourquoi un renvoi s’impose vers ce lien :
+https://www.ameli.fr/assure/remboursements/indemnites-journalieres/conge-paternite-accueil-enfant
+
+Dans les grandes lignes :
+
+      depuis le 1er juillet 2021, le congé dure 25 jours, dont 4 à prendre à la naissance de l’enfant ;
+      il est fractionnable avec un minimum de 5 jours par période ;
+      il peut être cumulé avec le congé de 3 jours pour évènements familiaux ;
+      l’employeur doit être prévenu par lettre recommandée avec accusé de réception un mois à l’avance minimum
+
+Toujours en raison du retour de la date anniversaire, les pères bénéficiaires de l’annexe X et du congé de paternité n’auront pas
+d’allongement de l’indemnisation chômage au-delà de la date anniversaire, mais bénéficieront en revanche d’un allongement de la
+période de référence pour l’affiliation en vue d’une nouvelle ouverture de droits en A10, équivalente à la durée du congé. La
+bonification du salaire de référence via le mécanisme du SAR comme pour le congé maternité a également lieu.
+
+
+
+
+Dans la même rubrique Sécurité sociale
+ Congé maladie, maternité, paternité, accident du travail          La prévoyance    Le congé maternité et paternité
+
+ Le congé maladie
+
+
+
+
+Le SNAM-CGT                                                                                          ADHÉSION
+Nous regroupons dans toute la France les musiciens et
+musiciennes quelle que soit la manière dont ils exercent leur                                RECEVOIR LA LETTRE D’INFO
+métier, c’est-à-dire qu’ils aient majoritairement une activité
+                                                                                                     CONTACT
+d’interprète ou d’enseignant et, de la même façon, qu’ils
+relèvent de l’emploi permanent ou qu’ils soient intermittents                                      PLAN DU SITE
+du spectacle.
+
+
+                                        Plus d'infos sur le SNAM
+
+
+
+
+                                                                                
+
+
+© Copyright 2026 SNAM CGT                                                                         Mentions Légales   Politique de confidentialité
+
+
+
+
+                                                                                                                                            
+

@@ -4,6 +4,10 @@
 // `onglet_traiter`, la réponse du moteur en sort telle quelle. Rien ne s'écrit ailleurs qu'en mémoire : fermer
 // l'onglet efface tout.
 //
+// LA PAGE DES DROITS (/droits/, droits.js) prend le même worker, sans relais ni cadre : elle tient elle-même le bout
+// d'un port, y demande la route `droits-des-pieces`, et pose les bulletins déposés dans le dossier que la route nomme
+// (`poser`). Un seul moteur dans l'onglet, les deux mêmes fichiers téléchargés, rien en double.
+//
 // L'échange avec le moteur est celui de la crate `onglet` (atelier/sources/onglet/src/lib.rs) : `onglet_entree(n)`
 // rend l'adresse où écrire la demande, `onglet_demarrer` et `onglet_traiter` rendent la longueur de leur réponse,
 // `onglet_sortie` son adresse. La mémoire du module peut grandir à chaque appel : une vue sur elle se refait après
@@ -236,6 +240,29 @@ function montrer(chemin) {
   return false;
 }
 
+// POSER DES FICHIERS DANS UN DOSSIER DU DISQUE, qui ne garde qu'eux (la page des droits, /droits/ : les bulletins
+// déposés, dans le dossier que la route `droits-des-pieces` nomme) : rend vrai si le dossier existe. Il ne pose que dans
+// `mes-pieces/` de l'installation (`/demo/mes-pieces`), qu'il vide d'abord ; tout autre chemin est refusé (faux).
+// Chaque fichier prend la date de sa pose, et le dossier aussi : le moteur voit qu'ils ont changé.
+function poser(chemin, fichiers) {
+  const parties = chemin.split("/").filter((x) => x !== "" && x !== ".");
+  if (parties.length !== 2 || parties[0] !== "demo" || parties[1] !== "mes-pieces") return false;
+  let ici = disque.get(parties[0]);
+  for (const p of parties.slice(1)) {
+    ici = ici instanceof Directory ? ici.contents.get(p) : undefined;
+  }
+  if (!(ici instanceof Directory)) return false;
+  ici.contents.clear();
+  for (const f of fichiers) {
+    const x = new File(new Uint8Array(f.octets));
+    x.date = maintenant();
+    x.parent = ici;
+    ici.contents.set(f.nom, x);
+  }
+  ici.date = maintenant();
+  return true;
+}
+
 async function demarrer() {
   const t0 = performance.now();
   const [module, archive] = await Promise.all([
@@ -336,5 +363,7 @@ self.onmessage = (e) => {
   } else if (e.data.quoi === "montrer") {
     // Un fichier d'un dossier montré, que la page demande.
     montrer(e.data.chemin);
+  } else if (e.data.quoi === "poser") {
+    dire({ quoi: "pose", chemin: e.data.chemin, ok: poser(e.data.chemin, e.data.fichiers) });
   }
 };

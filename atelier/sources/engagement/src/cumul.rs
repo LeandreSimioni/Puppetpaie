@@ -41,17 +41,18 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
             (None, Some(p)) => p,
             (None, None) => continue,
         };
-        // Une piece d'intermittent atteste ses compteurs et son brut (l'AEM, le bulletin, le certificat : `import`) ; les
-        // heures d'enseignement, seulement celles qu'elle distingue.
+        // Une piece d'intermittent atteste ses heures, ses cachets et son brut (l'AEM, le bulletin, le certificat :
+        // `import`) ; les heures d'enseignement, seulement celles qu'elle distingue. Ses jours, les droits ne les lisent pas.
         let a = &c.contrat;
         out.push(Declare {
             salarie: c.salarie.clone(),
-            periode,
+            debut: Some(periode.debut()),
+            fin: periode.fin(),
             heures: a.heures.ok_or_else(|| socle::fichiers::absent("heures"))?,
             cachets: a.cachets.ok_or_else(|| socle::fichiers::absent("cachets"))?,
-            jours: a.jours.ok_or_else(|| socle::fichiers::absent("jours"))?,
-            brut: a.brut.ok_or_else(|| socle::fichiers::absent("brut"))?,
+            brut: Some(a.brut.ok_or_else(|| socle::fichiers::absent("brut"))?),
             heures_enseignement: a.heures_enseignement.into_iter().sum(),
+            heures_formation: Heures::ZERO,
         });
     }
     Ok(out)
@@ -65,14 +66,16 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
     }
     // Un engagement sans heures n'en declare aucune.
     let heures = e.heures.into_iter().map(Heures::entieres).sum::<Heures>();
+    let periode = e.periode_payee()?;
     Ok(Some(Declare {
         salarie: p.salarie.id.clone(),
-        periode: e.periode_payee()?,
+        debut: Some(periode.debut()),
+        fin: periode.fin(),
         heures,
         cachets: e.cachets,
-        jours: e.jours,
-        brut: p.brut,
+        brut: Some(p.brut),
         heures_enseignement: heures_enseignement(ctx, &e.lignes)?.min(heures),
+        heures_formation: Heures::ZERO,
     }))
 }
 
@@ -146,7 +149,7 @@ impl<'a> Passe<'a> {
         }
         let mut tous: Vec<Declare> = self.importes.borrow().iter().flatten().cloned().collect();
         tous.extend(groupes.into_iter().flat_map(|(_, es)| es));
-        tous.sort_by(|a, b| (a.periode, &a.salarie).cmp(&(b.periode, &b.salarie)));
+        tous.sort_by(|a, b| (a.debut, a.fin, &a.salarie).cmp(&(b.debut, b.fin, &b.salarie)));
         Ok(tous)
     }
 }

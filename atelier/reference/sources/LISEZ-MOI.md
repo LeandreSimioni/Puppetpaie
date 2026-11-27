@@ -27,7 +27,8 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `syndeac-ccneac-artistes-dramatiques-nao-2026.xlsx` : transcription `syndeac-ccneac-artistes-dramatiques-nao-2026.csv`
 - `unedic-circulaire-2016-25-annexes-8-10.pdf` : transcription `unedic-circulaire-2016-25-annexes-8-10.txt` ; le moteur
   s'en sert dans `droit::fiche::NumeroObjetSpectacle::annee_de_la_demande` (fiche 2, § 1.1.3.2, l'année d'un numéro
-  d'objet)
+  d'objet), et dans `routes::accueil::droits_des_pieces` (fiche 1, § 2.3.1, l. 2623-2674 : l'annexe qui a le plus
+  d'heures s'applique, exemples 7 et 8 ; l'art. 65 §9 des annexes de 2024 dit la même règle)
 - `unicode/unicode-norme-18.0.0-chapitre-3-20261015.html` : transcription (extraits) `unicode/unicode-norme-18.0.0-chapitre-3-extraits-20261015.md`
 - `unicode/unicode-politique-de-stabilite-20261015.html` : transcription (extraits) `unicode/unicode-politique-de-stabilite-extraits-20261015.md`
 

@@ -1,0 +1,97 @@
+{
+  "quoi": "L'ALLOCATION JOURNALIÈRE D'UN INTERMITTENT, ESTIMÉE (annexes VIII et X au règlement d'assurance chômage, art. 14 et 16) : AJ = A + B + C, où A tient du salaire de référence (SR), B des heures travaillées (NHT), C de l'allocation journalière minimale ; un plancher par annexe ; un plafond commun. Lue par sa forme (`droit::allocation::Allocation`) ; la route `droits-des-pieces` l'estime et dit le salaire de référence qu'une allocation visée demande.",
+  "note": "Hors de l'estimation, et la route le dit : le salaire annuel de référence (art. 11 §2 : maternité, adoption, ALD), la participation de 0,93 % (art. 19), la clause de rattrapage (art. 9 §1 e), les franchises et le différé. Deux INFÉRENCES, qu'aucun texte déposé ne dit en toutes lettres : (1) à la réadmission, la fin de contrat qui a ouvert le droit précédent est la date anniversaire moins douze mois (art. 9 §1 c : « la date anniversaire correspondant au terme des douze mois suivant la fin du contrat de travail retenue pour l'ouverture ») ; (2) le plafond de l'allocation (art. 16) se lit sur le plafond annuel de la Sécurité sociale de l'année de cette fin de contrat. Chaque partie de l'allocation se tronque au centime, comme l'écrit l'exemple 6 du guide de France Travail (39,80 + 12,20 + 12,78 = 64,78 €). La route droits-des-pieces compte sur les 365 jours, sans réadmission : l'estimation y garde les diviseurs de l'annexe.",
+  "aj_minimale": {
+    "montant": 31.96,
+    "quoi": "L'allocation journalière minimale des annexes (art. 14), qui entre dans les parties A, B et C. Au 27/11/2026, aucune revalorisation ne la touche : celle du 01/07/2025 fixe l'allocation minimale « hors annexes VIII et X », et il n'y a pas de revalorisation au 01/07/2026.",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "VIII", "citation": "le montant de l'allocation journalière minimale est fixé à 31,96 euros"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "X", "citation": "le montant de l'allocation journalière minimale est fixé à 31,96 euros"},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/unedic-circulaire-2025-07-revalorisation-20250701.txt", "emetteur": "unedic", "citation": "l’allocation minimale (hors annexes VIII et X) à 32,13 euros"}
+      ]
+    }
+  },
+  "VIII": {
+    "seuil_du_salaire": 14400,
+    "part_du_salaire": 0.42,
+    "part_du_salaire_au_dela": 0.05,
+    "diviseur_du_salaire": 5000,
+    "seuil_des_heures": 720,
+    "part_des_heures": 0.26,
+    "part_des_heures_au_dela": 0.08,
+    "diviseur_des_heures": 507,
+    "part_fixe": 0.40,
+    "plancher": 38,
+    "quoi": "La formule de l'annexe VIII (les techniciens) : A = AJ minimale x (0,42 x SR jusqu'à 14 400 € + 0,05 x SR au-delà) / 5 000 ; B = AJ minimale x (0,26 x NHT jusqu'à 720 h + 0,08 x NHT au-delà) / 507 ; C = AJ minimale x 0,40 ; pas moins de 38 €.",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "VIII", "citation": "A = [AJ minimale x (0,42 x SR ou SAR (jusqu'à 14 400 €) + 0,05 x SR ou SAR (au-delà de 14 400 €)] : 5 000"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "VIII", "citation": "B = [AJ minimale x (0,26 x NHT (jusqu'à 720 heures) + 0,08 x NHT (au-delà de 720 heures)] : 507"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "VIII", "citation": "C = AJ minimale x 0,40"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "VIII", "citation": "Le montant de l'allocation journalière ainsi déterminé ne peut être inférieur à 38 euros"}
+      ]
+    }
+  },
+  "X": {
+    "seuil_du_salaire": 13700,
+    "part_du_salaire": 0.36,
+    "part_du_salaire_au_dela": 0.05,
+    "diviseur_du_salaire": 5000,
+    "seuil_des_heures": 690,
+    "part_des_heures": 0.26,
+    "part_des_heures_au_dela": 0.08,
+    "diviseur_des_heures": 507,
+    "part_fixe": 0.70,
+    "plancher": 44,
+    "quoi": "La formule de l'annexe X (les artistes) : A = AJ minimale x (0,36 x SR jusqu'à 13 700 € + 0,05 x SR au-delà) / 5 000 ; B = AJ minimale x (0,26 x NHT jusqu'à 690 h + 0,08 x NHT au-delà) / 507 ; C = AJ minimale x 0,70 ; pas moins de 44 €.",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "X", "citation": "A = [AJ minimale x (0,36 x SR ou SAR (jusqu'à 13 700 €) + 0,05 x SR ou SAR (au-delà de 13 700 €)] : 5 000"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "X", "citation": "B = [AJ minimale x (0,26 x NHT (jusqu'à 690 heures) + 0,08 x NHT (au-delà de 690 heures)] : 507"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "X", "citation": "C = AJ minimale x 0,70"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "X", "citation": "Le montant de l'allocation journalière ainsi déterminé ne peut être inférieur à 44 euros"}
+      ]
+    }
+  },
+  "readmission": {
+    "heures_par_periode": 42,
+    "jours_par_periode": 30,
+    "quoi": "La réadmission (art. 9 §1 b) : à qui a déjà été indemnisé au titre des annexes, sans les 507 heures sur 365 jours, l'affiliation se recherche majorée de 42 heures par période de 30 jours au-delà du 365e jour, jamais avant la fin de contrat qui a ouvert le droit précédent (art. 9 §1 a) ; les diviseurs de A et de B deviennent les heures exigées fois le SMIC horaire, et les heures exigées (art. 14).",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "9", "annexe": "VIII", "citation": "il est recherché une durée d'affiliation majorée de 42 heures par période de 30 jours au-delà du 365ème jour précédant la fin du contrat de travail"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "9", "annexe": "X", "citation": "il est recherché une durée d'affiliation majorée de 42 heures par période de 30 jours au-delà du 365ème jour précédant la fin du contrat de travail"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "9", "annexe": "VIII", "citation": "au titre d'une ou plusieurs activités exercées postérieurement à la fin du contrat de travail précédemment prise en considération pour l'ouverture des droits"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "VIII", "citation": "le diviseur de la branche \"A\" est égal au nombre d'heures exigé sur la période de référence multiplié par le SMIC horaire"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "14", "annexe": "X", "citation": "le diviseur de la branche \"B\" est égal au nombre d'heures exigées sur la période de référence"}
+      ]
+    }
+  },
+  "limite_du_salaire": {
+    "plafonds_par_paie": 4,
+    "quoi": "La limite du salaire de référence (art. 11 §3) : la somme des salaires plafonnés comme l'assiette des contributions (art. 49 : quatre fois le plafond de la Sécurité sociale). Chaque paie n'y compte qu'à quatre fois son plafond, celui de sa période (`droit::plafond`), ou celui que son bulletin imprime. INFÉRENCE : « salaires mensuels » se lit paie par paie, chacune sous le plafond de sa période (R. 242-2), comme l'assiette des contributions d'un intermittent, « employeur par employeur » (fiche Unédic, `unedic-fiche-assiette-des-contributions-20261010.txt`).",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "11", "annexe": "VIII", "citation": "Le salaire de référence ainsi déterminé ne peut dépasser la somme des salaires mensuels plafonnés conformément au deuxième alinéa du §1er de l'article 49 et compris dans la période de référence"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "11", "annexe": "X", "citation": "Le salaire de référence ainsi déterminé ne peut dépasser la somme des salaires mensuels plafonnés conformément au deuxième alinéa du §1er de l'article 49 et compris dans la période de référence"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "49", "annexe": "VIII", "citation": "Les rémunérations mentionnées au premier alinéa sont comprises dans l'assiette des contributions dans la limite d'un plafond fixé à quatre fois le plafond mentionné à l'article L. 241-3 du code de la sécurité sociale."}
+      ]
+    }
+  },
+  "plafond": {
+    "part": 34.4,
+    "plafonds_de_la_securite_sociale": 4,
+    "jours": 365,
+    "quoi": "Le plafond de l'allocation (art. 16) : 34,4 % de 1/365e du plafond annuel des contributions, qui est quatre fois le plafond annuel de la Sécurité sociale (art. 49). Le plafond de l'année où la fenêtre finit (`plafond_securite_sociale.annuel` du barème livré).",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "16", "annexe": "VIII", "citation": "L'allocation journalière déterminée en application de l'article 14 est limitée à 34,4 % de 1/365ème du plafond annuel des contributions à l'assurance chômage."},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "16", "annexe": "X", "citation": "L'allocation journalière déterminée en application de l'article 14 est limitée à 34,4 % de 1/365ème du plafond annuel des contributions à l'assurance chômage."},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "49", "annexe": "VIII", "citation": "d'un plafond fixé à quatre fois le plafond mentionné à l'article L. 241-3 du code de la sécurité sociale."},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "dépasser 174,80 € depuis le 1er janvier 2024."}
+      ],
+      "raisonnement": "Les annexes limitent l'allocation à 34,4 % de 1/365e du plafond annuel des contributions, que l'article 49 fixe à quatre fois le plafond de la Sécurité sociale ; le guide de France Travail en donne la valeur depuis le 1er janvier 2024, 174,80 €, soit 34,4 % de 4 x 46 368 € (le plafond annuel de 2024) divisés par 365."
+    }
+  }
+}

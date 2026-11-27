@@ -47,34 +47,109 @@ pub fn compte(n: usize, un: &str, pluriel: &str) -> String {
 /// (ce qui precise la ligne : le spectacle d'une ligne du livre, le nombre de bulletins d'un total).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ColonneRendue {
-    pub libelle: &'static str,
+    pub libelle: std::borrow::Cow<'static, str>,
     pub a_droite: bool,
     pub discrete: bool,
+    /// Dans un tableau qui se saisit (`SaisieDuTableau`), les parties de la case que la colonne tient, dans l'ordre (la
+    /// fin d'une ligne prevue) ; aucune : elle ne se saisit pas.
+    #[serde(skip_serializing_if = "<[&str]>::is_empty")]
+    pub parties: &'static [&'static str],
 }
 
 impl ColonneRendue {
     /// Une colonne de texte.
     pub fn de_texte(libelle: &'static str) -> ColonneRendue {
-        ColonneRendue { libelle, a_droite: false, discrete: false }
+        ColonneRendue { libelle: libelle.into(), a_droite: false, discrete: false, parties: &[] }
     }
 
     /// Une colonne de nombres, a droite.
     pub fn de_nombres(libelle: &'static str) -> ColonneRendue {
-        ColonneRendue { libelle, a_droite: true, discrete: false }
+        ColonneRendue { libelle: libelle.into(), a_droite: true, discrete: false, parties: &[] }
+    }
+
+    /// Une colonne de nombres dont l'en-tete se compose (« Pour 100 € / jour », la valeur que la charge dit).
+    pub fn de_nombres_dite(libelle: String) -> ColonneRendue {
+        ColonneRendue { libelle: libelle.into(), a_droite: true, discrete: false, parties: &[] }
     }
 
     /// Une colonne qui precise la ligne, en retrait.
     pub fn discrete(libelle: &'static str) -> ColonneRendue {
-        ColonneRendue { libelle, a_droite: false, discrete: true }
+        ColonneRendue { libelle: libelle.into(), a_droite: false, discrete: true, parties: &[] }
+    }
+
+    /// La meme, qui tient les parties `parties` d'une rangee qui se saisit.
+    pub fn tenant(self, parties: &'static [&'static str]) -> ColonneRendue {
+        ColonneRendue { parties, ..self }
     }
 }
 
-/// UNE RANGEE D'UN TABLEAU RENDU : ce qu'elle est (`SorteDeRangee`) et ses cellules deja dites, une par colonne ; une
-/// cellule qui ne dit rien est `None` (la page n'y pose rien).
+/// UN TABLEAU RENDU, tel que la page le dessine et que la ligne de commande le lit : son titre (aucun : le tableau n'en a
+/// pas), ses colonnes, ses rangees, chacune ses cellules deja dites, et, quand des rangees s'y saisissent, la case
+/// qu'elles portent (`saisie`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TableauRendu {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub titre: Option<&'static str>,
+    pub colonnes: Vec<ColonneRendue>,
+    pub rangees: Vec<RangeeRendue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saisie: Option<SaisieDuTableau>,
+}
+
+/// LES RANGEES QUI SE SAISISSENT DANS UN TABLEAU (les lignes prevues dans le tableau des paies de `droits-des-pieces`) :
+/// la case de la charge dont elles sont les rangees, et le bouton qui en retire une ; une rangee vide attend toujours en
+/// bas, et se remplit pour en ajouter une. Chaque colonne dit les parties qu'elle tient (`ColonneRendue::parties`), chaque rangee son rang dans la case
+/// (`RangeeRendue::saisie`) ; une rangee de la case que le tableau ne place pas (vide, ou qui ne se compte pas) se pose
+/// apres ses rangees.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SaisieDuTableau {
+    pub case: &'static str,
+    pub retirer: &'static str,
+}
+
+impl TableauRendu {
+    /// Un tableau sans titre.
+    pub fn de(colonnes: Vec<ColonneRendue>, rangees: Vec<RangeeRendue>) -> TableauRendu {
+        TableauRendu { titre: None, colonnes, rangees, saisie: None }
+    }
+
+    /// Le meme, sous le titre `titre`.
+    pub fn intitule(self, titre: &'static str) -> TableauRendu {
+        TableauRendu { titre: Some(titre), ..self }
+    }
+
+    /// Le meme, ou les rangees de la case `saisie` se saisissent.
+    pub fn saisissant(self, saisie: SaisieDuTableau) -> TableauRendu {
+        TableauRendu { saisie: Some(saisie), ..self }
+    }
+
+    /// Des lignes, chacune ses cellules dites, une par colonne.
+    pub fn de_lignes(colonnes: Vec<ColonneRendue>, lignes: impl IntoIterator<Item = Vec<Option<String>>>) -> TableauRendu {
+        TableauRendu::de(colonnes, lignes.into_iter().map(|cellules| RangeeRendue::de(SorteDeRangee::Ligne, cellules)).collect())
+    }
+}
+
+/// UNE RANGEE D'UN TABLEAU RENDU : ce qu'elle est (`SorteDeRangee`), ses cellules deja dites, une par colonne (une
+/// cellule qui ne dit rien est `None` : la page n'y pose rien), et, dans un tableau qui se saisit, son rang dans la case
+/// (`saisie` : ses parties s'y saisissent, sous les colonnes qui les tiennent ; aucun : elle ne se saisit pas).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RangeeRendue {
     pub sorte: SorteDeRangee,
     pub cellules: Vec<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saisie: Option<usize>,
+}
+
+impl RangeeRendue {
+    /// Une rangee qui ne se saisit pas.
+    pub fn de(sorte: SorteDeRangee, cellules: Vec<Option<String>>) -> RangeeRendue {
+        RangeeRendue { sorte, cellules, saisie: None }
+    }
+
+    /// Une ligne, la rangee `rang` de la case du tableau.
+    pub fn saisie(cellules: Vec<Option<String>>, rang: usize) -> RangeeRendue {
+        RangeeRendue { sorte: SorteDeRangee::Ligne, cellules, saisie: Some(rang) }
+    }
 }
 
 /// Ce qu'est une rangee d'un tableau rendu : une ligne, le sous-total d'un groupe, ou le total general (la page les dit en

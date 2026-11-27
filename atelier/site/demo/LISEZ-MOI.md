@@ -36,8 +36,10 @@ cadre « / »            la page du logiciel, inchangée : `/`, `/js/…`, `/api
 - **Si le moteur tombe** (l'appel au module lève une exception), le worker le dit, la page l'affiche et propose de
   relancer la démo, qui repart de zéro.
 - **Le seul envoi qui sort** va au filet (l'import `poster`, une requête synchrone du worker) ; le moteur ne laisse
-  partir que les adresses du filet (`socle::garde_reseau`), et le filet n'admet de la démo que l'identité d'un poste
-  et ses incidents (`poste`, `rapport`) : un message de « Un problème, une idée ? » écrit dans la démo ne part pas.
+  partir que les adresses du filet (`socle::garde_reseau`), et le filet n'admet de la démo que l'identité d'un poste,
+  ses incidents et ses messages de « Un problème, une idée ? » (`poste`, `rapport`, `retour` ; les messages venus de
+  puppetpaie.fr, trois par jour et par adresse). La boîte n'y promet ni réponse ni renvoi : le paquet soudé ne garde
+  rien et n'a pas de veille (`routes::filet`, `ecran_du_message` ; `problemes::passage`).
 - **Ce que le logiciel « ouvre »** (un PDF, un dossier) : sur un poste, un programme du poste le montre ; ici, le
   moteur le passe à la page (l'import `montrer`, `compagnie::poste`), qui l'affiche par-dessus le logiciel : un PDF
   dans un cadre, tout fichier à ouvrir dans un autre onglet ou à télécharger, un dossier par la liste de ce qu'il
@@ -49,7 +51,10 @@ cadre « / »            la page du logiciel, inchangée : `/`, `/js/…`, `/api
 
 - `index.html` (le style y est), `demo.js` : la page de la démo.
 - `moteur.js` : le worker du moteur. Il corrige au passage deux manques du disque en mémoire du shim : les dates des
-  fichiers (aucune, et rangées aux mauvais octets de `filestat`) et son journal de débogage, allumé par défaut.
+  fichiers (aucune, et rangées aux mauvais octets de `filestat`) et son journal de débogage, allumé par défaut. La page
+  des droits (`/droits/`, `droits/LISEZ-MOI.md`) prend le même worker, sans relais ni cadre : elle tient le port
+  elle-même, et lui fait poser des fichiers dans un dossier du disque en mémoire (le message `poser`, qui ne pose que dans
+  `/demo/mes-pieces` et refuse tout autre chemin).
 - `relais.js` : le service worker.
 - `wasi-shim/` : `@bjorn3/browser_wasi_shim` **0.4.2** (MIT ou Apache-2.0, `LICENSE-MIT`, `LICENSE-APACHE`), les
   fichiers de `dist/` du paquet npm dont la démo a besoin (`wasi.js`, `wasi_defs.js`, `fd.js`, `fs_mem.js`,

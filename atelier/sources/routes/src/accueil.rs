@@ -19,6 +19,7 @@
 
 pub mod deplacement;
 pub mod drive;
+pub mod droits_des_pieces;
 pub mod suppression;
 
 use std::path::{Path, PathBuf};
@@ -166,9 +167,9 @@ pub const ROUTES: &[Fiche] = &[
 ];
 
 /// LES ROUTES DE L'INSTALLATION, chaque module de l'accueil sa liste (sa place) : celles-ci, et reprendre une compagnie de
-/// son Drive (`drive::ROUTES`), dire ou est le logiciel et le deplacer (`deplacement::ROUTES`). Elles se servent sans
-/// compagnie (`route`).
-pub const DE_L_INSTALLATION: [&[Fiche]; 3] = [ROUTES, drive::ROUTES, deplacement::ROUTES];
+/// son Drive (`drive::ROUTES`), dire ou est le logiciel et le deplacer (`deplacement::ROUTES`), les droits d'un
+/// intermittent depuis ses pieces (`droits_des_pieces::ROUTES`). Elles se servent sans compagnie (`route`).
+pub const DE_L_INSTALLATION: [&[Fiche]; 4] = [ROUTES, drive::ROUTES, deplacement::ROUTES, droits_des_pieces::ROUTES];
 
 /// `route` est-elle une route de l'installation (`DE_L_INSTALLATION`) ?
 pub fn est_de_l_installation(route: Route) -> bool {
@@ -423,6 +424,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         _ if crate::catalogue::dans(drive::ROUTES, nom).is_some() => drive::route(&inst, nom, charge),
         _ if crate::catalogue::dans(deplacement::ROUTES, nom).is_some() => deplacement::route(&inst, nom, charge),
+        _ if crate::catalogue::dans(droits_des_pieces::ROUTES, nom).is_some() => droits_des_pieces::route(&inst, nom, charge),
         Route::Basculer => {
             compagnie::bridage::basculer_de(&inst)?;
             let bride = compagnie::bridage::est_bride_de(&inst);

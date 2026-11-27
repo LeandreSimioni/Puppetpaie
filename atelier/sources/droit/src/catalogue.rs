@@ -469,6 +469,9 @@ impl Base {
 pub struct Annexes {
     /// Les heures qui ouvrent les droits (507).
     pub seuil_heures: Heures,
+    /// Les heures de formation qui s'y assimilent au plus, enseignement compris (338 : les deux tiers du seuil, art. 3
+    /// §1 ; la `note` du fichier cite les textes).
+    pub plafond_formation_heures: Heures,
     /// La fenetre ou elles se comptent, en jours (365).
     #[serde(deserialize_with = "socle::date::Duree::en_jours")]
     pub fenetre_jours: socle::date::Duree<socle::date::EnJours>,

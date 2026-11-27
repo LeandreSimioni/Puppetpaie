@@ -7,10 +7,10 @@ use std::path::Path;
 
 use crate::catalogue::{annexes, rubrique};
 use crate::fiche::Lue;
-use crate::contexte::{aujourdhui, Contexte, IdSalarie};
+use crate::contexte::{Contexte, IdSalarie};
 use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
-use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Montant};
 
 /// Les constantes du decompte, lues dans les donnees livrees (le catalogue des rubriques et `annexes`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,6 +21,9 @@ pub struct Constantes {
     pub cachets_par_mois: Cachets,
     /// Seuil d'ouverture des droits (507).
     pub seuil_heures: Heures,
+    /// Les heures de formation qui s'assimilent au plus, l'enseignement retenu s'y imputant (338 : annexes VIII et X,
+    /// art. 3 §1).
+    pub plafond_formation: Heures,
     /// Fenetre des droits, en jours (365).
     pub fenetre_jours: Duree<EnJours>,
 }
@@ -34,6 +37,7 @@ impl Constantes {
             heures_par_cachet: cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))?,
             cachets_par_mois: cachet.plafond_mensuel.ok_or_else(|| socle::fichiers::absent("cachet.plafond_mensuel"))?,
             seuil_heures: a.seuil_heures,
+            plafond_formation: a.plafond_formation_heures,
             fenetre_jours: a.fenetre_jours,
         })
     }
@@ -53,22 +57,31 @@ pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_da
 }
 
 /// Une ligne declaree : un contrat de l'historique ou un mois de nos paies. Ses heures se comptent en heures entieres.
+/// Elle se situe par sa fin (la fenetre d'affiliation compte les contrats qui y finissent, les cachets se rattachent au
+/// mois de la fin) ; son debut, quand il se dit : un contrat prevu peut ne dire que sa fin
+/// (`routes::accueil::droits_des_pieces`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Declare {
     pub salarie: IdSalarie,
-    pub periode: Periode,
+    pub debut: Option<Jour>,
+    pub fin: Jour,
     pub heures: Heures,
     pub cachets: Cachets,
-    pub jours: Jours,
-    pub brut: Montant,
+    /// Son brut ; aucun : un contrat prevu qui ne le dit pas (`routes::accueil::droits_des_pieces`).
+    pub brut: Option<Montant>,
     /// Part de `heures` qui est de l'enseignement (dedans, pas en plus).
     pub heures_enseignement: Heures,
+    /// Les heures de formation suivies (annexes VIII et X, art. 3 §1 : « les actions concourant au développement des
+    /// compétences [...] sont assimilées à des heures de travail ») : en plus de `heures`, pas dedans ; elles ne
+    /// comptent que pour les 507 heures, sous leur plafond (`Position::heures_formation_retenues`). Une paie d'une
+    /// compagnie n'en porte pas : zero.
+    pub heures_formation: Heures,
 }
 
 impl Declare {
     /// Le mois de la fin, auquel se rattachent les cachets.
     pub fn mois(&self) -> socle::mois::Mois {
-        self.periode.fin().mois_civil()
+        self.fin.mois_civil()
     }
 
     pub fn heures_equivalentes(&self, c: &Constantes) -> Heures {
@@ -156,21 +169,36 @@ impl Position {
         self.heures_retenues() - self.heures_enseignement()
     }
 
-    /// Les heures qui comptent pour les 507 (l'enseignement y entre, plafonne).
+    /// Les heures de formation des lignes.
+    pub fn heures_formation(&self) -> Heures {
+        self.engagements.iter().map(|e| e.heures_formation).sum()
+    }
+
+    /// LES HEURES DE FORMATION RETENUES : dans la limite du plafond (338 h), sur lequel l'enseignement retenu s'impute
+    /// (annexes VIII et X, art. 3 §1 : « Les heures d'enseignement ainsi prises en compte sont imputées sur le contingent
+    /// des actions de formation »).
+    pub fn heures_formation_retenues(&self) -> R<Heures> {
+        let reste = (self.constantes.plafond_formation - self.heures_enseignement_retenues()?).max(Heures::ZERO);
+        Ok(self.heures_formation().min(reste))
+    }
+
+    /// Les heures de formation au-dela de leur plafond.
+    pub fn formation_perdue(&self) -> R<Heures> {
+        Ok(self.heures_formation() - self.heures_formation_retenues()?)
+    }
+
+    /// Les heures qui comptent pour les 507 (l'enseignement et la formation y entrent, plafonnes).
     pub fn heures_ouverture(&self) -> R<Heures> {
-        Ok(self.heures_montant() + self.heures_enseignement_retenues()?)
+        Ok(self.heures_montant() + self.heures_enseignement_retenues()? + self.heures_formation_retenues()?)
     }
 
     pub fn enseignement_perdu(&self) -> R<Heures> {
         Ok(self.heures_enseignement() - self.heures_enseignement_retenues()?)
     }
 
-    pub fn jours(&self) -> Jours {
-        self.engagements.iter().map(|e| e.jours).sum()
-    }
-
+    /// Le brut des lignes qui le disent.
     pub fn brut(&self) -> Montant {
-        self.engagements.iter().fold(Montant::ZERO, |a, e| a + e.brut)
+        self.engagements.iter().filter_map(|e| e.brut).fold(Montant::ZERO, |a, b| a + b)
     }
 
     /// Heures restant a acquerir pour atteindre le seuil ; 0 si atteint.
@@ -180,12 +208,6 @@ impl Position {
 
     pub fn atteint(&self) -> R<bool> {
         Ok(self.heures_ouverture()? >= self.constantes.seuil_heures)
-    }
-
-    /// Les jours qui restent avant la fin de la fenetre, du lendemain d'`aujourdhui` a sa fin ; aucun quand elle est
-    /// passee ou finit aujourd'hui.
-    pub fn jours_restants(&self, aujourdhui: Jour) -> Duree<EnJours> {
-        Duree::ecoulee(&aujourdhui, &self.periode.fin())
     }
 }
 
@@ -201,23 +223,30 @@ pub fn fenetre_annee_civile(jusqu_au: socle::mois::Mois) -> R<Fenetre> {
     Ok((Periode::du_au(annee.premier_jour(), jusqu_au.dernier_jour())?, format!("annee civile {}", annee)))
 }
 
-/// Les 12 mois precedant une date.
+/// LES `jours` JOURS QUI FINISSENT A `fin`, bornes comprises : le guide de France Travail
+/// (`atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt`, sur deux lignes de
+/// sa colonne de gauche) : « Exemple : FCT du 10 février 2023. Période de référence : du 11 février 2022 au 10 février
+/// 2023. » (365 jours).
+fn jours_jusqu_au(fin: Jour, jours: Duree<EnJours>) -> R<Periode> {
+    Periode::du_au(fin.avant(jours)?.apres(Duree::jours(1))?, fin)
+}
+
+/// Les 12 mois (les 365 jours) qui finissent a une date.
 pub fn fenetre_douze_mois(c: &Constantes, fin: Jour) -> R<Fenetre> {
-    Ok((Periode::du_au(fin.avant(c.fenetre_jours)?, fin)?, format!("12 mois au {}", fin.jj_mm_aaaa())))
+    Ok((jours_jusqu_au(fin, c.fenetre_jours)?, format!("12 mois au {}", fin.jj_mm_aaaa())))
 }
 
-/// Les 12 mois PRECEDANT la date anniversaire des droits : l'anniversaire est
-/// la fin de la fenetre, jamais son debut.
-pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> R<Fenetre> {
-    Ok((
-        Periode::du_au(anniversaire.avant(c.fenetre_jours)?, anniversaire)?,
-        format!("12 mois au {} (anniversaire des droits)", anniversaire.jj_mm_aaaa()),
-    ))
+/// LA FENETRE ALLONGEE DE LA READMISSION (annexes VIII et X, art. 9 §1 b : « au-delà du 365ème jour précédant la fin du
+/// contrat de travail ») : les 365 jours qui finissent a `fin`, plus `en_plus`.
+pub fn fenetre_allongee(c: &Constantes, fin: Jour, en_plus: Duree<EnJours>) -> R<Fenetre> {
+    let jours = c.fenetre_jours.plus(en_plus);
+    Ok((jours_jusqu_au(fin, jours)?, format!("{} jours au {}, réadmission", jours.jours_a_ecrire(), fin.jj_mm_aaaa())))
 }
 
-/// Les engagements du salarie dont la FIN est dans la fenetre.
+/// Les engagements du salarie dont la FIN est dans la fenetre. `racine` : la compagnie, dont le catalogue dit le plafond
+/// de l'enseignement ; sans compagnie (les pieces d'un intermittent), un dossier sans `config/` : le catalogue livre.
 pub fn position(
-    ctx: &Contexte,
+    racine: &Path,
     c: &Constantes,
     engagements: &[Declare],
     salarie: &IdSalarie,
@@ -227,11 +256,11 @@ pub fn position(
     let (periode, libelle) = fenetre;
     Position {
         constantes: *c,
-        racine: ctx.racine.clone(),
+        racine: racine.to_path_buf(),
         salarie: salarie.clone(),
         periode: *periode,
         libelle_fenetre: libelle.clone(),
-        engagements: engagements.iter().filter(|e| e.salarie == *salarie && periode.contient(&e.periode.fin())).cloned().collect(),
+        engagements: engagements.iter().filter(|e| e.salarie == *salarie && periode.contient(&e.fin)).cloned().collect(),
         date_naissance,
     }
 }
@@ -243,31 +272,23 @@ pub fn naissance(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<Jour>> {
 
 /// Fin du dernier contrat declare : le depart de la fenetre par defaut.
 pub fn derniere_fin(engagements: &[Declare], salarie: &IdSalarie) -> Option<Jour> {
-    engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.periode.fin()).max()
+    engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.fin).max()
 }
 
-/// Position au regard des annexes 8 et 10. `anniversaire` (notifie par France
-/// Travail) prime ; sinon la fenetre est les 12 mois precedant `a_la_date` ou
-/// la fin du dernier contrat declare.
+/// L'AFFILIATION D'UN SALARIE D'UNE COMPAGNIE au regard des annexes 8 et 10 : le meme compte que les droits d'un
+/// intermittent depuis ses pieces (`allocation::affiliation_des_droits`), sa date anniversaire (notifiee par France
+/// Travail, dans sa fiche) declenchant la readmission ; `jusqu_au` : le jour ou l'on se place (aucun : tout ce qui est
+/// declare).
 pub fn position_droits(
     ctx: &Contexte,
     salarie: &IdSalarie,
     engagements: &[Declare],
     anniversaire: Option<Jour>,
-    a_la_date: Option<Jour>,
-) -> R<Position> {
+    jusqu_au: Option<Jour>,
+) -> R<crate::allocation::Affiliation> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
-    let f = match anniversaire {
-        Some(a) => fenetre_anniversaire(&c, a)?,
-        None => {
-            let fin = match a_la_date.or_else(|| derniere_fin(engagements, salarie)) {
-                Some(j) => j,
-                None => aujourdhui()?,
-            };
-            fenetre_douze_mois(&c, fin)?
-        }
-    };
-    Ok(position(ctx, &c, engagements, salarie, &f, naissance(ctx, salarie)?))
+    let r = &crate::allocation::allocation()?.readmission;
+    crate::allocation::affiliation_des_droits(&ctx.racine, &c, r, engagements, salarie, anniversaire, jusqu_au, naissance(ctx, salarie)?)
 }
 
 // ------------------------------------------------------- bloc du bulletin
@@ -281,10 +302,6 @@ pub struct Colonne {
     pub heures: Heures,
     pub heures_equivalentes: Heures,
     pub brut: Montant,
-    /// Heures restantes avant le seuil (colonne droits).
-    pub reste: Option<Heures>,
-    /// Date d'anniversaire (colonne droits).
-    pub echeance: Option<Jour>,
     pub enseignement: Heures,
     pub heures_ouverture: Option<Heures>,
 }
@@ -300,10 +317,10 @@ pub fn tableau_cumul(
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let annee = mois.annee();
     let ne = naissance(ctx, salarie)?;
-    let p_mois = position(ctx, &c, engagements, salarie, &(Periode::du_mois(mois), "periode".to_string()), ne);
-    let p_annee = position(ctx, &c, engagements, salarie, &fenetre_annee_civile(mois)?, ne);
+    let p_mois = position(&ctx.racine, &c, engagements, salarie, &(Periode::du_mois(mois), "periode".to_string()), ne);
+    let p_annee = position(&ctx.racine, &c, engagements, salarie, &fenetre_annee_civile(mois)?, ne);
 
-    let col = |titre: &str, sous: String, p: &Position, reste: Option<Heures>, echeance: Option<Jour>| -> R<Colonne> {
+    let col = |titre: &str, sous: String, p: &Position| -> R<Colonne> {
         Ok(Colonne {
             titre: titre.to_string(),
             sous_titre: sous,
@@ -311,20 +328,20 @@ pub fn tableau_cumul(
             heures: p.heures(),
             heures_equivalentes: p.heures_equivalentes(),
             brut: p.brut(),
-            reste,
-            echeance,
             enseignement: p.heures_enseignement(),
             heures_ouverture: Some(p.heures_ouverture()?),
         })
     };
     let mut colonnes = vec![
-        col("Période", format!("{:02}/{}", mois.numero(), annee), &p_mois, None, None)?,
-        col("Cumul", format!("année {}", annee), &p_annee, None, None)?,
+        col("Période", format!("{:02}/{}", mois.numero(), annee), &p_mois)?,
+        col("Cumul", format!("année {}", annee), &p_annee)?,
     ];
+    // La colonne des droits, quand la fiche porte la date anniversaire : le compte de la route `droits`
+    // (`position_droits`), a la derniere fin de contrat jusqu'a la fin du mois ; son sous-titre, la fenetre telle que
+    // l'affiliation la nomme (allongee a la readmission).
     if let Some(anniv) = anniversaire_configure(ctx, salarie)? {
-        let p_droits = position(ctx, &c, engagements, salarie, &fenetre_anniversaire(&c, anniv)?, ne);
-        let reste = p_droits.manque()?;
-        colonnes.push(col("Droits", format!("au {}", anniv.jj_mm_aaaa()), &p_droits, Some(reste), Some(anniv))?);
+        let a = position_droits(ctx, salarie, engagements, Some(anniv), Some(mois.dernier_jour()))?;
+        colonnes.push(col("Droits", a.position.libelle_fenetre.clone(), &a.position)?);
     }
     Ok(colonnes)
 }

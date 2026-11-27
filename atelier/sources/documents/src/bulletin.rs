@@ -413,22 +413,22 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
     )];
     let enseigne = colonnes.iter().any(|c| !c.enseignement.est_nul());
     // (libelle, valeur de chaque colonne, suffixe) ; une valeur que la colonne n'a pas laisse sa case vide.
-    type Rang = (&'static str, fn(&Colonne) -> Option<String>, &'static str);
+    type Rang = (String, fn(&Colonne) -> Option<String>, &'static str);
     use socle::grandeurs::ecrit::sans_zero::dit;
     let mut rangs: Vec<Rang> = vec![
-        ("Cachets", |c| Some(dit(c.cachets)), ""),
-        ("Heures déclarées", |c| Some(dit(c.heures)), " h"),
-        ("Total heures (cachets × 12 + heures)", |c| Some(dit(c.heures_equivalentes)), " h"),
+        ("Cachets".into(), |c| Some(dit(c.cachets)), ""),
+        ("Heures déclarées".into(), |c| Some(dit(c.heures)), " h"),
+        ("Total heures (cachets × 12 + heures)".into(), |c| Some(dit(c.heures_equivalentes)), " h"),
     ];
     if enseigne {
-        rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| Some(dit(c.enseignement)), " h"));
-        rangs.push(("Heures retenues pour les 507 h", |c| c.heures_ouverture.map(dit), " h"));
+        rangs.push(("dont enseignement (droits seuls, pas le montant)".into(), |c| Some(dit(c.enseignement)), " h"));
+        rangs.push(("Heures retenues pour l'ouverture des droits".into(), |c| c.heures_ouverture.map(dit), " h"));
     }
-    rangs.push(("Salaire brut", |c| Some(euros(c.brut)), ""));
+    rangs.push(("Salaire brut".into(), |c| Some(euros(c.brut)), ""));
     let lignes = rangs
         .iter()
         .map(|(libelle, valeur, suffixe)| {
-            let mut cel = vec![s(*libelle)];
+            let mut cel = vec![s(libelle.clone())];
             cel.extend(colonnes.iter().map(|c| so(valeur(c).map(|v| format!("{}{}", v, suffixe)))));
             ligne(cel, vec![])
         })
@@ -1363,7 +1363,8 @@ pub fn jeux_et_description(
     let mut engagements = passe.engagements(Some(courantes))?;
     if borne_au_mois {
         let fin = mois.dernier_jour();
-        engagements.retain(|e| e.periode.debut() <= fin);
+        // Une ligne qui ne dit pas son debut ne vient que d'un contrat prevu, qu'une compagnie ne declare pas.
+        engagements.retain(|e| e.debut.is_none_or(|d| d <= fin));
     }
     for pa in paies {
         let cle = pa.salarie.id.clone();

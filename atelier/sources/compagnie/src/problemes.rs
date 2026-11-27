@@ -668,15 +668,25 @@ fn passage(racine: &Path) -> R<BilanMessages> {
         }
     }
     // Ce qui attend encore, et que ce passage n'a pas fait partir, le dit : la panne si elle a eu lieu (elle vaut pour
-    // tous), sinon qu'il partira au passage suivant.
+    // tous), sinon qu'il partira au passage suivant. Le paquet soudé (la démo, la page des droits) n'a pas de passage
+    // suivant de lui-même : un message qui n'est pas parti s'y dit tel.
+    let soude = crate::bridage::paquet_soude();
     let reste = modifier(racine, |lignes| {
         let mut n = 0;
         let mut change = false;
         for l in lignes.iter_mut().filter(|l| en_attente(l)) {
             n += 1;
             match (&panne, &l.envoi.erreur) {
+                (Some(p), _) if soude => {
+                    l.envoi.erreur = Some(format!("{} Il n'est pas parti.", p));
+                    change = true;
+                }
                 (Some(p), _) => {
                     l.envoi.erreur = Some(format!("{} PuppetPaie le renverra de lui-même.", p));
+                    change = true;
+                }
+                (None, None) if soude => {
+                    l.envoi.erreur = Some("Il n'est pas parti.".to_string());
                     change = true;
                 }
                 (None, None) => {
