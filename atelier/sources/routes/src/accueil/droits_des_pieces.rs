@@ -1528,8 +1528,12 @@ fn annexe_lue(attestees: &[Attestee], nir: Option<&Nir>, comptees: &[PaieComptee
         }
         0 => AnnexeLue { proposee: None, dit: Vec::new() },
         _ => {
-            let d: Vec<String> = dites.into_iter().map(|(_, d)| d).collect();
-            AnnexeLue { proposee: None, dit: vec![format!("Vos paies disent les deux ({}) : choisissez.", d.join(" ; "))] }
+            // Chaque source sur sa ligne, une phrase qui commence par une capitale.
+            let d = dites.into_iter().map(|(_, d)| {
+                let mut c = d.chars();
+                format!("{}.", c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect::<String>())
+            });
+            AnnexeLue { proposee: None, dit: std::iter::once("Vos paies disent les deux : choisissez.".to_string()).chain(d).collect() }
         }
     }
 }
