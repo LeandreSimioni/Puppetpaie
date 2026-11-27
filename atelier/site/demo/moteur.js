@@ -241,10 +241,12 @@ function montrer(chemin) {
 }
 
 // POSER DES FICHIERS DANS UN DOSSIER DU DISQUE, qui ne garde qu'eux (la page des droits, /droits/ : les bulletins
-// déposés, dans le dossier que la route `droits-des-pieces` nomme) : rend vrai si le dossier existe. Chaque fichier
-// prend la date de sa pose, et le dossier aussi : le moteur voit qu'ils ont changé.
+// déposés, dans le dossier que la route `droits-des-pieces` nomme) : rend vrai si le dossier existe. Il ne pose que dans
+// `mes-pieces/` de l'installation (`/demo/mes-pieces`), qu'il vide d'abord ; tout autre chemin est refusé (faux).
+// Chaque fichier prend la date de sa pose, et le dossier aussi : le moteur voit qu'ils ont changé.
 function poser(chemin, fichiers) {
   const parties = chemin.split("/").filter((x) => x !== "" && x !== ".");
+  if (parties.length !== 2 || parties[0] !== "demo" || parties[1] !== "mes-pieces") return false;
   let ici = disque.get(parties[0]);
   for (const p of parties.slice(1)) {
     ici = ici instanceof Directory ? ici.contents.get(p) : undefined;

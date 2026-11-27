@@ -24,14 +24,23 @@
   var attentes = {};
   var poses = [];
 
+  // L'AVIS DE LA PAGE : chaque erreur s'y ajoute (aucune n'en efface une autre), au-dessus du bouton qui recharge.
   function avis(texte) {
     var a = $("avis");
-    a.replaceChildren(el("p", null, texte));
-    var b = el("button", null, "Recharger la page");
-    b.type = "button";
-    b.addEventListener("click", function () { location.reload(); });
-    a.append(b);
+    var b = a.querySelector("button");
+    if (!b) {
+      b = el("button", null, "Recharger la page");
+      b.type = "button";
+      b.addEventListener("click", function () { location.reload(); });
+      a.append(b);
+    }
+    a.insertBefore(el("p", null, texte), b);
     a.classList.remove("cache");
+  }
+
+  // Le texte d'une erreur attrapée, tel qu'elle le porte.
+  function texteDErreur(e) {
+    return String((e && e.message) || e);
   }
 
   function demarrer() {
@@ -74,16 +83,17 @@
     worker.postMessage({ quoi: "demarrer" });
   }
 
-  // La route, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }).
+  // La route, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }). Une réponse qui ne se lit pas est une
+  // faute technique : elle remonte telle quelle (son code, son texte), sans phrase de plus.
   function route(charge) {
-    return new Promise(function (rendre) {
+    return new Promise(function (rendre, rejeter) {
       var id = prochain++;
       attentes[id] = function (r) {
         var texte = new TextDecoder().decode(r.corps);
         try {
           rendre(JSON.parse(texte));
         } catch (e) {
-          rendre({ ok: false, refus: { phrase: texte || "Le logiciel n'a pas répondu." } });
+          rejeter(new Error("réponse illisible du moteur (code " + r.code + ") : « " + texte + " » (" + texteDErreur(e) + ")"));
         }
       };
       var corps = new TextEncoder().encode(JSON.stringify(charge)).buffer;
@@ -108,11 +118,15 @@
   var dossier = null;
 
   function ajouterFichiers(liste) {
+    // Un fichier qui ne se lit pas se dit dans l'avis ; les autres se posent.
     var lus = Array.prototype.map.call(liste, function (f) {
-      return f.arrayBuffer().then(function (o) { return { nom: f.name, octets: o }; });
+      return f.arrayBuffer().then(
+        function (o) { return { nom: f.name, octets: o }; },
+        function (e) { avis("Le fichier " + f.name + " ne se lit pas : " + texteDErreur(e)); return null; }
+      );
     });
     Promise.all(lus).then(function (neufs) {
-      neufs.forEach(function (n) {
+      neufs.filter(function (n) { return n !== null; }).forEach(function (n) {
         // Deux fichiers du même nom (deux employeurs) restent deux fichiers.
         var nom = n.nom, k = 2;
         var point = nom.lastIndexOf(".");
@@ -134,6 +148,7 @@
       li.append(el("span", null, f.nom));
       var b = el("button", "lien", "Retirer");
       b.type = "button";
+      b.setAttribute("aria-label", "Retirer " + f.nom);
       b.addEventListener("click", function () {
         fichiers.splice(i, 1);
         montrerFichiers();
@@ -157,11 +172,15 @@
     depot.addEventListener(t, function (e) { e.preventDefault(); depot.classList.remove("survol"); });
   });
   depot.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files.length) ajouterFichiers(e.dataTransfer.files); });
+  // Un fichier lâché hors de la zone ne fait pas quitter la page (le navigateur l'ouvrirait à sa place).
+  ["dragover", "drop"].forEach(function (t) {
+    document.addEventListener(t, function (e) { e.preventDefault(); });
+  });
 
-  // La charge : ce qui est saisi, une case vide n'y étant pas.
+  // La charge : ce qui est saisi dans les cases que la route a rendues, et rien d'autre ; une case vide n'y est pas.
   function charge() {
     var c = {};
-    Object.keys(saisie).forEach(function (cle) {
+    rendues.forEach(function (cle) {
       var v = saisie[cle];
       if (Array.isArray(v)) {
         var rangees = v.map(function (r) {
@@ -191,20 +210,26 @@
     if (aPoser && dossier !== null) {
       aPoser = false;
       suite = poser(dossier).then(function (ok) {
-        if (!ok) avis("Les bulletins ne se sont pas posés sur le disque du logiciel (son dossier " + dossier + " n'existe pas). C'est un défaut du logiciel.");
+        if (!ok) avis("Les bulletins ne se sont pas posés sur le disque du logiciel : le dossier " + dossier + " n'est pas mes-pieces de l'installation, ou n'existe pas. C'est un défaut du logiciel.");
       });
     }
+    // Une erreur, où qu'elle tombe, se dit dans l'avis et ne fige rien : le calcul suivant part.
     suite.then(function () { return route(charge()); }).then(function (r) {
-      enCours = false;
       if (r.ok && r.resultat) {
         if (dossier === null && r.resultat.dossier) {
           dossier = r.resultat.dossier;
           if (fichiers.length) { aPoser = true; encore = true; }
         }
         montrer(r.resultat);
+      } else if (r.refus) {
+        montrerRefus(r.refus.phrase);
       } else {
-        montrerRefus(r.refus ? r.refus.phrase : "Le logiciel n'a pas répondu.");
+        throw new Error("réponse du moteur sans résultat ni refus : " + JSON.stringify(r));
       }
+    }).catch(function (e) {
+      avis("Défaut du logiciel : " + texteDErreur(e));
+    }).then(function () {
+      enCours = false;
       if (encore) calculer();
     });
   }
@@ -212,11 +237,12 @@
   // ---------------------------------------------------------------- les cases que la route rend
 
   var signature = null;
+  // Les clés des cases que la route a rendues en dernier : les seules que la charge porte.
+  var rendues = [];
 
-  function texteDe(v, forme) {
-    if (v === null || v === undefined) return "";
-    if (forme === "montant" || forme === "nombre") return String(v).replace(".", ",");
-    return String(v);
+  // Une valeur que la route rend, telle qu'elle l'écrit ; vide, rien.
+  function texteDe(v) {
+    return v === null || v === undefined ? "" : String(v);
   }
 
   // La valeur de départ d'une case, quand rien n'est encore saisi : celle que la route y dit.
@@ -224,11 +250,11 @@
     if (c.forme === "rangees") {
       return (c.valeur || []).map(function (r) {
         var o = {};
-        c.parties.forEach(function (p) { o[p.cle] = p.forme === "oui_non" ? r[p.cle] === true : texteDe(r[p.cle], p.forme); });
+        c.parties.forEach(function (p) { o[p.cle] = p.forme === "oui_non" ? r[p.cle] === true : texteDe(r[p.cle]); });
         return o;
       });
     }
-    return texteDe(c.valeur, c.forme);
+    return texteDe(c.valeur);
   }
 
   // UNE CASE SIMPLE, par sa forme : une date, un montant ou un nombre tapé, oui-non coché, un choix dans une liste.
@@ -288,8 +314,10 @@
           if (p.forme === "oui_non") { cellule.append(i, lp); } else { cellule.append(lp, i); }
           ligne.append(cellule);
         });
-        var retirer = el("button", "lien", "Retirer");
+        if (!c.retirer) { rangees.append(ligne); return; }
+        var retirer = el("button", "lien", c.retirer);
         retirer.type = "button";
+        retirer.setAttribute("aria-label", c.retirer + " " + (n + 1));
         retirer.addEventListener("click", function () {
           saisie[c.cle].splice(n, 1);
           redessiner();
@@ -315,8 +343,11 @@
   }
 
   // Les cases ne se redessinent que si la route en change la forme (une case, un choix) : ce qui est saisi reste.
+  // Une case que la route ne rend plus perd ce qui y était saisi : rendue de nouveau, elle repart de ce que la route dit.
   function dessinerCases(cases) {
-    var forme = JSON.stringify(cases.map(function (c) { return [c.cle, c.libelle, c.forme, c.choix, c.parties, c.aide, c.dit]; }));
+    rendues = cases.map(function (c) { return c.cle; });
+    Object.keys(saisie).forEach(function (cle) { if (rendues.indexOf(cle) < 0) delete saisie[cle]; });
+    var forme = JSON.stringify(cases.map(function (c) { return [c.cle, c.libelle, c.forme, c.choix, c.parties, c.aide, c.dit, c.ajouter, c.retirer]; }));
     if (forme === signature) return;
     signature = forme;
     cases.forEach(function (c) { if (!(c.cle in saisie)) saisie[c.cle] = depart(c); });
@@ -370,12 +401,19 @@
     return ul;
   }
 
+  // La phrase du résultat, que les lecteurs d'écran annoncent (seule à l'être) : celle que la route rend.
+  function annoncer(phrase) {
+    $("annonce").textContent = phrase;
+  }
+
   function montrerRefus(phrase) {
     var r = $("resultat");
     r.replaceChildren(el("p", "avis", phrase));
+    annoncer(phrase);
   }
 
   function montrer(d) {
+    annoncer(d.phrase);
     var pieces = $("pieces");
     pieces.replaceChildren();
     (d.pieces || []).forEach(function (p) { pieces.append(el("li", null, p)); });

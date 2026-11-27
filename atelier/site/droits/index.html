@@ -29,10 +29,13 @@ h2{font:400 1.45rem/1.25 "EB Garamond",Georgia,serif;margin:2.4rem 0 .8rem}
 h3{font-size:1rem;font-weight:500;margin:1.6rem 0 .5rem}
 .chapeau{margin:0 0 2rem;color:var(--gris)}
 .cache{display:none}
+/* Lue par les lecteurs d'écran seulement : la phrase du résultat, qu'ils annoncent. */
+.pour-lecteur{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 /* Le dépôt des bulletins. */
 .depot{display:block;padding:1.6rem 1rem;border:1.5px dashed #C9C7C2;border-radius:var(--rayon);text-align:center;
   cursor:pointer;background:var(--papier)}
 .depot:hover,.depot.survol{border-color:var(--bleu);background:var(--voile)}
+.depot:focus-within{border-color:var(--bleu);background:var(--voile);outline:2px solid var(--bleu);outline-offset:3px}
 .depot strong{display:block;font-weight:500;color:var(--bleu)}
 .depot span{font-size:.9rem;color:var(--gris)}
 .depot input{position:absolute;width:1px;height:1px;opacity:0}
@@ -100,7 +103,8 @@ a{color:var(--bleu);text-underline-offset:2px}
 
   <div id="cases"></div>
 
-  <section id="resultat" aria-live="polite"></section>
+  <p id="annonce" class="pour-lecteur" aria-live="polite"></p>
+  <section id="resultat"></section>
 
   <noscript><p class="avis">Cette page a besoin de JavaScript.</p></noscript>
   <p class="pied signature">Une page de <a href="https://puppetpaie.fr/">PuppetPaie</a>, le logiciel de paie libre et gratuit, codé et maintenu par la <a href="https://ueueue.eu/">Compagnie UEUEUE</a>.</p>
