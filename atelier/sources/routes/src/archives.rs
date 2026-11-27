@@ -1368,7 +1368,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         if let Some(anniversaire) = anniv {
             let jours = socle::date::Duree::ecoulee(&ctx.aujourdhui, &anniversaire);
             if !jours.nulle() {
-                lignes.push(("Avant le réexamen".into(), jours.dite_en_abrege()));
+                lignes.push(("Avant la date anniversaire".into(), jours.dite_en_abrege()));
             }
         }
         let phrase = if a.manque.est_nul() {

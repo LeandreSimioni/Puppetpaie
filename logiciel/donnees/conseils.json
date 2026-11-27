@@ -62,8 +62,8 @@
     }
   },
   "fenetres": {
-    "quoi": "La fenêtre des droits que la phrase nomme : depuis la date anniversaire que porte la fiche du salarié (`anniversaire_droits`, les 12 mois qui la précèdent, `cumul::fenetre_anniversaire`), sinon les 12 mois glissants.",
-    "anniversaire": "du {debut} au {fin}, les 12 mois avant sa date anniversaire",
+    "quoi": "La fenêtre des droits que la phrase nomme, celle de l'affiliation (`allocation::affiliation_des_droits`) : elle finit à la dernière fin de contrat du salarié ; quand sa fiche porte la date anniversaire (`anniversaire_droits`), c'est la réadmission, pour le réexamen à cette date, et la fenêtre peut dépasser 12 mois (art. 9 §1 b) ; sinon les 12 mois qui précèdent cette fin.",
+    "anniversaire": "du {debut} au {fin}, pour le réexamen de ses droits à sa date anniversaire",
     "glissante": "sur les 12 mois du {debut} au {fin}"
   },
   "ordre_saisie": [
@@ -3359,7 +3359,7 @@
       "id": "historique-enseignement-perdu",
       "domaine": "chômage / enseignement",
       "public": "employeur",
-      "texte": "{prenom} a donné chez vous {heures} heures d'enseignement {fenetre} : au-delà de {plafond} heures, {perdus|heure ne compte|heures ne comptent} pas pour ses 507 heures.",
+      "texte": "{prenom} a donné chez vous {heures} heures d'enseignement {fenetre} : au-delà de {plafond} heures, {perdus|heure ne compte|heures ne comptent} pas pour ses {seuil} heures.",
       "source": [
         {
           "fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt",
@@ -3384,7 +3384,7 @@
       "id": "historique-resume-melange",
       "domaine": "chômage / ouverture des droits",
       "public": "employeur",
-      "texte": "Vos contrats ont fait compter au moins {seuil} heures à {noms_anniversaire} sur les 12 mois avant {n_anniversaire?sa|leur} date anniversaire, et à {noms_glissants} sur les 12 derniers mois : leurs droits au chômage sont ouverts grâce à vous.",
+      "texte": "Vos contrats ont fait compter au moins {seuil} heures à {noms_anniversaire} pour le réexamen de {n_anniversaire?ses|leurs} droits à {n_anniversaire?sa|leur} date anniversaire, et à {noms_glissants} sur les 12 mois avant la fin de {n_glissants?son|leur} dernier contrat : leurs droits au chômage sont ouverts grâce à vous.",
       "source": [
         {
           "fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt",
@@ -3415,7 +3415,7 @@
           "annexe": "VIII"
         }
       ],
-      "ciblage": "à l'accueil : les salariés dont vos seuls contrats font au moins 507 heures sur la fenêtre de leurs droits (celle de leur fiche, `conseils::position`), quand la liste mêle des salariés dont la fiche porte la date anniversaire et d'autres non ; ce conseil passe avant les deux suivants, qui se résoudraient aussi",
+      "ciblage": "à l'accueil : les salariés dont vos seuls contrats font les heures qu'exige leur affiliation (celle de leur fiche, `conseils::position` : 507 heures, davantage quand la fenêtre de la réadmission s'allonge ; `{seuil}` est la plus petite), quand la liste mêle des salariés dont la fiche porte la date anniversaire et d'autres non ; ce conseil passe avant les deux suivants, qui se résoudraient aussi",
       "certitude": "sourcé"
     },
     {
@@ -3423,7 +3423,7 @@
       "id": "historique-resume-anniversaire",
       "domaine": "chômage / ouverture des droits",
       "public": "employeur",
-      "texte": "Vos contrats ont fait compter au moins {seuil} heures à {noms_anniversaire} sur les 12 mois avant {n_anniversaire?sa|leur} date anniversaire : {n_anniversaire?son droit au chômage est ouvert|leurs droits au chômage sont ouverts} grâce à vous.",
+      "texte": "Vos contrats ont fait compter au moins {seuil} heures à {noms_anniversaire} pour le réexamen de {n_anniversaire?ses|leurs} droits à {n_anniversaire?sa|leur} date anniversaire : {n_anniversaire?son droit au chômage est ouvert|leurs droits au chômage sont ouverts} grâce à vous.",
       "source": [
         {
           "fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt",
@@ -3454,7 +3454,7 @@
           "annexe": "VIII"
         }
       ],
-      "ciblage": "à l'accueil : les salariés dont vos seuls contrats font au moins 507 heures sur les 12 mois avant la date anniversaire que porte leur fiche, tous",
+      "ciblage": "à l'accueil : les salariés dont vos seuls contrats font les heures qu'exige leur réadmission (la date anniversaire que porte leur fiche), à leur dernière fin de contrat, tous",
       "certitude": "sourcé"
     },
     {
@@ -3462,7 +3462,7 @@
       "id": "historique-resume",
       "domaine": "chômage / ouverture des droits",
       "public": "employeur",
-      "texte": "Vos contrats ont fait compter au moins {seuil} heures à {noms_glissants} sur les 12 derniers mois : {n_glissants?son droit au chômage est ouvert|leurs droits au chômage sont ouverts} grâce à vous.",
+      "texte": "Vos contrats ont fait compter au moins {seuil} heures à {noms_glissants} sur les 12 mois avant la fin de {n_glissants?son|leur} dernier contrat : {n_glissants?son droit au chômage est ouvert|leurs droits au chômage sont ouverts} grâce à vous.",
       "source": [
         {
           "fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt",
@@ -3479,7 +3479,7 @@
           "annexe": "VIII"
         }
       ],
-      "ciblage": "à l'accueil : les salariés dont vos seuls contrats font au moins 507 heures sur les 12 derniers mois, aucun n'ayant de date anniversaire sur sa fiche",
+      "ciblage": "à l'accueil : les salariés dont vos seuls contrats font au moins 507 heures sur les 12 mois avant leur dernière fin de contrat, aucun n'ayant de date anniversaire sur sa fiche",
       "certitude": "sourcé"
     }
   ]

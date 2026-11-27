@@ -271,10 +271,9 @@ pub struct Colonne {
     pub heures: Heures,
     pub heures_equivalentes: Heures,
     pub brut: Montant,
-    /// Heures restantes avant le seuil (colonne droits).
-    pub reste: Option<Heures>,
-    /// Date d'anniversaire (colonne droits).
-    pub echeance: Option<Jour>,
+    /// Les heures qu'exige l'ouverture des droits : 507 (`Constantes::seuil_heures`) ; pour la colonne des droits, celles
+    /// de son affiliation (davantage a la readmission allongee, `allocation::Affiliation::heures_exigees`).
+    pub heures_exigees: Heures,
     pub enseignement: Heures,
     pub heures_ouverture: Option<Heures>,
 }
@@ -293,7 +292,7 @@ pub fn tableau_cumul(
     let p_mois = position(&ctx.racine, &c, engagements, salarie, &(Periode::du_mois(mois), "periode".to_string()), ne);
     let p_annee = position(&ctx.racine, &c, engagements, salarie, &fenetre_annee_civile(mois)?, ne);
 
-    let col = |titre: &str, sous: String, p: &Position, reste: Option<Heures>, echeance: Option<Jour>| -> R<Colonne> {
+    let col = |titre: &str, sous: String, p: &Position, heures_exigees: Heures| -> R<Colonne> {
         Ok(Colonne {
             titre: titre.to_string(),
             sous_titre: sous,
@@ -301,21 +300,21 @@ pub fn tableau_cumul(
             heures: p.heures(),
             heures_equivalentes: p.heures_equivalentes(),
             brut: p.brut(),
-            reste,
-            echeance,
+            heures_exigees,
             enseignement: p.heures_enseignement(),
             heures_ouverture: Some(p.heures_ouverture()?),
         })
     };
     let mut colonnes = vec![
-        col("Période", format!("{:02}/{}", mois.numero(), annee), &p_mois, None, None)?,
-        col("Cumul", format!("année {}", annee), &p_annee, None, None)?,
+        col("Période", format!("{:02}/{}", mois.numero(), annee), &p_mois, c.seuil_heures)?,
+        col("Cumul", format!("année {}", annee), &p_annee, c.seuil_heures)?,
     ];
     // La colonne des droits, quand la fiche porte la date anniversaire : le compte de la route `droits`
-    // (`position_droits`), a la derniere fin de contrat jusqu'a la fin du mois.
+    // (`position_droits`), a la derniere fin de contrat jusqu'a la fin du mois ; son sous-titre, la fenetre telle que
+    // l'affiliation la nomme (allongee a la readmission).
     if let Some(anniv) = anniversaire_configure(ctx, salarie)? {
         let a = position_droits(ctx, salarie, engagements, Some(anniv), Some(mois.dernier_jour()))?;
-        colonnes.push(col("Droits", format!("au {}", a.position.periode.fin().jj_mm_aaaa()), &a.position, Some(a.manque), Some(anniv))?);
+        colonnes.push(col("Droits", a.position.libelle_fenetre.clone(), &a.position, a.heures_exigees)?);
     }
     Ok(colonnes)
 }

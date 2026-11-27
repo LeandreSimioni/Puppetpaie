@@ -413,22 +413,25 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
     )];
     let enseigne = colonnes.iter().any(|c| !c.enseignement.est_nul());
     // (libelle, valeur de chaque colonne, suffixe) ; une valeur que la colonne n'a pas laisse sa case vide.
-    type Rang = (&'static str, fn(&Colonne) -> Option<String>, &'static str);
+    type Rang = (String, fn(&Colonne) -> Option<String>, &'static str);
     use socle::grandeurs::ecrit::sans_zero::dit;
     let mut rangs: Vec<Rang> = vec![
-        ("Cachets", |c| Some(dit(c.cachets)), ""),
-        ("Heures déclarées", |c| Some(dit(c.heures)), " h"),
-        ("Total heures (cachets × 12 + heures)", |c| Some(dit(c.heures_equivalentes)), " h"),
+        ("Cachets".into(), |c| Some(dit(c.cachets)), ""),
+        ("Heures déclarées".into(), |c| Some(dit(c.heures)), " h"),
+        ("Total heures (cachets × 12 + heures)".into(), |c| Some(dit(c.heures_equivalentes)), " h"),
     ];
     if enseigne {
-        rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| Some(dit(c.enseignement)), " h"));
-        rangs.push(("Heures retenues pour les 507 h", |c| c.heures_ouverture.map(dit), " h"));
+        rangs.push(("dont enseignement (droits seuls, pas le montant)".into(), |c| Some(dit(c.enseignement)), " h"));
+        // Les heures exigees : 507, davantage dans la colonne des droits a la readmission allongee (la plus haute).
+        if let Some(exigees) = colonnes.iter().map(|c| c.heures_exigees).max() {
+            rangs.push((format!("Heures retenues pour les {} h", dit(exigees)), |c| c.heures_ouverture.map(dit), " h"));
+        }
     }
-    rangs.push(("Salaire brut", |c| Some(euros(c.brut)), ""));
+    rangs.push(("Salaire brut".into(), |c| Some(euros(c.brut)), ""));
     let lignes = rangs
         .iter()
         .map(|(libelle, valeur, suffixe)| {
-            let mut cel = vec![s(*libelle)];
+            let mut cel = vec![s(libelle.clone())];
             cel.extend(colonnes.iter().map(|c| so(valeur(c).map(|v| format!("{}{}", v, suffixe)))));
             ligne(cel, vec![])
         })

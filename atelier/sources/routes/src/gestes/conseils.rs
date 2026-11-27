@@ -12,14 +12,17 @@
 //!   dans `produire`. Une phrase courte (`texte`), et le detail (`detail` : les deux faces, les chiffres) que l'ecran
 //!   deplie derriere « pourquoi ? » avec la reference ;
 //! - les conseils sur l'historique (`conseils-salarie`, `conseils-resume`) : ce que la compagnie a reellement fait pour
-//!   un salarie, sur la fenetre de ses droits (depuis la date anniversaire que porte sa fiche, sinon 12 mois glissants).
+//!   un salarie, sur la fenetre de ses droits : son affiliation a sa derniere fin de contrat
+//!   (`allocation::affiliation_des_droits`), la readmission quand sa fiche porte la date anniversaire, comparee aux
+//!   heures qu'elle exige (507, davantage quand la fenetre s'allonge).
 //!
 //! Le texte, ses chiffres dates et sa source vivent dans `donnees/conseils.json` (sa forme : `Banque`) : un conseil
 //! s'ajoute sans toucher au moteur, tant qu'il ne lit que les valeurs livrees que la forme d'un gabarit connait
 //! (`Livree`). Ici, seulement les conditions et les valeurs qu'elles fournissent. Ce qui est sur se chiffre : les heures
-//! comptees chez nous, leur part des 507, ce que les conseils auraient change en heures et en jours d'allocation (annexe
-//! X ou VIII, art. 30). JAMAIS d'euros d'allocation : on ne connait pas les autres employeurs. Le seul cas de
-//! certitude : nos contrats font a eux seuls au moins 507 heures sur la fenetre ; alors ses droits sont ouverts, et le
+//! comptees chez nous, leur part des heures exigees, ce que les conseils auraient change en heures et en jours
+//! d'allocation (annexe X ou VIII, art. 30). JAMAIS d'euros d'allocation : on ne connait pas les autres employeurs. Le
+//! seul cas de certitude : nos contrats font a eux seuls les heures exigees sur la fenetre ; alors ses droits sont
+//! ouverts, et le
 //! conseil « plus d'heures » cede la place a « intense plutot que dilue ».
 //!
 //! Le salarie se nomme par son seul prenom (`{prenom}`), jamais par un pronom qui le genre.
@@ -34,6 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
+use droit::allocation::Affiliation;
 use droit::cumul::{self, Constantes, Declare};
 use droit::forme_bareme::Pile;
 use socle::date::{Jour, Periode};
@@ -826,12 +830,12 @@ fn phrase_fenetre(b: &Banque, f: &cumul::Position, anniversaire: bool) -> String
     g.replace("{debut}", &f.periode.debut().jj_mm_aaaa()).replace("{fin}", &f.periode.fin().jj_mm_aaaa())
 }
 
-/// La position du salarie sur la fenetre de ses droits, a `a_la_date` : le compte de la route `droits`
-/// (`cumul::position_droits`).
-fn position(ctx: &Contexte, cle: &droit::contexte::IdSalarie, engs: &[Declare], a_la_date: Jour) -> R<(cumul::Position, bool)> {
+/// L'affiliation du salarie a `a_la_date` (sa fenetre et les heures qu'elle exige) : le compte de la route `droits`
+/// (`cumul::position_droits`) ; et si sa fiche porte la date anniversaire.
+fn position(ctx: &Contexte, cle: &droit::contexte::IdSalarie, engs: &[Declare], a_la_date: Jour) -> R<(Affiliation, bool)> {
     let anniv = cumul::anniversaire_configure(ctx, cle)?;
-    let p = cumul::position_droits(ctx, cle, engs, anniv, Some(a_la_date))?.position;
-    Ok((p, anniv.is_some()))
+    let a = cumul::position_droits(ctx, cle, engs, anniv, Some(a_la_date))?;
+    Ok((a, anniv.is_some()))
 }
 
 // ------------------------------------------------------------- la saisie
@@ -889,7 +893,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         };
         let seuil_mois = a30.jours_sans_allocation * a30.heures_par_jour;
         let sature = heures_mois >= seuil_mois;
-        // Les deux conseils « plus d'heures », et ce qui les remplace quand nos contrats assurent les 507 heures. Le seuil
+        // Les deux conseils « plus d'heures », et ce qui les remplace quand nos contrats assurent les heures exigees. Le seuil
         // d'un gain d'heures : le poids d'un cachet (`gain_heures`).
         let rep = if annexe == Annexe::X { gain_repetition(ctx, p, heures_cachet)? } else { None };
         let hrs = gain_heures(ctx, p, Cachets::UN * heures_cachet)?;
@@ -905,9 +909,9 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         };
         let assure = if (rep.is_some() || hrs.is_some()) && !sature {
             if !assurees.contains_key(&cle) {
-                let (pos, anniv) = position(ctx, &p.salarie.id, declares.tous()?, e.periode_payee()?.fin())?;
-                let h = pos.heures_ouverture()?;
-                let r = (h >= c.seuil_heures).then(|| (h, phrase_fenetre(&b, &pos, anniv)));
+                let (a, anniv) = position(ctx, &p.salarie.id, declares.tous()?, e.periode_payee()?.fin())?;
+                let h = a.position.heures_ouverture()?;
+                let r = (h >= a.heures_exigees).then(|| (h, phrase_fenetre(&b, &a.position, anniv)));
                 assurees.insert(cle.clone(), r);
             }
             assurees.get(&cle).cloned().flatten()
@@ -1050,7 +1054,8 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
-    let (pos, anniv) = position(ctx, cle, &engs, jour)?;
+    let (a, anniv) = position(ctx, cle, &engs, jour)?;
+    let (pos, seuil) = (&a.position, a.heures_exigees);
     if pos.engagements.is_empty() {
         return Ok(Vec::new());
     }
@@ -1063,7 +1068,7 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
         let mut v = Valeurs::new();
         v.insert("prenom".into(), val_texte(qui.clone()));
         v.insert("fenetre".into(), val_texte(fenetre.clone()));
-        v.insert("seuil".into(), val_grandeur(c.seuil_heures));
+        v.insert("seuil".into(), val_grandeur(seuil));
         for (k, x) in extra {
             v.insert(k.into(), x);
         }
@@ -1071,9 +1076,9 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
     };
     let en_jeu = annexes_en_jeu(annexe);
     let mut a_dire: Vec<(Quand, Valeurs)> = Vec::new();
-    // La part du seuil que des heures font, en pourcent : la phrase la dit.
-    let pourcentage = |h: Heures| h.rapport(c.seuil_heures).map(Coefficient::en_taux).ok_or_else(|| socle::refus!("le seuil des droits est de zéro heure : le signaler au développeur"));
-    if heures >= c.seuil_heures {
+    // La part des heures exigees que des heures font, en pourcent : la phrase la dit.
+    let pourcentage = |h: Heures| h.rapport(seuil).map(Coefficient::en_taux).ok_or_else(|| socle::refus!("le seuil des droits est de zéro heure : le signaler au développeur"));
+    if heures >= seuil {
         a_dire.push((Quand::DroitsOuverts, base(vec![("heures", val_grandeur(heures))])));
         if let Some(a) = &a30 {
             a_dire.push((Quand::Intense, base(vec![("heures_par_jour", val_grandeur(a.heures_par_jour)), ("coefficient", val_grandeur(a.coefficient))])));
@@ -1124,9 +1129,10 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
     Ok(out)
 }
 
-/// `conseils-resume` : a l'accueil, les salaries dont nos seuls contrats font au moins 507 heures sur la fenetre de
-/// leurs droits, la meme que leur fiche (`position`) : les 12 mois avant leur date anniversaire si la fiche la porte,
-/// sinon les 12 derniers mois. La phrase dit l'une, l'autre, ou les deux quand la liste les mele : la banque essaie
+/// `conseils-resume` : a l'accueil, les salaries dont nos seuls contrats font les heures qu'exige leur affiliation, la
+/// meme que leur fiche (`position`) : a leur derniere fin de contrat, la readmission (pour le reexamen a leur date
+/// anniversaire) si la fiche la porte, sinon les 12 mois qui la precedent. La phrase dit l'une, l'autre, ou les deux
+/// quand la liste les mele : la banque essaie
 /// `historique-resume-melange`, puis `historique-resume-anniversaire`, puis `historique-resume`, et le premier dont
 /// les deux groupes de noms sont la parle. Vide quand il n'y en a pas.
 fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
@@ -1136,16 +1142,18 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
     let b = banque()?;
     let jour = ctx.aujourdhui;
     let d = Donnees::de_l_annee(jour.annee());
-    let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
     let cles: BTreeSet<&droit::contexte::IdSalarie> = engs.iter().map(|e| &e.salarie).collect();
     // Les salaries par leur prenom (sans fiche, par leur cle) ; deux du meme prenom, par leur prenom et leur nom (sinon
     // on ne saurait lequel).
+    // `{seuil}` : les heures exigees de chacun sont au moins `seuil` ; la phrase dit « au moins » le plus petit d'entre eux.
     let mut fiches = Vec::new();
+    let mut seuil: Option<Heures> = None;
     for cle in cles {
-        let (p, anniv) = position(ctx, cle, &engs, jour)?;
-        if p.heures_ouverture()? >= c.seuil_heures {
+        let (a, anniv) = position(ctx, cle, &engs, jour)?;
+        if a.position.heures_ouverture()? >= a.heures_exigees {
+            seuil = Some(seuil.map_or(a.heures_exigees, |s| s.min(a.heures_exigees)));
             let fiche = ctx.salaries.get(cle).map(|f| &f.champs);
             let nom = match fiche {
                 Some(f) => prenom(f, cle),
@@ -1154,9 +1162,9 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
             fiches.push((nom, fiche, anniv));
         }
     }
-    if fiches.is_empty() {
+    let Some(seuil) = seuil else {
         return Ok(Vec::new());
-    }
+    };
     // Les annexes de ceux que la phrase nomme : la reference cite X pour un artiste, VIII pour un technicien, les deux
     // quand la liste les mele.
     let mut en_jeu: Vec<Annexe> = Vec::new();
@@ -1184,7 +1192,7 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
         })
         .collect();
     let mut v = Valeurs::new();
-    v.insert("seuil".into(), val_grandeur(c.seuil_heures));
+    v.insert("seuil".into(), val_grandeur(seuil));
     // `{noms_anniversaire}` (et `{n_anniversaire}`) : ceux dont la fiche porte la date anniversaire ;
     // `{noms_glissants}` : les autres. Un groupe vide ne se pose pas : les conseils qui le nomment se taisent.
     for (groupe, anniv) in [("anniversaire", true), ("glissants", false)] {
