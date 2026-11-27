@@ -72,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","debut":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "dossier (mes-pieces/, où poser les pièces), pieces (une phrase par fichier), cases (les cases de la charge telles qu'on les saisit : la personne quand les pièces en portent plusieurs ou que la charge en dit une, la date anniversaire, les lignes prévues, l'allocation visée quand une allocation s'estime, les dates d'embauche quand la route en demande ; chacune libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée), personne (celle choisie, ou les lignes prévues seules sans pièce : nir, nom, fenetre, paies (un tableau : titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut), lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]), phrase",
+    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le résumé, l'allocation visée (une case, quand une allocation s'estime), les paies, la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : une phrase par fichier. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut) et lignes (la case des lignes prévues). resume (la personne choisie, ou les lignes prévues seules sans pièce) : nir, nom, fenetre, lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -190,33 +190,68 @@ fn case_en_rangees(nom: &'static str, valeur: Option<socle::ecriture::ValeurDeCa
     Ok(crate::fiches::CaseDeLaFiche::de_rangees(nom, c.libelle, valeur, parties).ajoutant(ajouter).retirant(retirer).disant(vec![c.sens.to_string()]))
 }
 
-/// LES CASES QUE LA ROUTE REND, chacune un champ de sa charge, avec ce que la charge y porte : la personne quand les
-/// pieces en portent plusieurs ou que la charge en dit une, meme qu'elles ne portent plus (`personnes`, ses choix :
-/// celles des pieces ; on la vide pour en sortir) ; la date anniversaire ; les lignes prevues ; l'allocation visee
-/// quand une allocation s'estime (`visee_offerte`) ou que la charge en dit une ; les dates d'embauche quand la route en
-/// demande ou que la charge en dit (`embauches`, les paies qui se choisissent). Les nombres s'y ecrivent tels qu'on les
-/// lit (`a_lire`).
-fn les_cases(c: &ChargeDroitsDesPieces, personnes: Option<Vec<crate::ouverture::Choix>>, visee_offerte: bool, embauches: Vec<crate::ouverture::Choix>) -> R<Vec<crate::fiches::CaseDeLaFiche<&'static str>>> {
+/// Le depot des pieces, tel que l'ecran le dit.
+const DEPOSER: &str = "Déposer mes bulletins";
+const DEPOSER_AIDE: &str = "Glissez-les ici, ou cliquez pour les choisir.";
+
+/// L'ECRAN DES DROITS, BLOC PAR BLOC, dans l'ordre ou il se lit ; chaque case porte ce que la charge y dit, ses nombres
+/// tels qu'on les lit (`a_lire`).
+/// - Avec un calcul (`calcul` : la personne, le tableau de ses paies, les paies dont la date d'embauche se choisit) : la
+///   personne quand elle se choisit ; le resume ; l'allocation visee quand une allocation s'estime ou que la charge en
+///   dit une ; le tableau des paies, ou les lignes prevues se saisissent ; la date anniversaire ; le depot ; les dates
+///   d'embauche quand la route en demande ou que la charge en dit ; les pieces deposees.
+/// - Sans calcul : la personne quand elle se choisit ; la date anniversaire ; le depot ; le tableau des paies, vide, ou
+///   les lignes prevues se saisissent, quand aucune piece ne porte de personne (`sans_personne`) ; les pieces deposees.
+/// La personne se choisit quand les pieces en portent plusieurs ou que la charge en dit une, meme qu'elles ne portent
+/// plus (`personnes` : ses choix, celles des pieces, et ce qui se dit sous elle ; on la vide pour en sortir).
+fn ecran(
+    c: &ChargeDroitsDesPieces,
+    personnes: Option<(Vec<crate::ouverture::Choix>, Vec<String>)>,
+    calcul: Option<(DroitsDUnePersonne, TableauRendu, Vec<crate::ouverture::Choix>)>,
+    sans_personne: bool,
+    dossier: PathBuf,
+    pieces: Vec<String>,
+) -> R<Vec<BlocDesDroits>> {
     use socle::ecriture::ValeurDeCase;
-    let mut cases = Vec::new();
-    if let Some(offerts) = personnes {
-        cases.push(case_simple(cle!(ChargeDroitsDesPieces, personne), c.personne.as_ref().and_then(ValeurDeCase::de))?.offrant(offerts));
+    let mut ecran = Vec::new();
+    if let Some((offerts, dit)) = personnes {
+        ecran.push(BlocDesDroits::Case(case_simple(cle!(ChargeDroitsDesPieces, personne), c.personne.as_ref().and_then(ValeurDeCase::de))?.offrant(offerts).disant(dit)));
     }
-    cases.push(case_simple(cle!(ChargeDroitsDesPieces, anniversaire), c.anniversaire.as_ref().and_then(ValeurDeCase::de))?);
+    let anniversaire = BlocDesDroits::Case(case_simple(cle!(ChargeDroitsDesPieces, anniversaire), c.anniversaire.as_ref().and_then(ValeurDeCase::de))?);
+    let depot = BlocDesDroits::Depot(DepotDit { dossier, libelle: DEPOSER, aide: DEPOSER_AIDE });
     let parties = PARTIES_D_UNE_LIGNE_PREVUE.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
-    cases.push(case_en_rangees(cle!(ChargeDroitsDesPieces, previsionnel), c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_LIGNE, RETIRER_LA_LIGNE)?);
-    if visee_offerte || c.allocation_visee.is_some() {
-        let visee = c.allocation_visee.map(|m| ValeurDeCase::texte(socle::texte::virgule(m)));
-        cases.push(case_simple(cle!(ChargeDroitsDesPieces, allocation_visee), visee)?);
+    let lignes = case_en_rangees(cle!(ChargeDroitsDesPieces, previsionnel), c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_LIGNE, RETIRER_LA_LIGNE)?;
+    match calcul {
+        Some((personne, tableau, embauches)) => {
+            let visee_offerte = !personne.estimations.is_empty();
+            ecran.push(BlocDesDroits::Resume(Box::new(personne)));
+            if visee_offerte || c.allocation_visee.is_some() {
+                let visee = c.allocation_visee.map(|m| ValeurDeCase::texte(socle::texte::virgule(m)));
+                ecran.push(BlocDesDroits::Case(case_simple(cle!(ChargeDroitsDesPieces, allocation_visee), visee)?));
+            }
+            ecran.push(BlocDesDroits::Paies(PaiesDites { tableau, lignes }));
+            ecran.push(anniversaire);
+            ecran.push(depot);
+            if !embauches.is_empty() || c.debuts.as_ref().is_some_and(|d| !d.is_empty()) {
+                let parties = PARTIES_D_UN_DEBUT
+                    .iter()
+                    .map(|p| crate::fiches::PartieDeLaFiche::de(p, (p.forme == Forme::ChoixRendu).then(|| embauches.clone())))
+                    .collect();
+                ecran.push(BlocDesDroits::Case(case_en_rangees(cle!(ChargeDroitsDesPieces, debuts), c.debuts.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_EMBAUCHE, RETIRER_LA_DATE)?));
+            }
+        }
+        None => {
+            ecran.push(anniversaire);
+            ecran.push(depot);
+            if sans_personne {
+                ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: tableau_des_paies(&[]), lignes }));
+            }
+        }
     }
-    if !embauches.is_empty() || c.debuts.as_ref().is_some_and(|d| !d.is_empty()) {
-        let parties = PARTIES_D_UN_DEBUT
-            .iter()
-            .map(|p| crate::fiches::PartieDeLaFiche::de(p, (p.forme == Forme::ChoixRendu).then(|| embauches.clone())))
-            .collect();
-        cases.push(case_en_rangees(cle!(ChargeDroitsDesPieces, debuts), c.debuts.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_EMBAUCHE, RETIRER_LA_DATE)?);
+    if !pieces.is_empty() {
+        ecran.push(BlocDesDroits::Pieces(PiecesDites { phrases: pieces }));
     }
-    Ok(cases)
+    Ok(ecran)
 }
 
 pub fn route(inst: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
@@ -808,7 +843,6 @@ struct DroitsDUnePersonne {
     nir: Option<Nir>,
     nom: String,
     fenetre: String,
-    paies: TableauRendu,
     lignes: Vec<(String, String)>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     heures_exigees: Heures,
@@ -825,18 +859,47 @@ struct DroitsDUnePersonne {
     visee: Vec<ViseeDite>,
 }
 
-/// Ce que rend `droits-des-pieces`.
+/// Ce que rend `droits-des-pieces` : sa phrase, et l'ecran, bloc par bloc dans l'ordre ou il se lit (`BlocDesDroits`).
 #[derive(Debug, Serialize)]
 struct DroitsDesPieces {
     phrase: Phrase,
+    ecran: Vec<BlocDesDroits>,
+}
+
+/// UN BLOC DE L'ECRAN DES DROITS, dans l'ordre que la route lui donne (`ecran`) : une case de la charge ; le resume de la
+/// personne (son bilan, ce qui lui manque et le jour butoir, son allocation estimee et visee, les notes) ; le tableau
+/// des paies, ou les lignes prevues se saisissent ; le depot des pieces ; les pieces deposees et ce qui en est lu.
+#[derive(Debug, Serialize)]
+#[serde(tag = "est", rename_all = "snake_case")]
+enum BlocDesDroits {
+    Case(crate::fiches::CaseDeLaFiche<&'static str>),
+    Resume(Box<DroitsDUnePersonne>),
+    Paies(PaiesDites),
+    Depot(DepotDit),
+    Pieces(PiecesDites),
+}
+
+/// LE TABLEAU DES PAIES : une ligne par paie, et la case des lignes prevues qu'on y saisit (ses parties, ses rangees,
+/// l'ajout et le retrait d'une ligne).
+#[derive(Debug, Serialize)]
+struct PaiesDites {
+    tableau: TableauRendu,
+    lignes: crate::fiches::CaseDeLaFiche<&'static str>,
+}
+
+/// LE DEPOT DES PIECES : le dossier ou elles se posent (`mes-pieces/`), son libelle et ce qu'on y fait.
+#[derive(Debug, Serialize)]
+struct DepotDit {
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: PathBuf,
-    pieces: Vec<String>,
+    libelle: &'static str,
+    aide: &'static str,
+}
+
+/// LES PIECES DEPOSEES : ce que la route en lit.
+#[derive(Debug, Serialize)]
+struct PiecesDites {
     phrases: Vec<String>,
-    /// Les cases de la charge, telles qu'on les saisit (`les_cases`).
-    cases: Vec<crate::fiches::CaseDeLaFiche<&'static str>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    personne: Option<DroitsDUnePersonne>,
 }
 
 impl Dite for DroitsDesPieces {
@@ -887,15 +950,16 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
         None => format!("NIR {}", &**nir),
     };
     // Une personne que la charge choisit et qu'aucune piece ne porte plus (ses bulletins retires) ne compte pas, et se
-    // dit : les autres et les lignes seules se comptent comme sans choix, et sa case reste pour qu'on la vide.
-    let mut phrases: Vec<String> = Vec::new();
+    // dit, sous sa case : les autres et les lignes seules se comptent comme sans choix, et sa case reste pour qu'on la
+    // vide.
+    let mut sous_la_personne: Vec<String> = Vec::new();
     let choisie: Option<Nir> = match (c.personne.as_ref().filter(|n| personnes.contains_key(*n)), personnes.len()) {
         (Some(n), _) => Some(n.clone()),
         (None, 1) => personnes.keys().next().cloned(),
         (None, _) => None,
     };
     if let Some(n) = c.personne.as_ref().filter(|n| !personnes.contains_key(*n)) {
-        phrases.push(format!("Aucune pièce ne porte le numéro de sécurité sociale {} choisi dans « Personne » : ce choix ne compte pas.", &**n));
+        sous_la_personne.push(format!("Aucune pièce ne porte le numéro de sécurité sociale {} choisi dans « Personne » : ce choix ne compte pas.", &**n));
     }
     let offerts = (personnes.len() > 1 || c.personne.is_some()).then(|| personnes.keys().map(|k| crate::ouverture::Choix::de(&**k, nom_de(k))).collect());
     // Sans piece qui porte une personne, les lignes prevues se comptent seules.
@@ -905,19 +969,13 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
         None if lignes_seules => Some(droits_d_une_personne(inst, &attestees, None, LIGNES_SEULES.to_string(), &c)?),
         None => None,
     };
-    let (personne, embauches) = match calcul {
-        Some((p, e)) => (Some(p), e),
-        None => (None, Vec::new()),
-    };
-    let phrase = match (&personne, personnes.len()) {
-        (Some(p), _) => socle::phrase!("{} : {} {}", p.nom, p.bilan, p.phrase),
+    let phrase = match (&calcul, personnes.len()) {
+        (Some((p, _, _)), _) => socle::phrase!("{} : {} {}", p.nom, p.bilan, p.phrase),
         (None, 0) => Phrase::fixe("Aucune pièce ne se compte encore : posez vos bulletins, de tous vos employeurs, ou remplissez des lignes prévues."),
         (None, n) => socle::phrase!("Les pièces portent {} personnes : choisissez-en une, ses droits se comptent seuls.", n),
     };
-    phrases.extend(personne.iter().flat_map(|p| p.notes.iter().cloned()));
-    let visee_offerte = personne.as_ref().is_some_and(|p| !p.estimations.is_empty());
-    let cases = les_cases(&c, offerts, visee_offerte, embauches)?;
-    Ok(DroitsDesPieces { phrase, dossier, pieces, phrases, cases, personne })
+    let ecran = ecran(&c, offerts.map(|o| (o, sous_la_personne)), calcul, personnes.is_empty(), dossier, pieces)?;
+    Ok(DroitsDesPieces { phrase, ecran })
 }
 
 /// Le plafond de la Securite sociale de l'annee `an`, tel que le bareme livre le porte.
@@ -975,9 +1033,9 @@ fn plafond_le_plus_bas(fin: Jour, artiste: bool) -> Result<Montant, PlafondIncon
 }
 
 /// Ce que la route dit de la personne `nir` (aucune : les lignes prevues seules) : ses paies, son affiliation, le jour
-/// butoir, son allocation estimee, et ce que vise la charge ; et les paies dont la date d'embauche se choisit (celles
-/// dont la route la demande, et celles que la charge en dit deja).
-fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>, nom: String, c: &ChargeDroitsDesPieces) -> R<(DroitsDUnePersonne, Vec<crate::ouverture::Choix>)> {
+/// butoir, son allocation estimee, et ce que vise la charge ; le tableau de ses paies ; et les paies dont la date
+/// d'embauche se choisit (celles dont la route la demande, et celles que la charge en dit deja).
+fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>, nom: String, c: &ChargeDroitsDesPieces) -> R<(DroitsDUnePersonne, TableauRendu, Vec<crate::ouverture::Choix>)> {
     let aujourdhui = droit::contexte::aujourdhui()?;
     let constantes = Constantes::lire(inst, &aujourdhui)?;
     let t = droit::allocation::allocation()?;
@@ -1068,7 +1126,6 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         nir: nir.cloned(),
         nom,
         fenetre: aff.position.libelle_fenetre.clone(),
-        paies,
         lignes: lignes_du_compte,
         heures_exigees: a_partir.heures_exigees,
         manque: a_partir.manque,
@@ -1079,7 +1136,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         estimations,
         visee,
     };
-    Ok((personne, embauches))
+    Ok((personne, paies, embauches))
 }
 
 /// Le libelle d'une paie parmi les choix des dates d'embauche : son nom, ses dates, son employeur (une ligne prevue, qui

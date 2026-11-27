@@ -1275,6 +1275,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | colonne d'un tableau qu'une route rend à l'écran (son en-tête, à droite pour un nombre, discrète pour ce qui précise la ligne : le livre de paie des Exports, les lignes du bulletin d'une carte importée ; pas une colonne d'un état exporté, `documents::tableaux_export::Colonne`, que sa clé d'état et son genre font) | `socle::ecran::ColonneRendue` | `socle/src/ecran.rs` |
 | tableau qu'une route rend à l'écran (son titre s'il en a un, ses colonnes, ses rangées : le livre de paie des Exports, les lignes du bulletin d'une carte importée, les paies de `droits-des-pieces`) | `socle::ecran::TableauRendu` | `socle/src/ecran.rs` |
 | rangée d'un tableau qu'une route rend à l'écran (ce qu'elle est : une ligne, le sous-total d'un groupe, le total général ; ses cellules déjà dites, une par colonne) | `socle::ecran::RangeeRendue`, `socle::ecran::SorteDeRangee` | `socle/src/ecran.rs` |
+| bloc de l'écran des droits d'un intermittent, dans l'ordre que la route `droits-des-pieces` lui donne (une case de sa charge, le résumé de la personne, le tableau des paies et ses lignes prévues, le dépôt des pièces, les pièces déposées ; pas un rang d'un `EcranRendu`, qui n'a ni tableau ni dépôt) | `BlocDesDroits` | `routes/src/accueil/droits_des_pieces.rs` |
 | quand, sur une carte fermée (celle d'un engagement validé, celle d'une paie importée : ses jours du mois en clair et au plus court, un seul compositeur ; une période quand ils ne sont pas lus ; s'ils sont épars ; au survol, ce qu'ils sont ; le mois abrégé) | `socle::ecran::QuandDeLaCarte` | `socle/src/ecran.rs` |
 | carte fermée d'une paie importée (quand, et au survol ses dates ; si ses jours sont épars ; le mois abrégé ; qui, le mot « importé », ce qu'il est ; ses pastilles ; le montant qu'elle dit et ce qu'il est) | `ResumeDeLaCarte` | `import/src/mois.rs` |
 | pastille d'un acte d'une carte importée (son titre : DPAE, Contrat, Documents ; son état, `EtatDeCarte` : sa couleur, son mot court, sa phrase au survol ; pas une `socle::ecran::Pastille`, qui n'a que sa couleur et ses mots) | `PastilleDeLaCarte` | `import/src/mois.rs` |
@@ -2929,9 +2930,12 @@ l'estimation attend, et la route demande le début du contrat de la paie), et un
 visée dit le salaire de référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion, et ce qui
 arrête la hausse. Une DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du
 salaire de référence, et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui
-porte une personne, les lignes prévues se comptent seules. La route rend les cases de sa charge telles qu'on les saisit
-(`cases`, chacune tirée de la déclaration de son champ) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les
-dessine, le moteur tournant dans l'onglet par le worker de la démo, et pose les bulletins déposés dans `mes-pieces/`.
+porte une personne, les lignes prévues se comptent seules. Le bilan se compte à la dernière fin de contrat ; ce qui
+reste à faire et le jour butoir, à partir d'aujourd'hui quand cette fin est passée (le même compte, à une autre fin).
+La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : les cases de sa
+charge, chacune tirée de la déclaration de son champ, le résumé, le tableau des paies où les lignes prévues se
+saisissent, le dépôt, les pièces) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,
+le moteur tournant dans l'onglet par le worker de la démo, et pose les bulletins déposés dans `mes-pieces/`.
 
 ### Le modèle d'un contrat, et le contrat parti
 

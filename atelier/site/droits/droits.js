@@ -1,9 +1,10 @@
 // LA PAGE DES DROITS D'UN INTERMITTENT (puppetpaie.fr/droits/). Elle s'ouvre tout de suite ; le moteur se charge
 // derrière, dans le worker de la démo (/demo/moteur.js : les deux mêmes fichiers, onglet.wasm.gz et demo.tar.gz).
-// Elle ne décide rien : elle demande la route `droits-des-pieces` et montre ce qu'elle rend, ses cases (dessinées
-// depuis la forme que la route leur donne), ses phrases et ses chiffres. Chaque changement (un bulletin déposé ou
-// retiré, une case) redemande la route. Les bulletins déposés vont dans le dossier que la route nomme (`dossier`), sur
-// le disque en mémoire du moteur. Elle ne garde rien : ni stockage, ni cache ; fermer l'onglet efface tout.
+// Elle ne décide rien : elle demande la route `droits-des-pieces` et pose son écran, bloc par bloc dans l'ordre où la
+// route le rend (`ecran` : les cases, dessinées depuis la forme que la route leur donne, le résumé, le tableau des
+// paies, le dépôt, les pièces). Chaque changement (un bulletin déposé ou retiré, une case) redemande la route. Les
+// bulletins déposés vont dans le dossier que le dépôt nomme (`dossier`), sur le disque en mémoire du moteur. Elle ne
+// garde rien : ni stockage, ni cache ; fermer l'onglet efface tout.
 "use strict";
 
 (function () {
@@ -101,7 +102,7 @@
     });
   }
 
-  // Les bulletins déposés, dans le dossier que la route nomme.
+  // Les bulletins déposés, dans le dossier que le dépôt nomme.
   function poser(dossier) {
     return new Promise(function (rendre) {
       poses.push(rendre);
@@ -116,6 +117,8 @@
   // Ce qui est saisi dans chaque case, sous sa clé : un texte, oui-non, ou des rangées (chacune ses parties).
   var saisie = {};
   var dossier = null;
+  // Les clés des cases que la route a rendues en dernier : les seules que la charge porte.
+  var rendues = [];
 
   function ajouterFichiers(liste) {
     // Un fichier qui ne se lit pas se dit dans l'avis ; les autres se posent.
@@ -134,48 +137,30 @@
         while (fichiers.some(function (f) { return f.nom === nom; })) nom = base + " (" + k++ + ")" + ext;
         fichiers.push({ nom: nom, octets: n.octets });
       });
-      montrerFichiers();
       aPoser = true;
       calculer();
     });
   }
 
-  function montrerFichiers() {
-    var ul = $("fichiers");
-    ul.replaceChildren();
-    fichiers.forEach(function (f, i) {
-      var li = el("li");
-      li.append(el("span", null, f.nom));
-      var b = el("button", "lien", "Retirer");
-      b.type = "button";
-      b.setAttribute("aria-label", "Retirer " + f.nom);
-      b.addEventListener("click", function () {
-        fichiers.splice(i, 1);
-        montrerFichiers();
-        aPoser = true;
-        calculer();
-      });
-      li.append(b);
-      ul.append(li);
-    });
+  function retirerFichier(nom) {
+    fichiers = fichiers.filter(function (f) { return f.nom !== nom; });
+    aPoser = true;
+    calculer();
   }
 
-  var depot = $("depot");
-  $("choisir").addEventListener("change", function (e) {
-    ajouterFichiers(e.target.files);
-    e.target.value = "";
-  });
-  ["dragenter", "dragover"].forEach(function (t) {
-    depot.addEventListener(t, function (e) { e.preventDefault(); depot.classList.add("survol"); });
-  });
-  ["dragleave", "drop"].forEach(function (t) {
-    depot.addEventListener(t, function (e) { e.preventDefault(); depot.classList.remove("survol"); });
-  });
-  depot.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files.length) ajouterFichiers(e.dataTransfer.files); });
-  // Un fichier lâché hors de la zone ne fait pas quitter la page (le navigateur l'ouvrirait à sa place).
+  // Un fichier lâché hors de la zone de dépôt ne fait pas quitter la page (le navigateur l'ouvrirait à sa place).
   ["dragover", "drop"].forEach(function (t) {
     document.addEventListener(t, function (e) { e.preventDefault(); });
   });
+
+  // Les rangées d'une case, telles qu'elles partent : chacune ses parties remplies ; une rangée vide ne part pas.
+  function rangeesEnvoyees(v) {
+    return v.map(function (r) {
+      var o = {};
+      Object.keys(r).forEach(function (k) { if (r[k] !== "" && r[k] !== null && r[k] !== false) o[k] = r[k]; });
+      return o;
+    }).filter(function (o) { return Object.keys(o).length > 0; });
+  }
 
   // La charge : ce qui est saisi dans les cases que la route a rendues, et rien d'autre ; une case vide n'y est pas.
   function charge() {
@@ -183,11 +168,7 @@
     rendues.forEach(function (cle) {
       var v = saisie[cle];
       if (Array.isArray(v)) {
-        var rangees = v.map(function (r) {
-          var o = {};
-          Object.keys(r).forEach(function (k) { if (r[k] !== "" && r[k] !== null && r[k] !== false) o[k] = r[k]; });
-          return o;
-        }).filter(function (o) { return Object.keys(o).length > 0; });
+        var rangees = rangeesEnvoyees(v);
         if (rangees.length) c[cle] = rangees;
       } else if (v !== "" && v !== null && v !== undefined) {
         c[cle] = v;
@@ -216,10 +197,6 @@
     // Une erreur, où qu'elle tombe, se dit dans l'avis et ne fige rien : le calcul suivant part.
     suite.then(function () { return route(charge()); }).then(function (r) {
       if (r.ok && r.resultat) {
-        if (dossier === null && r.resultat.dossier) {
-          dossier = r.resultat.dossier;
-          if (fichiers.length) { aPoser = true; encore = true; }
-        }
         montrer(r.resultat);
       } else if (r.refus) {
         montrerRefus(r.refus.phrase);
@@ -236,13 +213,16 @@
 
   // ---------------------------------------------------------------- les cases que la route rend
 
-  var signature = null;
-  // Les clés des cases que la route a rendues en dernier : les seules que la charge porte.
-  var rendues = [];
-
   // Une valeur que la route rend, telle qu'elle l'écrit ; vide, rien.
   function texteDe(v) {
     return v === null || v === undefined ? "" : String(v);
+  }
+
+  // Une rangée vide d'une case : chaque partie vide.
+  function rangeeVide(c) {
+    var o = {};
+    c.parties.forEach(function (p) { o[p.cle] = p.forme === "oui_non" ? false : ""; });
+    return o;
   }
 
   // La valeur de départ d'une case, quand rien n'est encore saisi : celle que la route y dit.
@@ -286,6 +266,30 @@
     return i;
   }
 
+  // Le bouton qui retire la rangée `n` d'une case (son libellé, celui de la route ; son nom, avec le rang).
+  function boutonRetirer(c, n) {
+    var b = el("button", "lien", c.retirer);
+    b.type = "button";
+    b.setAttribute("aria-label", c.retirer + " " + (n + 1));
+    b.addEventListener("click", function () {
+      saisie[c.cle].splice(n, 1);
+      redessiner();
+      calculer();
+    });
+    return b;
+  }
+
+  // Le bouton qui ajoute une rangée vide à une case (son libellé, celui de la route).
+  function boutonAjouter(c) {
+    var b = el("button", null, c.ajouter);
+    b.type = "button";
+    b.addEventListener("click", function () {
+      saisie[c.cle].push(rangeeVide(c));
+      redessiner();
+    });
+    return b;
+  }
+
   function dessinerCase(c) {
     var bloc = el("div", "case");
     var id = "case-" + c.cle;
@@ -295,71 +299,33 @@
       bloc.append(l);
       bloc.append(champ(c.forme, c.choix, saisie[c.cle], function (v) { saisie[c.cle] = v; calculer(); }, id));
       if (c.aide) bloc.append(el("p", "aide", c.aide));
+      (c.dit || []).forEach(function (d) { bloc.append(el("p", "aide", d)); });
       return bloc;
     }
     bloc.append(el("div", "libelle", c.libelle));
     (c.dit || []).forEach(function (d) { bloc.append(el("p", "aide", d)); });
-    var rangees = el("div");
-    bloc.append(rangees);
-    function redessiner() {
-      rangees.replaceChildren();
-      saisie[c.cle].forEach(function (r, n) {
-        var ligne = el("div", "rangee");
-        c.parties.forEach(function (p) {
-          var cellule = el("div", p.forme === "oui_non" ? "oui-non" : null);
-          var idp = id + "-" + n + "-" + p.cle;
-          var lp = el("label", null, p.libelle);
-          lp.htmlFor = idp;
-          var i = champ(p.forme, p.choix, r[p.cle], function (v) { r[p.cle] = v; calculer(); }, idp);
-          if (p.forme === "oui_non") { cellule.append(i, lp); } else { cellule.append(lp, i); }
-          ligne.append(cellule);
-        });
-        if (!c.retirer) { rangees.append(ligne); return; }
-        var retirer = el("button", "lien", c.retirer);
-        retirer.type = "button";
-        retirer.setAttribute("aria-label", c.retirer + " " + (n + 1));
-        retirer.addEventListener("click", function () {
-          saisie[c.cle].splice(n, 1);
-          redessiner();
-          calculer();
-        });
-        ligne.append(retirer);
-        rangees.append(ligne);
+    saisie[c.cle].forEach(function (r, n) {
+      var ligne = el("div", "rangee");
+      c.parties.forEach(function (p) {
+        var cellule = el("div", p.forme === "oui_non" ? "oui-non" : null);
+        var idp = id + "-" + n + "-" + p.cle;
+        var lp = el("label", null, p.libelle);
+        lp.htmlFor = idp;
+        var i = champ(p.forme, p.choix, r[p.cle], function (v) { r[p.cle] = v; calculer(); }, idp);
+        if (p.forme === "oui_non") { cellule.append(i, lp); } else { cellule.append(lp, i); }
+        ligne.append(cellule);
       });
-    }
-    redessiner();
-    if (c.ajouter) {
-      var b = el("button", null, c.ajouter);
-      b.type = "button";
-      b.addEventListener("click", function () {
-        var o = {};
-        c.parties.forEach(function (p) { o[p.cle] = p.forme === "oui_non" ? false : ""; });
-        saisie[c.cle].push(o);
-        redessiner();
-      });
-      bloc.append(b);
-    }
+      if (c.retirer) ligne.append(boutonRetirer(c, n));
+      bloc.append(ligne);
+    });
+    if (c.ajouter) bloc.append(boutonAjouter(c));
     return bloc;
-  }
-
-  // Les cases ne se redessinent que si la route en change la forme (une case, un choix) : ce qui est saisi reste.
-  // Une case que la route ne rend plus perd ce qui y était saisi : rendue de nouveau, elle repart de ce que la route dit.
-  function dessinerCases(cases) {
-    rendues = cases.map(function (c) { return c.cle; });
-    Object.keys(saisie).forEach(function (cle) { if (rendues.indexOf(cle) < 0) delete saisie[cle]; });
-    var forme = JSON.stringify(cases.map(function (c) { return [c.cle, c.libelle, c.forme, c.choix, c.parties, c.aide, c.dit, c.ajouter, c.retirer]; }));
-    if (forme === signature) return;
-    signature = forme;
-    cases.forEach(function (c) { if (!(c.cle in saisie)) saisie[c.cle] = depart(c); });
-    var boite = $("cases");
-    boite.replaceChildren();
-    cases.forEach(function (c) { boite.append(dessinerCase(c)); });
   }
 
   // ---------------------------------------------------------------- ce que la route dit
 
   // UN TABLEAU QUE LA ROUTE REND (`socle::ecran::TableauRendu`) : ses colonnes (à droite, discrète), ses rangées de
-  // cellules déjà dites (vide : rien), les totaux en gras. Son titre se pose à part (`titreDe`).
+  // cellules déjà dites (vide : rien), les totaux en gras. Son titre se pose à part.
   function tableau(t) {
     var table = el("table");
     var classe = function (c) { return c.a_droite ? "n" : c.discrete ? "discret" : null; };
@@ -401,33 +367,11 @@
     return ul;
   }
 
-  // La phrase du résultat, que les lecteurs d'écran annoncent (seule à l'être) : celle que la route rend.
-  function annoncer(phrase) {
-    $("annonce").textContent = phrase;
-  }
-
-  function montrerRefus(phrase) {
-    var r = $("resultat");
-    r.replaceChildren(el("p", "avis", phrase));
-    annoncer(phrase);
-  }
-
-  function montrer(d) {
-    annoncer(d.phrase);
-    var pieces = $("pieces");
-    pieces.replaceChildren();
-    (d.pieces || []).forEach(function (p) { pieces.append(el("li", null, p)); });
-    dessinerCases(d.cases || []);
-
-    var r = $("resultat");
-    r.replaceChildren();
-    var p = d.personne;
-    if (!p) {
-      r.append(el("p", "phrase", d.phrase));
-      return;
-    }
-    r.append(el("h2", null, p.nom));
-    r.append(el("p", "phrase", p.bilan), el("p", "aide", p.fenetre));
+  // LE RÉSUMÉ de la personne : son nom, son bilan, sa fenêtre, ce qui manque et le jour butoir, le compte des heures,
+  // l'allocation estimée et visée (chacune son détail replié), les notes.
+  function resume(p) {
+    var r = el("section", "bloc");
+    r.append(el("h2", null, p.nom), el("p", "phrase", p.bilan), el("p", "aide", p.fenetre));
     if (p.butoir) {
       var b = el("div", "butoir");
       b.append(el("p", null, p.butoir.phrase), el("p", null, p.butoir.pourquoi), el("p", "reference", p.butoir.reference));
@@ -436,13 +380,6 @@
       r.append(el("p", "phrase", p.phrase));
     }
     r.append(paires(p.lignes));
-
-    if (p.paies.rangees.length) {
-      if (p.paies.titre) r.append(el("h3", null, p.paies.titre));
-      r.append(tableau(p.paies));
-    }
-
-    // Le détail d'une estimation ou d'une visée se replie, sous le titre de son tableau.
     var replie = function (t) {
       var det = el("details");
       det.append(el("summary", null, t.titre), tableau(t));
@@ -454,15 +391,124 @@
       if (e.paies.rangees.length) bloc.append(replie(e.paies));
       r.append(bloc);
     });
-
     p.visee.forEach(function (v) {
       var bloc = el("div", "estimation");
       bloc.append(el("p", null, v.phrase), el("p", "aide", v.arret));
       if (v.paies && v.paies.rangees.length) bloc.append(replie(v.paies));
       r.append(bloc);
     });
+    if (p.notes.length) r.append(liste(p.notes));
+    return r;
+  }
 
-    if (d.phrases && d.phrases.length) r.append(liste(d.phrases));
+  // LE TABLEAU DES PAIES, et sous lui la case des lignes prévues.
+  function paies(b) {
+    var s = el("section", "bloc");
+    if (b.tableau.titre) s.append(el("h3", null, b.tableau.titre));
+    if (b.tableau.rangees.length) s.append(tableau(b.tableau));
+    s.append(dessinerCase(b.lignes));
+    return s;
+  }
+
+  // LE DÉPÔT : la zone où l'on glisse ou choisit ses bulletins (son libellé et son aide, ceux de la route), puis les
+  // fichiers déposés, chacun avec « Retirer ».
+  function depot(b) {
+    dossier = b.dossier;
+    var s = el("section", "bloc");
+    var zone = el("label", "depot");
+    var entree = el("input");
+    entree.type = "file";
+    entree.id = "choisir";
+    entree.multiple = true;
+    entree.addEventListener("change", function () {
+      ajouterFichiers(entree.files);
+      entree.value = "";
+    });
+    zone.append(el("strong", null, b.libelle), el("span", null, b.aide), entree);
+    ["dragenter", "dragover"].forEach(function (t) {
+      zone.addEventListener(t, function (e) { e.preventDefault(); zone.classList.add("survol"); });
+    });
+    ["dragleave", "drop"].forEach(function (t) {
+      zone.addEventListener(t, function (e) { e.preventDefault(); zone.classList.remove("survol"); });
+    });
+    zone.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files.length) ajouterFichiers(e.dataTransfer.files); });
+    s.append(zone);
+    var ul = el("ul", "fichiers");
+    fichiers.forEach(function (f) {
+      var li = el("li");
+      li.append(el("span", null, f.nom));
+      var x = el("button", "lien", "Retirer");
+      x.type = "button";
+      x.setAttribute("aria-label", "Retirer " + f.nom);
+      x.addEventListener("click", function () { retirerFichier(f.nom); });
+      li.append(x);
+      ul.append(li);
+    });
+    s.append(ul);
+    return s;
+  }
+
+  // LES PIÈCES DÉPOSÉES : ce que la route en lit.
+  function pieces(b) {
+    var s = el("section", "bloc");
+    s.append(liste(b.phrases));
+    return s;
+  }
+
+  // ---------------------------------------------------------------- l'écran
+
+  // La phrase du résultat, que les lecteurs d'écran annoncent (seule à l'être) : celle que la route rend.
+  function annoncer(phrase) {
+    $("annonce").textContent = phrase;
+  }
+
+  // Un refus de la route se dit au-dessus de l'écran, qui reste tel qu'il était : on corrige la case qu'il nomme.
+  function montrerRefus(phrase) {
+    var r = $("refus");
+    r.textContent = phrase;
+    r.classList.remove("cache");
+    annoncer(phrase);
+  }
+
+  var dernier = null;
+
+  // L'ÉCRAN : les blocs que la route rend, dans son ordre. Une case que la route ne rend plus perd ce qui y était saisi
+  // (rendue de nouveau, elle repart de ce que la route dit) ; ce qui est saisi dans les autres reste.
+  function montrer(d) {
+    dernier = d;
+    $("refus").classList.add("cache");
+    annoncer(d.phrase);
+    var cases = [];
+    d.ecran.forEach(function (b) {
+      if (b.est === "case") cases.push(b);
+      if (b.est === "paies") cases.push(b.lignes);
+    });
+    rendues = cases.map(function (c) { return c.cle; });
+    Object.keys(saisie).forEach(function (cle) { if (rendues.indexOf(cle) < 0) delete saisie[cle]; });
+    cases.forEach(function (c) { if (!(c.cle in saisie)) saisie[c.cle] = depart(c); });
+    redessiner();
+  }
+
+  // Redessine le dernier écran rendu, en gardant la case où l'on était et ce qu'on y tapait sans l'avoir quittée.
+  function redessiner() {
+    if (!dernier) return;
+    var actif = document.activeElement;
+    var ici = actif && actif.id;
+    var tape = actif && actif.tagName === "INPUT" && actif.type !== "checkbox" && actif.type !== "file" ? actif.value : null;
+    var ecran = $("ecran");
+    ecran.replaceChildren();
+    dernier.ecran.forEach(function (b) {
+      if (b.est === "case") ecran.append(dessinerCase(b));
+      else if (b.est === "resume") ecran.append(resume(b));
+      else if (b.est === "paies") ecran.append(paies(b));
+      else if (b.est === "depot") ecran.append(depot(b));
+      else if (b.est === "pieces") ecran.append(pieces(b));
+      else throw new Error("bloc inconnu de la route : " + b.est);
+    });
+    if (ici && $(ici)) {
+      if (tape !== null) $(ici).value = tape;
+      $(ici).focus();
+    }
   }
 
   demarrer();

@@ -31,6 +31,8 @@ h3{font-size:1rem;font-weight:500;margin:1.6rem 0 .5rem}
 .cache{display:none}
 /* Lue par les lecteurs d'écran seulement : la phrase du résultat, qu'ils annoncent. */
 .pour-lecteur{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+/* Les blocs de l'écran, dans l'ordre que la route leur donne. */
+.bloc{margin:0 0 1.8rem}
 /* Le dépôt des bulletins. */
 .depot{display:block;padding:1.6rem 1rem;border:1.5px dashed #C9C7C2;border-radius:var(--rayon);text-align:center;
   cursor:pointer;background:var(--papier)}
@@ -93,18 +95,9 @@ a{color:var(--bleu);text-underline-offset:2px}
 
   <div id="avis" class="avis cache" role="alert"></div>
 
-  <label class="depot" id="depot">
-    <strong>Déposer mes bulletins</strong>
-    <span>Glissez-les ici, ou cliquez pour les choisir.</span>
-    <input type="file" id="choisir" multiple>
-  </label>
-  <ul class="fichiers" id="fichiers"></ul>
-  <ul class="phrases" id="pieces"></ul>
-
-  <div id="cases"></div>
-
   <p id="annonce" class="pour-lecteur" aria-live="polite"></p>
-  <section id="resultat"></section>
+  <p id="refus" class="avis cache"></p>
+  <div id="ecran"></div>
 
   <noscript><p class="avis">Cette page a besoin de JavaScript.</p></noscript>
   <p class="pied signature">Une page de <a href="https://puppetpaie.fr/">PuppetPaie</a>, le logiciel de paie libre et gratuit, codé et maintenu par la <a href="https://ueueue.eu/">Compagnie UEUEUE</a>.</p>
