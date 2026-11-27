@@ -532,7 +532,7 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
     let mut avance_ouvert = false;
     for c in table.iter().filter(|c| montres.contains(&c.cle)) {
         let ecrite = |chemin: &[&str]| plate.ecrite_au_chemin(c.cle, chemin);
-        let Some(mut case) = case_du_champ(c, plate.valeur_ecrite(c.cle), &ecrite, mobilite)? else { continue };
+        let Some(mut case) = case_du_champ(ctx, c, plate.valeur_ecrite(c.cle), &ecrite, mobilite)? else { continue };
         if !completer.case(ctx, &mut case)? {
             continue;
         }
@@ -600,7 +600,7 @@ pub(crate) fn case_a_remplir(
 ) -> R<Option<CaseDeLaFiche>> {
     let Some(c) = champs::champ(fiche.nom(), chemin.champ)?.filter(|c| c.ecran && !c.calcule()) else { return Ok(None) };
     let mobilite = crate::ouverture::versement_mobilite_des_etablissements(ctx);
-    let Some(mut case) = case_du_champ(&c, valeur, &|ch: &[&str]| ecrite(c.cle, ch), mobilite)? else { return Ok(None) };
+    let Some(mut case) = case_du_champ(ctx, &c, valeur, &|ch: &[&str]| ecrite(c.cle, ch), mobilite)? else { return Ok(None) };
     if !Completer::de(ctx, fiche, &|k| k == c.cle, listes)?.case(ctx, &mut case)? {
         return Ok(None);
     }
@@ -617,7 +617,7 @@ pub(crate) fn case_a_remplir(
 pub(crate) fn case_a_redire(ctx: &Contexte, nom: NomDeFiche, k: CaseDeFiche) -> R<Option<CaseDeLaFiche>> {
     let Some(c) = champs::champ(nom, k)? else { return Ok(None) };
     let mobilite = crate::ouverture::versement_mobilite_des_etablissements(ctx);
-    case_du_champ(&c, None, &|_: &[&str]| MotEcrit::Vide, mobilite)
+    case_du_champ(ctx, &c, None, &|_: &[&str]| MotEcrit::Vide, mobilite)
 }
 
 /// La case que la fiche montre pour la cle `k` : la forme lisible dont elle se deduit, ou elle-meme.
@@ -631,7 +631,7 @@ fn a_l_ecran(table: &[Champ], k: CaseDeFiche) -> CaseDeFiche {
 /// LA CASE DU CHAMP `c` de valeur `valeur`, sans temps ni faute (`ecrite` : ce qu'ecrit la fiche au bout d'un chemin
 /// dans la case ; `mobilite` : les autres etablissements disent leur versement mobilite) ; aucune pour la ligne de
 /// l'histoire, qui n'est pas une case. Une case faite de cases rend ses parties ; une liste de cases, ses rangees.
-fn case_du_champ(c: &Champ, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(&[&str]) -> MotEcrit, mobilite: bool) -> R<Option<CaseDeLaFiche>> {
+fn case_du_champ(ctx: &Contexte, c: &Champ, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(&[&str]) -> MotEcrit, mobilite: bool) -> R<Option<CaseDeLaFiche>> {
     let parties_decrites = c.champs.as_deref().filter(|l| !l.is_empty());
     // UNE LISTE DE VALEURS D'UNE LISTE FERMEE (les jours travailles) : sa forme les declare (`Declaree::valeurs`), elle se
     // coche valeur par valeur.
@@ -683,7 +683,7 @@ fn case_du_champ(c: &Champ, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(&[&str
         renvoi: None,
         temps: None,
         anomalie: None,
-        fermee: c.fermee.as_ref().map(|f| f.pourquoi().to_string()),
+        fermee: super::ecriture::fermee(ctx, c)?.map(|f| f.pourquoi().to_string()),
     }))
 }
 

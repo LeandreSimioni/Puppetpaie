@@ -76,9 +76,9 @@ pub struct PlusLong {
 }
 
 /// UNE CASE A COCHER FERMEE POUR L'INSTANT (`fermee` de `champs-base.json`) : la chose existe et arrive, mais ne s'ouvre
-/// pas encore. La case se montre grisee, ne se coche pas, et dit pourquoi (la phrase de la table) ; l'ecriture qui la
-/// cocherait se refuse avec la meme phrase (`routes::fiches::ecriture::preparer`). Ce qu'une fiche en ecrit deja se
-/// lit toujours.
+/// pas encore. Dans une compagnie reelle (une fictive la garde ouverte : `routes::fiches::ecriture::fermee`), la case se
+/// montre grisee, ne se coche pas, et dit pourquoi (la phrase de la table) ; l'ecriture qui la cocherait se refuse avec
+/// la meme phrase. Ce qu'une fiche en ecrit deja se lit toujours.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(transparent)]
 pub struct CaseFermee(String);
