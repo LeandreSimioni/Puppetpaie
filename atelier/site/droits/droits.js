@@ -327,22 +327,40 @@
 
   // ---------------------------------------------------------------- ce que la route dit
 
-  function tableau(entetes, lignes) {
-    var t = el("table");
+  // UN TABLEAU QUE LA ROUTE REND (`socle::ecran::TableauRendu`) : ses colonnes (à droite, discrète), ses rangées de
+  // cellules déjà dites (vide : rien), les totaux en gras. Son titre se pose à part (`titreDe`).
+  function tableau(t) {
+    var table = el("table");
+    var classe = function (c) { return c.a_droite ? "n" : c.discrete ? "discret" : null; };
     var tr = el("tr");
-    entetes.forEach(function (e) { tr.append(el("th", e[1] ? "n" : null, e[0])); });
+    t.colonnes.forEach(function (c) { tr.append(el("th", classe(c), c.libelle)); });
     var tete = el("thead");
     tete.append(tr);
-    t.append(tete);
+    table.append(tete);
+    var corps = el("tbody");
+    t.rangees.forEach(function (g) {
+      var r = el("tr", g.sorte === "ligne" ? null : "total");
+      g.cellules.forEach(function (v, i) { r.append(el("td", classe(t.colonnes[i]), v)); });
+      corps.append(r);
+    });
+    table.append(corps);
+    var d = el("div", "tableau");
+    d.append(table);
+    return d;
+  }
+
+  // Les lignes [quoi, valeur] que la route rend (le compte des heures) : deux colonnes, sans en-tête.
+  function paires(lignes) {
+    var table = el("table");
     var corps = el("tbody");
     lignes.forEach(function (l) {
       var r = el("tr");
-      l.forEach(function (v, i) { r.append(el("td", entetes[i][1] ? "n" : null, v === null || v === undefined ? "" : String(v))); });
+      r.append(el("td", null, l[0]), el("td", "n", l[1]));
       corps.append(r);
     });
-    t.append(corps);
+    table.append(corps);
     var d = el("div", "tableau");
-    d.append(t);
+    d.append(table);
     return d;
   }
 
@@ -379,38 +397,30 @@
     } else {
       r.append(el("p", "phrase", p.phrase));
     }
-    r.append(tableau([["", false], ["", true]], p.lignes));
+    r.append(paires(p.lignes));
 
-    if (p.paies.length) {
-      r.append(el("h3", null, "Une ligne par paie"));
-      r.append(tableau(
-        [["Période", false], ["Employeur", false], ["Pièce", false], ["Cachets", true], ["Heures", true], ["Enseignement", true], ["Brut", true]],
-        p.paies.map(function (x) { return [x.periode, x.employeur, x.piece, x.cachets, x.heures, x.enseignement, x.brut]; })
-      ));
+    if (p.paies.rangees.length) {
+      if (p.paies.titre) r.append(el("h3", null, p.paies.titre));
+      r.append(tableau(p.paies));
     }
 
+    // Le détail d'une estimation ou d'une visée se replie, sous le titre de son tableau.
+    var replie = function (t) {
+      var det = el("details");
+      det.append(el("summary", null, t.titre), tableau(t));
+      return det;
+    };
     p.estimations.forEach(function (e) {
       var bloc = el("div", "estimation");
       bloc.append(el("p", null, e.phrase));
-      var det = el("details");
-      det.append(el("summary", null, "Le salaire de référence, paie par paie"));
-      det.append(tableau(
-        [["Période", false], ["Employeur", false], ["Brut", true], ["Plafond", true], ["Limite", true], ["Compte", true], ["", false]],
-        e.paies.map(function (x) { return [x.periode, x.employeur, x.brut, x.plafond, x.limite, x.compte, x.note]; })
-      ));
-      bloc.append(det);
+      if (e.paies.rangees.length) bloc.append(replie(e.paies));
       r.append(bloc);
     });
 
     p.visee.forEach(function (v) {
       var bloc = el("div", "estimation");
       bloc.append(el("p", null, v.phrase), el("p", "aide", v.arret));
-      if (v.paies.length) {
-        bloc.append(tableau(
-          [["Période", false], ["Employeur", false], ["Brut", true], ["Brut visé", true], ["Par cachet", true], ["Par heure", true]],
-          v.paies.map(function (x) { return [x.periode, x.employeur, x.brut, x.brut_vise, x.par_cachet, x.par_heure]; })
-        ));
-      }
+      if (v.paies && v.paies.rangees.length) bloc.append(replie(v.paies));
       r.append(bloc);
     });
 

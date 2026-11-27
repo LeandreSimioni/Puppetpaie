@@ -30,7 +30,7 @@ use envois::journal;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::fichiers::NomDeFichier;
-use socle::ecran::{ColonneRendue, RangeeRendue, SorteDeRangee};
+use socle::ecran::{ColonneRendue, RangeeRendue, SorteDeRangee, TableauRendu};
 use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
@@ -704,26 +704,19 @@ struct EcranDUnEtat {
     #[serde(skip_serializing_if = "Option::is_none")]
     ouvrir: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    livre: Option<EcranDuLivre>,
+    livre: Option<TableauRendu>,
     #[serde(skip_serializing_if = "Option::is_none")]
     casc: Option<EcranDeLaCasc>,
-}
-
-/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE, tel qu'il se lit : ses colonnes (le mois, le salarie, le spectacle, puis les
-/// montants de `documents::etats_paie::LigneLivre`, dans cet ordre), puis ses rangees dans l'ordre ou elles se lisent
-/// (les lignes de chaque groupe et son sous-total, le total general au bout), chacune ses cellules deja dites, une par
-/// colonne.
-#[derive(Debug, Serialize)]
-struct EcranDuLivre {
-    colonnes: Vec<ColonneRendue>,
-    rangees: Vec<RangeeRendue>,
 }
 
 /// Ce qu'une cellule du livre dit d'un montant que la ligne ne dit pas (les pieces d'une paie importee l'ont tu).
 const MONTANT_TU: &str = "—";
 
-/// Le livre `l`, tel qu'il se lit : chaque cellule dite.
-fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
+/// CE QUE L'ECRAN DIT DU LIVRE DE PAIE `l`, tel qu'il se lit : ses colonnes (le mois, le salarie, le spectacle, puis les
+/// montants de `documents::etats_paie::LigneLivre`, dans cet ordre), puis ses rangees dans l'ordre ou elles se lisent
+/// (les lignes de chaque groupe et son sous-total, le total general au bout), chacune ses cellules deja dites, une par
+/// colonne.
+fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> TableauRendu {
     let mut colonnes = vec![ColonneRendue::de_texte("Mois"), ColonneRendue::de_texte("Salarié"), ColonneRendue::discrete("Spectacle")];
     colonnes.extend(["Brut", "Part salariale", "Part patronale", "Net imposable", "Net à payer", "PAS", "Coût employeur"].map(ColonneRendue::de_nombres));
     let total = |sorte, titre: &str, t: &documents::etats_paie::Totaux| {
@@ -747,7 +740,7 @@ fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> EcranDuLivre {
         rangees.push(total(SorteDeRangee::SousTotal, &g.total_dit, &g.totaux));
     }
     rangees.push(total(SorteDeRangee::TotalGeneral, "TOTAL GÉNÉRAL", &l.totaux));
-    EcranDuLivre { colonnes, rangees }
+    TableauRendu::de(colonnes, rangees)
 }
 
 /// CE QUE L'ECRAN DIT DE LA REGULARISATION CASC-SVP, et ce qui s'y fait : son titre ; les virements (`virement`) ; les

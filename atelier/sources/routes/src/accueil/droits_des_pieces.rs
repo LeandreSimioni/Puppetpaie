@@ -49,6 +49,7 @@ use import::attestes::{BlocDImport, Registre};
 use import::reponse::Source;
 use import::tri::Sorte;
 use socle::date::{Duree, Jour, Periode};
+use socle::ecran::{ColonneRendue, TableauRendu};
 use socle::echec::{Classe, R};
 use socle::fichiers::NomDeFichier;
 use socle::grandeurs::ecrit::sans_zero::dit;
@@ -70,7 +71,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","debut":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "dossier (mes-pieces/, où poser les pièces), pieces (une phrase par fichier), cases (les cases de la charge telles qu'on les saisit : la personne quand les pièces en portent plusieurs, la date anniversaire, les lignes prévues, l'allocation visée quand une allocation s'estime, les dates d'embauche quand la route en demande ; chacune libelle, forme, valeur, choix, parties), personne (celle choisie, ou les lignes prévues seules sans pièce : nir, fenetre, paies [periode, employeur, piece (bulletin, AEM, prévisionnel), cachets, heures, enseignement, brut], lignes [quoi, valeur], heures_exigees, manque, butoir [jour, phrase, pourquoi, reference], phrase, notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies avec plafond et limite], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies avec brut_vise, limite, par_cachet, par_heure]), phrase",
+    rend: "dossier (mes-pieces/, où poser les pièces), pieces (une phrase par fichier), cases (les cases de la charge telles qu'on les saisit : la personne quand les pièces en portent plusieurs, la date anniversaire, les lignes prévues, l'allocation visée quand une allocation s'estime, les dates d'embauche quand la route en demande ; chacune libelle, forme, valeur, choix, parties), personne (celle choisie, ou les lignes prévues seules sans pièce : nir, nom, fenetre, paies (un tableau : titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut), lignes [quoi, valeur], heures_exigees, manque, butoir [jour, phrase, pourquoi, reference], phrase, notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]), phrase",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -691,38 +692,52 @@ fn declaree(p: &PaieComptee, cle: &droit::contexte::IdSalarie) -> Option<Declare
 
 // ------------------------------------------------------------------ ce que la route rend
 
-/// Une paie, telle que la route la dit : ce qu'elle compte (un compteur que la piece ne dit pas reste vide).
-#[derive(Debug, Serialize)]
-struct PaieDite {
-    periode: String,
-    employeur: String,
-    piece: &'static str,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    heures: Option<Heures>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    enseignement: Option<Heures>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    brut: Option<Montant>,
+/// UNE LIGNE PAR PAIE, en tableau (`socle::ecran::TableauRendu`) : sa periode, son employeur, sa piece, ses cachets, ses
+/// heures dont l'enseignement, son brut ; un compteur que la piece ne dit pas reste vide.
+fn tableau_des_paies(paies: &[PaieComptee]) -> TableauRendu {
+    let colonnes = vec![
+        ColonneRendue::de_texte("Période"),
+        ColonneRendue::de_texte("Employeur"),
+        ColonneRendue::discrete("Pièce"),
+        ColonneRendue::de_nombres("Cachets"),
+        ColonneRendue::de_nombres("Heures"),
+        ColonneRendue::de_nombres("Enseignement"),
+        ColonneRendue::de_nombres("Brut"),
+    ];
+    let lignes = paies.iter().map(|p| {
+        vec![Some(p.dates()), Some(p.employeur.clone()), Some(p.piece.to_string()), p.cachets.map(dit), p.heures.map(dit), p.enseignement.map(dit), p.brut.map(euros)]
+    });
+    TableauRendu::de_lignes(colonnes, lignes).intitule("Une ligne par paie")
 }
 
-/// Une paie dans le salaire de reference d'une annexe : son brut, son plafond et sa limite (quatre plafonds, art. 11 §3),
-/// ce qu'elle y compte, et pourquoi son plafond ne se connait pas.
-#[derive(Debug, Serialize)]
-struct PaieDuSalaire {
-    periode: String,
-    employeur: String,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
-    brut: Montant,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    plafond: Option<Montant>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    limite: Option<Montant>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
-    compte: Montant,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
+/// LES PAIES DU SALAIRE DE REFERENCE D'UNE ANNEXE, en tableau : le brut de chacune, son plafond et sa limite (quatre
+/// plafonds, art. 11 §3), ce qu'elle y compte, et pourquoi son plafond ne se connait pas.
+fn tableau_du_salaire(lignes: Vec<Vec<Option<String>>>) -> TableauRendu {
+    let colonnes = vec![
+        ColonneRendue::de_texte("Période"),
+        ColonneRendue::de_texte("Employeur"),
+        ColonneRendue::de_nombres("Brut"),
+        ColonneRendue::de_nombres("Plafond"),
+        ColonneRendue::de_nombres("Limite"),
+        ColonneRendue::de_nombres("Compte"),
+        ColonneRendue::discrete("Remarque"),
+    ];
+    TableauRendu::de_lignes(colonnes, lignes).intitule("Le salaire de référence, paie par paie")
+}
+
+/// LES PAIES DE LA FENETRE AUGMENTEES POUR L'ALLOCATION VISEE, en tableau : le brut de chacune, le brut vise, sa limite,
+/// et le montant d'un cachet ou d'une heure qui y mene (quand la paie n'est faite que de cachets, ou que d'heures).
+fn tableau_de_la_visee(lignes: Vec<Vec<Option<String>>>) -> TableauRendu {
+    let colonnes = vec![
+        ColonneRendue::de_texte("Période"),
+        ColonneRendue::de_texte("Employeur"),
+        ColonneRendue::de_nombres("Brut"),
+        ColonneRendue::de_nombres("Brut visé"),
+        ColonneRendue::de_nombres("Limite"),
+        ColonneRendue::de_nombres("Par cachet"),
+        ColonneRendue::de_nombres("Par heure"),
+    ];
+    TableauRendu::de_lignes(colonnes, lignes).intitule("Chaque paie, pour l'allocation visée")
 }
 
 /// L'allocation d'une annexe, estimee : ses parties, leur somme, le salaire de reference, ce qui est retenu, sa phrase,
@@ -743,25 +758,7 @@ struct EstimationDite {
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     retenue: Montant,
     phrase: String,
-    paies: Vec<PaieDuSalaire>,
-}
-
-/// Une paie de la fenetre, augmentee pour l'allocation visee : son brut, le brut vise, sa limite, et le montant d'un
-/// cachet ou d'une heure qui y mene (quand la paie n'est faite que de cachets, ou que d'heures).
-#[derive(Debug, Serialize)]
-struct PaieVisee {
-    periode: String,
-    employeur: String,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
-    brut: Montant,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
-    brut_vise: Montant,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    limite: Option<Montant>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    par_cachet: Option<Montant>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    par_heure: Option<MontantUnitaire>,
+    paies: TableauRendu,
 }
 
 /// Ce que l'allocation visee demande sous une annexe, et ce qui arrete la hausse.
@@ -774,7 +771,9 @@ struct ViseeDite {
     allocation: Option<Montant>,
     phrase: String,
     arret: String,
-    paies: Vec<PaieVisee>,
+    /// Aucune quand la visee ne se chiffre pas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    paies: Option<TableauRendu>,
 }
 
 /// Le jour butoir, tel que la route le dit : le jour, sa phrase, pourquoi il se deplace, et le texte.
@@ -794,7 +793,7 @@ struct DroitsDUnePersonne {
     nir: Option<Nir>,
     nom: String,
     fenetre: String,
-    paies: Vec<PaieDite>,
+    paies: TableauRendu,
     lignes: Vec<(String, String)>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     heures_exigees: Heures,
@@ -1021,10 +1020,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         }
     }
     let embauches = demandes.into_iter().map(|(code, libelle)| crate::ouverture::Choix::de(&code, libelle)).collect();
-    let paies = comptees
-        .iter()
-        .map(|p| PaieDite { periode: p.dates(), employeur: p.employeur.clone(), piece: p.piece, cachets: p.cachets, heures: p.heures, enseignement: p.enseignement, brut: p.brut })
-        .collect();
+    let paies = tableau_des_paies(&comptees);
     let personne = DroitsDUnePersonne {
         nir: nir.cloned(),
         nom,
@@ -1205,7 +1201,7 @@ fn estimer(
             let compte = droit::allocation::salaire_limite(&[(brut, limite)], Coefficient::UN);
             bruts.push((brut, limite));
             a_viser.push((**x, brut, limite));
-            lignes.push(PaieDuSalaire { periode: x.dates(), employeur: x.employeur.clone(), brut, plafond: plafond_paie, limite, compte, note });
+            lignes.push(vec![Some(x.dates()), Some(x.employeur.clone()), Some(euros(brut)), plafond_paie.map(euros), limite.map(euros), Some(euros(compte)), note]);
         }
         if !attendent.is_empty() {
             notes.push(format!("{} : l'allocation n'est pas estimée ; {}.", annexe_dite(annexe), attendent.join(" ; ")));
@@ -1232,7 +1228,7 @@ fn estimer(
             borne,
             limitee
         );
-        estimations.push(EstimationDite { annexe: annexe_dite(annexe), a: e.a, b: e.b, c: e.c, calculee: e.calculee, salaire_de_reference: sr, retenue: e.retenue, phrase, paies: lignes });
+        estimations.push(EstimationDite { annexe: annexe_dite(annexe), a: e.a, b: e.b, c: e.c, calculee: e.calculee, salaire_de_reference: sr, retenue: e.retenue, phrase, paies: tableau_du_salaire(lignes) });
         if let Some(v) = visee {
             visees.push(viser(t, annexe, v, sr, nht, plafond, diviseurs, &bruts, &a_viser, &sous_le_plus_bas, demandes)?);
         }
@@ -1298,7 +1294,7 @@ fn viser(
         (Some(m), None) => format!("Les paies ne comptent qu'à quatre fois leur plafond (art. 11 §3) : au plus {} de salaire de référence ; le plafond de l'allocation est de {} par jour.", euros(m), euros(plafond)),
         (None, None) => format!("Le plafond de l'allocation est de {} par jour (art. 16).", euros(plafond)),
     };
-    let vide = |phrase: String| ViseeDite { annexe: nom, salaire_de_reference: None, allocation: None, phrase, arret: arret.clone(), paies: Vec::new() };
+    let vide = |phrase: String| ViseeDite { annexe: nom, salaire_de_reference: None, allocation: None, phrase, arret: arret.clone(), paies: None };
     let cible = match t.salaire_vise(annexe, v, nht, plafond, d)? {
         Visee::Salaire(s) => s,
         Visee::AuDelaDuPlafond => return Ok(vide(format!("{} : {} par jour dépasse le plafond ; aucun salaire n'y mène.", nom, euros(v)))),
@@ -1331,7 +1327,7 @@ fn viser(
         let (cachets, heures) = (x.cachets.into_iter().sum::<Cachets>(), x.heures.into_iter().sum::<Heures>());
         let par_cachet = (heures.est_nul() && !cachets.est_nul()).then(|| brut_vise.prorata(Cachets::UN, cachets).au_centime());
         let par_heure = if cachets.est_nul() { brut_vise.par_heure(heures) } else { None };
-        paies.push(PaieVisee { periode: x.dates(), employeur: x.employeur.clone(), brut: *brut, brut_vise, limite: *limite, par_cachet, par_heure });
+        paies.push(vec![Some(x.dates()), Some(x.employeur.clone()), Some(euros(*brut)), Some(euros(brut_vise)), limite.map(euros), par_cachet.map(euros), par_heure.map(euros)]);
     }
     let (sens, ecart) = if k >= Coefficient::UN { ("augmentée", k - Coefficient::UN) } else { ("baissée", Coefficient::UN - k) };
     let phrase = format!(
@@ -1344,5 +1340,5 @@ fn viser(
         dit(ecart.en_taux().au_pair(1)),
         euros(atteinte)
     );
-    Ok(ViseeDite { annexe: nom, salaire_de_reference: Some(cible), allocation: Some(atteinte), phrase, arret, paies })
+    Ok(ViseeDite { annexe: nom, salaire_de_reference: Some(cible), allocation: Some(atteinte), phrase, arret, paies: Some(tableau_de_la_visee(paies)) })
 }

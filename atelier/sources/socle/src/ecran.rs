@@ -69,6 +69,33 @@ impl ColonneRendue {
     }
 }
 
+/// UN TABLEAU RENDU, tel que la page le dessine et que la ligne de commande le lit : son titre (aucun : le tableau n'en a
+/// pas), ses colonnes, et ses rangees, chacune ses cellules deja dites.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TableauRendu {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub titre: Option<&'static str>,
+    pub colonnes: Vec<ColonneRendue>,
+    pub rangees: Vec<RangeeRendue>,
+}
+
+impl TableauRendu {
+    /// Un tableau sans titre.
+    pub fn de(colonnes: Vec<ColonneRendue>, rangees: Vec<RangeeRendue>) -> TableauRendu {
+        TableauRendu { titre: None, colonnes, rangees }
+    }
+
+    /// Le meme, sous le titre `titre`.
+    pub fn intitule(self, titre: &'static str) -> TableauRendu {
+        TableauRendu { titre: Some(titre), ..self }
+    }
+
+    /// Des lignes, chacune ses cellules dites, une par colonne.
+    pub fn de_lignes(colonnes: Vec<ColonneRendue>, lignes: impl IntoIterator<Item = Vec<Option<String>>>) -> TableauRendu {
+        TableauRendu::de(colonnes, lignes.into_iter().map(|cellules| RangeeRendue { sorte: SorteDeRangee::Ligne, cellules }).collect())
+    }
+}
+
 /// UNE RANGEE D'UN TABLEAU RENDU : ce qu'elle est (`SorteDeRangee`) et ses cellules deja dites, une par colonne ; une
 /// cellule qui ne dit rien est `None` (la page n'y pose rien).
 #[derive(Debug, Clone, serde::Serialize)]
