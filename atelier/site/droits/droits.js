@@ -457,8 +457,6 @@ var dire = null;
   }
 
   var detailOuvert = false;
-  // La sorte d'heures cochée pour chaque ligne prévue (le confort de la main, avant qu'un nombre soit tapé).
-  var genres = new WeakMap();
 
   // LE DÉTAIL DU CALCUL, replié en bas : la fenêtre, le compte des heures, ce qui manque, l'estimation (son tableau,
   // paie par paie) et les phrases.
@@ -468,8 +466,8 @@ var dire = null;
     det.open = detailOuvert;
     det.addEventListener("toggle", function () { detailOuvert = det.open; });
     det.append(el("summary", null, d.libelle));
-    // La case de l'annexe, quand la route l'y pose (les pièces la disent).
-    if (d.annexe) det.append(dessinerCase(d.annexe));
+    // En tête, les heures de chaque annexe, celle qui s'applique, et l'annexe de chaque paie.
+    if (d.annexes.length) det.append(liste(d.annexes));
     det.append(el("p", "aide", d.fenetre));
     det.append(paires(d.compte));
     if (d.estimation && d.estimation.paies.rangees.length) {
@@ -497,17 +495,8 @@ var dire = null;
     };
     if (!rangs.length || remplie(rangs[rangs.length - 1])) rangs.push(rangeeVide(c));
     // L'AFFICHAGE EST CELUI DE LA PAGE (Léandre, 27/11/2026 : « les calculs, ça doit être les mêmes, il ne doit y avoir
-    // aucun calcul dans la page. Mais sinon, tout le reste, on le sort comme on veut ») : l'enseignement et la formation
-    // ne sont pas des colonnes, mais deux petites cases à cocher à côté des heures (« soit c'est des heures normales,
-    // soit on coche enseignement ou formation ») ; la colonne de l'allocation visée est verte.
-    var genreDe = function (col) {
-      var p = col.parties || [];
-      return p.indexOf("enseignement") >= 0 ? "enseignement" : p.indexOf("formation") >= 0 ? "formation" : null;
-    };
-    var iGenre = {};
-    t.colonnes.forEach(function (col, i) { var g = genreDe(col); if (g) iGenre[g] = i; });
-    var iHeures = t.colonnes.findIndex(function (col) { return (col.parties || []).indexOf("heures") >= 0; });
-    var montree = function (col) { return genreDe(col) === null; };
+    // aucun calcul dans la page. Mais sinon, tout le reste, on le sort comme on veut ») : la colonne de l'allocation
+    // visée est verte.
     var classe = function (col) {
       var k = [];
       if (col.a_droite) k.push("n");
@@ -515,61 +504,12 @@ var dire = null;
       if (!col.parties || !col.parties.length) { if (/^Pour /.test(col.libelle)) k.push("vise"); }
       return k.length ? k.join(" ") : null;
     };
-    // Les deux petites colonnes « ens. » et « form. », juste après les heures : les chiffres des heures restent les uns
-    // sous les autres (Léandre, 27/11/2026).
-    var GENRES = [["enseignement", "ens.", "Heures d'enseignement"], ["formation", "form.", "Heures de formation"]];
-    var lu = function (cellules, g) { return iGenre[g] === undefined ? "" : cellules[iGenre[g]]; };
-    // Les heures d'une rangée lue : ses heures, et celles d'enseignement ou de formation qu'elle porte.
-    var heuresLues = function (cellules) {
-      return [cellules[iHeures] || "", lu(cellules, "enseignement"), lu(cellules, "formation")].filter(Boolean).join(" + ");
-    };
-    var celluleDeGenre = function (contenu, titre) {
-      var td = el("td", "genre");
-      td.title = titre;
-      if (contenu) td.append(contenu);
-      return td;
-    };
-    // Les heures d'une ligne prévue : une case, et les deux cases à cocher de ses petites colonnes. Ce qui est tapé part
-    // sous `heures`, `enseignement` ou `formation` de la charge, selon la case cochée ; la page ne compte rien.
-    var casesDHeures = function (rang, n) {
-      var genre = genres.get(rang) || (rang.enseignement !== "" ? "enseignement" : rang.formation !== "" ? "formation" : "heures");
-      var valeur = rang[genre];
-      var i = champ("nombre", null, valeur, function (v) {
-        rang.heures = ""; rang.enseignement = ""; rang.formation = "";
-        rang[genre] = v;
-        if (n === rangs.length - 1) redessiner();
-        calculer();
-      }, "case-" + cle + "-" + n + "-heures");
-      i.setAttribute("aria-label", "Heures " + (n + 1));
-      var cases = GENRES.map(function (g) {
-        var x = el("input");
-        x.type = "checkbox";
-        x.id = "case-" + cle + "-" + n + "-" + g[0];
-        x.checked = genre === g[0];
-        x.addEventListener("change", function () {
-          var v = rang[genre];
-          var neuf = x.checked ? g[0] : "heures";
-          rang.heures = ""; rang.enseignement = ""; rang.formation = "";
-          rang[neuf] = v;
-          genres.set(rang, neuf);
-          redessiner();
-          if (v !== "") calculer();
-        });
-        x.setAttribute("aria-label", g[2] + " " + (n + 1));
-        return celluleDeGenre(x, g[2]);
-      });
-      return { heures: i, cases: cases };
-    };
     var s = el("section", "bloc");
     if (t.titre) s.append(el("h3", null, t.titre));
     (c.dit || []).forEach(function (d) { s.append(el("p", "aide", d)); });
     var table = el("table", "saisie");
     var tr = el("tr");
-    t.colonnes.forEach(function (col, i) {
-      if (!montree(col)) return;
-      tr.append(el("th", classe(col), col.libelle));
-      if (i === iHeures) GENRES.forEach(function (g) { var th = el("th", "genre", g[1]); th.title = g[2]; tr.append(th); });
-    });
+    t.colonnes.forEach(function (col) { tr.append(el("th", classe(col), col.libelle)); });
     tr.append(el("th"));
     var tete = el("thead");
     tete.append(tr);
@@ -580,15 +520,8 @@ var dire = null;
       placees[n] = true;
       var r = el("tr", "prevue");
       t.colonnes.forEach(function (col, i) {
-        if (!montree(col)) return;
         var td = el("td", classe(col));
-        if (i === iHeures) {
-          var h = casesDHeures(rangs[n], n);
-          td.append(h.heures);
-          r.append(td);
-          h.cases.forEach(function (c2) { r.append(c2); });
-          return;
-        } else if (col.parties && col.parties.length) {
+        if (col.parties && col.parties.length) {
           col.parties.filter(function (k) { return parties[k].ouverte; }).forEach(function (k) {
             var p = parties[k];
             var i2 = champ(p.forme, p.choix, rangs[n][k], function (v) {
@@ -596,7 +529,7 @@ var dire = null;
               // La ligne vide qu'on remplit en fait paraître une autre, même avant que le moteur soit prêt.
               if (n === rangs.length - 1) redessiner();
               calculer();
-            }, "case-" + cle + "-" + n + "-" + k);
+            }, "case-" + cle + "-" + n + "-" + k, texteDe(p.prerempli));
             i2.setAttribute("aria-label", p.libelle + " " + (n + 1));
             td.append(i2);
             // Un montant porte « € », le dessin de sa forme.
@@ -620,11 +553,7 @@ var dire = null;
       }
       if (g.saisie !== undefined) return;
       var r = el("tr", g.sorte === "ligne" ? null : "total");
-      g.cellules.forEach(function (v, i) {
-        if (!montree(t.colonnes[i])) return;
-        r.append(el("td", classe(t.colonnes[i]), i === iHeures ? heuresLues(g.cellules) : v));
-        if (i === iHeures) GENRES.forEach(function (gg) { r.append(celluleDeGenre(lu(g.cellules, gg[0]) ? document.createTextNode("✓") : null, gg[2])); });
-      });
+      g.cellules.forEach(function (v, i) { r.append(el("td", classe(t.colonnes[i]), v)); });
       r.append(el("td"));
       corps.append(r);
     });
@@ -716,7 +645,6 @@ var dire = null;
       if (b.est === "case") cases.push(b);
       if (b.est === "visee") cases.push(b.case);
       if (b.est === "paies") cases.push(b.lignes);
-      if (b.est === "details" && b.annexe) cases.push(b.annexe);
     });
     rendues = cases.map(function (c) { return c.cle; });
     Object.keys(saisie).forEach(function (cle) { if (rendues.indexOf(cle) < 0) delete saisie[cle]; });

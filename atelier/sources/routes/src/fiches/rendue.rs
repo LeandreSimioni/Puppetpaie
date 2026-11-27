@@ -385,11 +385,6 @@ impl<K> CaseDeLaFiche<K> {
         CaseDeLaFiche { place: PlaceDeLaCase::Avance, ..self }
     }
 
-    /// La meme case, le moteur prenant `prerempli` pour elle vide (il le propose, la case le montre sans l'ecrire).
-    pub(crate) fn preremplie(self, prerempli: Option<ValeurDeCase>) -> CaseDeLaFiche<K> {
-        CaseDeLaFiche { prerempli, ..self }
-    }
-
     /// La meme case, le moteur disant `dit` sous elle (une ligne chacune).
     pub(crate) fn disant(self, dit: Vec<String>) -> CaseDeLaFiche<K> {
         CaseDeLaFiche { dit, ..self }
@@ -409,6 +404,11 @@ impl PartieDeLaFiche {
     /// se choisit dans ce que la route rend.
     pub(crate) fn de(p: &crate::catalogue::Partie, choix: Option<Vec<Choix>>) -> PartieDeLaFiche {
         PartieDeLaFiche { cle: p.cle.to_string(), libelle: p.libelle.texte().to_string(), forme: p.forme, aide: None, exemple: None, prerempli: None, choix, boutons: false, ouverte: p.toujours }
+    }
+
+    /// La meme partie, le moteur prenant `prerempli` pour elle vide (il le propose, la case le montre sans l'ecrire).
+    pub(crate) fn preremplie(self, prerempli: Option<ValeurDeCase>) -> PartieDeLaFiche {
+        PartieDeLaFiche { prerempli, ..self }
     }
 
     /// UNE PARTIE OUVERTE QUE LA ROUTE COMPOSE, d'une case qu'une boite de saisie rend (`CaseDeLaFiche::de_parties`) ou

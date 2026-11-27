@@ -11,15 +11,18 @@
 //! bulletin l'emporte (`Registre::ajouter`), comme a l'import d'une compagnie.
 //!
 //! LES LIGNES PREVUES : la charge peut porter des contrats a venir, saisis a la main (`LignePrevue` : leur fin, des
-//! cachets ou des heures, des heures d'enseignement et de formation, un brut facultatif) ; chacune se compte comme une
-//! paie, et rien ne s'ecrit. Sans brut, elle compte pour les heures, pas pour l'allocation. Sans piece qui porte une
-//! personne, les lignes se comptent seules (« simple pour les simples » : on pose ses bulletins, ou l'on remplit des
-//! lignes).
+//! cachets ou des heures, leur nature, un brut facultatif) ; chacune se compte comme une paie, et rien ne s'ecrit. Sans
+//! brut, elle compte pour les heures, pas pour l'allocation. Sans piece qui porte une personne, les lignes se comptent
+//! seules (« simple pour les simples » : on pose ses bulletins, ou l'on remplit des lignes).
 //!
-//! L'ANNEXE (artiste, annexe X ; technicien, annexe VIII) : la charge la dit (`annexe`, une liste fermee) ; sinon, celle
-//! que les pieces disent toutes (`annexe_lue` : la case d'une AEM, le statut ou l'emploi d'un bulletin, des cachets) se
-//! propose, la reponse la nomme et sa case passe dans le detail ; sans l'une ni l'autre, les heures se disent et
-//! l'allocation attend le choix.
+//! L'ANNEXE (artiste, annexe X ; technicien, annexe VIII) : CHAQUE PAIE A LA SIENNE. Une paie des pieces, celle que sa
+//! piece dit (la case d'une AEM, le statut ou l'emploi d'un bulletin) ou ses cachets ; une ligne prevue, sa nature
+//! (`NatureDUneLigne` : artiste, technicien, enseignement, formation). Une paie qui ne la dit pas prend celle de base :
+//! l'annexe de la personne, quand ses paies n'en disent qu'une (`AnnexesDesPaies`). Les heures des deux annexes
+//! s'additionnent pour les 507 heures, et L'ANNEXE APPLIQUEE EST CELLE QUI A LE PLUS D'HEURES dans les 12 mois : toute
+//! l'activite compte sous elle (annexes VIII et X du 15/11/2024, art. 65 §9 :
+//! `plafond-intermittents/unedic-annexe10-convention-20241115.txt` l. 1545-1549, `…annexe8…` l. 1509-1513 ; circulaire
+//! Unedic 2016-25, fiche 1, § 2.3.1, `unedic-circulaire-2016-25-annexes-8-10.txt` l. 2623-2674).
 //!
 //! LES CASES : la route rend les cases de sa charge telles qu'on les saisit (`cases` : libelle, forme, valeur, choix,
 //! parties des rangees), chacune tiree de la declaration de son champ ; la page de puppetpaie.fr les dessine, et qui lit
@@ -81,8 +84,8 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     route: Route::DroitsDesPieces,
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
-    exemple: r#"{"annexe":"X","allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "phrase (la réponse : les heures, jusqu'à quand, l'allocation), et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), la réponse, l'allocation visée (quand une allocation s'estime), l'annexe (une case, quand les pièces ne la disent pas ou en disent deux ; sinon dans le détail), la date anniversaire (une case), les paies, le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces, le détail ; sans calcul : la personne, l'annexe, la date anniversaire, les paies (vides, quand aucune pièce ne porte de personne), le dépôt, les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), prerempli (l'annexe que les pièces disent), choix, parties, ajouter et retirer d'une rangée, dit. reponse : nom (seulement quand les pièces portent plusieurs personnes), couleur (vert : les heures sont là), heures (les 507 h sur les 12 mois avant la dernière fin de contrat, ou ce qui manque, compté à partir d'aujourd'hui quand cette fin est passée), jusqu_a (quand il en manque : la date anniversaire à venir, sinon le jour où la plus ancienne paie sort des 12 mois), allocation (celle de l'annexe, ou ce qui l'attend), sous. visee : case (« Je voudrais »), unite, reponse (ce qu'il faudrait par cachet ou de l'heure), reinitialiser (vide la case). paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie que les 12 mois comptent, dans l'ordre des fins : fin, cachets, heures, enseignement, formation, brut, et le brut visé quand l'allocation visée est remplie ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. details (replié ; la personne choisie, ou les lignes prévues seules sans pièce) : libelle, annexe (sa case, quand les pièces la disent), nir, fenetre, compte [quoi, valeur], heures_exigees, manque, estimation (de l'annexe : a, b, c, calculee, salaire_de_reference, retenue, paies : un tableau avec plafond, limite, ce qui compte), lignes (le jour butoir, l'estimation, ce qui arrête la hausse, les notes)",
+    exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","cachets":1,"nature":"artiste","brut":250}]}"#,
+    rend: "phrase (la réponse : les heures, jusqu'à quand, l'allocation), et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), la réponse, l'allocation visée (quand une allocation s'estime), la date anniversaire (une case), les paies, le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces, le détail ; sans calcul : la personne, la date anniversaire, les paies (vides, quand aucune pièce ne porte de personne), le dépôt, les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties (chacune sa forme, ses choix, et prerempli : la nature d'une ligne prévue vide prend l'annexe de base, quand les paies n'en disent qu'une), ajouter et retirer d'une rangée, dit. reponse : nom (seulement quand les pièces portent plusieurs personnes), couleur (vert : les heures sont là), heures (les 507 h sur les 12 mois avant la dernière fin de contrat, ou ce qui manque, compté à partir d'aujourd'hui quand cette fin est passée), jusqu_a (quand il en manque : la date anniversaire à venir, sinon le jour où la plus ancienne paie sort des 12 mois), allocation (celle de l'annexe qui s'applique, celle qui a le plus d'heures, ou ce qui l'attend), sous (la fenêtre, et l'annexe qui s'applique avec ses heures contre celles de l'autre). visee : case (« Je voudrais »), unite, reponse (ce qu'il faudrait par cachet ou de l'heure), reinitialiser (vide la case). paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie que les 12 mois comptent, dans l'ordre des fins : fin, cachets, heures, nature, brut, et le brut visé quand l'allocation visée est remplie ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. details (replié ; la personne choisie, ou les lignes prévues seules sans pièce) : libelle, annexes (les heures de chaque annexe, celle qui s'applique et pourquoi, l'annexe de chaque paie et d'où elle se lit), nir, fenetre, compte [quoi, valeur], heures_exigees, manque, estimation (de l'annexe : a, b, c, calculee, salaire_de_reference, retenue, paies : un tableau avec plafond, limite, ce qui compte), lignes (le jour butoir, l'estimation, ce qui arrête la hausse, les notes)",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -92,16 +95,14 @@ pub const ROUTES: &[Fiche] = &[Fiche {
 
 charge! {
     /// La charge de `droits-des-pieces` : la personne (aucune : la seule des pieces, ou aucune s'il y en a plusieurs),
-    /// son annexe (aucune : celle que les pieces disent, sinon aucune allocation), la date anniversaire (aucune : ce qui
-    /// manque se compte jusqu'a la sortie de la plus ancienne paie), l'allocation visee (aucune : rien ne se vise), les
-    /// lignes prevues (aucune : les pieces seules).
+    /// la date anniversaire (aucune : ce qui manque se compte jusqu'a la sortie de la plus ancienne paie), l'allocation
+    /// visee (aucune : rien ne se vise), les lignes prevues (aucune : les pieces seules).
     #[derive(Debug)]
     struct ChargeDroitsDesPieces {
         personne: Option<Nir> = legende("Personne", "son numéro de sécurité sociale, parmi ceux que portent les pièces ; absent : la seule qu'elles portent ; un numéro qu'elles ne portent plus ne compte pas").rendue(),
-        annexe: Option<AnnexeChomage> = legende("Je suis", "artiste (annexe 10) ou technicien (annexe 8) : l'allocation se calcule pour cette annexe ; absente : celle que les pièces disent, sinon l'allocation attend le choix"),
         anniversaire: Option<Jour> = legende("Date anniversaire (si vous en avez une)", "celle que France Travail a notifiée : les heures qui manquent se comptent jusqu'à elle ; absente ou passée : jusqu'au jour où la plus ancienne paie sort des 12 mois"),
         allocation_visee: Option<Montant> = legende("Je voudrais", "l'allocation journalière qu'on voudrait, en euros par jour ; absente : rien ne se vise"),
-        previsionnel: Option<Vec<LignePrevue>> = legende("Lignes prévues", "le travail à venir, une ligne par engagement : sa fin, ses cachets ou ses heures, ses heures d'enseignement et de formation, son brut ; rien ne s'écrit"),
+        previsionnel: Option<Vec<LignePrevue>> = legende("Lignes prévues", "le travail à venir, une ligne par engagement : sa fin, ses cachets ou ses heures, sa nature (artiste, technicien, enseignement ou formation ; vide : l'annexe de base, quand les paies n'en disent qu'une), son brut ; rien ne s'écrit"),
         debuts: Option<Vec<DebutDUnContrat>> = legende("Dates d'embauche", "la date d'embauche d'une paie des pièces dont la route la demande (la case Dates d'embauche, ses choix), sous le nom de la paie ; absente : rien n'est dit"),
     }
 }
@@ -129,8 +130,7 @@ impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for De
 
 /// UNE LIGNE PREVUE : un contrat a venir, saisi a la main pour un previsionnel. Sa fin seule (la ligne declaree se situe
 /// par elle, `droit::cumul::Declare` ; son debut ne se demande pas, Léandre, 27/11/2026 : « on s'en fiche ») ; des
-/// cachets ou des heures ; des heures d'enseignement, en plus de ses heures (elles comptent pour les 507 heures, sous
-/// leur plafond, pas pour l'allocation) ; des heures de formation (de meme, annexes VIII et X, art. 3 §1) ; son brut,
+/// cachets ou des heures ; sa nature (`NatureDUneLigne` ; vide : l'annexe de base, `AnnexesDesPaies::base`) ; son brut,
 /// facultatif (sans lui, la ligne compte pour les heures, pas pour l'allocation).
 /// Elle s'ecrit aussi dans la valeur de sa case (`cases`), ses nombres tels qu'on les lit (`a_lire`).
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
@@ -141,12 +141,66 @@ struct LignePrevue {
     cachets: Option<Cachets>,
     #[serde(serialize_with = "a_lire")]
     heures: Option<Heures>,
-    #[serde(serialize_with = "a_lire")]
-    enseignement: Option<Heures>,
-    #[serde(serialize_with = "a_lire")]
-    formation: Option<Heures>,
+    nature: Option<NatureDUneLigne>,
     #[serde(serialize_with = "a_lire")]
     brut: Option<Montant>,
+}
+
+/// LA NATURE D'UNE LIGNE PREVUE (Léandre, 27/11/2026 : « un seul déroulant : Artiste, Technicien, Enseignement,
+/// Formation ») : ses heures ou ses cachets comptent sous elle. Artiste ou technicien : l'activite d'une annexe (X ou
+/// VIII), pour les 507 heures, le choix de l'annexe et l'allocation. Enseignement ou formation : des heures seulement,
+/// que les annexes assimilent a du travail sous leur plafond (art. 3 §1) ; elles ne se comptent sous aucune annexe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum NatureDUneLigne {
+    Artiste,
+    Technicien,
+    Enseignement,
+    Formation,
+}
+
+impl NatureDUneLigne {
+    /// L'annexe dont elle est l'activite ; aucune : l'enseignement et la formation.
+    fn annexe(self) -> Option<AnnexeChomage> {
+        match self {
+            NatureDUneLigne::Artiste => Some(AnnexeChomage::X),
+            NatureDUneLigne::Technicien => Some(AnnexeChomage::Viii),
+            NatureDUneLigne::Enseignement | NatureDUneLigne::Formation => None,
+        }
+    }
+
+    /// La nature d'une annexe.
+    fn de_l_annexe(a: AnnexeChomage) -> NatureDUneLigne {
+        match a {
+            AnnexeChomage::X => NatureDUneLigne::Artiste,
+            AnnexeChomage::Viii => NatureDUneLigne::Technicien,
+        }
+    }
+}
+
+/// La nature d'une ligne est une liste fermee : la charge l'ecrit par son code (`artiste`…), l'ecran la fait choisir.
+impl socle::liste::ListeFermee for NatureDUneLigne {
+    const TOUTES: &'static [NatureDUneLigne] = &[NatureDUneLigne::Artiste, NatureDUneLigne::Technicien, NatureDUneLigne::Enseignement, NatureDUneLigne::Formation];
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(self.dite())
+    }
+}
+
+impl NatureDUneLigne {
+    /// Son libelle : ce que la liste deroulante et le tableau des paies en montrent.
+    fn dite(self) -> &'static str {
+        match self {
+            NatureDUneLigne::Artiste => "Artiste (annexe 10)",
+            NatureDUneLigne::Technicien => "Technicien (annexe 8)",
+            NatureDUneLigne::Enseignement => "Enseignement",
+            NatureDUneLigne::Formation => "Formation",
+        }
+    }
 }
 
 /// UN NOMBRE DANS LA VALEUR D'UNE CASE, tel qu'on le lit et qu'on le retape (`socle::texte::virgule` : « 2,5 »,
@@ -163,8 +217,7 @@ const PARTIES_D_UNE_LIGNE_PREVUE: &[crate::catalogue::Partie] = &[
     crate::catalogue::Partie { cle: "fin", libelle: Affiche::new("Fin"), forme: Forme::Date, toujours: true },
     crate::catalogue::Partie { cle: "cachets", libelle: Affiche::new("Cachets"), forme: Forme::Nombre, toujours: true },
     crate::catalogue::Partie { cle: "heures", libelle: Affiche::new("Heures"), forme: Forme::Nombre, toujours: true },
-    crate::catalogue::Partie { cle: "enseignement", libelle: Affiche::new("Enseignement (h)"), forme: Forme::Nombre, toujours: true },
-    crate::catalogue::Partie { cle: "formation", libelle: Affiche::new("Formation (h)"), forme: Forme::Nombre, toujours: true },
+    crate::catalogue::Partie { cle: "nature", libelle: Affiche::new("Nature"), forme: Forme::Choix(crate::catalogue::ListeDeChoix::de::<NatureDUneLigne>()), toujours: true },
     crate::catalogue::Partie { cle: "brut", libelle: Affiche::new("Brut"), forme: Forme::Montant, toujours: true },
 ];
 
@@ -219,10 +272,11 @@ const REINITIALISER: &str = "Réinitialiser";
 /// viennent là pour savoir s'ils ont leurs heures […] c'est la première information qu'il faut voir ») ; chaque case
 /// porte ce que la charge y dit, ses nombres tels qu'on les lit (`a_lire`).
 /// - Avec un calcul (`CalculDesDroits`) : la personne quand elle se choisit ; la reponse (les heures, l'allocation) ;
-///   l'allocation visee quand une allocation s'estime ou que la charge en dit une ; l'annexe, quand les pieces ne la disent
-///   pas (sinon sa case est dans le detail) ; la date anniversaire ; le tableau des paies, ou les lignes prevues se saisissent ; le depot ; les dates d'embauche quand la route en demande
-///   ou que la charge en dit ; les pieces deposees ; le detail du calcul, replie.
-/// - Sans calcul : la personne quand elle se choisit ; l'annexe ; la date anniversaire ; le tableau des paies, vide, ou
+///   l'allocation visee quand une allocation s'estime ou que la charge en dit une ; la date anniversaire ; le tableau des
+///   paies, ou les lignes prevues se saisissent (leur nature montre l'annexe de base pour une ligne qui ne la dit pas) ;
+///   le depot ; les dates d'embauche quand la route en demande ou que la charge en dit ; les pieces deposees ; le detail
+///   du calcul, replie.
+/// - Sans calcul : la personne quand elle se choisit ; la date anniversaire ; le tableau des paies, vide, ou
 ///   les lignes prevues se saisissent, quand aucune piece ne porte de personne (`sans_personne`) ; le depot ; les pieces
 ///   deposees.
 /// La personne se choisit quand les pieces en portent plusieurs ou que la charge en dit une, meme qu'elles ne portent
@@ -242,20 +296,21 @@ fn ecran(
         let case = case_simple(cle!(ChargeDroitsDesPieces, personne), c.personne.as_ref().and_then(ValeurDeCase::de))?;
         ecran.push(BlocDesDroits::Case(case.offrant(offerts).disant(dit)));
     }
-    // L'annexe : ses deux valeurs, celle que les pieces disent proposee (la case la montre sans l'ecrire), et d'ou elle
-    // vient.
-    let choix_des_annexes = AnnexeChomage::LES_DEUX.iter().map(|a| Ok(crate::ouverture::Choix::de(a.code()?, a.libelle()?))).collect::<R<Vec<_>>>()?;
-    let lue = calcul.as_ref().map(|x| &x.annexe);
-    let annexe = case_simple(cle!(ChargeDroitsDesPieces, annexe), c.annexe.as_ref().and_then(ValeurDeCase::de))?
-        .offrant(choix_des_annexes)
-        .preremplie(lue.and_then(|l| l.proposee.as_ref()).and_then(ValeurDeCase::de))
-        .disant(lue.into_iter().flat_map(|l| l.dit.iter().cloned()).collect());
     let anniversaire = BlocDesDroits::Case(case_simple(cle!(ChargeDroitsDesPieces, anniversaire), c.anniversaire.as_ref().and_then(ValeurDeCase::de))?);
     let depot = BlocDesDroits::Depot(DepotDit { dossier, libelle: DEPOSER, aide: DEPOSER_AIDE });
     // Les lignes prevues : leurs parties et ce que la charge en dit ; elles se saisissent dans le tableau des paies, qui
-    // dit ou chacune se pose, et ses boutons (`tableau_des_paies`).
+    // dit ou chacune se pose, et ses boutons (`tableau_des_paies`). Leur nature se choisit parmi ses quatre valeurs ;
+    // vide, la ligne prend l'annexe de base (`AnnexesDesPaies::base`), que la case montre sans l'ecrire.
     let nom = cle!(ChargeDroitsDesPieces, previsionnel);
-    let parties = PARTIES_D_UNE_LIGNE_PREVUE.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
+    let natures = NatureDUneLigne::TOUTES.iter().map(|n| Ok(crate::ouverture::Choix::de(n.code()?, n.libelle()?))).collect::<R<Vec<_>>>()?;
+    let base = calcul.as_ref().and_then(|x| x.base).map(NatureDUneLigne::de_l_annexe);
+    let parties = PARTIES_D_UNE_LIGNE_PREVUE
+        .iter()
+        .map(|p| match p.cle {
+            "nature" => crate::fiches::PartieDeLaFiche::de(p, Some(natures.clone())).preremplie(base.as_ref().and_then(ValeurDeCase::de)),
+            _ => crate::fiches::PartieDeLaFiche::de(p, None),
+        })
+        .collect();
     let champ_des_lignes = champ(nom)?;
     let lignes = crate::fiches::CaseDeLaFiche::de_rangees(nom, champ_des_lignes.libelle, c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties);
     let mut details = None;
@@ -266,14 +321,6 @@ fn ecran(
                 let valeur = c.allocation_visee.map(|m| ValeurDeCase::texte(socle::texte::virgule(m)));
                 let case = case_simple(cle!(ChargeDroitsDesPieces, allocation_visee), valeur)?;
                 ecran.push(BlocDesDroits::Visee(ViseeDite { case, unite: PAR_JOUR, reponse: x.visee, reinitialiser: REINITIALISER }));
-            }
-            // La case de l'annexe ne se montre que si les paies ne la disent pas (ou en disent deux) ; quand elles la
-            // disent, la reponse la nomme et la case passe dans le detail (Léandre, 27/11/2026 : « technicien, c'est
-            // seulement dans le cas où il n'aurait pas deviné sur le bulletin »).
-            let mut annexe_au_detail = None;
-            match x.annexe.proposee {
-                Some(_) => annexe_au_detail = Some(annexe),
-                None => ecran.push(BlocDesDroits::Case(annexe)),
             }
             ecran.push(anniversaire);
             ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: x.paies, lignes }));
@@ -286,13 +333,12 @@ fn ecran(
                 let case = case_en_rangees(cle!(ChargeDroitsDesPieces, debuts), c.debuts.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_EMBAUCHE, RETIRER_LA_DATE)?;
                 ecran.push(BlocDesDroits::Case(case.disant(x.demande.into_iter().collect())));
             }
-            details = Some(DetailsDits { annexe: annexe_au_detail, ..x.details });
+            details = Some(x.details);
         }
         None => {
-            ecran.push(BlocDesDroits::Case(annexe));
             ecran.push(anniversaire);
             if sans_personne {
-                ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: tableau_des_paies(&[], &[], None), lignes }));
+                ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: tableau_des_paies(&[], &[], None, None), lignes }));
             }
             ecran.push(depot);
         }
@@ -789,6 +835,9 @@ struct PaieComptee {
     /// Une ligne prevue : son rang dans les lignes prevues de la charge (la rangee qui se saisit dans le tableau des
     /// paies) ; aucun : une paie qu'une piece atteste.
     prevue: Option<usize>,
+    /// Son annexe, quand sa piece, sa nature ou ses cachets la disent (`annexe_de_la_paie`), et d'ou elle se lit ;
+    /// aucune : elle prend celle de base (`AnnexesDesPaies::base`), s'il en est une.
+    annexe: Option<(AnnexeChomage, String)>,
 }
 
 impl PaieComptee {
@@ -823,6 +872,45 @@ impl PaieComptee {
     /// Mele-t-elle l'enseignement et d'autres heures ou des cachets, sans dire le salaire de chacun ?
     fn melee(&self) -> bool {
         !self.heures_d_enseignement().est_nul() && !self.d_enseignement()
+    }
+
+    /// Son annexe : celle qu'elle dit, sinon celle de base (`AnnexesDesPaies::base`) ; aucune : ni l'une ni l'autre.
+    fn annexe_ou(&self, base: Option<AnnexeChomage>) -> Option<AnnexeChomage> {
+        self.annexe.as_ref().map(|(a, _)| *a).or(base)
+    }
+
+    /// Sa nature, en mots, dans le tableau des paies : son annexe (celle de base se dit telle), l'enseignement qu'elle
+    /// compte ; la formation d'une ligne prevue ; « non dite » quand rien ne la dit.
+    fn nature_dite(&self, base: Option<AnnexeChomage>) -> String {
+        if self.d_enseignement() {
+            return NatureDUneLigne::Enseignement.dite().to_string();
+        }
+        if self.formation.is_some() && self.heures.is_none() && self.cachets.is_none() {
+            return NatureDUneLigne::Formation.dite().to_string();
+        }
+        let annexe = match (&self.annexe, base) {
+            (Some((a, _)), _) => NatureDUneLigne::de_l_annexe(*a).dite().to_string(),
+            (None, Some(b)) => format!("{}, comme vos autres paies", NatureDUneLigne::de_l_annexe(b).dite()),
+            (None, None) => "Non dite".to_string(),
+        };
+        match self.heures_d_enseignement().est_nul() {
+            true => annexe,
+            false => format!("{}, dont {} h d'enseignement", annexe, dit(self.heures_d_enseignement())),
+        }
+    }
+}
+
+/// L'ANNEXE D'UNE PAIE, quand elle se lit : le statut que dit une piece du contrat (`statut`, avec la piece), sinon ses
+/// cachets : l'annexe X dit l'activite des artistes « déclarée sous la forme de cachets »
+/// (`plafond-intermittents/unedic-annexe10-convention-20241115.txt`, art. 3 §1 ; INFERENCE : un cachet ne se paie qu'a
+/// un artiste). Aucune : rien ne la dit.
+fn annexe_de_la_paie(statut: Option<(droit::fiche::Statut, &str)>, cachets: Option<Cachets>) -> Option<(AnnexeChomage, String)> {
+    use droit::fiche::Statut;
+    match statut {
+        Some((Statut::Artiste, piece)) => Some((AnnexeChomage::X, format!("{} dit artiste", piece))),
+        Some((Statut::Technicien, piece)) => Some((AnnexeChomage::Viii, format!("{} dit technicien", piece))),
+        None if cachets.is_some_and(|c| !c.est_nul()) => Some((AnnexeChomage::X, "elle compte des cachets, que seul un artiste reçoit (annexe 10, art. 3)".to_string())),
+        None => None,
     }
 }
 
@@ -886,6 +974,11 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
                     (id, SourceDuPlafond::DuContrat { contrat: None, paie: periode })
                 }
             };
+            // Son annexe : celle que dit sa piece, ou une autre piece du meme contrat (l'AEM qu'un bulletin a remplacee).
+            let dite = siennes()
+                .filter(|x| x.employeur == cle && x.periode == periode)
+                .find_map(|x| x.statut.map(|s| (s, x.piece.as_str())));
+            let annexe = annexe_de_la_paie(dite, a.cachets);
             out.push(PaieComptee {
                 id,
                 plafond,
@@ -899,6 +992,7 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
                 jours: a.jours,
                 brut: a.brut,
                 prevue: None,
+                annexe,
             });
         }
     }
@@ -909,28 +1003,49 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
 fn prevues(lignes: &[LignePrevue], notes: &mut Vec<String>) -> R<Vec<PaieComptee>> {
     let mut out = Vec::new();
     for (rang, l) in lignes.iter().enumerate() {
-        if l.cachets.is_none() && l.heures.is_none() && l.enseignement.is_none() && l.formation.is_none() {
+        if l.cachets.is_none() && l.heures.is_none() {
             notes.push(format!("La ligne prévue qui finit le {} ne dit ni cachets ni heures : elle ne compte rien.", l.fin.jj_mm_aaaa()));
             continue;
         }
-        // Ses heures, l'enseignement compris (`droit::cumul::Declare`) : la ligne les dit a part.
-        let heures = match (l.heures, l.enseignement) {
-            (None, None) => None,
-            (h, e) => Some(h.into_iter().chain(e).sum()),
+        // L'enseignement et la formation se comptent en heures : les cachets d'une telle ligne ne comptent pas.
+        let (cachets, heures, enseignement, formation) = match l.nature {
+            Some(n @ (NatureDUneLigne::Enseignement | NatureDUneLigne::Formation)) => {
+                if l.cachets.is_some_and(|c| !c.est_nul()) {
+                    notes.push(format!(
+                        "La ligne prévue qui finit le {} est de {} : elle se compte en heures, ses cachets ne comptent pas.",
+                        l.fin.jj_mm_aaaa(),
+                        if n == NatureDUneLigne::Enseignement { "l'enseignement" } else { "la formation" }
+                    ));
+                }
+                match n {
+                    // Les heures d'enseignement sont dans les heures (`droit::cumul::Declare::heures`) ; celles de la
+                    // formation a cote (`Declare::heures_formation`).
+                    NatureDUneLigne::Enseignement => (None, l.heures, l.heures, None),
+                    _ => (None, None, None, l.heures),
+                }
+            }
+            _ => (l.cachets, l.heures, None, None),
+        };
+        // Son annexe, quand sa nature la dit ; sinon ses cachets (`annexe_de_la_paie`) ; l'enseignement et la formation
+        // n'en ont pas.
+        let annexe = match l.nature {
+            Some(n) => n.annexe().map(|a| (a, "sa nature le dit".to_string())),
+            None => annexe_de_la_paie(None, cachets),
         };
         out.push(PaieComptee {
             id: format!("ligne prévue n° {}", rang + 1),
             employeur: None,
             debut: None,
             fin: l.fin,
-            cachets: l.cachets,
+            cachets,
             heures,
-            enseignement: l.enseignement,
-            formation: l.formation,
+            enseignement,
+            formation,
             jours: None,
             brut: l.brut,
             plafond: SourceDuPlafond::SansDebut,
             prevue: Some(rang),
+            annexe,
         });
     }
     Ok(out)
@@ -965,21 +1080,21 @@ fn declaree(p: &PaieComptee, cle: &droit::contexte::IdSalarie) -> Option<Declare
 
 /// UNE LIGNE PAR PAIE `paies` (celles que la fenetre compte, `droits_d_une_personne`), en tableau
 /// (`socle::ecran::TableauRendu`), dans l'ordre des fins : sa
-/// fin, ses cachets, ses heures (hors enseignement), ses heures d'enseignement et de formation, son brut ; un compteur
-/// que la piece ne dit pas reste vide. L'employeur et la piece ne s'y montrent pas (Leandre, 27/11/2026 : « ça
+/// fin, ses cachets, ses heures (l'enseignement compris ; la formation d'une ligne prevue), sa nature (`nature_dite` :
+/// son annexe, celle de base, l'enseignement, la formation ; pour une ligne prevue, la case de sa nature), son brut ; un
+/// compteur que la piece ne dit pas reste vide. L'employeur et la piece ne s'y montrent pas (Leandre, 27/11/2026 : « ça
 /// alourdit ») : la liste des pieces les dit. Avec une allocation visee (`visee` : son montant, et le brut vise de
 /// chaque paie par son nom), une colonne de plus, « Pour … € / jour » : le brut qu'il faudrait a chaque paie (Leandre,
 /// 27/11/2026 : « pour qu'on voie le brut »).
 /// Les lignes prevues s'y saisissent, chacune a sa place parmi les paies (son rang dans la case `previsionnel`) ; une
 /// ligne prevue qui ne se compte pas (ni cachets ni heures) prend aussi sa place, a sa fin : `lignes`, celles de la
 /// charge.
-fn tableau_des_paies(paies: &[&PaieComptee], lignes: &[LignePrevue], visee: Option<(Montant, &BTreeMap<String, Montant>)>) -> TableauRendu {
+fn tableau_des_paies(paies: &[&PaieComptee], lignes: &[LignePrevue], base: Option<AnnexeChomage>, visee: Option<(Montant, &BTreeMap<String, Montant>)>) -> TableauRendu {
     let mut colonnes = vec![
         ColonneRendue::de_texte("Fin").tenant(&["fin"]),
         ColonneRendue::de_nombres("Cachets").tenant(&["cachets"]),
         ColonneRendue::de_nombres("Heures").tenant(&["heures"]),
-        ColonneRendue::de_nombres("Enseignement (h)").tenant(&["enseignement"]),
-        ColonneRendue::de_nombres("Formation (h)").tenant(&["formation"]),
+        ColonneRendue::de_texte("Nature").tenant(&["nature"]),
         ColonneRendue::de_nombres("Brut").tenant(&["brut"]),
     ];
     if let Some((v, _)) = visee {
@@ -989,8 +1104,8 @@ fn tableau_des_paies(paies: &[&PaieComptee], lignes: &[LignePrevue], visee: Opti
     let mut rangees: Vec<(Jour, RangeeRendue)> = paies
         .iter()
         .map(|p| {
-            let hors_enseignement = p.heures.map(|h| dit(h - p.heures_d_enseignement()));
-            let mut cellules = vec![Some(p.fin.jj_mm_aaaa()), p.cachets.map(dit), hors_enseignement, p.enseignement.map(dit), p.formation.map(dit), p.brut.map(euros)];
+            let heures = p.heures.or(p.formation).map(dit);
+            let mut cellules = vec![Some(p.fin.jj_mm_aaaa()), p.cachets.map(dit), heures, Some(p.nature_dite(base)), p.brut.map(euros)];
             cellules.extend(vise(&p.id));
             let rangee = match p.prevue {
                 Some(rang) => RangeeRendue::saisie(cellules, rang),
@@ -1000,7 +1115,8 @@ fn tableau_des_paies(paies: &[&PaieComptee], lignes: &[LignePrevue], visee: Opti
         })
         .collect();
     for (rang, l) in lignes.iter().enumerate().filter(|(rang, _)| !paies.iter().any(|p| p.prevue == Some(*rang))) {
-        let mut cellules = vec![Some(l.fin.jj_mm_aaaa()), l.cachets.map(dit), l.heures.map(dit), l.enseignement.map(dit), l.formation.map(dit), l.brut.map(euros)];
+        let nature = l.nature.map(|n| n.dite().to_string());
+        let mut cellules = vec![Some(l.fin.jj_mm_aaaa()), l.cachets.map(dit), l.heures.map(dit), nature, l.brut.map(euros)];
         cellules.extend(visee.map(|_| None));
         rangees.push((l.fin, RangeeRendue::saisie(cellules, rang)));
     }
@@ -1086,12 +1202,11 @@ struct ViseeDite {
 /// LE DETAIL DU CALCUL, replie en bas de l'ecran : son libelle ; la fenetre ; le compte des heures (`[quoi, valeur]`,
 /// jusqu'au seuil) ; le seuil et ce qui manque ; l'estimation de l'annexe de la personne (ses parties et les paies du
 /// salaire de reference) ; et une phrase par ligne (le jour butoir, l'estimation, ce que les pieces ont d'etrange).
-/// Quand les pieces disent l'annexe, sa case y est, en tete (`annexe`) : pour qui la lecture tromperait.
+/// En tete, les heures de chaque annexe et celle qui s'applique (`annexes`, `AnnexesDesPaies::dites`).
 #[derive(Debug, Serialize)]
 struct DetailsDits {
     libelle: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    annexe: Option<crate::fiches::CaseDeLaFiche<&'static str>>,
+    annexes: Vec<String>,
     /// Le numero de la personne ; aucun : les lignes prevues seules, sans piece (`LIGNES_SEULES`).
     #[serde(skip_serializing_if = "Option::is_none")]
     nir: Option<Nir>,
@@ -1111,24 +1226,90 @@ struct DetailsDits {
 const DETAILS: &str = "Détails du calcul";
 
 /// CE QUE LE CALCUL DES DROITS DE LA PERSONNE DONNE A L'ECRAN (`ecran`) : la reponse ; si l'allocation visee s'offre,
-/// et sa reponse ; ce que les pieces disent de l'annexe ; le tableau des paies ; les paies dont la date d'embauche se
-/// choisit, et la phrase qui la demande ; le detail.
+/// et sa reponse ; l'annexe de base (`AnnexesDesPaies::base`, celle que prend une ligne prevue sans nature) ; le tableau
+/// des paies ; les paies dont la date d'embauche se choisit, et la phrase qui la demande ; le detail.
 struct CalculDesDroits {
     reponse: ReponseDite,
     visee_offerte: bool,
     visee: Option<String>,
-    annexe: AnnexeLue,
+    base: Option<AnnexeChomage>,
     paies: TableauRendu,
     embauches: Vec<crate::ouverture::Choix>,
     demande: Option<String>,
     details: DetailsDits,
 }
 
-/// L'ANNEXE QUE LES PIECES DISENT : celle qu'elles disent toutes, proposee (aucune : elles n'en disent pas, ou deux), et
-/// d'ou elle vient, une phrase (sous la case de l'annexe).
-struct AnnexeLue {
-    proposee: Option<AnnexeChomage>,
-    dit: Vec<String>,
+/// LES ANNEXES DES PAIES D'UNE PERSONNE (annexes VIII et X, art. 65 §9 ; voir le module) : l'annexe de base, celle que
+/// ses paies disent quand elles n'en disent qu'une (`base`) ; dans les 12 mois, les heures de chaque annexe, chaque paie
+/// sous la sienne ou celle de base (`viii`, `x`), et celles des paies dont l'annexe ne se dit pas (`sans`, et leur nom,
+/// `non_dites` ; `pieces_non_dites` : une paie des pieces en est, que nulle case ne fait dire) ; d'ou chaque annexe se
+/// lit, paie par paie (`sources`).
+/// Les heures d'une paie sont celles de son activite : ses cachets a 12 heures et ses heures, sans l'enseignement ni la
+/// formation, que les annexes assimilent a du travail sans en faire l'activite d'une annexe (art. 3 §1 ; INFERENCE :
+/// l'art. 65 §9 compare « les activités », la circulaire 2016-25 des heures de travail, exemple 7).
+struct AnnexesDesPaies {
+    base: Option<AnnexeChomage>,
+    viii: Heures,
+    x: Heures,
+    sans: Heures,
+    non_dites: Vec<String>,
+    pieces_non_dites: bool,
+    sources: Vec<String>,
+}
+
+/// L'ANNEXE QUI S'APPLIQUE : celle qui a le plus d'heures (`Une`), meme en donnant aux paies dont l'annexe ne se dit pas
+/// toutes leurs heures a l'autre ; autant d'heures dans l'une que dans l'autre (`Egales` : le texte ne dit que « la plus
+/// importante », rien ne se devine) ; ou elle depend des paies dont l'annexe ne se dit pas (`NonDite`).
+#[derive(Clone, Copy)]
+enum AnnexeAppliquee {
+    Une(AnnexeChomage),
+    Egales,
+    NonDite,
+}
+
+impl AnnexesDesPaies {
+    /// L'annexe qui s'applique.
+    fn appliquee(&self) -> AnnexeAppliquee {
+        let (viii, x, sans) = (self.viii, self.x, self.sans);
+        if viii > x + sans {
+            AnnexeAppliquee::Une(AnnexeChomage::Viii)
+        } else if x > viii + sans {
+            AnnexeAppliquee::Une(AnnexeChomage::X)
+        } else if sans.est_nul() && !viii.est_nul() {
+            AnnexeAppliquee::Egales
+        } else {
+            AnnexeAppliquee::NonDite
+        }
+    }
+
+    /// Les heures de l'annexe `a`.
+    fn heures(&self, a: AnnexeChomage) -> Heures {
+        match a {
+            AnnexeChomage::Viii => self.viii,
+            AnnexeChomage::X => self.x,
+        }
+    }
+
+    /// Ce que le detail en dit : les heures de chaque annexe, celles qui ne se disent pas, celle qui s'applique et
+    /// pourquoi, et d'ou chaque annexe se lit.
+    fn dites(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut heures = vec![format!("annexe 8 (technicien) : {} h", dit(self.viii)), format!("annexe 10 (artiste) : {} h", dit(self.x))];
+        if !self.sans.est_nul() {
+            heures.push(format!("annexe non dite : {} h ({})", dit(self.sans), self.non_dites.join(", ")));
+        }
+        out.push(format!("Les heures de chaque annexe sur les 12 mois (cachets à 12 h, sans l'enseignement ni la formation) : {}.", heures.join(" ; ")));
+        out.push(match self.appliquee() {
+            AnnexeAppliquee::Une(a) => format!(
+                "L'annexe qui s'applique est celle qui a le plus d'heures, {} ; toutes vos heures et tous vos salaires comptent sous elle (annexes VIII et X, art. 65 §9).",
+                annexe_en_petit(a)
+            ),
+            AnnexeAppliquee::Egales => "Les deux annexes ont autant d'heures : le texte applique celle « ayant permis de constater l'affiliation la plus importante » (annexes VIII et X, art. 65 §9) et ne dit rien d'une égalité ; l'allocation ne s'estime pas.".to_string(),
+            AnnexeAppliquee::NonDite => "L'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), dépend des paies dont l'annexe n'est pas dite.".to_string(),
+        });
+        out.extend(self.sources.iter().cloned());
+        out
+    }
 }
 
 /// Ce que rend `droits-des-pieces` : sa phrase, et l'ecran, bloc par bloc dans l'ordre ou il se lit (`BlocDesDroits`).
@@ -1386,11 +1567,12 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     if let Some(b) = &butoir {
         notes.push(pourquoi_le_butoir(b, &a_partir));
     }
-    // L'ANNEXE : celle que la charge dit, sinon celle que les pieces disent (`annexe_lue`).
-    let lue = annexe_lue(attestees, nir, &comptees);
-    let annexe = c.annexe.or(lue.proposee);
     // Les paies que la fenetre compte : celles de la position retenue.
-    let dans_la_fenetre: Vec<&PaieComptee> = declarees.iter().filter(|(d, _)| aff.position.engagements.contains(d)).map(|(_, i)| &comptees[*i]).collect();
+    let fenetre: Vec<(&Declare, &PaieComptee)> = declarees.iter().filter(|(d, _)| aff.position.engagements.contains(d)).map(|(d, i)| (d, &comptees[*i])).collect();
+    let dans_la_fenetre: Vec<&PaieComptee> = fenetre.iter().map(|(_, p)| *p).collect();
+    // L'ANNEXE : chaque paie la sienne, ou celle de base ; celle qui a le plus d'heures s'applique (`AnnexesDesPaies`).
+    let annexes = annexes_des_paies(&comptees, &fenetre, &aff.position.constantes);
+    let appliquee = annexes.appliquee();
     // Les debuts de contrat que la charge dit des paies des pieces, par le nom de leur paie ; un nom qu'aucune ne porte se
     // dit.
     let mut debuts: BTreeMap<String, Jour> = BTreeMap::new();
@@ -1401,12 +1583,12 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
             notes.push(format!("« {} » (Dates d'embauche) n'est le nom d'aucune paie des pièces : cette date ne dit rien.", d.paie));
         }
     }
-    // L'ALLOCATION, quand les heures sont la : pour l'annexe de la personne, le chiffre exact (Léandre, 27/11/2026 : « il
-    // n'y a pas de environ, c'est un calcul exact ») ; sans annexe, la reponse la demande.
+    // L'ALLOCATION, quand les heures sont la : sous l'annexe qui s'applique, le chiffre exact (Léandre, 27/11/2026 : « il
+    // n'y a pas de environ, c'est un calcul exact ») ; sans elle, la reponse dit ce qu'elle attend.
     let mut supposees: BTreeMap<String, (Option<Montant>, bool)> = BTreeMap::new();
-    let estimee = match (atteintes, annexe) {
-        (true, Some(a)) => estimer(&t, &aff, &dans_la_fenetre, a, c.allocation_visee, fin, &debuts, &mut supposees, &mut notes)?,
-        (true, None) | (false, _) => None,
+    let estimee = match (atteintes, appliquee) {
+        (true, AnnexeAppliquee::Une(a)) => estimer(&t, &aff, &dans_la_fenetre, a, annexes.base, c.allocation_visee, fin, &debuts, &mut supposees, &mut notes)?,
+        (true, AnnexeAppliquee::Egales | AnnexeAppliquee::NonDite) | (false, _) => None,
     };
     // LA REPONSE : les heures d'abord, puis l'allocation (la maquette de Léandre, 27/11/2026).
     let exigees = dit(a_partir.heures_exigees);
@@ -1417,16 +1599,35 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     };
     let reponse = match atteintes {
         true => {
-            let allocation = match (annexe, &estimee) {
-                (Some(_), Some((e, _))) => format!("Votre allocation : {} par jour", euros(e.retenue)),
-                (Some(_), None) => "L'allocation ne s'estime pas : le détail du calcul dit pourquoi".to_string(),
-                (None, _) => "Votre allocation dépend de votre métier : dites si vous êtes artiste ou technicien".to_string(),
+            let allocation = match (appliquee, &estimee) {
+                (AnnexeAppliquee::Une(_), Some((e, _))) => format!("Votre allocation : {} par jour", euros(e.retenue)),
+                (AnnexeAppliquee::Une(_), None) => "L'allocation ne s'estime pas : le détail du calcul dit pourquoi".to_string(),
+                (AnnexeAppliquee::Egales, _) => "L'allocation ne s'estime pas : autant d'heures en annexe 8 qu'en annexe 10, le détail du calcul dit pourquoi".to_string(),
+                (AnnexeAppliquee::NonDite, _) if annexes.pieces_non_dites => "L'allocation ne s'estime pas : des paies ne disent pas leur annexe, le détail du calcul dit lesquelles".to_string(),
+                (AnnexeAppliquee::NonDite, _) => "Votre allocation attend la nature de vos lignes prévues : artiste ou technicien".to_string(),
             };
-            let sous = match annexe {
-                // Lue sur les paies, elle le dit : sa case est dans le detail (`ecran`).
-                Some(a) if c.annexe.is_none() => format!("Sur les 12 mois au {} · {}, lue sur vos paies", fin.jj_mm_aaaa(), annexe_en_petit(a)),
-                Some(a) => format!("Sur les 12 mois au {} · {}", fin.jj_mm_aaaa(), annexe_en_petit(a)),
-                None => format!("Sur les 12 mois au {}", fin.jj_mm_aaaa()),
+            // L'annexe qui s'applique, et pourquoi, quand les paies en disent deux (la consigne de Léandre, 27/11/2026 :
+            // « annexe 10 (artiste) : 260 h, contre 250 h en annexe 8 »).
+            let sous = match appliquee {
+                AnnexeAppliquee::Une(a) => {
+                    let autre = match a {
+                        AnnexeChomage::X => AnnexeChomage::Viii,
+                        AnnexeChomage::Viii => AnnexeChomage::X,
+                    };
+                    match annexes.heures(autre).est_nul() {
+                        true => format!("Sur les 12 mois au {} · {}", fin.jj_mm_aaaa(), annexe_en_petit(a)),
+                        false => format!(
+                            "Sur les 12 mois au {} · {} : {} h, contre {} h en annexe {}",
+                            fin.jj_mm_aaaa(),
+                            annexe_en_petit(a),
+                            dit(annexes.heures(a)),
+                            dit(annexes.heures(autre)),
+                            autre.numero()
+                        ),
+                    }
+                }
+                AnnexeAppliquee::Egales => format!("Sur les 12 mois au {} · {} h en annexe 8, autant en annexe 10", fin.jj_mm_aaaa(), dit(annexes.viii)),
+                AnnexeAppliquee::NonDite => format!("Sur les 12 mois au {}", fin.jj_mm_aaaa()),
             };
             ReponseDite {
                 nom,
@@ -1488,18 +1689,18 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     // « Si elle ne compte pas, elle n'a pas à être affichée »), et les lignes prevues, qui s'y saisissent.
     let comptent = |i: usize| declarees.iter().any(|(d, j)| *j == i && a_partir.position.engagements.contains(d));
     let du_tableau: Vec<&PaieComptee> = comptees.iter().enumerate().filter(|(i, p)| p.prevue.is_some() || comptent(*i)).map(|(_, p)| p).collect();
-    let paies = tableau_des_paies(&du_tableau, lignes_prevues, c.allocation_visee.zip(par_paie));
+    let paies = tableau_des_paies(&du_tableau, lignes_prevues, annexes.base, c.allocation_visee.zip(par_paie));
     Ok(CalculDesDroits {
         reponse,
         visee_offerte: estimation.is_some(),
         visee: visee.map(|v| v.reponse),
-        annexe: lue,
+        base: annexes.base,
         paies,
         embauches,
         demande,
         details: DetailsDits {
             libelle: DETAILS,
-            annexe: None,
+            annexes: annexes.dites(),
             nir: nir.cloned(),
             fenetre: aff.position.libelle_fenetre.clone(),
             compte: lignes_du_compte,
@@ -1519,42 +1720,52 @@ fn annexe_en_petit(annexe: AnnexeChomage) -> &'static str {
     }
 }
 
-/// CE QUE LES PIECES DE LA PERSONNE `nir` DISENT DE SON ANNEXE, et d'ou elles le tiennent : la case « Artiste » ou
-/// « Technicien » d'une AEM, le statut ou l'emploi d'un bulletin (`Attestee::statut`) ; et une paie (une ligne prevue
-/// comprise) qui compte des cachets : l'annexe X dit l'activite des artistes « déclarée sous la forme de cachets »
-/// (`plafond-intermittents/unedic-annexe10-convention-20241115.txt`, art. 3 §1 ; INFERENCE : un cachet ne se paie qu'a un
-/// artiste). Une seule annexe dite : elle se propose. Deux : aucune, et la phrase dit lesquelles ; rien ne se devine.
-fn annexe_lue(attestees: &[Attestee], nir: Option<&Nir>, comptees: &[PaieComptee]) -> AnnexeLue {
-    use droit::fiche::Statut;
-    let mut dites: BTreeMap<&'static str, (AnnexeChomage, String)> = BTreeMap::new();
-    for a in attestees.iter().filter(|a| Some(&a.nir) == nir) {
-        let (annexe, mot) = match a.statut {
-            Some(Statut::Artiste) => (AnnexeChomage::X, "artiste"),
-            Some(Statut::Technicien) => (AnnexeChomage::Viii, "technicien"),
-            None => continue,
+/// LES ANNEXES DES PAIES DE LA PERSONNE (`AnnexesDesPaies`) : l'annexe de base, celle que ses paies `comptees` disent
+/// quand elles n'en disent qu'une (Léandre, 27/11/2026 : « celui de base pour ceux qui sont uniques ») ; puis, sur les
+/// paies de la fenetre (`fenetre`, chacune avec sa ligne declaree), les heures d'activite de chaque annexe, chaque paie
+/// sous la sienne, sinon sous celle de base, sinon parmi celles dont l'annexe ne se dit pas.
+fn annexes_des_paies(comptees: &[PaieComptee], fenetre: &[(&Declare, &PaieComptee)], c: &Constantes) -> AnnexesDesPaies {
+    let dites: Vec<AnnexeChomage> = comptees.iter().filter_map(|p| p.annexe.as_ref().map(|(a, _)| *a)).collect();
+    let base = match dites.first() {
+        Some(a) if dites.iter().all(|b| b == a) => Some(*a),
+        _ => None,
+    };
+    let mut out = AnnexesDesPaies { base, viii: Heures::ZERO, x: Heures::ZERO, sans: Heures::ZERO, non_dites: Vec::new(), pieces_non_dites: false, sources: Vec::new() };
+    for (d, p) in fenetre {
+        let heures = d.heures_montant(c);
+        if heures.est_nul() {
+            continue;
+        }
+        match p.annexe_ou(base) {
+            Some(AnnexeChomage::Viii) => out.viii += heures,
+            Some(AnnexeChomage::X) => out.x += heures,
+            None => {
+                out.sans += heures;
+                out.non_dites.push(p.en_mots());
+                out.pieces_non_dites |= p.prevue.is_none();
+            }
+        }
+        let d_ou = match &p.annexe {
+            Some((_, d_ou)) => d_ou.clone(),
+            None if base.is_some() => "l'annexe de vos autres paies".to_string(),
+            None => match p.prevue {
+                Some(_) => "sa nature n'est pas choisie".to_string(),
+                None => "sa pièce ne la dit pas".to_string(),
+            },
         };
-        dites.entry(annexe.nom()).or_insert((annexe, format!("{} dit {}", a.piece, mot)));
+        let annexe = match p.annexe_ou(base) {
+            Some(a) => annexe_en_petit(a),
+            None => "annexe non dite",
+        };
+        out.sources.push(format!("{}, {} h : {} ({}).", majuscule(&p.en_mots()), dit(heures), annexe, d_ou));
     }
-    if let Some(p) = comptees.iter().find(|p| p.cachets.is_some_and(|c| !c.est_nul())) {
-        let x = AnnexeChomage::X;
-        dites.entry(x.nom()).or_insert((x, format!("{} compte des cachets, que seul un artiste reçoit (annexe 10, art. 3)", p.en_mots())));
-    }
-    let mut dites: Vec<(AnnexeChomage, String)> = dites.into_values().collect();
-    match dites.len() {
-        1 => {
-            let (annexe, d) = dites.remove(0);
-            AnnexeLue { proposee: Some(annexe), dit: vec![format!("Lu sur vos paies : {}.", d)] }
-        }
-        0 => AnnexeLue { proposee: None, dit: Vec::new() },
-        _ => {
-            // Chaque source sur sa ligne, une phrase qui commence par une capitale.
-            let d = dites.into_iter().map(|(_, d)| {
-                let mut c = d.chars();
-                format!("{}.", c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect::<String>())
-            });
-            AnnexeLue { proposee: None, dit: std::iter::once("Vos paies disent les deux : choisissez.".to_string()).chain(d).collect() }
-        }
-    }
+    out
+}
+
+/// Une phrase qui commence par une capitale.
+fn majuscule(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect()
 }
 
 /// Le libelle d'une paie des pieces parmi les choix des dates d'embauche : son nom, ses dates, son employeur.
@@ -1617,6 +1828,7 @@ fn estimer(
     aff: &Affiliation,
     paies: &[&PaieComptee],
     annexe: AnnexeChomage,
+    base: Option<AnnexeChomage>,
     visee: Option<Montant>,
     fin: Jour,
     debuts: &BTreeMap<String, Jour>,
@@ -1675,13 +1887,20 @@ fn estimer(
         }
         sources.push(s);
     }
-    let artiste = annexe == AnnexeChomage::X;
     let mut lignes = Vec::new();
     let mut bruts: Vec<(Montant, Option<Montant>)> = Vec::new();
     let mut a_viser: Vec<(&PaieComptee, Montant, Option<Montant>)> = Vec::new();
     let mut inconnues: Vec<PlafondSuppose> = Vec::new();
     for (x, source) in du_salaire.iter().zip(&sources) {
         let Some(brut) = x.brut else { continue };
+        // Le plafond d'une paie est celui de son emploi : artiste quand son annexe est la X. Une paie dont l'annexe ne se
+        // dit pas prend celle qui s'applique, dont son activite est « considérée comme relevant » (circulaire Unedic
+        // 2016-25, fiche 1, § 2.3.1, `unedic-circulaire-2016-25-annexes-8-10.txt` l. 2673-2674 ; INFERENCE : la phrase
+        // range les activites pour le chomage, le plafond de la Securite sociale suit l'emploi).
+        let artiste = match x.annexe_ou(base) {
+            Some(a) => a == AnnexeChomage::X,
+            None => annexe == AnnexeChomage::X,
+        };
         // Un plafond qui ne se connait pas : la paie compte entiere. Sous quatre fois le plafond d'un contrat d'un
         // jour, elle ne passe pas sa limite, quel que soit le contrat ; au-dessus, l'estimation suppose qu'elle ne la
         // passe pas, et une paie des pieces le fait savoir (`supposees`).

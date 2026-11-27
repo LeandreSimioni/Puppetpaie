@@ -1494,7 +1494,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce que la compagnie a dit de ses métiers, lu pour une lecture (cochés, décochés, créés ; un fichier qui ne se lit pas ne ferme rien, sa faute se dit) | `DitsDeLaCompagnie` | `routes/src/metiers.rs` |
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
-| annexe du règlement d'assurance chômage (une liste fermée : la case « Je suis » de `droits-des-pieces`) | `AnnexeChomage` | `droit/src/emplois.rs` |
+| annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne`) ; et ce qu'une allocation visée demande au salaire de référence | `Estimation` ; `Visee` | `droit/src/allocation.rs` |
 | affiliation d'un intermittent à une fin de contrat (art. 3, art. 9 §1 a et b : sa position dans la fenêtre de 365 jours, allongée de 30 jours en 30 jours à la réadmission, les heures exigées, ce qui manque ; les valeurs de la réadmission, `Readmission`, et la limite du salaire de référence, `LimiteDuSalaire`, sont des formes de `allocation-intermittents.json`) ; et le jour butoir, le dernier où, sans contrat de plus, aucune ligne ne sort des 365 jours | `Affiliation` ; `Butoir` | `droit/src/allocation.rs` |
 | table livrée de l'allocation des intermittents, entière (`allocation-intermittents.json`) | `Allocation` | `droit/src/allocation.rs` |
@@ -1503,10 +1503,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | plafond de l'allocation (art. 16 : une part de 1/365e de quatre plafonds annuels) | `PlafondDeLAllocation` | `droit/src/allocation.rs` |
 | réadmission : les heures de plus par période de jours au-delà de la fenêtre (art. 9 §1 b) | `Readmission` | `droit/src/allocation.rs` |
 | limite du salaire de référence : les plafonds d'une paie qu'il compte au plus (art. 11 §3, art. 49) | `LimiteDuSalaire` | `droit/src/allocation.rs` |
-| contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) | `LignePrevue` | `routes/src/accueil/droits_des_pieces.rs` |
+| contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) ; sa nature, une liste fermée (artiste, technicien, enseignement, formation) | `LignePrevue` ; `NatureDUneLigne` | `routes/src/accueil/droits_des_pieces.rs` |
 | date de début du contrat d'une paie des pièces, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas (une ligne prévue ne dit que sa fin) | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
-| ce que les pièces d'un intermittent disent de son annexe (celle qu'elles disent toutes, proposée, et d'où elle vient) | `AnnexeLue` | `routes/src/accueil/droits_des_pieces.rs` |
-| ce que le calcul des droits d'un intermittent donne à l'écran de `droits-des-pieces` (la réponse, la visée, l'annexe lue, le tableau des paies, les dates d'embauche demandées, le détail) ; la réponse elle-même (les heures, en vert quand elles sont là, jusqu'à quand, l'allocation) ; l'allocation visée telle que l'écran la dit, et calculée (ce qu'il faudrait par cachet ou de l'heure, le brut visé de chaque paie) ; le détail du calcul, replié | `CalculDesDroits` ; `ReponseDite` ; `ViseeDite`, `ViseeCalculee` ; `DetailsDits` | `routes/src/accueil/droits_des_pieces.rs` |
+| les annexes des paies d'un intermittent (l'annexe de base, les heures de chaque annexe dans les 12 mois, celles qui ne se disent pas, d'où chacune se lit) ; l'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), l'égalité, ou ce qui ne se dit pas | `AnnexesDesPaies` ; `AnnexeAppliquee` | `routes/src/accueil/droits_des_pieces.rs` |
+| ce que le calcul des droits d'un intermittent donne à l'écran de `droits-des-pieces` (la réponse, la visée, l'annexe de base, le tableau des paies, les dates d'embauche demandées, le détail) ; la réponse elle-même (les heures, en vert quand elles sont là, jusqu'à quand, l'allocation) ; l'allocation visée telle que l'écran la dit, et calculée (ce qu'il faudrait par cachet ou de l'heure, le brut visé de chaque paie) ; le détail du calcul, replié | `CalculDesDroits` ; `ReponseDite` ; `ViseeDite`, `ViseeCalculee` ; `DetailsDits` | `routes/src/accueil/droits_des_pieces.rs` |
 | employeur d'une pièce d'un intermittent, qui range ses contrats (son Siren, sa raison sociale, ou la pièce seule) ; et le compte des pièces seules | `CleDEmployeur` ; `Seules` | `routes/src/accueil/droits_des_pieces.rs` |
 | pièce d'un intermittent lue, avant son registre (de qui, chez quel employeur, son nom, sa naissance, le contrat qu'elle atteste, d'où vient son plafond) ; elle entre dans le registre de son employeur, `import::attestes::Atteste`, qui ne garde ni l'employeur, ni le nom de la pièce, ni le plafond | `Attestee` | `routes/src/accueil/droits_des_pieces.rs` |
 | d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, à calculer du contrat d'un bulletin, ou inconnu d'une ligne prévue qui ne dit que sa fin) ; pourquoi il ne se connaît pas ; une paie dont le plafond ne se connaît pas, qui compte entière (sa plus basse limite possible, au-dessus de laquelle l'estimation la suppose non limitée) | `SourceDuPlafond` ; `PlafondInconnu` ; `PlafondSuppose` | `routes/src/accueil/droits_des_pieces.rs` |
@@ -2923,8 +2923,8 @@ leur mois. Les conseils (`routes/src/gestes/conseils.rs`) et la position des dro
 ou déposées) dans `mes-pieces/` de l'installation ; les lecteurs de l'import les lisent, par NIR, et le registre de
 l'import (`import::attestes::Registre::vide`, un par employeur : deux employeurs ne font jamais un contrat) ne garde
 chaque contrat qu'une fois ; la charge peut y ajouter des contrats prévus, qui se comptent pareil et ne s'écrivent pas
-(une ligne prévue ne dit que sa fin : une ligne déclarée, `droit::cumul::Declare`, se situe par sa fin ; ses heures
-d'enseignement et de formation sont des nombres d'heures). La formation compte pour les 507 heures, pas pour le
+(une ligne prévue ne dit que sa fin : une ligne déclarée, `droit::cumul::Declare`, se situe par sa fin ; sa nature,
+`NatureDUneLigne`, dit si ses heures sont d'artiste, de technicien, d'enseignement ou de formation). La formation compte pour les 507 heures, pas pour le
 montant, dans la limite de 338 heures enseignement compris (annexes VIII et X, art. 3 §1 :
 `Declare::heures_formation`, `Position::heures_formation_retenues`, le plafond dans `rubriques-base.json`, `annexes`) ;
 une paie d'une compagnie n'en porte pas.
@@ -2939,9 +2939,12 @@ allongement. La réponse vient d'abord (`ReponseDite`) : les heures, en vert qua
 (`socle::ecran::couleur_de_l_etat`), puis l'allocation journalière, le chiffre exact, de l'annexe de la personne ; ou
 ce qui manque (compté à partir d'aujourd'hui quand cette fin est passée) et jusqu'à quand : la date anniversaire dite,
 quand elle est à venir ; sinon le jour butoir (`droit::allocation::butoir`, le dernier où, sans contrat de plus, aucune
-paie ne sort des 365 jours), dont le détail dit pourquoi. L'annexe est une case à choix (`AnnexeChomage`) ; vide, celle
-que les pièces disent toutes se propose (`AnnexeLue` : la case d'une AEM, le statut ou l'emploi d'un bulletin, des
-cachets) ; sans l'une ni l'autre, l'allocation attend le choix. Elle s'estime par `allocation-intermittents.json`
+paie ne sort des 365 jours), dont le détail dit pourquoi. Chaque paie a son annexe (`AnnexeChomage`) : celle que sa
+pièce dit (la case d'une AEM, le statut ou l'emploi d'un bulletin), la nature d'une ligne prévue, ou ses cachets ;
+sinon celle de base, quand les paies n'en disent qu'une. Les heures des deux annexes s'additionnent pour les 507 heures,
+et l'annexe qui s'applique est celle qui a le plus d'heures dans les 12 mois, toute l'activité comptant sous elle
+(annexes VIII et X, art. 65 §9 ; `AnnexesDesPaies`, `AnnexeAppliquee`) ; à égalité, ou quand les paies dont l'annexe ne
+se dit pas pourraient faire pencher, l'allocation ne s'estime pas et la réponse dit ce qu'elle attend. Elle s'estime par `allocation-intermittents.json`
 (art. 14 et 16), chaque paie sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon
 `droit::plafond` ; un plafond qui ne se connaît pas compte entier, et une paie des pièces qui peut passer sa limite et
 dont le début du contrat le dirait se demande par « Dates d'embauche » ; une ligne prévue ne demande rien). Une

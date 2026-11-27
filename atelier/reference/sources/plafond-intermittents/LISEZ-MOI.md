@@ -45,7 +45,13 @@ sociale, texte `artistes-1975`), et déposés à côté.
   d'enseignement retenues « sont imputées sur le contingent des actions de formation ». Le moteur s'en sert pour les
   heures de formation d'une ligne prévue de `droits-des-pieces` (`droit::cumul::Position::heures_formation_retenues`,
   le plafond de 338 h dans `rubriques-base.json`, `annexes`, que le guide de France Travail dit en chiffres :
-  `../chomage-intermittents/francetravail-guide-intermittents-20261020.txt`, l. 333-336).
+  `../chomage-intermittents/francetravail-guide-intermittents-20261020.txt`, l. 333-336). **Art. 65 §9** (annexe X
+  `.txt` l. 1545-1549 ; annexe VIII l. 1509-1513) : quand les activités relèvent des deux annexes, « la condition
+  d'affiliation est déterminée en totalisant les heures de travail accomplies au titre des annexes VIII et X », et
+  « la réglementation applicable est celle de l'annexe qui correspond aux activités ayant permis de constater
+  l'affiliation la plus importante ». Le moteur s'en sert dans `droits-des-pieces` (`AnnexesDesPaies`, l'annexe qui a
+  le plus d'heures s'applique) ; la circulaire Unédic 2016-25 (`../unedic-circulaire-2016-25-annexes-8-10.txt`, fiche
+  1, § 2.3.1) en donne les exemples.
 - `unedic-circulaire-2025-05-contributions-20250501.pdf` (et `.txt`) : https://www.unedic.org/ged/documents/circulars/pdf/PRE-CIRC-Circulaire_n_2025-05_du_1er_mai_2025.pdf.
   Fiche technique 1.1 : « Les rémunérations dépassant 4 fois le plafond [...] demeurent exclues de l'assiette des
   contributions [...]. Cette règle est également applicable aux salariés relevant des annexes ». Vaut aussi pour les
