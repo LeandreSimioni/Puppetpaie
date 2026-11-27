@@ -756,6 +756,10 @@ fn ranger(mut t: Table) -> R<Table> {
                     }
                 }
             }
+            // UNE CASE FERMEE EST UNE CASE A COCHER (`CaseFermee`) : son refus et son dessin ne savent fermer qu'un oui-non.
+            if c.fermee.is_some() && c.forme != Forme::Booleen {
+                return Err(faute(format!("{}.{} : seule une case à cocher se ferme (fermee)", nom, c.cle)));
+            }
             c.piece = c.cle.piece();
             c.declaree = Some(d.clone());
         }
