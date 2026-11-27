@@ -92,14 +92,13 @@ pub struct TableauRendu {
 }
 
 /// LES RANGEES QUI SE SAISISSENT DANS UN TABLEAU (les lignes prevues dans le tableau des paies de `droits-des-pieces`) :
-/// la case de la charge dont elles sont les rangees, le bouton qui en ajoute une sous le tableau, et celui qui en retire
-/// une. Chaque colonne dit les parties qu'elle tient (`ColonneRendue::parties`), chaque rangee son rang dans la case
+/// la case de la charge dont elles sont les rangees, et le bouton qui en retire une ; une rangee vide attend toujours en
+/// bas, et se remplit pour en ajouter une. Chaque colonne dit les parties qu'elle tient (`ColonneRendue::parties`), chaque rangee son rang dans la case
 /// (`RangeeRendue::saisie`) ; une rangee de la case que le tableau ne place pas (vide, ou qui ne se compte pas) se pose
 /// apres ses rangees.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SaisieDuTableau {
     pub case: &'static str,
-    pub ajouter: &'static str,
     pub retirer: &'static str,
 }
 

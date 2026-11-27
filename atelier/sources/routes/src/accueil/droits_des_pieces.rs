@@ -72,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","debut":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le résumé, l'allocation visée (une case, quand une allocation s'estime), les paies, la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent : saisie [case, ajouter, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). resume (la personne choisie, ou les lignes prévues seules sans pièce) : nir, nom, fenetre, lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
+    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le résumé, l'allocation visée (une case, quand une allocation s'estime), les paies, la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). resume (la personne choisie, ou les lignes prévues seules sans pièce) : nir, nom, fenetre, lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -157,8 +157,8 @@ impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for Li
     const FORME: Forme = Forme::Parties(PARTIES_D_UNE_LIGNE_PREVUE);
 }
 
-/// Les boutons qui ajoutent et retirent une ligne prevue, et une date d'embauche.
-const AJOUTER_UNE_LIGNE: Affiche = Affiche::new("Ajouter une ligne");
+/// Le bouton qui retire une ligne prevue (une ligne vide attend toujours en bas du tableau), et ceux d'une date
+/// d'embauche.
 const RETIRER_LA_LIGNE: Affiche = Affiche::new("Retirer la ligne");
 const AJOUTER_UNE_EMBAUCHE: Affiche = Affiche::new("Ajouter une date d'embauche");
 const RETIRER_LA_DATE: Affiche = Affiche::new("Retirer la date d'embauche");
@@ -839,7 +839,7 @@ fn tableau_des_paies(paies: &[PaieComptee]) -> TableauRendu {
             }
         })
         .collect();
-    let saisie = SaisieDuTableau { case: cle!(ChargeDroitsDesPieces, previsionnel), ajouter: AJOUTER_UNE_LIGNE.texte(), retirer: RETIRER_LA_LIGNE.texte() };
+    let saisie = SaisieDuTableau { case: cle!(ChargeDroitsDesPieces, previsionnel), retirer: RETIRER_LA_LIGNE.texte() };
     TableauRendu::de(colonnes, rangees).intitule("Une ligne par paie").saisissant(saisie)
 }
 

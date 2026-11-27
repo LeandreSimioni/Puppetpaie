@@ -447,6 +447,13 @@
     var parties = {};
     c.parties.forEach(function (p) { parties[p.cle] = p; });
     var rangs = saisie[cle], envoi = envoiRendu[cle] || [], placees = {};
+    // UNE LIGNE VIDE ATTEND TOUJOURS EN BAS (Léandre, 27/11/2026 : « il n'y a pas de bouton pour ajouter une ligne. Il y
+    // a déjà une ligne dans le tableau, et si on la remplit, il y a une autre ligne qui apparaît toute seule, vide »).
+    // Une rangée vide ne part pas dans la charge (`charge`) : elle ne compte rien.
+    var remplie = function (r) {
+      return Object.keys(r).some(function (k) { return r[k] !== "" && r[k] !== null && r[k] !== false; });
+    };
+    if (!rangs.length || remplie(rangs[rangs.length - 1])) rangs.push(rangeeVide(c));
     var classe = function (col) { return col.a_droite ? "n" : col.discrete ? "discret" : null; };
     var s = el("section", "bloc");
     if (t.titre) s.append(el("h3", null, t.titre));
@@ -467,7 +474,12 @@
         if (col.parties && col.parties.length) {
           col.parties.forEach(function (k) {
             var p = parties[k];
-            var i2 = champ(p.forme, p.choix, rangs[n][k], function (v) { rangs[n][k] = v; calculer(); }, "case-" + cle + "-" + n + "-" + k);
+            var i2 = champ(p.forme, p.choix, rangs[n][k], function (v) {
+              rangs[n][k] = v;
+              // La ligne vide qu'on remplit en fait paraître une autre, même avant que le moteur soit prêt.
+              if (n === rangs.length - 1) redessiner();
+              calculer();
+            }, "case-" + cle + "-" + n + "-" + k);
             i2.setAttribute("aria-label", p.libelle + " " + (n + 1));
             td.append(i2);
           });
@@ -477,7 +489,7 @@
         r.append(td);
       });
       var fin = el("td");
-      fin.append(boutonRetirer(cle, t.saisie.retirer, n));
+      if (n < rangs.length - 1) fin.append(boutonRetirer(cle, t.saisie.retirer, n));
       r.append(fin);
       corps.append(r);
     };
@@ -497,7 +509,7 @@
     table.append(corps);
     var d = el("div", "tableau");
     d.append(table);
-    s.append(d, boutonAjouter(c, t.saisie.ajouter));
+    s.append(d);
     return s;
   }
 
