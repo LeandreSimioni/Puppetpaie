@@ -427,7 +427,7 @@
       return;
     }
     r.append(el("h2", null, p.nom));
-    r.append(el("p", "aide", p.fenetre));
+    r.append(el("p", "phrase", p.bilan), el("p", "aide", p.fenetre));
     if (p.butoir) {
       var b = el("div", "butoir");
       b.append(el("p", null, p.butoir.phrase), el("p", null, p.butoir.pourquoi), el("p", "reference", p.butoir.reference));

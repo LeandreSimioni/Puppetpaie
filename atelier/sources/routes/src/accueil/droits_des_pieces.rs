@@ -72,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","debut":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "dossier (mes-pieces/, où poser les pièces), pieces (une phrase par fichier), cases (les cases de la charge telles qu'on les saisit : la personne quand les pièces en portent plusieurs ou que la charge en dit une, la date anniversaire, les lignes prévues, l'allocation visée quand une allocation s'estime, les dates d'embauche quand la route en demande ; chacune libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée), personne (celle choisie, ou les lignes prévues seules sans pièce : nir, nom, fenetre, paies (un tableau : titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut), lignes [quoi, valeur], heures_exigees, manque, butoir [jour, phrase, pourquoi, reference], phrase, notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]), phrase",
+    rend: "dossier (mes-pieces/, où poser les pièces), pieces (une phrase par fichier), cases (les cases de la charge telles qu'on les saisit : la personne quand les pièces en portent plusieurs ou que la charge en dit une, la date anniversaire, les lignes prévues, l'allocation visée quand une allocation s'estime, les dates d'embauche quand la route en demande ; chacune libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée), personne (celle choisie, ou les lignes prévues seules sans pièce : nir, nom, fenetre, paies (un tableau : titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut), lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]), phrase",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -816,6 +816,9 @@ struct DroitsDUnePersonne {
     manque: Heures,
     #[serde(skip_serializing_if = "Option::is_none")]
     butoir: Option<ButoirDit>,
+    /// Le bilan a la derniere fin de contrat ; `phrase`, `manque`, `heures_exigees` et `butoir` : ce qui reste a faire,
+    /// compte a partir d'aujourd'hui quand cette fin est passee.
+    bilan: String,
     phrase: String,
     notes: Vec<String>,
     estimations: Vec<EstimationDite>,
@@ -907,7 +910,7 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
         None => (None, Vec::new()),
     };
     let phrase = match (&personne, personnes.len()) {
-        (Some(p), _) => socle::phrase!("{} ({}) : {}", p.nom, p.fenetre, p.phrase),
+        (Some(p), _) => socle::phrase!("{} : {} {}", p.nom, p.bilan, p.phrase),
         (None, 0) => Phrase::fixe("Aucune pièce ne se compte encore : posez vos bulletins, de tous vos employeurs, ou remplissez des lignes prévues."),
         (None, n) => socle::phrase!("Les pièces portent {} personnes : choisissez-en une, ses droits se comptent seuls.", n),
     };
@@ -1013,14 +1016,32 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     let r = &t.readmission;
     let aff = droit::allocation::affiliation_des_droits(inst, &constantes, r, &lignes, &cle, c.anniversaire, None, naissance)?;
     let fin = aff.position.periode.fin();
-    let butoir = droit::allocation::butoir(inst, &constantes, r, &lignes, &cle, naissance, &aff)?;
+    // LE BILAN se compte a la derniere fin de contrat (`aff`) ; CE QUI RESTE A FAIRE ET LE JOUR BUTOIR, a partir
+    // d'aujourd'hui quand cette fin est passee : un prochain contrat finira au plus tot aujourd'hui. Le meme compte
+    // (`droit::allocation::affiliation`, puis `butoir`), a une autre fin.
+    let a_partir = match aujourdhui > fin {
+        true => droit::allocation::affiliation(inst, &constantes, r, &lignes, &cle, aujourdhui, aff.precedente, naissance)?,
+        false => aff.clone(),
+    };
+    let butoir = droit::allocation::butoir(inst, &constantes, r, &lignes, &cle, naissance, &a_partir)?;
     let (lignes_du_compte, notes_du_compte) = crate::archives::comptes_de_la_position(&aff, "des pièces")?;
     notes.extend(notes_du_compte);
-    let butoir_dit = butoir.as_ref().map(|b| butoir_dit(b, &aff, r));
-    let phrase = match (&butoir_dit, aff.manque.est_nul()) {
-        (Some(b), _) => b.phrase.clone(),
-        (None, true) => format!("{} h sur la fenêtre : les {} h sont atteintes.", dit(aff.position.heures_ouverture()?), dit(aff.heures_exigees)),
-        (None, false) => format!("Il vous manque {} h sur la fenêtre.", dit(aff.manque)),
+    let heures_a_la_fin = dit(aff.position.heures_ouverture()?);
+    let bilan = match (fin <= aujourdhui, aff.manque.est_nul()) {
+        (true, true) => format!("Au {}, votre dernière fin de contrat, vous aviez {} h : les {} h étaient atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+        (true, false) => format!("Au {}, votre dernière fin de contrat, vous aviez {} h sur les {} h exigées.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+        (false, true) => format!("Au {}, la dernière fin prévue, vous aurez {} h : les {} h seront atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+        (false, false) => format!("Au {}, la dernière fin prévue, vous aurez {} h sur les {} h exigées.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+    };
+    let butoir_dit = butoir.as_ref().map(|b| butoir_dit(b, &a_partir, r));
+    let phrase = match (&butoir_dit, a_partir.manque.est_nul(), aujourdhui > fin) {
+        (Some(b), _, _) => b.phrase.clone(),
+        (None, true, _) => format!("Les {} h sont atteintes.", dit(a_partir.heures_exigees)),
+        (None, false, false) => format!("Il vous manque {} h sur la fenêtre.", dit(a_partir.manque)),
+        (None, false, true) => match a_partir.position.heures_ouverture()?.est_nul() {
+            true => format!("Pour un contrat qui finirait aujourd'hui ou plus tard, il vous manque {} h : plus aucune paie ne compte sur la fenêtre.", dit(a_partir.manque)),
+            false => format!("Pour un contrat qui finirait aujourd'hui ou plus tard, il vous manque {} h.", dit(a_partir.manque)),
+        },
     };
     // Les paies que la fenetre compte : celles de la position retenue.
     let dans_la_fenetre: Vec<&PaieComptee> = declarees.iter().filter(|(d, _)| aff.position.engagements.contains(d)).map(|(_, i)| &comptees[*i]).collect();
@@ -1049,9 +1070,10 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         fenetre: aff.position.libelle_fenetre.clone(),
         paies,
         lignes: lignes_du_compte,
-        heures_exigees: aff.heures_exigees,
-        manque: aff.manque,
+        heures_exigees: a_partir.heures_exigees,
+        manque: a_partir.manque,
         butoir: butoir_dit,
+        bilan,
         phrase,
         notes,
         estimations,
