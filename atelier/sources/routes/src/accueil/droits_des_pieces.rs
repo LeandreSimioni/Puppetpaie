@@ -397,7 +397,10 @@ struct DitDesPieces(BTreeMap<String, Vec<String>>);
 
 /// Le fichier pose d'ou vient le chemin `chemin` (relatif au dossier ; dans une archive, `lot.zip/x.pdf` : `lot.zip`).
 fn fichier_pose(chemin: &str) -> &str {
-    chemin.split('/').next().unwrap_or(chemin)
+    match chemin.split_once('/') {
+        Some((fichier, _)) => fichier,
+        None => chemin,
+    }
 }
 
 impl DitDesPieces {
@@ -1177,10 +1180,10 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     notes.extend(notes_du_compte);
     let heures_a_la_fin = dit(aff.position.heures_ouverture()?);
     let bilan = match (fin <= aujourdhui, aff.manque.est_nul()) {
-        (true, true) => format!("Au {}, votre dernière fin de contrat, vous aviez {} h : les {} h étaient atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
-        (true, false) => format!("Au {}, votre dernière fin de contrat, vous aviez {} h sur les {} h exigées.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
-        (false, true) => format!("Au {}, la dernière fin prévue, vous aurez {} h : les {} h seront atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
-        (false, false) => format!("Au {}, la dernière fin prévue, vous aurez {} h sur les {} h exigées.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+        (true, true) => format!("Au {} (dernière fin de contrat) : {} h, les {} h étaient atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+        (true, false) => format!("Au {} (dernière fin de contrat) : {} h sur {}.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+        (false, true) => format!("Au {} (dernière fin prévue) : {} h, les {} h seront atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
+        (false, false) => format!("Au {} (dernière fin prévue) : {} h sur {}.", fin.jj_mm_aaaa(), heures_a_la_fin, dit(aff.heures_exigees)),
     };
     let butoir_dit = butoir.as_ref().map(|b| butoir_dit(b, &a_partir, r));
     let phrase = match (&butoir_dit, a_partir.manque.est_nul(), aujourdhui > fin) {
@@ -1247,7 +1250,7 @@ fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::alloc
     let phrase = if aff.manque.est_nul() {
         format!("Les {} h sont atteintes ; sans contrat de plus, elles ne le sont plus après le {}.", dit(aff.heures_exigees), jour)
     } else {
-        format!("Il vous manque {} h d'ici le {} : passé ce jour, sans contrat de plus, il en faudra davantage.", dit(aff.manque), jour)
+        format!("Il vous manque {} h d'ici le {} ; après, sans contrat de plus, il en faudra davantage.", dit(aff.manque), jour)
     };
     let c = &aff.position.constantes;
     let sortent: Vec<&Declare> = aff.position.engagements.iter().filter(|d| !apres.position.engagements.contains(d)).collect();
