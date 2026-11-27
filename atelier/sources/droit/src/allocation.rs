@@ -12,8 +12,10 @@
 //!
 //! Les valeurs et leurs textes sont dans `allocation-intermittents.json` ; ce module n'a que les formules. Ni le salaire
 //! annuel de reference (art. 11 §2), ni la participation de 0,93 % (art. 19), ni la clause de rattrapage. Chaque partie
-//! s'arrondit au centime, puis s'ajoute : INFERENCE depuis l'exemple 6 du guide de France Travail
-//! (`chomage-intermittents/francetravail-guide-intermittents-20261020.txt` : « 39,80 + 12,20 + 12,78 = 64,78 € »).
+//! se tronque au centime, puis s'ajoute : c'est ce qu'ecrit l'exemple 6 du guide de France Travail
+//! (`chomage-intermittents/francetravail-guide-intermittents-20261020.txt` : un technicien, 800 heures, 18 000 € ; la
+//! partie A, 31,96 x 6 228 / 5 000 = 39,809…, s'y ecrit 39,80 € ; « 39,80 + 12,20 + 12,78 = 64,78 € ») ; aucun article
+//! des annexes ne dit l'arrondi.
 
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
@@ -126,7 +128,7 @@ impl Allocation {
         };
         let (bas, haut) = (sr.min(f.seuil_du_salaire), (sr - f.seuil_du_salaire).max(Montant::ZERO));
         let part = |m: Montant| m.rapport(diviseur).ok_or_else(|| socle::fichiers::absent("diviseur_du_salaire"));
-        Ok((self.aj_minimale.montant * (part(bas)? * f.part_du_salaire + part(haut)? * f.part_du_salaire_au_dela)).au_centime())
+        Ok((self.aj_minimale.montant * (part(bas)? * f.part_du_salaire + part(haut)? * f.part_du_salaire_au_dela)).au_centime_vers_zero())
     }
 
     /// LA PARTIE B : l'allocation minimale fois la part des heures travaillees `nht`, jusqu'au seuil puis au-dela, sur le
@@ -138,7 +140,12 @@ impl Allocation {
         };
         let (bas, haut) = (nht.min(f.seuil_des_heures), (nht - f.seuil_des_heures).max(Heures::ZERO));
         let part = |h: Heures| h.rapport(diviseur).ok_or_else(|| socle::fichiers::absent("diviseur_des_heures"));
-        Ok((self.aj_minimale.montant * (part(bas)? * f.part_des_heures + part(haut)? * f.part_des_heures_au_dela)).au_centime())
+        Ok((self.aj_minimale.montant * (part(bas)? * f.part_des_heures + part(haut)? * f.part_des_heures_au_dela)).au_centime_vers_zero())
+    }
+
+    /// LA PARTIE C : l'allocation minimale fois la part fixe.
+    fn partie_c(&self, f: &Formule) -> Montant {
+        (self.aj_minimale.montant * f.part_fixe).au_centime_vers_zero()
     }
 
     /// L'ALLOCATION DE L'ANNEXE `annexe` pour le salaire de reference `sr` et les heures travaillees `nht`, sous le plafond
@@ -146,7 +153,7 @@ impl Allocation {
     pub fn estimer(&self, annexe: AnnexeChomage, sr: Montant, nht: Heures, plafond: Montant, d: Diviseurs) -> R<Estimation> {
         let f = self.formule(annexe);
         let (a, b) = (self.partie_a(f, sr, d)?, self.partie_b(f, nht, d)?);
-        let c = (self.aj_minimale.montant * f.part_fixe).au_centime();
+        let c = self.partie_c(f);
         let calculee = a + b + c;
         let (retenue, borne) = if calculee < f.plancher {
             (f.plancher, Some(Borne::Plancher))
@@ -169,7 +176,7 @@ impl Allocation {
             return Ok(Visee::DesLePlancher);
         }
         let b = self.partie_b(f, nht, d)?;
-        let c = (self.aj_minimale.montant * f.part_fixe).au_centime();
+        let c = self.partie_c(f);
         let a = visee - b - c;
         if a <= Montant::ZERO {
             return Ok(Visee::SansSalaire);

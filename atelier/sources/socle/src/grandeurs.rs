@@ -398,6 +398,15 @@ impl Montant {
         Montant(c)
     }
 
+    /// AU CENTIME, VERS ZERO, ses deux decimales ecrites : chaque partie de l'allocation journaliere d'un intermittent
+    /// (`droit::allocation`), comme l'ecrit l'exemple 6 du guide de France Travail
+    /// (`chomage-intermittents/francetravail-guide-intermittents-20261020.txt` : la partie A, 39,809…, s'y ecrit 39,80).
+    pub fn au_centime_vers_zero(self) -> Montant {
+        let mut c = self.0.round_dp_with_strategy(2, RoundingStrategy::ToZero);
+        c.rescale(2);
+        Montant(c)
+    }
+
     /// Le montant que le taux `t` en prend, exact (`au_centime` le fixe).
     pub fn fois_taux(self, t: Taux) -> Montant {
         Montant(num::div(num::mul(self.0, t.0), Decimal::ONE_HUNDRED))

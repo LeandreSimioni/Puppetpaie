@@ -6,6 +6,7 @@
 #[path = "../outils/mod.rs"]
 mod outils;
 
+mod allocation;
 mod caisse_conges;
 mod catalogue;
 mod clauses;
