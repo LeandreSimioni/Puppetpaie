@@ -235,7 +235,8 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
 /// elle vide (`prerempli`), les choix d'une case qui se choisit (code et libelle), s'ils se montrent en boutons a cocher,
 /// chacun avec le document qui le montre quand il en a un (`boutons`, le modele du bulletin), ses parties (une case faite de cases,
 /// ou chaque rangee d'une liste), le bouton qui ajoute une rangee, ce que le moteur dit sous elle (`dit`) et ou elle
-/// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots) et sa faute. Sa cle est celle d'une case
+/// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots), sa faute, et pourquoi elle est fermee
+/// pour l'instant (`fermee`). Sa cle est celle d'une case
 /// de fiche, ou d'une case d'un ecran qu'une route rend (`EcranRendu` : un contrat de la DSN, par sa cle).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct CaseDeLaFiche<K = CaseDeFiche> {
@@ -267,6 +268,10 @@ pub(crate) struct CaseDeLaFiche<K = CaseDeFiche> {
     temps: Option<TempsDeLaCase<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     anomalie: Option<Anomalie>,
+    /// LA CASE EST FERMEE POUR L'INSTANT (`declarations::champs::CaseFermee`) : elle se montre grisee, ne se coche pas, et
+    /// dit pourquoi au survol, cette phrase.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fermee: Option<String>,
 }
 
 /// UNE PARTIE D'UNE CASE FAITE DE CASES (le signataire, le compte bancaire, le taux AT/MP, une rangee d'un autre
@@ -317,6 +322,7 @@ impl<K> CaseDeLaFiche<K> {
             renvoi: None,
             temps,
             anomalie: None,
+            fermee: None,
         }
     }
 }
@@ -345,6 +351,7 @@ impl<K> CaseDeLaFiche<K> {
             renvoi: None,
             temps: None,
             anomalie: None,
+            fermee: None,
         }
     }
 
@@ -676,6 +683,7 @@ fn case_du_champ(c: &Champ, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(&[&str
         renvoi: None,
         temps: None,
         anomalie: None,
+        fermee: c.fermee.as_ref().map(|f| f.pourquoi().to_string()),
     }))
 }
 

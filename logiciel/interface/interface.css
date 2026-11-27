@@ -319,6 +319,9 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .case { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--discret); min-width: 0; }
 .case > [data-case] { color: var(--texte); }
 .case input[type="checkbox"] { width: auto; align-self: flex-start; }
+/* Une case fermée pour l'instant : grisée, et la bulle de la case au survol, même sur le contrôle. */
+.case.fermee { opacity: .55; cursor: not-allowed; }
+.case.fermee > [data-case] { pointer-events: none; }
 .case-lignes { grid-column: 1 / -1; }
 .case-objet { font-size: 12px; overflow-wrap: anywhere; }
 .case-dit { font-size: 12px; color: var(--discret); }

@@ -75,6 +75,21 @@ pub struct PlusLong {
     pub longueur: usize,
 }
 
+/// UNE CASE A COCHER FERMEE POUR L'INSTANT (`fermee` de `champs-base.json`) : la chose existe et arrive, mais ne s'ouvre
+/// pas encore. La case se montre grisee, ne se coche pas, et dit pourquoi (la phrase de la table) ; l'ecriture qui la
+/// cocherait se refuse avec la meme phrase (`routes::fiches::ecriture::preparer`). Ce qu'une fiche en ecrit deja se
+/// lit toujours.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(transparent)]
+pub struct CaseFermee(String);
+
+impl CaseFermee {
+    /// Pourquoi elle est fermee, tel que la case le dit au survol et que le refus le redit.
+    pub fn pourquoi(&self) -> &str {
+        &self.0
+    }
+}
+
 impl Forme {
     /// Le libelle de la forme, que la description des fiches donne a l'ecran.
     pub fn libelle(self) -> &'static str {
@@ -360,6 +375,8 @@ pub struct Champ {
     pub si_entreprise: Option<Condition>,
     /// La case est un cas particulier, rangee sous « Avancé », et ce qui y est le cas ordinaire (`avance`).
     pub avance: Option<Avance>,
+    /// La case a cocher est fermee pour l'instant, et pourquoi (`fermee`).
+    pub fermee: Option<CaseFermee>,
     /// Quand la compagnie DOIT le remplir (`exige_si`, meme forme que `si`) : `Champ::exige`.
     pub exige_si: Option<Condition>,
     pub ecran: bool,

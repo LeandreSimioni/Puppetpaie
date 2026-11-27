@@ -1191,6 +1191,7 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
     }
     let mut apres = avant.clone();
     let nommees = changer(&mut apres);
+    refuser_les_fermees::<F>(&avant, &apres, &nommees)?;
     F::ajuster(&avant, &mut apres);
     let mut fautes = F::reconnaitre(ctx, &avant, &mut apres)?;
     F::refuser(ctx, cle, &avant, &apres)?;
@@ -1204,6 +1205,24 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
         return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
     }
     Ok(Preparee { cle: cle.cloned(), avant, apres, memoire })
+}
+
+/// UNE CASE FERMEE NE SE COCHE PAS (`champs::CaseFermee`) : l'ecriture qui cocherait l'une des cases `nommees` se refuse,
+/// avec la phrase de la case, et n'ecrit rien. La laisser telle qu'elle est (decochee, ou ce qu'une fiche en ecrit deja)
+/// n'est jamais un refus.
+fn refuser_les_fermees<F: SorteDeFiche>(avant: &F::Plate, apres: &F::Plate, nommees: &[CaseDeFiche]) -> R<()> {
+    for &k in nommees {
+        let cochee = |p: &F::Plate| p.ecrite_au_chemin(k, &[]) == MotEcrit::OuiNon(true);
+        if cochee(avant) || !cochee(apres) {
+            continue;
+        }
+        if let Some(c) = champs::champ(F::NOM, k)? {
+            if let Some(f) = &c.fermee {
+                return Err(refus(format!("« {} » : {}. Rien n'a été enregistré.", c.libelle, f.pourquoi())));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Ce que l'ecriture d'une fiche a fait : sa cle (celle d'une fiche neuve est fabriquee ici), les anomalies, si le
