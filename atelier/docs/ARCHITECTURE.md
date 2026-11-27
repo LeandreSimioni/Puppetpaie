@@ -1489,6 +1489,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
+| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne` ; la table livrée qui la fonde, `allocation-intermittents.json`, est sa forme, `Allocation`) ; et ce qu'une allocation visée demande au salaire de référence | `Estimation` ; `Visee` | `droit/src/allocation.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
 | jauge de la salle qu'une grille de cachets vise, et celle des autres jauges qu'elle porte pour mémoire (`autres_jauges`) | `JaugeDeLaGrille` | `droit/src/minima.rs` |
@@ -2895,6 +2896,17 @@ Le bulletin se compte lui-même : `documents::bulletin` passe les paies qu'il
 imprime à `Passe::engagements(Some(paies))` (`engagement::cumul`), qui les substitue à celles de
 leur mois. Les conseils (`routes/src/gestes/conseils.rs`) et la position des droits
 (`routes/src/archives.rs`) lisent la même chose.
+
+**Les droits d'un intermittent, sans compagnie** (`droits-des-pieces`, une route de l'installation,
+`routes/src/accueil/droits_des_pieces.rs`) : la personne pose les pièces de tous ses employeurs (bulletins, AEM en PDF
+ou déposées) dans `mes-pieces/` de l'installation ; les lecteurs de l'import les lisent, par NIR, et le registre de
+l'import (`import::attestes::Registre::vide`, un par employeur : deux employeurs ne font jamais un contrat) ne garde
+chaque contrat qu'une fois. Le compte est celui de la route `droits` (`droit::cumul::position`, qui ne prend que la
+racine où lire le catalogue, et `archives::comptes_de_la_position`) ; l'allocation journalière s'estime par annexe
+(`droit::allocation`, `allocation-intermittents.json` : art. 14 et 16), et une allocation visée dit le salaire de
+référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion. Une DSN, un certificat Congés
+Spectacles ne s'y comptent pas ; l'estimation se tait quand la fenêtre porte de l'enseignement (son salaire n'est pas
+dit à part).
 
 ### Le modèle d'un contrat, et le contrat parti
 

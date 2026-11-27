@@ -281,6 +281,12 @@ impl Registre {
         Ok(Registre { tous, retenus: Vec::new(), changes: Vec::new(), muets })
     }
 
+    /// UN REGISTRE SANS HISTORIQUE : les pieces d'un intermittent, qu'aucune compagnie ne tient (la route
+    /// `droits-des-pieces`, un registre par employeur).
+    pub fn vide() -> Registre {
+        Registre { tous: Vec::new(), retenus: Vec::new(), changes: Vec::new(), muets: Vec::new() }
+    }
+
     /// Les contrats deja attestes qui chevauchent celui que la piece `piece` (un certificat, une AEM, un bulletin)
     /// atteste, et qui peuvent etre le sien : ni un autre numero d'objet, ni une autre nature que ceux qu'elle dit
     /// (`objet`, `nature` ; `engagement::importe::deux_contrats`). Un certificat ne compte que pour un certificat : un

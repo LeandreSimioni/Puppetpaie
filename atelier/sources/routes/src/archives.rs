@@ -1362,21 +1362,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         let c = &p.constantes;
         use socle::grandeurs::ecrit::sans_zero::dit;
         let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
-        let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), dit(p.cachets()))];
-        if !p.cachets_perdus().est_nul() {
-            lignes.push((format!("Retenus ({} par mois au plus)", dit(c.cachets_par_mois)), dit(p.cachets_retenus())));
-        }
-        lignes.push((format!("Convertis ({} h par cachet)", dit(c.heures_par_cachet)), h(p.cachets_retenus() * c.heures_par_cachet)));
-        lignes.push(("Heures déclarées".into(), h(p.heures())));
-        lignes.push(("Total d'heures équivalentes".into(), h(p.heures_retenues())));
-        if !p.heures_enseignement().est_nul() {
-            // Deux comptes des qu'il y a de l'enseignement : ces heures ouvrent les droits (plafonnees), sans augmenter l'allocation.
-            lignes.push(("Dont enseignement".into(), h(p.heures_enseignement())));
-            lignes.push((format!("Enseignement retenu (plafond {} h)", dit(p.plafond_enseignement()?)), h(p.heures_enseignement_retenues()?)));
-            lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
-            lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
-        }
-        lignes.push(("Seuil des annexes 8 et 10".into(), h(c.seuil_heures)));
+        let (mut lignes, mut notes) = comptes_de_la_position(&p, "de la fiche")?;
         let jours = p.jours_restants(ctx.aujourdhui);
         if anniv.is_some() && !jours.nulle() {
             lignes.push(("Avant le réexamen".into(), jours.dite_en_abrege()));
@@ -1386,21 +1372,6 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         } else {
             socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_ouverture()?), dit(c.seuil_heures))
         };
-        let mut notes = Vec::new();
-        if !p.cachets_perdus().est_nul() {
-            notes.push(format!(
-                "{} cachet(s) dépassent les {} d'un mois ({}) : joués, payés et déclarés, mais sans effet sur les droits.",
-                dit(p.cachets_perdus()),
-                dit(c.cachets_par_mois),
-                p.mois_plafonnes().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-            ));
-        }
-        if !p.enseignement_perdu()?.est_nul() {
-            notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", dit(p.enseignement_perdu()?)));
-        }
-        if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
-            notes.push("Date de naissance absente de la fiche : le plafond bas de l'enseignement s'applique, peut-être à tort.".to_string());
-        }
         if anniv.is_none() {
             let case = declarations::champs::champ(droit::fiche::NomDeFiche::Salarie, droit::fiche::CaseSalarie::AnniversaireDroits)?
                 .map(|ch| ch.libelle)
@@ -1429,4 +1400,45 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     });
     let phrases = salarie.iter().map(|s| format!("{} ({}) : {}", s.nom, s.fenetre, s.phrase)).collect();
     Ok(Droits { phrase, mois, phrases, case, salarie })
+}
+
+/// CE QUE COMPTE LA POSITION D'UN INTERMITTENT DANS SA FENETRE (`droit::cumul::Position`), en `[quoi, valeur]` jusqu'au
+/// seuil, et les notes de ce qui ne compte pas (des cachets au-dela du plafond d'un mois, de l'enseignement au-dela du
+/// sien, une date de naissance absente `naissance_absente_de`). Les droits des salaries d'une compagnie (`droits`) et
+/// ceux d'un intermittent depuis ses pieces (`accueil::droits_des_pieces`) se disent par elle.
+pub(crate) fn comptes_de_la_position(p: &droit::cumul::Position, naissance_absente_de: &str) -> R<(Vec<(String, String)>, Vec<String>)> {
+    use socle::grandeurs::ecrit::sans_zero::dit;
+    let c = &p.constantes;
+    let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
+    let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), dit(p.cachets()))];
+    if !p.cachets_perdus().est_nul() {
+        lignes.push((format!("Retenus ({} par mois au plus)", dit(c.cachets_par_mois)), dit(p.cachets_retenus())));
+    }
+    lignes.push((format!("Convertis ({} h par cachet)", dit(c.heures_par_cachet)), h(p.cachets_retenus() * c.heures_par_cachet)));
+    lignes.push(("Heures déclarées".into(), h(p.heures())));
+    lignes.push(("Total d'heures équivalentes".into(), h(p.heures_retenues())));
+    if !p.heures_enseignement().est_nul() {
+        // Deux comptes des qu'il y a de l'enseignement : ces heures ouvrent les droits (plafonnees), sans augmenter l'allocation.
+        lignes.push(("Dont enseignement".into(), h(p.heures_enseignement())));
+        lignes.push((format!("Enseignement retenu (plafond {} h)", dit(p.plafond_enseignement()?)), h(p.heures_enseignement_retenues()?)));
+        lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
+        lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
+    }
+    lignes.push(("Seuil des annexes 8 et 10".into(), h(c.seuil_heures)));
+    let mut notes = Vec::new();
+    if !p.cachets_perdus().est_nul() {
+        notes.push(format!(
+            "{} cachet(s) dépassent les {} d'un mois ({}) : joués, payés et déclarés, mais sans effet sur les droits.",
+            dit(p.cachets_perdus()),
+            dit(c.cachets_par_mois),
+            p.mois_plafonnes().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    if !p.enseignement_perdu()?.est_nul() {
+        notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", dit(p.enseignement_perdu()?)));
+    }
+    if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
+        notes.push(format!("Date de naissance absente {} : le plafond bas de l'enseignement s'applique, peut-être à tort.", naissance_absente_de));
+    }
+    Ok((lignes, notes))
 }
