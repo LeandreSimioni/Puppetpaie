@@ -1174,7 +1174,7 @@ fn viser(
     let cible = match t.salaire_vise(annexe, v, nht, plafond, d)? {
         Visee::Salaire(s) => s,
         Visee::AuDelaDuPlafond => return Ok(vide(format!("{} : {} par jour dépasse le plafond ; aucun salaire n'y mène.", nom, euros(v)))),
-        Visee::DesLePlancher => return Ok(vide(format!("{} : {} par jour ne passe pas le plancher, que les heures ouvrent déjà.", nom, euros(v)))),
+        Visee::DesLePlancher => return Ok(vide(format!("{} : {} par jour ne passe pas le plancher de l'annexe, {} par jour, qui s'applique dès que le droit est ouvert.", nom, euros(v), euros(t.formule(annexe).plancher)))),
         Visee::SansSalaire => return Ok(vide(format!("{} : les heures seules donnent déjà {} par jour.", nom, euros(v)))),
     };
     let Some(k) = droit::allocation::facteur_vise(bruts, cible) else {

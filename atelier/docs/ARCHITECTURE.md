@@ -1491,6 +1491,18 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne` ; la table livrée qui la fonde, `allocation-intermittents.json`, est sa forme, `Allocation`) ; et ce qu'une allocation visée demande au salaire de référence ; les diviseurs de ses parties A et B, ceux de l'annexe ou ceux d'une fenêtre allongée | `Estimation` ; `Visee` ; `Diviseurs` | `droit/src/allocation.rs` |
 | affiliation d'un intermittent à une fin de contrat (art. 3, art. 9 §1 a et b : sa position dans la fenêtre de 365 jours, allongée de 30 jours en 30 jours à la réadmission, les heures exigées, ce qui manque ; les valeurs de la réadmission, `Readmission`, et la limite du salaire de référence, `LimiteDuSalaire`, sont des formes de `allocation-intermittents.json`) ; et le jour butoir, le dernier où, sans contrat de plus, il n'en faut pas davantage | `Affiliation` ; `Butoir` | `droit/src/allocation.rs` |
+| table livrée de l'allocation des intermittents, entière (`allocation-intermittents.json`) | `Allocation` | `droit/src/allocation.rs` |
+| allocation journalière minimale des annexes VIII et X (art. 14) | `AjMinimale` | `droit/src/allocation.rs` |
+| formule d'une annexe : ses seuils, ses parts, ses diviseurs, son plancher (art. 14) | `Formule` | `droit/src/allocation.rs` |
+| plafond de l'allocation (art. 16 : une part de 1/365e de quatre plafonds annuels) | `PlafondDeLAllocation` | `droit/src/allocation.rs` |
+| réadmission : les heures de plus par période de jours au-delà de la fenêtre (art. 9 §1 b) | `Readmission` | `droit/src/allocation.rs` |
+| limite du salaire de référence : les plafonds d'une paie qu'il compte au plus (art. 11 §3, art. 49) | `LimiteDuSalaire` | `droit/src/allocation.rs` |
+| contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) | `LignePrevue` | `routes/src/accueil/droits_des_pieces.rs` |
+| date de début du contrat d'une paie, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
+| employeur d'une pièce d'un intermittent, qui range ses contrats (son Siren, sa raison sociale, ou la pièce seule) ; et le compte des pièces seules | `CleDEmployeur` ; `Seules` | `routes/src/accueil/droits_des_pieces.rs` |
+| pièce d'un intermittent lue (de qui, chez quel employeur, le contrat qu'elle atteste) | `Attestee` | `routes/src/accueil/droits_des_pieces.rs` |
+| d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, ou à calculer du contrat d'un bulletin) ; pourquoi il ne se connaît pas ; une paie qui compte entière sous la plus basse limite possible | `SourceDuPlafond` ; `PlafondInconnu` ; `SousLePlusBas` | `routes/src/accueil/droits_des_pieces.rs` |
+| paie d'un intermittent comptée depuis ses pièces ou un contrat prévu : ce que sa pièce dit (un compteur qu'elle tait reste vide), son employeur, d'où vient son plafond ; elle devient une ligne déclarée (`droit::cumul::Declare`) quand elle dit ce que la ligne demande | `PaieComptee` | `routes/src/accueil/droits_des_pieces.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
 | jauge de la salle qu'une grille de cachets vise, et celle des autres jauges qu'elle porte pour mémoire (`autres_jauges`) | `JaugeDeLaGrille` | `droit/src/minima.rs` |
@@ -2869,8 +2881,8 @@ cachets le même jour. À défaut, les jours valent le nombre de dates jouées
 **distinctes**.
 
 Ces trois valeurs partent dans la DSN (bloc
-`S21.G00.53` : unité 12 journée, 37 cachets, 35 heures) et dans les droits
-(`cumul.rs`). Aucune de ces destinations ne les recalcule. Un engagement qui porte des
+`S21.G00.53` : unité 12 journée, 37 cachets, 35 heures), les cachets et les heures
+dans les droits (`cumul.rs`). Aucune de ces destinations ne les recalcule. Un engagement qui porte des
 lignes de paie et **zéro jour** est refusé : l'unité 12 ouvre les droits du
 salarié, et un mois payé en compte au moins un. Un mois du contrat sans paye
 (`lignes: []`) et un contrat mensuel, qui compte en heures, en sont exclus.
@@ -2908,7 +2920,9 @@ Le compte est celui de la route `droits` (`droit::cumul::position`, qui ne prend
 réadmission (`droit::allocation::affiliation`, art. 9 §1 b ; la date anniversaire dite dit la réadmission) ; le jour
 butoir (`droit::allocation::butoir`) est le dernier où, sans contrat de plus, il n'en faut pas davantage, et la route
 dit pourquoi. L'allocation journalière s'estime par annexe (`allocation-intermittents.json` : art. 14 et 16), chaque paie
-sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon `droit::plafond`), et une allocation
+sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon `droit::plafond` ; un plafond qui ne
+se connaît pas ne compte que si le brut passe quatre fois le plus bas possible, celui d'un contrat d'un jour : alors
+l'estimation attend, et la route demande le début du contrat de la paie), et une allocation
 visée dit le salaire de référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion, et ce qui
 arrête la hausse. Une DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du
 salaire de référence, et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures.
