@@ -3,10 +3,11 @@
 // Elle ne décide rien : elle demande la route `droits-des-pieces` et pose son écran, bloc par bloc dans l'ordre où la
 // route le rend (`ecran` : la réponse, l'allocation visée, les cases, dessinées depuis la forme que la route leur
 // donne, le tableau des paies, le dépôt, les pièces, le détail du calcul). Avant que le moteur soit prêt, elle pose ce que la route rend sans charge
-// (`premier-ecran.json`) ; le moteur prêt, « Calculer » fait le premier calcul. Ensuite, chaque changement (un bulletin
-// déposé ou retiré, une case) redemande la route. Les
-// bulletins déposés vont dans le dossier que le dépôt nomme (`dossier`), sur le disque en mémoire du moteur. Elle ne
-// garde rien : ni stockage, ni cache ; fermer l'onglet efface tout.
+// (`premier-ecran.json`) ; le moteur prêt, « Calculer » (ou un bulletin déposé) fait le premier calcul. Ensuite, chaque
+// changement (un bulletin déposé ou retiré, une case) redemande la route. Les
+// bulletins déposés vont dans le dossier que le dépôt nomme (`dossier`), sur le disque en mémoire du moteur. Ce qui est
+// saisi et déposé se garde dans l'onglet seul (`sessionStorage`) : recharger la page le reprend, fermer l'onglet
+// l'efface ; rien ne part ailleurs.
 "use strict";
 
 // « UN PROBLÈME, UNE IDÉE ? » : la boîte du logiciel elle-même (logiciel/js/filet.js et ce qu'elle prend, servis sous
@@ -112,7 +113,7 @@ var dire = null;
       if (!r.ok) throw new Error("premier-ecran.json : code " + r.status);
       return r.json();
     }).then(function (d) {
-      if (dernier === null) montrer(d, {});
+      if (dernier === null) montrer(d, {}, true);
     }).catch(function (e) {
       avis("Défaut du logiciel : " + texteDErreur(e));
     });
@@ -120,13 +121,26 @@ var dire = null;
 
   // LE BOUTON « CALCULER » apparaît quand le moteur est prêt (Léandre, 27/11/2026 : « Le bouton calculer arrive avec
   // le moteur ») ; un appui fait le premier calcul, et il s'en va : ensuite tout se recalcule seul à chaque changement.
+  // Un bulletin déposé vaut un appui : on attend sa lecture, pas un bouton (Léandre, 27/11/2026 : « j'aurais aimé qu'il
+  // y ait un petit signal qui me dise que les trucs avaient bien été pris en compte ») ; une page rechargée après un
+  // premier calcul recalcule seule.
   var lance = false;
+  function lancer() {
+    lance = true;
+    var b = $("calculer");
+    if (b) b.remove();
+    garder();
+  }
   function offrirLeCalcul() {
+    if (lance) {
+      lancer();
+      calculer();
+      return;
+    }
     var b = $("calculer");
     b.classList.remove("cache");
     b.addEventListener("click", function () {
-      lance = true;
-      b.remove();
+      lancer();
       calculer();
     });
   }
@@ -161,6 +175,8 @@ var dire = null;
 
   var fichiers = [];
   var aPoser = false;
+  // Les bulletins déposés que la route n'a pas encore lus : le dépôt les montre « en lecture » jusqu'à sa réponse.
+  var enLecture = [];
   // Ce qui est saisi dans chaque case, sous sa clé : un texte, oui-non, ou des rangées (chacune ses parties).
   var saisie = {};
   var dossier = null;
@@ -183,16 +199,93 @@ var dire = null;
         var base = point > 0 ? nom.slice(0, point) : nom, ext = point > 0 ? nom.slice(point) : "";
         while (fichiers.some(function (f) { return f.nom === nom; })) nom = base + " (" + k++ + ")" + ext;
         fichiers.push({ nom: nom, octets: n.octets });
+        enLecture.push(nom);
       });
       aPoser = true;
+      garderFichiers();
+      if (!lance) lancer();
+      redessiner();
       calculer();
     });
   }
 
   function retirerFichier(nom) {
     fichiers = fichiers.filter(function (f) { return f.nom !== nom; });
+    enLecture = enLecture.filter(function (n) { return n !== nom; });
     aPoser = true;
+    garderFichiers();
     calculer();
+  }
+
+  // ---------------------------------------------------------------- ce que l'onglet garde
+
+  // Recharger la page par mégarde (sur un téléphone, d'un geste) ne perd rien (Léandre, 27/11/2026 : « tu fais
+  // actualiser sans faire exprès et hop, tu perds tout ») : la saisie et les bulletins se gardent dans l'onglet
+  // (`sessionStorage`, que le navigateur efface avec lui). Des bulletins trop lourds pour lui restent tant que la page
+  // est ouverte, et le dépôt le dit.
+  var GARDE = "puppetpaie-droits";
+  var GARDE_FICHIERS = "puppetpaie-droits-bulletins";
+  var gardeRatee = null;
+
+  function garder() {
+    try {
+      sessionStorage.setItem(GARDE, JSON.stringify({ saisie: saisie, lance: lance }));
+    } catch (e) {
+      gardeRatee = "Ce navigateur ne garde pas ce que vous saisissez : recharger la page l'effacerait (" + texteDErreur(e) + ").";
+    }
+  }
+
+  function enBase64(octets) {
+    var o = new Uint8Array(octets), s = "";
+    for (var k = 0; k < o.length; k += 0x8000) s += String.fromCharCode.apply(null, o.subarray(k, k + 0x8000));
+    return btoa(s);
+  }
+
+  function deBase64(texte) {
+    var s = atob(texte), o = new Uint8Array(s.length);
+    for (var k = 0; k < s.length; k++) o[k] = s.charCodeAt(k);
+    return o.buffer;
+  }
+
+  function garderFichiers() {
+    try {
+      sessionStorage.setItem(GARDE_FICHIERS, JSON.stringify(fichiers.map(function (f) { return { nom: f.nom, octets: enBase64(f.octets) }; })));
+      gardeRatee = null;
+    } catch (e) {
+      try { sessionStorage.removeItem(GARDE_FICHIERS); } catch (e2) { /* le message ci-dessous le dit déjà */ }
+      gardeRatee = "Vos bulletins sont trop lourds pour que ce navigateur les garde : si la page se recharge, il faudra les redéposer. Vos lignes, elles, sont gardées.";
+    }
+  }
+
+  // Ce que l'onglet gardait, repris au chargement de la page. Ce qui ne se relit pas se dit, et la page repart vide.
+  function reprendre() {
+    var g, f;
+    try {
+      g = sessionStorage.getItem(GARDE);
+      f = sessionStorage.getItem(GARDE_FICHIERS);
+    } catch (e) {
+      return;
+    }
+    try {
+      if (g) {
+        var lu = JSON.parse(g);
+        saisie = lu.saisie || {};
+        lance = lu.lance === true;
+      }
+      if (f) {
+        fichiers = JSON.parse(f).map(function (x) { return { nom: x.nom, octets: deBase64(x.octets) }; });
+        enLecture = fichiers.map(function (x) { return x.nom; });
+        aPoser = fichiers.length > 0;
+      }
+    } catch (e) {
+      saisie = {};
+      fichiers = [];
+      enLecture = [];
+      lance = false;
+      aPoser = false;
+      try { sessionStorage.removeItem(GARDE); sessionStorage.removeItem(GARDE_FICHIERS); } catch (e2) { /* rien à effacer */ }
+      avis("Ce que la page gardait de votre dernière visite ne se relit pas : elle repart vide (" + texteDErreur(e) + ").");
+    }
   }
 
   // Un fichier lâché hors de la zone de dépôt ne fait pas quitter la page (le navigateur l'ouvrirait à sa place).
@@ -228,14 +321,22 @@ var dire = null;
   var enCours = false;
   var encore = false;
 
+  // Les bulletins de `postes` sont lus (ou refusés) : ils quittent « en lecture ».
+  function lus(postes) {
+    enLecture = enLecture.filter(function (n) { return postes.indexOf(n) < 0; });
+  }
+
   function calculer() {
+    garder();
     if (!pret || !lance) return;
     if (enCours) { encore = true; return; }
     enCours = true;
     encore = false;
     var suite = Promise.resolve();
+    var postes = [];
     if (aPoser && dossier !== null) {
       aPoser = false;
+      postes = enLecture.slice();
       suite = poser(dossier).then(function (ok) {
         if (!ok) avis("Les bulletins ne se sont pas posés sur le disque du logiciel : le dossier " + dossier + " n'est pas mes-pieces de l'installation, ou n'existe pas. C'est un défaut du logiciel.");
       });
@@ -247,14 +348,18 @@ var dire = null;
       envoi = x.envoi;
       return route("droits-des-pieces", x.charge);
     }).then(function (r) {
+      lus(postes);
       if (r.ok && r.resultat) {
         montrer(r.resultat, envoi);
       } else if (r.refus) {
+        redessiner();
         montrerRefus(r.refus.phrase);
       } else {
         throw new Error("réponse du moteur sans résultat ni refus : " + JSON.stringify(r));
       }
     }).catch(function (e) {
+      lus(postes);
+      redessiner();
       avis("Défaut du logiciel : " + texteDErreur(e));
     }).then(function () {
       enCours = false;
@@ -309,15 +414,68 @@ var dire = null;
       i.type = "checkbox";
       i.checked = valeur === true;
       i.addEventListener("change", function () { changer(i.checked); });
+    } else if (forme === "date") {
+      return champDate(valeur, changer, id);
     } else {
       i = el("input");
-      i.type = forme === "date" ? "date" : "text";
+      i.type = "text";
       if (forme === "montant" || forme === "nombre") i.inputMode = "decimal";
       i.value = valeur;
       i.addEventListener("change", function () { changer(i.value.trim()); });
     }
     if (id) i.id = id;
     return i;
+  }
+
+  // UNE DATE se lit JJ/MM/AAAA, comme en France, quelle que soit la langue du téléphone (retour R-BD9FBD : le calendrier
+  // « s'affiche à l'envers ») ; la toucher ouvre le calendrier du navigateur, gardé caché derrière elle, et elle se tape
+  // aussi (là où le navigateur ne sait pas ouvrir son calendrier). La valeur saisie reste celle que la route lit, AAAA-MM-JJ ;
+  // un texte qui n'est pas une date part tel quel, et la route dit quoi corriger.
+  function enClair(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    return m ? m[3] + "/" + m[2] + "/" + m[1] : iso;
+  }
+
+  function enIso(texte) {
+    var m = /^(\d{1,2})[\/.\- ](\d{1,2})[\/.\- ](\d{4})$/.exec(texte);
+    if (!m) return texte;
+    var deux = function (x) { return x.length === 1 ? "0" + x : x; };
+    return m[3] + "-" + deux(m[2]) + "-" + deux(m[1]);
+  }
+
+  function champDate(valeur, changer, id) {
+    var s = el("span", "date");
+    var i = el("input");
+    i.type = "text";
+    i.placeholder = "JJ/MM/AAAA";
+    i.autocomplete = "off";
+    i.value = enClair(valeur);
+    if (id) i.id = id;
+    var cal = el("input", "natif");
+    cal.type = "date";
+    cal.tabIndex = -1;
+    cal.setAttribute("aria-hidden", "true");
+    if (typeof cal.showPicker === "function") {
+      // Sur un téléphone, le calendrier, pas le clavier ; un navigateur qui ne l'ouvre pas rend le clavier.
+      i.inputMode = "none";
+      i.addEventListener("click", function () {
+        cal.value = /^\d{4}-\d{2}-\d{2}$/.test(enIso(i.value)) ? enIso(i.value) : "";
+        try {
+          cal.showPicker();
+        } catch (e) {
+          i.inputMode = "numeric";
+        }
+      });
+    } else {
+      i.inputMode = "numeric";
+    }
+    cal.addEventListener("change", function () {
+      i.value = enClair(cal.value);
+      changer(cal.value);
+    });
+    i.addEventListener("change", function () { changer(enIso(i.value.trim())); });
+    s.append(i, cal);
+    return s;
   }
 
   // Le bouton qui retire la rangée `n` de la case `cle` (`libelle`, celui de la route ; son nom, avec le rang). Les rangs
@@ -530,7 +688,7 @@ var dire = null;
               if (n === rangs.length - 1) redessiner();
               calculer();
             }, "case-" + cle + "-" + n + "-" + k, texteDe(p.prerempli));
-            i2.setAttribute("aria-label", p.libelle + " " + (n + 1));
+            (i2.querySelector("input") || i2).setAttribute("aria-label", p.libelle + " " + (n + 1));
             td.append(i2);
             // Un montant porte « € », le dessin de sa forme.
             if (p.forme === "montant") td.append(el("span", "unite", "€"));
@@ -591,6 +749,17 @@ var dire = null;
     });
     zone.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files.length) ajouterFichiers(e.dataTransfer.files); });
     s.append(zone);
+    // Les bulletins déposés que la route n'a pas encore lus, tout de suite sous le dépôt : on voit qu'ils sont pris.
+    if (enLecture.length) {
+      var ul = el("ul", "fichiers en-lecture");
+      enLecture.forEach(function (n) {
+        var li = el("li");
+        li.append(el("span", "nom", n), el("span", "aide", pret ? "lecture…" : "le logiciel se charge, la lecture suit…"));
+        ul.append(li);
+      });
+      s.append(ul);
+    }
+    if (gardeRatee) s.append(el("p", "aide", gardeRatee));
     return s;
   }
 
@@ -639,7 +808,10 @@ var dire = null;
 
   // L'ÉCRAN : les blocs que la route rend, dans son ordre. Une case que la route ne rend plus perd ce qui y était saisi
   // (rendue de nouveau, elle repart de ce que la route dit) ; ce qui est saisi dans les autres reste.
-  function montrer(d, envoi) {
+  // Le premier écran (`premier`) ne retire rien de la saisie : ce que l'onglet gardait d'un calcul (une case que seul un
+  // calcul rend) attend la réponse de la route. Une case gardée qui reparaît, remplie, sans être partie dans la charge,
+  // fait recalculer une fois.
+  function montrer(d, envoi, premier) {
     dernier = d;
     envoiRendu = envoi;
     $("refus").classList.add("cache");
@@ -650,8 +822,15 @@ var dire = null;
       if (b.est === "visee") cases.push(b.case);
       if (b.est === "paies") cases.push(b.lignes);
     });
+    var avant = rendues;
     rendues = cases.map(function (c) { return c.cle; });
-    Object.keys(saisie).forEach(function (cle) { if (rendues.indexOf(cle) < 0) delete saisie[cle]; });
+    if (!premier) {
+      Object.keys(saisie).forEach(function (cle) { if (rendues.indexOf(cle) < 0) delete saisie[cle]; });
+      rendues.forEach(function (cle) {
+        var v = saisie[cle];
+        if (avant.indexOf(cle) < 0 && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)) encore = true;
+      });
+    }
     cases.forEach(function (c) { if (!(c.cle in saisie)) saisie[c.cle] = depart(c); });
     redessiner();
   }
@@ -680,5 +859,6 @@ var dire = null;
     }
   }
 
+  reprendre();
   demarrer();
 })();
