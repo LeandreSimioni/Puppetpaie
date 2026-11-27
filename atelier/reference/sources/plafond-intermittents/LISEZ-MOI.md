@@ -39,7 +39,13 @@ sociale, texte `artistes-1975`), et déposés à côté.
   10/10/2026. **Art. 49, al. 2** (annexe VIII p. 23, `.txt` l. 1203-1204 ; annexe X `.txt` l. 1181-1182) : « Les
   rémunérations mentionnées au premier alinéa sont comprises dans l'assiette des contributions dans la limite d'un
   plafond fixé à quatre fois le plafond mentionné à l'article L. 241-3 du code de la sécurité sociale. » Art. 50 : les
-  taux (4 % + 5 % employeur, 2,40 % salarié ; 4,50 % pour certains CDD).
+  taux (4 % + 5 % employeur, 2,40 % salarié ; 4,50 % pour certains CDD). **Art. 3 §1** (annexe X `.txt` l. 124-136 ;
+  annexe VIII l. 134-146) : les actions de formation, sauf celles que l'assurance chômage rémunère, « sont assimilées à
+  des heures de travail dans la limite des deux tiers du nombre d'heures fixé par le présent article » ; les heures
+  d'enseignement retenues « sont imputées sur le contingent des actions de formation ». Le moteur s'en sert pour les
+  heures de formation d'une ligne prévue de `droits-des-pieces` (`droit::cumul::Position::heures_formation_retenues`,
+  le plafond de 338 h dans `rubriques-base.json`, `annexes`, que le guide de France Travail dit en chiffres :
+  `../chomage-intermittents/francetravail-guide-intermittents-20261020.txt`, l. 333-336).
 - `unedic-circulaire-2025-05-contributions-20250501.pdf` (et `.txt`) : https://www.unedic.org/ged/documents/circulars/pdf/PRE-CIRC-Circulaire_n_2025-05_du_1er_mai_2025.pdf.
   Fiche technique 1.1 : « Les rémunérations dépassant 4 fois le plafond [...] demeurent exclues de l'assiette des
   contributions [...]. Cette règle est également applicable aux salariés relevant des annexes ». Vaut aussi pour les

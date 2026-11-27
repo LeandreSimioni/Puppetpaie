@@ -1420,6 +1420,14 @@ pub(crate) fn comptes_de_la_position(a: &droit::allocation::Affiliation, naissan
         // Deux comptes des qu'il y a de l'enseignement : ces heures ouvrent les droits (plafonnees), sans augmenter l'allocation.
         lignes.push(("Dont enseignement".into(), h(p.heures_enseignement())));
         lignes.push((format!("Enseignement retenu (plafond {} h)", dit(p.plafond_enseignement()?)), h(p.heures_enseignement_retenues()?)));
+    }
+    if !p.heures_formation().est_nul() {
+        // La formation ouvre les droits, plafonnee avec l'enseignement (annexes VIII et X, art. 3 §1), sans compter
+        // dans le montant.
+        lignes.push(("Formation".into(), h(p.heures_formation())));
+        lignes.push((format!("Formation retenue (plafond {} h, enseignement compris)", dit(c.plafond_formation)), h(p.heures_formation_retenues()?)));
+    }
+    if !p.heures_enseignement().est_nul() || !p.heures_formation().est_nul() {
         lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
         lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
     }
@@ -1435,6 +1443,9 @@ pub(crate) fn comptes_de_la_position(a: &droit::allocation::Affiliation, naissan
     }
     if !p.enseignement_perdu()?.est_nul() {
         notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", dit(p.enseignement_perdu()?)));
+    }
+    if !p.formation_perdue()?.est_nul() {
+        notes.push(format!("{} h de formation dépassent le plafond de {} h, enseignement compris : sans effet sur les droits.", dit(p.formation_perdue()?), dit(c.plafond_formation)));
     }
     if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
         notes.push(format!("Date de naissance absente {} : le plafond bas de l'enseignement s'applique, peut-être à tort.", naissance_absente_de));

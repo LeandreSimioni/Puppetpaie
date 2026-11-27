@@ -21,6 +21,9 @@ pub struct Constantes {
     pub cachets_par_mois: Cachets,
     /// Seuil d'ouverture des droits (507).
     pub seuil_heures: Heures,
+    /// Les heures de formation qui s'assimilent au plus, l'enseignement retenu s'y imputant (338 : annexes VIII et X,
+    /// art. 3 §1).
+    pub plafond_formation: Heures,
     /// Fenetre des droits, en jours (365).
     pub fenetre_jours: Duree<EnJours>,
 }
@@ -34,6 +37,7 @@ impl Constantes {
             heures_par_cachet: cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))?,
             cachets_par_mois: cachet.plafond_mensuel.ok_or_else(|| socle::fichiers::absent("cachet.plafond_mensuel"))?,
             seuil_heures: a.seuil_heures,
+            plafond_formation: a.plafond_formation_heures,
             fenetre_jours: a.fenetre_jours,
         })
     }
@@ -67,6 +71,11 @@ pub struct Declare {
     pub brut: Option<Montant>,
     /// Part de `heures` qui est de l'enseignement (dedans, pas en plus).
     pub heures_enseignement: Heures,
+    /// Les heures de formation suivies (annexes VIII et X, art. 3 §1 : « les actions concourant au développement des
+    /// compétences [...] sont assimilées à des heures de travail ») : en plus de `heures`, pas dedans ; elles ne
+    /// comptent que pour les 507 heures, sous leur plafond (`Position::heures_formation_retenues`). Une paie d'une
+    /// compagnie n'en porte pas : zero.
+    pub heures_formation: Heures,
 }
 
 impl Declare {
@@ -160,9 +169,27 @@ impl Position {
         self.heures_retenues() - self.heures_enseignement()
     }
 
-    /// Les heures qui comptent pour les 507 (l'enseignement y entre, plafonne).
+    /// Les heures de formation des lignes.
+    pub fn heures_formation(&self) -> Heures {
+        self.engagements.iter().map(|e| e.heures_formation).sum()
+    }
+
+    /// LES HEURES DE FORMATION RETENUES : dans la limite du plafond (338 h), sur lequel l'enseignement retenu s'impute
+    /// (annexes VIII et X, art. 3 §1 : « Les heures d'enseignement ainsi prises en compte sont imputées sur le contingent
+    /// des actions de formation »).
+    pub fn heures_formation_retenues(&self) -> R<Heures> {
+        let reste = (self.constantes.plafond_formation - self.heures_enseignement_retenues()?).max(Heures::ZERO);
+        Ok(self.heures_formation().min(reste))
+    }
+
+    /// Les heures de formation au-dela de leur plafond.
+    pub fn formation_perdue(&self) -> R<Heures> {
+        Ok(self.heures_formation() - self.heures_formation_retenues()?)
+    }
+
+    /// Les heures qui comptent pour les 507 (l'enseignement et la formation y entrent, plafonnes).
     pub fn heures_ouverture(&self) -> R<Heures> {
-        Ok(self.heures_montant() + self.heures_enseignement_retenues()?)
+        Ok(self.heures_montant() + self.heures_enseignement_retenues()? + self.heures_formation_retenues()?)
     }
 
     pub fn enseignement_perdu(&self) -> R<Heures> {

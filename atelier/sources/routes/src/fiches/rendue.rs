@@ -385,6 +385,11 @@ impl<K> CaseDeLaFiche<K> {
         CaseDeLaFiche { place: PlaceDeLaCase::Avance, ..self }
     }
 
+    /// La meme case, le moteur prenant `prerempli` pour elle vide (il le propose, la case le montre sans l'ecrire).
+    pub(crate) fn preremplie(self, prerempli: Option<ValeurDeCase>) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { prerempli, ..self }
+    }
+
     /// La meme case, le moteur disant `dit` sous elle (une ligne chacune).
     pub(crate) fn disant(self, dit: Vec<String>) -> CaseDeLaFiche<K> {
         CaseDeLaFiche { dit, ..self }

@@ -52,6 +52,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
             cachets: a.cachets.ok_or_else(|| socle::fichiers::absent("cachets"))?,
             brut: Some(a.brut.ok_or_else(|| socle::fichiers::absent("brut"))?),
             heures_enseignement: a.heures_enseignement.into_iter().sum(),
+            heures_formation: Heures::ZERO,
         });
     }
     Ok(out)
@@ -74,6 +75,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         cachets: e.cachets,
         brut: Some(p.brut),
         heures_enseignement: heures_enseignement(ctx, &e.lignes)?.min(heures),
+        heures_formation: Heures::ZERO,
     }))
 }
 

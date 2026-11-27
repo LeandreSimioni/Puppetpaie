@@ -82,6 +82,23 @@ impl AnnexeChomage {
     }
 }
 
+/// L'ANNEXE EST UNE LISTE QU'UNE CHARGE NOMME (celle des droits d'un intermittent, `droits-des-pieces`), par son nom
+/// (`X`, `VIII`, ce que serde lit) : l'artiste, le technicien.
+impl socle::liste::ListeFermee for AnnexeChomage {
+    const TOUTES: &'static [AnnexeChomage] = &AnnexeChomage::LES_DEUX;
+
+    fn code(&self) -> R<String> {
+        socle::liste::code_ecrit(self)
+    }
+
+    fn libelle(&self) -> R<&'static str> {
+        Ok(match self {
+            AnnexeChomage::X => "Artiste (annexe 10)",
+            AnnexeChomage::Viii => "Technicien (annexe 8)",
+        })
+    }
+}
+
 /// L'ANNEXE ECRITE PAR SON NUMERO (`#[serde(with = "droit::emplois::annexe_en_nombre")]`) : `emplois-base.json`, la
 /// nomenclature, un metier rendu ; `option` pour un `Option<AnnexeChomage>`. Un autre numero se refuse a la lecture.
 pub mod annexe_en_nombre {
