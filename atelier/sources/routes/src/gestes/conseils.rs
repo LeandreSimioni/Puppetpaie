@@ -1153,7 +1153,11 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
     for cle in cles {
         let (a, anniv) = position(ctx, cle, &engs, jour)?;
         if a.position.heures_ouverture()? >= a.heures_exigees {
-            seuil = Some(seuil.map_or(a.heures_exigees, |s| s.min(a.heures_exigees)));
+            // Le plus petit des seuils atteints : la phrase dit « au moins {seuil} heures ».
+            seuil = Some(match seuil {
+                Some(s) => s.min(a.heures_exigees),
+                None => a.heures_exigees,
+            });
             let fiche = ctx.salaries.get(cle).map(|f| &f.champs);
             let nom = match fiche {
                 Some(f) => prenom(f, cle),
