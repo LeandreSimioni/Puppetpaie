@@ -592,6 +592,7 @@ var dire = null;
     r.append(el("p", "heures", p.heures));
     if (p.jusqu_a) r.append(el("p", "jusqu", p.jusqu_a));
     if (p.allocation) r.append(el("p", "allocation", p.allocation));
+    if (p.annee) r.append(el("p", "annee", p.annee));
     r.append(el("p", "sous", p.sous));
     return r;
   }
@@ -611,6 +612,88 @@ var dire = null;
     ligne.append(vider);
     s.append(ligne);
     if (b.reponse) s.append(el("p", null, b.reponse));
+    return s;
+  }
+
+  // UN CALCUL EN LIGNES que la route rend : chaque ligne [quoi, valeur], puis le total, en gras.
+  function calcul(c) {
+    var g = el("div", "calcul");
+    c.lignes.forEach(function (l) { g.append(el("span", null, l[0]), el("span", "n", l[1])); });
+    g.append(el("span", "tot", c.total[0]), el("span", "n tot", c.total[1]));
+    return g;
+  }
+
+  // LES BARRES DES MOIS : le salaire brut (vert) sous le chômage (bleu), chaque mois. L'échelle est celle du dessin :
+  // la plus haute barre touche le haut.
+  function barres(liste) {
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 640 250");
+    svg.setAttribute("class", "barres");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Chômage et salaire brut, mois par mois");
+    var n = function (nom, a, t) {
+      var x = document.createElementNS(NS, nom);
+      Object.keys(a).forEach(function (k) { x.setAttribute(k, a[k]); });
+      if (t !== undefined) x.textContent = t;
+      svg.append(x);
+    };
+    var nombre = function (v) { return v === null || v === undefined ? 0 : parseFloat(v); };
+    var haut = 1;
+    liste.forEach(function (m) { haut = Math.max(haut, nombre(m.chomage) + nombre(m.salaire)); });
+    var G = { g: 10, d: 630, h: 10, b: 220 }, w = (G.d - G.g) / Math.max(liste.length, 1);
+    var Y = function (v) { return G.b - (G.b - G.h) * v / haut; };
+    n("line", { x1: G.g, x2: G.d, y1: G.b, y2: G.b, stroke: "#E6E5E2" });
+    liste.forEach(function (m, i) {
+      var x = G.g + i * w + w * 0.15, l = w * 0.7, s = nombre(m.salaire), c = nombre(m.chomage);
+      n("rect", { x: x, y: Y(s), width: l, height: G.b - Y(s), fill: "#1E7A46" });
+      n("rect", { x: x, y: Y(s + c), width: l, height: Y(s) - Y(s + c), fill: "#2350C4" });
+      n("text", { x: x + l / 2, y: G.b + 20, "text-anchor": "middle", "font-size": 13, fill: "#6E6B66" }, m.mois);
+    });
+    return svg;
+  }
+
+  // L'ANNÉE DE CHÔMAGE : sans aucun travail (le chiffre, ses calculs, ce qui s'en dit, la case du taux de CSG), ce que
+  // coûte un jour de travail et ses exemples, l'année comme la dernière (ses barres, le tableau des mois, le calcul), et
+  // les notes. Tout est dit par la route.
+  function annee(b) {
+    var s = el("section", "bloc annee");
+    s.append(el("h2", null, b.titre));
+    var st = b.sans_travail;
+    s.append(el("h3", null, st.titre));
+    var ch = el("div", "chiffre");
+    ch.append(el("b", null, st.chiffre), el("span", null, st.sous));
+    s.append(ch);
+    st.calculs.forEach(function (c) { s.append(calcul(c)); });
+    st.aide.forEach(function (a) { s.append(el("p", "aide", a)); });
+    s.append(dessinerCase(b.case));
+    var co = b.cout;
+    s.append(el("h3", null, co.titre));
+    s.append(el("p", "aide", co.aide));
+    co.exemples.forEach(function (x) {
+      var e = el("div", "exemple");
+      e.append(el("p", null, x.titre), calcul(x.calcul));
+      if (x.aide) e.append(el("p", "aide", x.aide));
+      s.append(e);
+    });
+    if (b.comme) {
+      var cm = b.comme;
+      s.append(el("h3", null, cm.titre));
+      s.append(el("p", "aide", cm.aide));
+      s.append(barres(cm.barres));
+      var lg = el("div", "legende");
+      var p1 = el("span"), p2 = el("span");
+      p1.append(el("i", "pastille salaire"), "salaire brut");
+      p2.append(el("i", "pastille chomage"), "chômage");
+      lg.append(p1, p2);
+      s.append(lg);
+      s.append(tableau(cm.tableau));
+      var e = el("div", "exemple");
+      e.append(calcul(cm.calcul));
+      cm.dit.forEach(function (d) { e.append(el("p", "aide", d)); });
+      s.append(e);
+    }
+    if (b.notes.length) s.append(liste(b.notes));
     return s;
   }
 
@@ -820,6 +903,7 @@ var dire = null;
     d.ecran.forEach(function (b) {
       if (b.est === "case") cases.push(b);
       if (b.est === "visee") cases.push(b.case);
+      if (b.est === "annee") cases.push(b.case);
       if (b.est === "paies") cases.push(b.lignes);
     });
     var avant = rendues;
@@ -847,6 +931,7 @@ var dire = null;
       if (b.est === "case") ecran.append(dessinerCase(b));
       else if (b.est === "reponse") ecran.append(reponse(b));
       else if (b.est === "visee") ecran.append(visee(b));
+      else if (b.est === "annee") ecran.append(annee(b));
       else if (b.est === "paies") ecran.append(paies(b));
       else if (b.est === "depot") ecran.append(depot(b));
       else if (b.est === "pieces") ecran.append(pieces(b));

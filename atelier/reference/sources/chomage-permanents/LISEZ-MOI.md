@@ -114,6 +114,10 @@ toujours fondé par aucun texte déposé.
   régularisation), `valeur_ctp` (`CTP_CHOMAGE_PERMANENT` : un fichier des organismes composé avant le lot, qui met 772 et
   937 sur `brut_permanent`, refuse dès que ce brut diffère de la base 07).
 - `logiciel/donnees/organismes-base.json` : les CTP 772 et 937 sur `chomage_permanent`.
+- `logiciel/donnees/allocation-intermittents.json` (`contributions`) et `droit::annee_de_chomage` : la circulaire
+  2026-06, fiche 2, § 7 (l. 4290-4335), dit la CSG (6,2 % ou 3,8 %) et la CRDS (0,5 %) sur l'allocation abattue de
+  1,75 %, leurs exonérations, et le plancher de 62 € (au 1er juin 2026) sous lequel elles ne font pas passer
+  l'allocation versée : l'année de chômage d'un intermittent dans `droits-des-pieces`.
 
 ## Ce qui est une inférence
 

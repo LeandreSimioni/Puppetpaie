@@ -69,6 +69,22 @@ tr.prevue{background:var(--voile)}
 .visee .ligne{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;font-size:1.05rem}
 .visee .ligne input{width:6rem}
 .visee p{margin:.7rem 0 0}
+/* L'année de chômage : le chiffre, les calculs en lignes (le total en gras), les exemples, et les barres des mois. */
+.reponse .annee{font-size:1.15rem;font-weight:500;margin:.4rem 0 0}
+.chiffre{display:flex;flex-wrap:wrap;align-items:baseline;gap:.2rem .8rem;margin:0 0 .4rem}
+.chiffre b{font-size:2rem;font-weight:500;font-variant-numeric:tabular-nums}
+.chiffre span{color:var(--gris)}
+.calcul{display:grid;grid-template-columns:1fr auto;gap:.15rem 1rem;max-width:34rem;font-variant-numeric:tabular-nums;margin:.5rem 0 0}
+.calcul .n{text-align:right;white-space:nowrap}
+.calcul .tot{font-weight:600;border-top:1px solid var(--encre);padding-top:.2rem}
+.exemple{background:var(--voile);border-radius:6px;padding:1rem 1.1rem;margin:.6rem 0 0}
+.exemple p{margin:0 0 .4rem}
+.barres{display:block;width:100%;height:auto;max-width:100%;margin:.8rem 0 0}
+.legende{display:flex;flex-wrap:wrap;gap:.3rem 1rem;font-size:.85rem;color:var(--gris);margin:.4rem 0 .8rem}
+.legende span{display:inline-flex;align-items:center;gap:.35rem}
+.pastille{display:inline-block;width:.9rem;height:.9rem;border-radius:2px}
+.pastille.chomage{background:var(--bleu)}
+.pastille.salaire{background:var(--vert)}
 .details{margin:1.4rem 0}
 /* Le dépôt des bulletins. */
 .depot{display:block;padding:1.6rem 1rem;border:1.5px dashed #C9C7C2;border-radius:var(--rayon);text-align:center;

@@ -113,6 +113,11 @@ Ce qu'on en lit (le détail est dans le rapport de la séance) :
   qu'une même somme couvre au minimum horaire de la convention (`minima::minimum_de_la_ligne`), et les 507 heures
   assurées par nos seuls contrats (`cumul::position_droits`). Le coût d'une heure de plus pendant l'indemnisation se dit en
   jours (art. 30 : heures ÷ 10 × 1,3 en X, ÷ 8 × 1,4 en VIII), jamais en euros.
+- `logiciel/donnees/allocation-intermittents.json` et `droit::annee_de_chomage` (la route `droits-des-pieces`, l'année
+  de chômage qui vient, 27/11/2026) citent le guide France Travail pour les 12 heures d'un cachet à l'article 30
+  (p. 16), l'arrondi de la franchise de congés payés au nombre entier obtenu, les jours de l'AEM qu'elle compte et son
+  forfait de 2 jours à 24 jours tout juste (p. 13), le report d'un mois sur l'autre, et la franchise de salaires du
+  mois, le total sur les mois civils limités à huit, à l'entier supérieur (p. 14-15).
 
 ## Empreintes
 

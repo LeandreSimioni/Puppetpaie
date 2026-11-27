@@ -10,7 +10,9 @@ lui manque et jusqu'à quand. Elle ne garde rien ailleurs que dans cet onglet : 
   décide rien : elle demande la route `droits-des-pieces` (`atelier/sources/routes/src/accueil/droits_des_pieces.rs`)
   et pose son écran bloc par bloc, dans l'ordre où la route le rend (`ecran`). Avec un calcul : la réponse (sa
   couleur, celle que la route dit), l'allocation visée (« Je voudrais … € par jour », « Réinitialiser » vide la case),
-  la date anniversaire, le tableau des paies (celles que les 12 mois comptent) où les lignes prévues se saisissent
+  l'année de chômage (sans aucun travail, ses calculs et la case du taux de CSG ; ce que coûte un jour de travail et ses
+  exemples ; l'année comme la dernière, ses barres dessinées à l'échelle de la plus haute, le tableau des mois), la date
+  anniversaire, le tableau des paies (celles que les 12 mois comptent) où les lignes prévues se saisissent
   (leur nature dans une liste déroulante : artiste, technicien, enseignement, formation ; vide, celle de base que la
   route y montre ; une paie lue dit la sienne en texte), le dépôt, les dates d'embauche, les pièces, et « Détails du
   calcul », replié (en tête, les heures de chaque annexe, celle qui s'applique, et l'annexe de chaque paie). Sans
