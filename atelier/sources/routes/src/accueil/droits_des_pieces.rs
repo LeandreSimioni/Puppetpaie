@@ -123,17 +123,21 @@ pub fn route(inst: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
 
 // ------------------------------------------------------------------ ce que les pieces attestent
 
-/// L'EMPLOYEUR D'UNE PIECE, tel qu'elle le dit : son Siren (celui de son Siret), sinon sa raison sociale ; aucun des deux,
-/// les pieces sans employeur lu font un employeur a part. Il range les contrats : un registre par employeur.
+/// L'EMPLOYEUR D'UNE PIECE, tel qu'elle le dit : son Siren (celui de son Siret), sinon sa raison sociale. Il range les
+/// contrats : un registre par employeur. Une piece qui ne dit pas un employeur seul (ni Siren ni raison sociale, ou une
+/// AEM deposee a plusieurs Siren) est un employeur a elle seule (`Seule`, son rang parmi elles) : deux employeurs ne font
+/// jamais un contrat, et la route le dit.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum CleDEmployeur {
     Siren(Siren),
     Nom(String),
-    NonLu,
+    Seule(usize),
 }
 
 /// Une piece lue : de qui (NIR), chez quel employeur, et le contrat qu'elle atteste.
 struct Attestee {
+    /// La piece, telle que la route la nomme (le fichier pose, sa page).
+    piece: String,
     nir: Nir,
     employeur: CleDEmployeur,
     raison_sociale: Option<String>,
@@ -165,12 +169,30 @@ fn plafond_imprime(b: &import::bulletin_lu::BulletinLu) -> Option<Montant> {
     })
 }
 
-/// La cle de l'employeur que dit une piece.
-fn cle_d_employeur(siren: Option<Siren>, raison_sociale: Option<&String>) -> CleDEmployeur {
+/// La cle de l'employeur que dit une piece ; aucune quand elle ne dit ni Siren ni raison sociale.
+fn cle_d_employeur(siren: Option<Siren>, raison_sociale: Option<&String>) -> Option<CleDEmployeur> {
     match (siren, raison_sociale.map(|r| r.trim()).filter(|r| !r.is_empty())) {
-        (Some(s), _) => CleDEmployeur::Siren(s),
-        (None, Some(r)) => CleDEmployeur::Nom(r.to_uppercase()),
-        (None, None) => CleDEmployeur::NonLu,
+        (Some(s), _) => Some(CleDEmployeur::Siren(s)),
+        (None, Some(r)) => Some(CleDEmployeur::Nom(r.to_uppercase())),
+        (None, None) => None,
+    }
+}
+
+/// LES PIECES QUI NE DISENT PAS UN EMPLOYEUR SEUL : chacune le sien (`CleDEmployeur::Seule`), et sa phrase.
+#[derive(Default)]
+struct Seules(usize);
+
+impl Seules {
+    /// La cle de la piece `piece` : celle que dit `lue`, sinon une a elle seule, dite dans `phrases`.
+    fn cle(&mut self, lue: Option<CleDEmployeur>, piece: &str, phrases: &mut Vec<String>) -> CleDEmployeur {
+        match lue {
+            Some(c) => c,
+            None => {
+                self.0 += 1;
+                phrases.push(format!("{} : la pièce ne dit pas un employeur seul ; son contrat compte à part, il ne se rapproche d'aucune autre pièce.", piece));
+                CleDEmployeur::Seule(self.0)
+            }
+        }
     }
 }
 
@@ -195,7 +217,9 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
     let mut attestees = Vec::new();
     let mut bulletins: Vec<(String, usize, NomDeFichier, import::bulletin_lu::BulletinLu, Nir)> = Vec::new();
     let aem_dir = travail.join("aem");
-    let mut aem_employeurs: BTreeMap<String, CleDEmployeur> = BTreeMap::new();
+    // Les AEM deposees, par leur copie : le nom du fichier pose, et l'employeur s'il est seul.
+    let mut aem_employeurs: BTreeMap<String, (String, Option<CleDEmployeur>)> = BTreeMap::new();
+    let mut seules = Seules::default();
     for f in &tri.fichiers {
         let nom = f.chemin.texte().to_string();
         match f.sorte {
@@ -206,7 +230,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                 std::fs::copy(&f.disque, &cible).map_err(|e| socle::echec::du_disque(&cible, &e).reclasser(Classe::Disque))?;
                 let e = import::dsn_aem::employeur_aem(&f.disque)?;
                 let siren = (e.sirens.len() == 1).then(|| e.sirens.iter().next().cloned()).flatten();
-                aem_employeurs.insert(copie.texte().to_string(), cle_d_employeur(siren, None));
+                aem_employeurs.insert(copie.texte().to_string(), (nom.clone(), cle_d_employeur(siren, None)));
                 phrases.push(format!("{} : AEM déposée, lue.", nom));
             }
             Sorte::PdfTexte => {
@@ -224,13 +248,25 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                         let (Some(nir), Some(periode)) = (a.identite.nir.clone(), a.periode) else { continue };
                         let (ligne, _) = contrat_de_l_aem(&a, None, &copie)?;
                         // Le contrat entier, quand l'AEM imprime son embauche et sa fin : il dit si l'engagement est court.
+                        // Une embauche apres la fin : les dates de l'AEM sont incoherentes, la route le dit, et le
+                        // contrat entier ne se connait pas.
                         let contrat_imprime = match (a.embauche, a.fin_contrat) {
-                            (Some(d), Some(f)) => Periode::du_au(d, f).ok(),
+                            (Some(d), Some(f)) => match Periode::du_au(d, f) {
+                                Ok(c) => Some(c),
+                                Err(_) => {
+                                    phrases.push(format!("{}, page {} : l'AEM imprime une embauche le {}, après la fin du contrat le {} : ses dates sont incohérentes.", nom, p.page, d.jj_mm_aaaa(), f.jj_mm_aaaa()));
+                                    None
+                                }
+                            },
                             _ => None,
                         };
+                        let lue = cle_d_employeur(a.employeur.siret.as_ref().map(droit::fiche::Siret::siren), a.employeur.raison_sociale.as_ref());
+                        let piece = format!("{}, page {}", nom, p.page);
+                        let employeur = seules.cle(lue, &piece, &mut phrases);
                         attestees.push(Attestee {
+                            piece,
                             nir,
-                            employeur: cle_d_employeur(a.employeur.siret.as_ref().map(droit::fiche::Siret::siren), a.employeur.raison_sociale.as_ref()),
+                            employeur,
                             raison_sociale: a.employeur.raison_sociale.clone(),
                             nom: nom_de(&a.identite),
                             naissance: a.identite.naissance.and_then(|n| n.jour()),
@@ -280,11 +316,13 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
         let (contrats, illisibles, fautes) = import::dsn_aem::lire_aem(&aem_dir)?;
         phrases.extend(illisibles.into_iter().chain(fautes));
         for c in contrats {
-            let employeur = match aem_employeurs.get(c.fichier.texte()) {
-                Some(e) => e.clone(),
-                None => CleDEmployeur::NonLu,
+            let (piece, lue) = match aem_employeurs.get(c.fichier.texte()) {
+                Some((nom, e)) => (nom.clone(), e.clone()),
+                None => (c.fichier.texte().to_string(), None),
             };
+            let employeur = seules.cle(lue, &piece, &mut phrases);
             attestees.push(Attestee {
+                piece,
                 nir: c.nir.clone(),
                 employeur,
                 raison_sociale: None,
@@ -317,9 +355,13 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
             }
         };
         let raison = b.entreprise.employeur.raison_sociale.clone();
+        let lue = cle_d_employeur(b.entreprise.employeur.siret.as_ref().map(droit::fiche::Siret::siren), raison.as_ref());
+        let piece = format!("{}, page {}", nom, page);
+        let employeur = seules.cle(lue, &piece, &mut phrases);
         attestees.push(Attestee {
+            piece,
             nir: nir.clone(),
-            employeur: cle_d_employeur(b.entreprise.employeur.siret.as_ref().map(droit::fiche::Siret::siren), raison.as_ref()),
+            employeur,
             raison_sociale: raison,
             nom: b.salarie.nom_complet.clone().or_else(|| nom_de(&b.salarie.identite)),
             naissance: b.salarie.identite.naissance.and_then(|n| n.jour()),
@@ -382,8 +424,11 @@ impl PaieComptee {
 }
 
 /// LES CONTRATS DE LA PERSONNE `nir`, un registre par employeur : les AEM d'abord, puis les bulletins, qui remplacent
-/// l'AEM du meme contrat qui compte autre chose ; une piece dont le contrat est deja atteste n'ajoute rien.
-fn retenues(attestees: &[Attestee], nir: &Nir) -> R<Vec<PaieComptee>> {
+/// l'AEM du meme contrat qui compte autre chose ; une piece dont le contrat est deja atteste n'ajoute rien. Comme a
+/// l'import d'une compagnie (`importation::bulletins`) : une piece aux memes dates qu'un contrat atteste qui porte
+/// d'autres compteurs (deux AEM, deux bulletins, une AEM apres un bulletin) laisse le contrat atteste ; elle n'est pas
+/// ajoutee, et l'ecart se dit dans `notes`, avec ses deux valeurs.
+fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec<PaieComptee>> {
     let mut registres: BTreeMap<CleDEmployeur, (Registre, Option<String>)> = BTreeMap::new();
     let siennes = || attestees.iter().filter(|a| a.nir == *nir);
     for a in siennes().filter(|a| a.source == Source::Aem).chain(siennes().filter(|a| a.source == Source::Bulletin)) {
@@ -397,7 +442,18 @@ fn retenues(attestees: &[Attestee], nir: &Nir) -> R<Vec<PaieComptee>> {
         if pareils.iter().any(|p| p.compte() == le_sien) {
             continue;
         }
-        if !pareils.is_empty() && (a.source != Source::Bulletin || pareils.iter().any(|p| p.contrat().atteste_par != Attestation::Aem)) {
+        let garde = match a.source {
+            Source::Bulletin => pareils.iter().find(|p| p.contrat().atteste_par != Attestation::Aem),
+            _ => pareils.first(),
+        };
+        if let Some(p) = garde {
+            notes.push(format!(
+                "{} : un contrat attesté aux mêmes dates ({}) porte d'autres compteurs ; il est gardé, celui de cette pièce n'est pas ajouté (le contrat attesté dit {}, la pièce {}).",
+                a.piece,
+                p.d_ou(),
+                p.en_mots(),
+                import::attestes::en_mots(c.heures, c.cachets, c.jours, c.brut)
+            ));
             continue;
         }
         registre.ajouter(&a.nir, a.ligne.clone(), a.periode, a.source, a.bloc)?;
@@ -408,7 +464,7 @@ fn retenues(attestees: &[Attestee], nir: &Nir) -> R<Vec<PaieComptee>> {
             (Some(r), _) => r,
             (None, CleDEmployeur::Siren(s)) => format!("SIREN {}", &**s),
             (None, CleDEmployeur::Nom(n)) => n.clone(),
-            (None, CleDEmployeur::NonLu) => "employeur non lu".to_string(),
+            (None, CleDEmployeur::Seule(_)) => "employeur non lu".to_string(),
         };
         for (_, ligne, _) in registre.retenus {
             let Some(periode) = ligne.periode.and_then(|p| p.fermee()) else { continue };
@@ -744,7 +800,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: &Nir, nom: St
     let t = droit::allocation::allocation()?;
     let naissance = attestees.iter().filter(|a| a.nir == *nir).find_map(|a| a.naissance);
     let mut notes = Vec::new();
-    let mut comptees = retenues(attestees, nir)?;
+    let mut comptees = retenues(attestees, nir, &mut notes)?;
     if let Some(v) = &c.previsionnel {
         comptees.extend(prevues(v, &mut notes));
     }
