@@ -94,7 +94,7 @@ pub struct TableauRendu {
 /// LES RANGEES QUI SE SAISISSENT DANS UN TABLEAU (les lignes prevues dans le tableau des paies de `droits-des-pieces`) :
 /// la case de la charge dont elles sont les rangees, et le bouton qui en retire une ; une rangee vide attend toujours en
 /// bas, et se remplit pour en ajouter une. Chaque colonne dit les parties qu'elle tient (`ColonneRendue::parties`), chaque rangee son rang dans la case
-/// (`RangeeRendue::saisie`) ; une rangee de la case que le tableau ne place pas (vide, ou qui ne se compte pas) se pose
+/// (`RangeeRendue::saisie`) et celles qu'elle ouvre (`RangeeRendue::ouvre`) ; une rangee de la case que le tableau ne place pas (vide, ou qui ne se compte pas) se pose
 /// apres ses rangees.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SaisieDuTableau {
@@ -126,24 +126,32 @@ impl TableauRendu {
 
 /// UNE RANGEE D'UN TABLEAU RENDU : ce qu'elle est (`SorteDeRangee`), ses cellules deja dites, une par colonne (une
 /// cellule qui ne dit rien est `None` : la page n'y pose rien), et, dans un tableau qui se saisit, son rang dans la case
-/// (`saisie` : ses parties s'y saisissent, sous les colonnes qui les tiennent ; aucun : elle ne se saisit pas).
+/// (`saisie` : ses parties s'y saisissent, sous les colonnes qui les tiennent ; aucun : elle ne se saisit pas) et les
+/// parties qu'elle ouvre (`ouvre` : une partie qui n'est pas de toujours ne s'y saisit que dans la rangee qui l'ouvre).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RangeeRendue {
     pub sorte: SorteDeRangee,
     pub cellules: Vec<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub saisie: Option<usize>,
+    #[serde(skip_serializing_if = "<[&str]>::is_empty")]
+    pub ouvre: &'static [&'static str],
 }
 
 impl RangeeRendue {
     /// Une rangee qui ne se saisit pas.
     pub fn de(sorte: SorteDeRangee, cellules: Vec<Option<String>>) -> RangeeRendue {
-        RangeeRendue { sorte, cellules, saisie: None }
+        RangeeRendue { sorte, cellules, saisie: None, ouvre: &[] }
     }
 
     /// Une ligne, la rangee `rang` de la case du tableau.
     pub fn saisie(cellules: Vec<Option<String>>, rang: usize) -> RangeeRendue {
-        RangeeRendue { sorte: SorteDeRangee::Ligne, cellules, saisie: Some(rang) }
+        RangeeRendue { sorte: SorteDeRangee::Ligne, cellules, saisie: Some(rang), ouvre: &[] }
+    }
+
+    /// La meme, ouvrant les parties `ouvre`, qui ne sont pas de toujours.
+    pub fn ouvrant(self, ouvre: &'static [&'static str]) -> RangeeRendue {
+        RangeeRendue { ouvre, ..self }
     }
 }
 

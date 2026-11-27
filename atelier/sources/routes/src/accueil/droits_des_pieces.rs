@@ -20,8 +20,11 @@
 //! la reponse en ligne de commande voit les memes.
 //!
 //! LE PLAFOND D'UNE PAIE, pour la limite du salaire de reference (art. 11 §3) : quand il ne se connait pas, la paie compte
-//! entiere si son brut reste sous quatre fois le plus bas plafond possible (un contrat d'un jour) ; sinon l'estimation
-//! attend, en nommant la paie, et la route demande la date de debut de son contrat (`debuts`) quand elle le dirait.
+//! entiere ; sous quatre fois le plus bas plafond possible (un contrat d'un jour), elle ne peut pas passer sa limite ;
+//! au-dessus, elle le peut si elle a dure peu de jours : l'estimation sort quand meme, et dit qu'elle suppose ces paies
+//! non limitees (Leandre, 27/11/2026 : « L'estimation sort toujours »). La route demande alors, en une phrase, le debut
+//! de leur contrat quand il le dirait : dans sa ligne pour une ligne prevue (la case « Début », que la rangee ouvre),
+//! par la case « Dates d'embauche » (`debuts`) pour une paie des pieces.
 //!
 //! CE QUE LA ROUTE REND, pour la personne : une ligne par paie retenue (la periode, l'employeur, les cachets, les heures
 //! dont l'enseignement, le brut, la piece) ; l'affiliation a la derniere fin de contrat (`droit::allocation::affiliation` :
@@ -72,7 +75,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le bilan, les paies, le résumé, l'allocation visée (une case, quand une allocation s'estime), la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie, dans l'ordre des fins : période (la fin d'une ligne prévue), cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). bilan (au-dessus des paies) : nom (seulement quand les pièces portent plusieurs personnes), bilan (à la dernière fin de contrat). resume (sous les paies ; la personne choisie, ou les lignes prévues seules sans pièce) : nir, fenetre, lignes [quoi, valeur],heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
+    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le bilan, les paies, le résumé, l'allocation visée (une case, quand une allocation s'estime), la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie, dans l'ordre des fins : période (la fin d'une ligne prévue, et son début dans la rangée qui l'ouvre), cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue et les parties qu'elle ouvre) et lignes (la case des lignes prévues : ses parties, ses rangées). bilan (au-dessus des paies) : nom (seulement quand les pièces portent plusieurs personnes), bilan (à la dernière fin de contrat). resume (sous les paies ; la personne choisie, ou les lignes prévues seules sans pièce) : nir, fenetre, lignes [quoi, valeur],heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), demande (une phrase, quand une paie que l'estimation suppose non limitée peut l'être), estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase (le chiffre, en une ligne), paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure], details (replié : libelle, lignes ; le détail des estimations et les notes)",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -89,13 +92,14 @@ charge! {
         personne: Option<Nir> = legende("Personne", "son numéro de sécurité sociale, parmi ceux que portent les pièces ; absent : la seule qu'elles portent ; un numéro qu'elles ne portent plus ne compte pas").rendue(),
         anniversaire: Option<Jour> = legende("Date anniversaire", "celle du droit en cours ou du dernier droit, que France Travail a notifiée : la réadmission, la fin de contrat qui a ouvert ce droit étant douze mois avant ; absente : une première ouverture"),
         allocation_visee: Option<Montant> = legende("Allocation visée", "l'allocation journalière qu'on voudrait, en euros ; absente : rien ne se vise"),
-        previsionnel: Option<Vec<LignePrevue>> = legende("Lignes prévues", "le travail à venir, une ligne par engagement : sa fin, ses cachets ou ses heures, l'enseignement, son brut ; rien ne s'écrit"),
-        debuts: Option<Vec<DebutDUnContrat>> = legende("Dates d'embauche", "la date d'embauche d'une paie dont la route la demande (la case Dates d'embauche, ses choix), sous le nom de la paie ; absente : rien n'est dit"),
+        previsionnel: Option<Vec<LignePrevue>> = legende("Lignes prévues", "le travail à venir, une ligne par engagement : sa fin (son début, dans la ligne qui le demande), ses cachets ou ses heures, l'enseignement, son brut ; rien ne s'écrit"),
+        debuts: Option<Vec<DebutDUnContrat>> = legende("Dates d'embauche", "la date d'embauche d'une paie des pièces dont la route la demande (la case Dates d'embauche, ses choix), sous le nom de la paie ; absente : rien n'est dit"),
     }
 }
 
-/// LE DEBUT DU CONTRAT D'UNE PAIE, que la route demande quand le plafond de la paie ne se connait pas et que son brut peut
-/// passer sa limite (art. 11 §3) : la paie, par le nom que la route rend (les choix de sa case), et la date.
+/// LE DEBUT DU CONTRAT D'UNE PAIE DES PIECES, que la route demande quand le plafond de la paie ne se connait pas et que
+/// son brut peut passer sa limite (art. 11 §3) : la paie, par le nom que la route rend (les choix de sa case), et la
+/// date. Une ligne prevue dit le sien dans sa ligne (`LignePrevue::debut`).
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct DebutDUnContrat {
@@ -115,8 +119,8 @@ impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for De
 }
 
 /// UNE LIGNE PREVUE : un contrat a venir, saisi a la main pour un previsionnel. Sa fin (la ligne declaree se situe par
-/// elle, `droit::cumul::Declare`) ; son debut, facultatif et hors du tableau : il ne sert qu'au plafond de la paie, et
-/// la route le demande sur cette ligne quand il compte (`debuts`), comme pour une piece ; des cachets ou des heures ; si
+/// elle, `droit::cumul::Declare`) ; son debut, facultatif : il ne sert qu'au plafond de la paie, et ne se saisit que
+/// dans la rangee qui l'ouvre, quand la route le demande ou qu'il est dit (`tableau_des_paies`) ; des cachets ou des heures ; si
 /// ses heures sont de l'enseignement ; son brut, facultatif (sans lui, la ligne compte pour les heures, pas pour
 /// l'allocation).
 /// Elle s'ecrit aussi dans la valeur de sa case (`cases`), ses nombres tels qu'on les lit (`a_lire`).
@@ -143,8 +147,9 @@ fn a_lire<G: socle::grandeurs::Grandeur, S: serde::Serializer>(g: &Option<G>, s:
     }
 }
 
-/// Les cases d'une ligne prevue, chacune la forme de son type.
+/// Les cases d'une ligne prevue, chacune la forme de son type ; le debut, seulement dans la rangee qui l'ouvre.
 const PARTIES_D_UNE_LIGNE_PREVUE: &[crate::catalogue::Partie] = &[
+    crate::catalogue::Partie { cle: "debut", libelle: Affiche::new("Début"), forme: Forme::Date, toujours: false },
     crate::catalogue::Partie { cle: "fin", libelle: Affiche::new("Fin"), forme: Forme::Date, toujours: true },
     crate::catalogue::Partie { cle: "cachets", libelle: Affiche::new("Cachets"), forme: Forme::Nombre, toujours: true },
     crate::catalogue::Partie { cle: "heures", libelle: Affiche::new("Heures"), forme: Forme::Nombre, toujours: true },
@@ -160,6 +165,8 @@ impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for Li
 /// Le bouton qui retire une ligne prevue (une ligne vide attend toujours en bas du tableau), et ceux d'une date
 /// d'embauche.
 const RETIRER_LA_LIGNE: Affiche = Affiche::new("Retirer la ligne");
+/// Ce que la rangee d'une ligne prevue ouvre quand son debut se demande ou se dit : la partie du debut.
+const OUVRE_LE_DEBUT: &[&str] = &["debut"];
 const AJOUTER_UNE_EMBAUCHE: Affiche = Affiche::new("Ajouter une date d'embauche");
 const RETIRER_LA_DATE: Affiche = Affiche::new("Retirer la date d'embauche");
 
@@ -254,7 +261,7 @@ fn ecran(
             ecran.push(anniversaire);
             ecran.push(depot);
             if sans_personne {
-                ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: tableau_des_paies(&[], &[]), lignes }));
+                ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: tableau_des_paies(&[], &[], &[]), lignes }));
             }
         }
     }
@@ -314,7 +321,7 @@ struct Attestee {
 enum SourceDuPlafond {
     Imprime(Montant),
     DuContrat { contrat: Option<Periode>, paie: Periode },
-    SansDebut { fin: Jour },
+    SansDebut,
 }
 
 /// POURQUOI LE PLAFOND D'UNE PAIE NE SE CONNAIT PAS : la phrase, et si la date de debut de son contrat le dirait.
@@ -327,16 +334,12 @@ impl SourceDuPlafond {
     /// La meme, avec la date de debut `debut` que la charge dit du contrat de la paie (`debuts`) : le contrat va de ce
     /// debut a la fin de la paie, et la paie n'en prend que ce qui est dans sa periode (INFERENCE : le debut ne se demande
     /// que pour une paie de moins de cinq jours, qui n'est pas un mois entier ; elle finit avec son contrat) ; un debut
-    /// apres la fin de la paie ne dit rien, et la note le dit. Une ligne prevue sans debut : le contrat va de ce debut a
-    /// sa fin, et la paie aussi.
+    /// apres la fin de la paie ne dit rien, et la note le dit. Une ligne prevue dit son debut dans sa ligne, jamais ici :
+    /// sa source reste ce qu'elle est.
     fn avec_le_debut(&self, debut: Jour) -> Option<SourceDuPlafond> {
         let paie = match self {
-            SourceDuPlafond::SansDebut { fin } => {
-                let contrat = Periode::du_au(debut, *fin).ok()?;
-                return Some(SourceDuPlafond::DuContrat { contrat: Some(contrat), paie: contrat });
-            }
             SourceDuPlafond::DuContrat { contrat: None, paie } => *paie,
-            SourceDuPlafond::Imprime(_) | SourceDuPlafond::DuContrat { contrat: Some(_), .. } => return Some(self.clone()),
+            SourceDuPlafond::Imprime(_) | SourceDuPlafond::DuContrat { contrat: Some(_), .. } | SourceDuPlafond::SansDebut => return Some(self.clone()),
         };
         let contrat = Periode::du_au(debut, paie.fin()).ok()?;
         let paie = Periode::du_au(debut.max(paie.debut()), paie.fin()).ok()?;
@@ -718,7 +721,8 @@ struct PaieComptee {
     /// Son nom, tel que la route le rend et que la charge le reprend (`debuts`) : sa piece (le fichier pose, sa page), ou
     /// le contrat prevu.
     id: String,
-    employeur: String,
+    /// Son employeur ; aucun : une ligne prevue, qui n'en a pas.
+    employeur: Option<String>,
     /// Son debut : celui de la periode que la piece atteste ; une ligne prevue peut ne dire que sa fin.
     debut: Option<Jour>,
     fin: Jour,
@@ -740,6 +744,14 @@ impl PaieComptee {
             Some(d) if d != self.fin => format!("du {} au {}", d.jj_mm_aaaa(), self.fin.jj_mm_aaaa()),
             Some(_) => format!("le {}", self.fin.jj_mm_aaaa()),
             None => format!("finissant le {}", self.fin.jj_mm_aaaa()),
+        }
+    }
+
+    /// Elle, en mots : la paie, ses dates et son employeur ; une ligne prevue, ses dates.
+    fn en_mots(&self) -> String {
+        match &self.employeur {
+            Some(e) => format!("la paie {} chez {}", self.dates(), e),
+            None => format!("la ligne prévue {}", self.dates()),
         }
     }
 
@@ -823,7 +835,7 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
             out.push(PaieComptee {
                 id,
                 plafond,
-                employeur: employeur.clone(),
+                employeur: Some(employeur.clone()),
                 debut: Some(periode.debut()),
                 fin: periode.fin(),
                 cachets: a.cachets,
@@ -846,8 +858,8 @@ fn prevues(lignes: &[LignePrevue], notes: &mut Vec<String>) -> R<Vec<PaieComptee
             notes.push(format!("La ligne prévue qui finit le {} ne dit ni cachets ni heures : elle ne compte rien.", l.fin.jj_mm_aaaa()));
             continue;
         }
-        // Son plafond : celui de son contrat quand elle dit son debut ; sinon il ne se connait pas, et la route demande la
-        // date d'embauche quand elle compte (`debuts`).
+        // Son plafond : celui de son contrat quand elle dit son debut ; sinon il ne se connait pas, et la route ouvre son
+        // debut dans sa ligne quand il compte (`tableau_des_paies`).
         let plafond = match l.debut {
             Some(d) => match Periode::du_au(d, l.fin) {
                 Ok(p) => SourceDuPlafond::DuContrat { contrat: Some(p), paie: p },
@@ -856,7 +868,7 @@ fn prevues(lignes: &[LignePrevue], notes: &mut Vec<String>) -> R<Vec<PaieComptee
                     continue;
                 }
             },
-            None => SourceDuPlafond::SansDebut { fin: l.fin },
+            None => SourceDuPlafond::SansDebut,
         };
         // Un oui-non absent est un non : ses heures ne sont pas de l'enseignement.
         let enseignement = match l.enseignement {
@@ -864,8 +876,8 @@ fn prevues(lignes: &[LignePrevue], notes: &mut Vec<String>) -> R<Vec<PaieComptee
             Some(false) | None => None,
         };
         out.push(PaieComptee {
-            id: format!("ligne prévue qui finit le {}", l.fin.jj_mm_aaaa()),
-            employeur: "prévisionnel".to_string(),
+            id: format!("ligne prévue n° {}", rang + 1),
+            employeur: None,
             debut: l.debut,
             fin: l.fin,
             cachets: l.cachets,
@@ -905,9 +917,15 @@ fn declaree(p: &PaieComptee, cle: &droit::contexte::IdSalarie) -> Option<Declare
 /// periode tient leur fin, les cachets, les heures, l'enseignement et le brut les leurs.
 /// Une ligne prevue qui ne se compte pas (ni cachets ni heures, ou un debut apres sa fin) prend aussi sa place, a sa fin :
 /// `lignes`, celles de la charge.
-fn tableau_des_paies(paies: &[PaieComptee], lignes: &[LignePrevue]) -> TableauRendu {
+/// La periode tient aussi le debut, dans la rangee qui l'ouvre seulement : celle d'une ligne dont l'estimation demande
+/// le debut (`demandes`, leurs rangs), et celle qui le dit deja (on le corrige, ou on le vide).
+fn tableau_des_paies(paies: &[PaieComptee], lignes: &[LignePrevue], demandes: &[usize]) -> TableauRendu {
+    let ouvre = |rang: usize, r: RangeeRendue| match demandes.contains(&rang) || lignes.get(rang).is_some_and(|l| l.debut.is_some()) {
+        true => r.ouvrant(OUVRE_LE_DEBUT),
+        false => r,
+    };
     let colonnes = vec![
-        ColonneRendue::de_texte("Période").tenant(&["fin"]),
+        ColonneRendue::de_texte("Période").tenant(&["debut", "fin"]),
         ColonneRendue::de_nombres("Cachets").tenant(&["cachets"]),
         ColonneRendue::de_nombres("Heures").tenant(&["heures"]),
         ColonneRendue::de_nombres("Enseignement").tenant(&["enseignement"]),
@@ -918,7 +936,7 @@ fn tableau_des_paies(paies: &[PaieComptee], lignes: &[LignePrevue]) -> TableauRe
         .map(|p| {
             let cellules = vec![Some(p.dates()), p.cachets.map(dit), p.heures.map(dit), p.enseignement.map(dit), p.brut.map(euros)];
             let rangee = match p.prevue {
-                Some(rang) => RangeeRendue::saisie(cellules, rang),
+                Some(rang) => ouvre(rang, RangeeRendue::saisie(cellules, rang)),
                 None => RangeeRendue::de(SorteDeRangee::Ligne, cellules),
             };
             (p.fin, rangee)
@@ -926,7 +944,7 @@ fn tableau_des_paies(paies: &[PaieComptee], lignes: &[LignePrevue]) -> TableauRe
         .collect();
     for (rang, l) in lignes.iter().enumerate().filter(|(rang, _)| !paies.iter().any(|p| p.prevue == Some(*rang))) {
         let cellules = vec![Some(format!("finissant le {}", l.fin.jj_mm_aaaa())), l.cachets.map(dit), l.heures.map(dit), None, l.brut.map(euros)];
-        rangees.push((l.fin, RangeeRendue::saisie(cellules, rang)));
+        rangees.push((l.fin, ouvre(rang, RangeeRendue::saisie(cellules, rang))));
     }
     // Le tri est stable : a la meme fin, les paies gardent l'ordre de `paies`, puis viennent les lignes qui ne se comptent pas.
     rangees.sort_by_key(|(fin, _)| *fin);
@@ -1037,10 +1055,26 @@ struct DroitsDUnePersonne {
     /// `phrase`, `manque`, `heures_exigees` et `butoir` : ce qui reste a faire, compte a partir d'aujourd'hui quand la
     /// derniere fin de contrat est passee (le bilan a cette fin : `BilanDit`).
     phrase: String,
-    notes: Vec<String>,
+    /// Quand l'estimation suppose non limitee une paie qui peut l'etre (son plafond ne se connait pas), la phrase qui le
+    /// dit, une fois, et demande son debut quand il le dirait ; aucune : rien n'est suppose.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demande: Option<String>,
     estimations: Vec<EstimationDite>,
     visee: Vec<ViseeDite>,
+    /// Ce qui n'est pas la reponse elle-meme, replie : le detail des estimations et les notes.
+    details: DetailsDits,
 }
+
+/// LE DETAIL REPLIE DU RESUME : son libelle, et ses lignes (le detail de chaque estimation, la readmission, ce que
+/// l'estimation ne compte pas, ce que les pieces ont d'etrange), une phrase chacune.
+#[derive(Debug, Serialize)]
+struct DetailsDits {
+    libelle: &'static str,
+    lignes: Vec<String>,
+}
+
+/// Le libelle du detail replie du resume.
+const DETAILS: &str = "Détails";
 
 /// Ce que rend `droits-des-pieces` : sa phrase, et l'ecran, bloc par bloc dans l'ordre ou il se lit (`BlocDesDroits`).
 #[derive(Debug, Serialize)]
@@ -1111,8 +1145,8 @@ impl Dite for DroitsDesPieces {
 /// Le nom d'une annexe, tel que la route le dit.
 fn annexe_dite(annexe: AnnexeChomage) -> &'static str {
     match annexe {
-        AnnexeChomage::Viii => "annexe VIII (technicien)",
-        AnnexeChomage::X => "annexe X (artiste)",
+        AnnexeChomage::Viii => "Technicien (annexe 8)",
+        AnnexeChomage::X => "Artiste (annexe 10)",
     }
 }
 
@@ -1197,7 +1231,7 @@ fn plafond_de(s: &SourceDuPlafond, artiste: bool) -> Result<Montant, PlafondInco
     let (contrat, paie) = match s {
         SourceDuPlafond::Imprime(m) => return Ok(*m),
         SourceDuPlafond::DuContrat { contrat, paie } => (contrat, paie),
-        SourceDuPlafond::SansDebut { .. } => return Err(inconnu("la ligne prévue ne dit que sa fin : sans la date d'embauche, ni le contrat ni la paie ne se datent", true)),
+        SourceDuPlafond::SansDebut => return Err(inconnu("la ligne ne dit pas son début", true)),
     };
     let court = match contrat {
         Some(c) => engagement_court(c, artiste),
@@ -1259,9 +1293,8 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         match declaree(p, &cle) {
             Some(d) => declarees.push((d, i)),
             None => notes.push(format!(
-                "La paie {} chez {} ne se compte pas : sa pièce ne dit pas ses heures, ses cachets et son brut ({}).",
-                p.dates(),
-                p.employeur,
+                "Ne se compte pas, {} : sa pièce ne dit pas ses heures, ses cachets et son brut ({}).",
+                p.en_mots(),
                 import::attestes::en_mots(p.heures, p.cachets, p.jours, p.brut)
             )),
         }
@@ -1302,30 +1335,34 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     };
     // Les paies que la fenetre compte : celles de la position retenue.
     let dans_la_fenetre: Vec<&PaieComptee> = declarees.iter().filter(|(d, _)| aff.position.engagements.contains(d)).map(|(_, i)| &comptees[*i]).collect();
-    // Les debuts de contrat que la charge dit, par le nom de leur paie ; un nom qu'aucune paie ne porte se dit.
+    // Les debuts de contrat que la charge dit des paies des pieces, par le nom de leur paie ; un nom qu'aucune ne porte se
+    // dit (une ligne prevue dit le sien dans sa ligne).
     let mut debuts: BTreeMap<String, Jour> = BTreeMap::new();
     for d in c.debuts.iter().flatten() {
-        if comptees.iter().any(|p| p.id == d.paie) {
+        if comptees.iter().any(|p| p.id == d.paie && p.prevue.is_none()) {
             debuts.insert(d.paie.clone(), d.debut);
         } else {
-            notes.push(format!("« {} » (Dates d'embauche) n'est le nom d'aucune paie, des pièces ni des lignes prévues : cette date ne dit rien.", d.paie));
+            notes.push(format!("« {} » (Dates d'embauche) n'est le nom d'aucune paie des pièces : cette date ne dit rien.", d.paie));
         }
     }
-    let mut demandes: BTreeMap<String, String> = BTreeMap::new();
-    let (estimations, visee) = if aff.manque.est_nul() { estimer(&t, &aff, &dans_la_fenetre, c.allocation_visee, fin, &debuts, &mut demandes, &mut notes)? } else { (Vec::new(), Vec::new()) };
-    // Une date d'embauche deja dite reste un choix de sa case, meme quand elle a comble la demande.
-    for id in debuts.keys() {
-        if let Some(p) = comptees.iter().find(|p| p.id == *id) {
-            demandes.entry(id.clone()).or_insert_with(|| choix_d_embauche(p));
-        }
-    }
-    let embauches = demandes.into_iter().map(|(code, libelle)| crate::ouverture::Choix::de(&code, libelle)).collect();
+    let mut supposees: BTreeMap<String, (Option<Montant>, bool)> = BTreeMap::new();
+    let (estimations, visee) = if aff.manque.est_nul() { estimer(&t, &aff, &dans_la_fenetre, c.allocation_visee, fin, &debuts, &mut supposees, &mut notes)? } else { (Vec::new(), Vec::new()) };
+    let demande = demande_dite(&supposees);
+    // Le debut se demande dans la ligne d'une ligne prevue, par la case « Dates d'embauche » pour une paie des pieces ;
+    // une date d'embauche deja dite reste un choix de sa case, meme quand elle a comble la demande.
+    let demandees = |p: &&PaieComptee| supposees.get(&p.id).is_some_and(|(_, le_debut_le_dit)| *le_debut_le_dit);
+    let lignes_demandees: Vec<usize> = comptees.iter().filter(demandees).filter_map(|p| p.prevue).collect();
+    let embauches = comptees
+        .iter()
+        .filter(|p| p.prevue.is_none() && (demandees(p) || debuts.contains_key(&p.id)))
+        .map(|p| crate::ouverture::Choix::de(&p.id, choix_d_embauche(p)))
+        .collect();
     // Aucune ligne prevue dans la charge : aucune n'a de place a prendre.
     let lignes_prevues: &[LignePrevue] = match &c.previsionnel {
         Some(v) => v,
         None => &[],
     };
-    let paies = tableau_des_paies(&comptees, lignes_prevues);
+    let paies = tableau_des_paies(&comptees, lignes_prevues, &lignes_demandees);
     let personne = DroitsDUnePersonne {
         nir: nir.cloned(),
         fenetre: aff.position.libelle_fenetre.clone(),
@@ -1334,20 +1371,35 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         manque: a_partir.manque,
         butoir: butoir_dit,
         phrase,
-        notes,
+        demande,
         estimations,
         visee,
+        details: DetailsDits { libelle: DETAILS, lignes: notes },
     };
     Ok((BilanDit { nom, bilan }, personne, paies, embauches))
 }
 
-/// Le libelle d'une paie parmi les choix des dates d'embauche : son nom, ses dates, son employeur (une ligne prevue, qui
-/// n'en a pas : son nom et ses dates).
+/// Le libelle d'une paie des pieces parmi les choix des dates d'embauche : son nom, ses dates, son employeur.
 fn choix_d_embauche(x: &PaieComptee) -> String {
-    match x.prevue {
-        Some(_) => format!("{} : {}", x.id, x.dates()),
-        None => format!("{} : paie {} chez {}", x.id, x.dates(), x.employeur),
+    format!("{} : {}", x.id, x.en_mots())
+}
+
+/// LA PHRASE QUI DIT CE QUE L'ESTIMATION SUPPOSE, une fois pour toutes les paies `supposees` (par leur nom : la plus
+/// basse limite au-dessus de laquelle chacune peut etre limitee, aucune quand elle ne se connait pas, et si le debut de
+/// son contrat le dirait) : une paie au-dessus de la plus basse de ces limites peut etre limitee si elle a dure peu de
+/// jours ; la phrase demande quand elle a commence, quand cela le dirait. Aucune : rien n'est suppose.
+fn demande_dite(supposees: &BTreeMap<String, (Option<Montant>, bool)>) -> Option<String> {
+    if supposees.is_empty() {
+        return None;
     }
+    let paie = match supposees.values().filter_map(|(limite, _)| *limite).min() {
+        Some(seuil) => format!("Une paie de plus de {}", euros(seuil)),
+        None => "Une paie".to_string(),
+    };
+    Some(match supposees.values().any(|(_, le_debut_le_dit)| *le_debut_le_dit) {
+        true => format!("{} peut être limitée si elle a duré peu de jours : dites quand elle a commencé.", paie),
+        false => format!("{} peut être limitée si elle a duré peu de jours ; ses pièces ne permettent pas de le savoir.", paie),
+    })
 }
 
 /// LE JOUR BUTOIR EN MOTS : ce qui manque et jusqu'a quand ; pourquoi la date se deplace, chiffre depuis les paies (celles
@@ -1403,6 +1455,10 @@ fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::alloc
 /// l'enseignement : `Position::heures_montant`). A la readmission (une fenetre allongee), les diviseurs de A et B sont
 /// les heures exigees, fois le SMIC horaire de la fin de contrat pour A : INFERENCE, l'article 14 ne dit pas a quelle
 /// date lire le SMIC.
+/// UNE PAIE DONT LE PLAFOND NE SE CONNAIT PAS compte entiere (Leandre, 27/11/2026 : « L'estimation sort toujours ») ;
+/// quand son brut passe quatre fois le plus bas plafond qu'elle puisse avoir (`plafond_le_plus_bas`), elle peut etre
+/// limitee : l'estimation le suppose, le dit dans sa phrase, et la paie entre dans `supposees` (son nom : cette plus
+/// basse limite, et si le debut de son contrat dirait son plafond), d'ou la route tire sa seule demande (`demande_dite`).
 #[allow(clippy::too_many_arguments)]
 fn estimer(
     t: &Allocation,
@@ -1411,21 +1467,20 @@ fn estimer(
     visee: Option<Montant>,
     fin: Jour,
     debuts: &BTreeMap<String, Jour>,
-    demandes: &mut BTreeMap<String, String>,
+    supposees: &mut BTreeMap<String, (Option<Montant>, bool)>,
     notes: &mut Vec<String>,
 ) -> R<(Vec<EstimationDite>, Vec<ViseeDite>)> {
     let p = &aff.position;
     if let Some(m) = paies.iter().find(|x| x.melee()) {
         notes.push(format!(
-            "L'allocation ne s'estime pas : la paie {} chez {} mêle {} h d'enseignement à d'autres heures ou des cachets, et le salaire de l'enseignement, qui sort du salaire de référence, n'y est pas dit à part.",
-            m.dates(),
-            m.employeur,
+            "L'allocation ne s'estime pas : {} mêle {} h d'enseignement à d'autres heures ou des cachets, et le salaire de l'enseignement, qui sort du salaire de référence, n'y est pas dit à part.",
+            m.en_mots(),
             dit(m.heures_d_enseignement())
         ));
         return Ok((Vec::new(), Vec::new()));
     }
     for x in paies.iter().filter(|x| x.d_enseignement()) {
-        notes.push(format!("La paie {} chez {}, toute d'enseignement, sort du salaire de référence.", x.dates(), x.employeur));
+        notes.push(format!("Toute d'enseignement, {} sort du salaire de référence.", x.en_mots()));
     }
     for x in paies.iter().filter(|x| x.brut.is_none()) {
         notes.push(format!("La ligne prévue {} n'a pas de brut : elle compte pour les heures, pas pour l'allocation.", x.dates()));
@@ -1459,7 +1514,7 @@ fn estimer(
             Some(d) => match x.plafond.avec_le_debut(*d) {
                 Some(s) => s,
                 None => {
-                    notes.push(format!("Le début dit pour la paie {} chez {} ({}) est après sa fin : il ne dit rien.", x.dates(), x.employeur, d.jj_mm_aaaa()));
+                    notes.push(format!("Le début dit pour {} ({}) est après sa fin : il ne dit rien.", x.en_mots(), d.jj_mm_aaaa()));
                     x.plafond.clone()
                 }
             },
@@ -1470,9 +1525,8 @@ fn estimer(
         if let SourceDuPlafond::DuContrat { contrat: None, paie } = &s {
             if *paie == Periode::du_mois(paie.debut().mois_civil()) {
                 notes.push(format!(
-                    "La paie {} chez {} n'imprime pas son plafond et paie le mois entier : sa limite (art. 11 §3) se calcule sur le plafond du mois, peut-être plus haut que celui de son emploi ; l'estimation peut être trop haute.",
-                    x.dates(),
-                    x.employeur
+                    "Sans plafond imprimé, {} paie le mois entier : sa limite (art. 11 §3) se calcule sur le plafond du mois, peut-être plus haut que celui de son emploi ; l'estimation peut être trop haute.",
+                    x.en_mots()
                 ));
             }
         }
@@ -1485,35 +1539,38 @@ fn estimer(
         let mut lignes = Vec::new();
         let mut bruts: Vec<(Montant, Option<Montant>)> = Vec::new();
         let mut a_viser: Vec<(&PaieComptee, Montant, Option<Montant>)> = Vec::new();
-        let mut sous_le_plus_bas: Vec<SousLePlusBas> = Vec::new();
-        let mut attendent: Vec<String> = Vec::new();
+        let mut inconnues: Vec<PlafondSuppose> = Vec::new();
+        let mut suppose = false;
         for (x, source) in du_salaire.iter().zip(&sources) {
             let Some(brut) = x.brut else { continue };
-            // Un plafond qui ne se connait pas ne compte que si le brut peut passer sa limite : sous quatre fois le
-            // plafond d'un contrat d'un jour, il ne la passe pas, quel que soit le contrat (« simple pour les simples »).
+            // Un plafond qui ne se connait pas : la paie compte entiere. Sous quatre fois le plafond d'un contrat d'un
+            // jour, elle ne passe pas sa limite, quel que soit le contrat ; au-dessus, l'estimation suppose qu'elle ne la
+            // passe pas.
             let (plafond_paie, limite, note) = match plafond_de(source, artiste) {
                 Ok(m) => (Some(m), Some(t.limite_de_la_paie(m)), None),
-                Err(inconnu) => match plafond_le_plus_bas(x.fin, artiste) {
-                    Ok(bas) if brut <= t.limite_de_la_paie(bas) => {
-                        let au_plus_bas = t.limite_de_la_paie(bas);
-                        let note = format!("son plafond ne se connaît pas ({}) ; son brut ne passe pas {}, quatre fois le plafond d'un emploi d'un jour : il compte entier", inconnu.raison, euros(au_plus_bas));
-                        sous_le_plus_bas.push(SousLePlusBas { rang: bruts.len(), limite: au_plus_bas, inconnu, paie: x });
-                        (None, None, Some(note))
+                Err(inconnu) => {
+                    let (au_plus_bas, note) = match plafond_le_plus_bas(x.fin, artiste) {
+                        Ok(bas) => {
+                            let l = t.limite_de_la_paie(bas);
+                            match brut <= l {
+                                true => (Some(l), format!("son plafond ne se connaît pas ({}) ; son brut ne passe pas {}, quatre fois le plafond d'un emploi d'un jour : il compte entier", inconnu.raison, euros(l))),
+                                false => (Some(l), format!("son plafond ne se connaît pas ({}) ; son brut passe {}, quatre fois le plafond d'un emploi d'un jour : il compte entier, comme s'il ne passait pas sa limite", inconnu.raison, euros(l))),
+                            }
+                        }
+                        Err(bas) => (None, format!("son plafond ne se connaît pas ({}), ni le plus bas qu'il puisse être ({}) : il compte entier, comme s'il ne passait pas sa limite", inconnu.raison, bas.raison)),
+                    };
+                    if au_plus_bas.is_none_or(|l| brut > l) {
+                        supposer(supposees, x, au_plus_bas, inconnu.le_debut_le_dit);
+                        suppose = true;
                     }
-                    Ok(_) | Err(_) => {
-                        attendent.push(attente(x, &inconnu, demandes));
-                        continue;
-                    }
-                },
+                    inconnues.push(PlafondSuppose { rang: bruts.len(), limite: au_plus_bas, le_debut_le_dit: inconnu.le_debut_le_dit, paie: x });
+                    (None, None, Some(note))
+                }
             };
             let compte = droit::allocation::salaire_limite(&[(brut, limite)], Coefficient::UN);
             bruts.push((brut, limite));
             a_viser.push((**x, brut, limite));
-            lignes.push(vec![Some(x.dates()), Some(x.employeur.clone()), Some(euros(brut)), plafond_paie.map(euros), limite.map(euros), Some(euros(compte)), note]);
-        }
-        if !attendent.is_empty() {
-            notes.push(format!("{} : l'allocation n'est pas estimée ; {}.", annexe_dite(annexe), attendent.join(" ; ")));
-            continue;
+            lignes.push(vec![Some(x.dates()), x.employeur.clone(), Some(euros(brut)), plafond_paie.map(euros), limite.map(euros), Some(euros(compte)), note]);
         }
         let total: Montant = bruts.iter().fold(Montant::ZERO, |a, (b, _)| a + *b);
         let sr = droit::allocation::salaire_limite(&bruts, Coefficient::UN);
@@ -1524,10 +1581,14 @@ fn estimer(
             None => String::new(),
         };
         let limitee = if sr < total { format!(" ; les paies ne comptent qu'à quatre fois leur plafond (art. 11 §3) : {} de salaire, {} retenus", euros(total), euros(sr)) } else { String::new() };
-        let phrase = format!(
-            "{} : {} par jour, estimation (A {} pour {} de salaire de référence, B {} pour {} h, C {}){}{}.",
+        // LE CHIFFRE, en une ligne ; son detail, dans le replie.
+        let phrase = match suppose {
+            false => format!("{} : environ {} par jour.", annexe_dite(annexe), euros(e.retenue)),
+            true => format!("{} : environ {} par jour, si ces paies ne sont pas limitées.", annexe_dite(annexe), euros(e.retenue)),
+        };
+        notes.push(format!(
+            "{} : A {} pour {} de salaire de référence, B {} pour {} h, C {}{}{}.",
             annexe_dite(annexe),
-            euros(e.retenue),
             euros(e.a),
             euros(sr),
             euros(e.b),
@@ -1535,36 +1596,36 @@ fn estimer(
             euros(e.c),
             borne,
             limitee
-        );
+        ));
         estimations.push(EstimationDite { annexe: annexe_dite(annexe), a: e.a, b: e.b, c: e.c, calculee: e.calculee, salaire_de_reference: sr, retenue: e.retenue, phrase, paies: tableau_du_salaire(lignes) });
         if let Some(v) = visee {
-            visees.push(viser(t, annexe, v, sr, nht, plafond, diviseurs, &bruts, &a_viser, &sous_le_plus_bas, demandes)?);
+            visees.push(viser(t, annexe, v, sr, nht, plafond, diviseurs, &bruts, &a_viser, &inconnues, supposees)?);
         }
     }
     Ok((estimations, visees))
 }
 
-/// UNE PAIE DONT LE PLAFOND NE SE CONNAIT PAS, ET QUI COMPTE ENTIERE : son brut reste sous `limite`, quatre fois le plus
-/// bas plafond qu'elle puisse avoir (`plafond_le_plus_bas`) ; `rang`, sa place parmi les bruts de l'annexe. Augmentee
-/// pour une allocation visee, elle peut passer cette limite : alors la visee attend son plafond.
-struct SousLePlusBas<'a> {
-    rang: usize,
-    limite: Montant,
-    inconnu: PlafondInconnu,
-    paie: &'a PaieComptee,
+/// LA PAIE `x`, QUE L'ESTIMATION SUPPOSE NON LIMITEE, dans `supposees` (`estimer`) : la plus basse de ses limites
+/// possibles, d'une annexe a l'autre (`limite`, aucune quand elle ne se connait pas), et si le debut de son contrat dirait
+/// son plafond.
+fn supposer(supposees: &mut BTreeMap<String, (Option<Montant>, bool)>, x: &PaieComptee, limite: Option<Montant>, le_debut_le_dit: bool) {
+    let deja = supposees.entry(x.id.clone()).or_insert((limite, le_debut_le_dit));
+    deja.0 = match (deja.0, limite) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    deja.1 |= le_debut_le_dit;
 }
 
-/// CE QU'UNE PAIE DONT LE PLAFOND NE SE CONNAIT PAS FAIT ATTENDRE, en mots : la paie, et pourquoi ; quand la date de
-/// debut de son contrat le dirait, la route la demande (`demandes`, sous le nom de la paie, que la charge reprend dans
-/// `debuts`).
-fn attente(x: &PaieComptee, inconnu: &PlafondInconnu, demandes: &mut BTreeMap<String, String>) -> String {
-    let demande = if inconnu.le_debut_le_dit {
-        demandes.insert(x.id.clone(), choix_d_embauche(x));
-        format!(" ; dites sa date d'embauche (« Dates d'embauche », paie « {} »)", x.id)
-    } else {
-        String::new()
-    };
-    format!("la paie {} chez {} peut passer sa limite (quatre fois son plafond, art. 11 §3), et son plafond ne se connaît pas ({}){}", x.dates(), x.employeur, inconnu.raison, demande)
+/// UNE PAIE DONT LE PLAFOND NE SE CONNAIT PAS, QUI COMPTE ENTIERE : `rang`, sa place parmi les bruts de l'annexe ;
+/// `limite`, quatre fois le plus bas plafond qu'elle puisse avoir (`plafond_le_plus_bas` ; aucune quand il ne se connait
+/// pas) ; si le debut de son contrat dirait son plafond. Au-dessus de cette limite, brute ou augmentee pour une
+/// allocation visee, elle peut etre limitee : l'estimation suppose qu'elle ne l'est pas (`supposer`).
+struct PlafondSuppose<'a> {
+    rang: usize,
+    limite: Option<Montant>,
+    le_debut_le_dit: bool,
+    paie: &'a PaieComptee,
 }
 
 /// CE QUE L'ALLOCATION `v` DEMANDE SOUS L'ANNEXE `annexe` : le salaire de reference, chaque paie augmentee dans la meme
@@ -1581,8 +1642,8 @@ fn viser(
     d: Diviseurs,
     bruts: &[(Montant, Option<Montant>)],
     a_viser: &[(&PaieComptee, Montant, Option<Montant>)],
-    sous_le_plus_bas: &[SousLePlusBas],
-    demandes: &mut BTreeMap<String, String>,
+    inconnues: &[PlafondSuppose],
+    supposees: &mut BTreeMap<String, (Option<Montant>, bool)>,
 ) -> R<ViseeDite> {
     let nom = annexe_dite(annexe);
     let au_plus = droit::allocation::salaire_au_plus(bruts);
@@ -1623,11 +1684,16 @@ fn viser(
         });
     };
     // Une paie dont le plafond ne se connait pas, augmentee au-dela de la plus basse limite qu'elle puisse avoir : la
-    // visee attend son plafond.
-    let passent: Vec<String> = sous_le_plus_bas.iter().filter(|s| bruts.get(s.rang).is_some_and(|(b, _)| *b * k > s.limite)).map(|s| attente(s.paie, &s.inconnu, demandes)).collect();
-    if !passent.is_empty() {
-        return Ok(vide(format!("{} : pour {} par jour, il faudrait {} de salaire de référence ; la visée n'est pas estimée : {}.", nom, euros(v), euros(cible), passent.join(" ; "))));
+    // visee suppose qu'elle ne la passe pas, et le dit avec ce qui arrete la hausse.
+    let mut suppose = false;
+    for s in inconnues.iter().filter(|s| bruts.get(s.rang).is_some_and(|(b, _)| s.limite.is_none_or(|l| *b * k > l))) {
+        supposer(supposees, s.paie, s.limite, s.le_debut_le_dit);
+        suppose = true;
     }
+    let arret = match suppose {
+        true => format!("{} Le calcul suppose que ces paies ne sont pas limitées.", arret),
+        false => arret,
+    };
     let atteinte = aj_de(cible)?;
     let mut paies = Vec::new();
     for (x, brut, limite) in a_viser {
@@ -1635,7 +1701,7 @@ fn viser(
         let (cachets, heures) = (x.cachets.into_iter().sum::<Cachets>(), x.heures.into_iter().sum::<Heures>());
         let par_cachet = (heures.est_nul() && !cachets.est_nul()).then(|| brut_vise.prorata(Cachets::UN, cachets).au_centime());
         let par_heure = if cachets.est_nul() { brut_vise.par_heure(heures) } else { None };
-        paies.push(vec![Some(x.dates()), Some(x.employeur.clone()), Some(euros(*brut)), Some(euros(brut_vise)), limite.map(euros), par_cachet.map(euros), par_heure.map(euros)]);
+        paies.push(vec![Some(x.dates()), x.employeur.clone(), Some(euros(*brut)), Some(euros(brut_vise)), limite.map(euros), par_cachet.map(euros), par_heure.map(euros)]);
     }
     let (sens, ecart) = if k >= Coefficient::UN { ("augmentée", k - Coefficient::UN) } else { ("baissée", Coefficient::UN - k) };
     let phrase = format!(

@@ -1274,8 +1274,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qui enregistre la case d'une ligne de « Pour démarrer » (la route `enregistrer-fiche` et la part fixe de sa charge, la fiche et sa clé ; la case part dans les `changements` de la charge, une écriture par fiche ; pas un `EnregistrerLEcran`, qui envoie toutes les cases d'un écran, chacune sous sa clé) | `EnregistrerLaCase` | `routes/src/rappels.rs` |
 | colonne d'un tableau qu'une route rend à l'écran (son en-tête, à droite pour un nombre, discrète pour ce qui précise la ligne, les parties qu'elle tient dans un tableau qui se saisit : le livre de paie des Exports, les lignes du bulletin d'une carte importée ; pas une colonne d'un état exporté, `documents::tableaux_export::Colonne`, que sa clé d'état et son genre font) | `socle::ecran::ColonneRendue` | `socle/src/ecran.rs` |
 | tableau qu'une route rend à l'écran (son titre s'il en a un, ses colonnes, ses rangées : le livre de paie des Exports, les lignes du bulletin d'une carte importée, les paies de `droits-des-pieces`) | `socle::ecran::TableauRendu` | `socle/src/ecran.rs` |
-| rangée d'un tableau qu'une route rend à l'écran (ce qu'elle est : une ligne, le sous-total d'un groupe, le total général ; ses cellules déjà dites, une par colonne ; dans un tableau qui se saisit, son rang dans la case) | `socle::ecran::RangeeRendue`, `socle::ecran::SorteDeRangee` | `socle/src/ecran.rs` |
-| rangées qui se saisissent dans un tableau rendu (la case de la charge dont elles sont les rangées, le bouton qui en ajoute une, celui qui en retire une ; chaque colonne dit les parties qu'elle tient, chaque rangée son rang : les lignes prévues dans le tableau des paies de `droits-des-pieces`) | `socle::ecran::SaisieDuTableau` | `socle/src/ecran.rs` |
+| rangée d'un tableau qu'une route rend à l'écran (ce qu'elle est : une ligne, le sous-total d'un groupe, le total général ; ses cellules déjà dites, une par colonne ; dans un tableau qui se saisit, son rang dans la case et les parties qu'elle ouvre) | `socle::ecran::RangeeRendue`, `socle::ecran::SorteDeRangee` | `socle/src/ecran.rs` |
+| rangées qui se saisissent dans un tableau rendu (la case de la charge dont elles sont les rangées, le bouton qui en ajoute une, celui qui en retire une ; chaque colonne dit les parties qu'elle tient, chaque rangée son rang et celles qu'elle ouvre : les lignes prévues dans le tableau des paies de `droits-des-pieces`) | `socle::ecran::SaisieDuTableau` | `socle/src/ecran.rs` |
 | ce que le lecteur des AEM déposées dit d'un fichier du dossier lu (son nom, la phrase : un enregistrement illisible, une case laissée vide) | `import::dsn_aem::NoteDUneAem` | `import/src/dsn_aem.rs` |
 | pièce déposée sur l'écran des droits d'un intermittent (le fichier posé dans `mes-pieces/`, sa nature, ses employeurs, ce que la route en lit ; ce que dit chaque fichier se range sous lui, `DitDesPieces`, `CeQuiSeDitDUnFichier`) | `PieceDite` | `routes/src/accueil/droits_des_pieces.rs` |
 | bloc de l'écran des droits d'un intermittent, dans l'ordre que la route `droits-des-pieces` lui donne (une case de sa charge, le bilan de la personne, le tableau des paies, le résumé de son compte et ses lignes prévues, le dépôt des pièces, les pièces déposées ; pas un rang d'un `EcranRendu`, qui n'a ni tableau ni dépôt) | `BlocDesDroits` | `routes/src/accueil/droits_des_pieces.rs` |
@@ -1504,10 +1504,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | réadmission : les heures de plus par période de jours au-delà de la fenêtre (art. 9 §1 b) | `Readmission` | `droit/src/allocation.rs` |
 | limite du salaire de référence : les plafonds d'une paie qu'il compte au plus (art. 11 §3, art. 49) | `LimiteDuSalaire` | `droit/src/allocation.rs` |
 | contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) | `LignePrevue` | `routes/src/accueil/droits_des_pieces.rs` |
-| date de début du contrat d'une paie, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
+| date de début du contrat d'une paie des pièces, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas (une ligne prévue dit le sien dans sa ligne) | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
 | employeur d'une pièce d'un intermittent, qui range ses contrats (son Siren, sa raison sociale, ou la pièce seule) ; et le compte des pièces seules | `CleDEmployeur` ; `Seules` | `routes/src/accueil/droits_des_pieces.rs` |
 | pièce d'un intermittent lue, avant son registre (de qui, chez quel employeur, son nom, sa naissance, le contrat qu'elle atteste, d'où vient son plafond) ; elle entre dans le registre de son employeur, `import::attestes::Atteste`, qui ne garde ni l'employeur, ni le nom de la pièce, ni le plafond | `Attestee` | `routes/src/accueil/droits_des_pieces.rs` |
-| d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, à calculer du contrat d'un bulletin, ou inconnu d'une ligne prévue qui ne dit que sa fin) ; pourquoi il ne se connaît pas ; une paie qui compte entière sous la plus basse limite possible | `SourceDuPlafond` ; `PlafondInconnu` ; `SousLePlusBas` | `routes/src/accueil/droits_des_pieces.rs` |
+| d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, à calculer du contrat d'un bulletin, ou inconnu d'une ligne prévue qui ne dit que sa fin) ; pourquoi il ne se connaît pas ; une paie dont le plafond ne se connaît pas, qui compte entière (sa plus basse limite possible, au-dessus de laquelle l'estimation la suppose non limitée) | `SourceDuPlafond` ; `PlafondInconnu` ; `PlafondSuppose` | `routes/src/accueil/droits_des_pieces.rs` |
 | paie d'un intermittent comptée depuis ses pièces ou un contrat prévu : ce que sa pièce dit (un compteur qu'elle tait reste vide), son employeur, d'où vient son plafond ; elle devient une ligne déclarée (`droit::cumul::Declare`) quand elle dit ce que la ligne demande | `PaieComptee` | `routes/src/accueil/droits_des_pieces.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
@@ -2922,7 +2922,7 @@ ou déposées) dans `mes-pieces/` de l'installation ; les lecteurs de l'import l
 l'import (`import::attestes::Registre::vide`, un par employeur : deux employeurs ne font jamais un contrat) ne garde
 chaque contrat qu'une fois ; la charge peut y ajouter des contrats prévus, qui se comptent pareil et ne s'écrivent pas
 (une ligne prévue ne se saisit qu'avec sa fin : une ligne déclarée, `droit::cumul::Declare`, se situe par sa fin, son
-début facultatif ; la route ne le demande que pour le plafond, quand il compte).
+début facultatif ; la route ne l'ouvre, dans la ligne, que pour le plafond, quand il compte).
 Le compte est un seul, `droit::allocation::affiliation_des_droits` : celui de la route `droits` d'une compagnie (par
 `droit::cumul::position_droits`), de ses conseils, de la colonne « Droits » du bulletin, et de celle-ci ; il se dit par
 `archives::comptes_de_la_position` : à la dernière fin de contrat (sinon aujourd'hui), sur 365 jours, allongés de 30
@@ -2931,8 +2931,10 @@ la fiche, dit la réadmission : la fin de contrat précédente est douze mois av
 butoir (`droit::allocation::butoir`) est le dernier où, sans contrat de plus, il n'en faut pas davantage, et la route
 dit pourquoi. L'allocation journalière s'estime par annexe (`allocation-intermittents.json` : art. 14 et 16), chaque paie
 sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon `droit::plafond` ; un plafond qui ne
-se connaît pas ne compte que si le brut passe quatre fois le plus bas possible, celui d'un contrat d'un jour : alors
-l'estimation attend, et la route demande le début du contrat de la paie), et une allocation
+se connaît pas compte entier ; quand le brut passe quatre fois le plus bas possible, celui d'un contrat d'un jour, la
+paie peut être limitée : l'estimation sort quand même, en disant qu'elle la suppose non limitée, et la route demande,
+en une phrase, le début de son contrat : dans sa ligne pour une ligne prévue, par « Dates d'embauche » pour une pièce ;
+le chiffre tient en une ligne par annexe, son détail et les notes dans un repli, « Détails »), et une allocation
 visée dit le salaire de référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion, et ce qui
 arrête la hausse. Une DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du
 salaire de référence, et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui

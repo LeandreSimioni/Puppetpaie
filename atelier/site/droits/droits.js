@@ -423,8 +423,6 @@ var dire = null;
     return ul;
   }
 
-  // LE RÉSUMÉ de la personne : son nom, son bilan, sa fenêtre, ce qui manque et le jour butoir, le compte des heures,
-  // l'allocation estimée et visée (chacune son détail replié), les notes.
   // LE BILAN de la personne, au-dessus du tableau : son nom, quand la route le dit (les pièces portent plusieurs
   // personnes), et son bilan.
   function bilan(p) {
@@ -434,6 +432,8 @@ var dire = null;
     return r;
   }
 
+  // LE RÉSUMÉ de la personne, sous le tableau : sa fenêtre, ce qui manque et le jour butoir, le compte des heures, ce
+  // que l'estimation suppose, l'allocation estimée et visée (chacune son tableau replié), puis « Détails », replié.
   function resume(p) {
     var r = el("section", "bloc");
     r.append(el("p", "aide", p.fenetre));
@@ -450,6 +450,8 @@ var dire = null;
       det.append(el("summary", null, t.titre), tableau(t));
       return det;
     };
+    // La phrase qui dit ce que l'estimation suppose, et ce qu'il faut dire pour en être sûr, avant ses chiffres.
+    if (p.demande) r.append(el("p", "phrase", p.demande));
     p.estimations.forEach(function (e) {
       var bloc = el("div", "estimation");
       bloc.append(el("p", null, e.phrase));
@@ -462,7 +464,12 @@ var dire = null;
       if (v.paies && v.paies.rangees.length) bloc.append(replie(v.paies));
       r.append(bloc);
     });
-    if (p.notes.length) r.append(liste(p.notes));
+    // Ce qui n'est pas la réponse elle-même : replié, sous le libellé de la route.
+    if (p.details.lignes.length) {
+      var det = el("details");
+      det.append(el("summary", null, p.details.libelle), liste(p.details.lignes));
+      r.append(det);
+    }
     return r;
   }
 
@@ -494,13 +501,15 @@ var dire = null;
     tete.append(tr);
     table.append(tete);
     var corps = el("tbody");
-    var ligneSaisie = function (n, cellules) {
+    // Une partie se saisit dans une rangée quand elle est ouverte, ou que la rangée l'ouvre (`ouvre` : le début d'une
+    // ligne prévue dont la route le demande).
+    var ligneSaisie = function (n, cellules, ouvre) {
       placees[n] = true;
       var r = el("tr", "prevue");
       t.colonnes.forEach(function (col, i) {
         var td = el("td", classe(col));
         if (col.parties && col.parties.length) {
-          col.parties.forEach(function (k) {
+          col.parties.filter(function (k) { return parties[k].ouverte || ouvre.indexOf(k) >= 0; }).forEach(function (k) {
             var p = parties[k];
             var i2 = champ(p.forme, p.choix, rangs[n][k], function (v) {
               rangs[n][k] = v;
@@ -524,7 +533,7 @@ var dire = null;
     t.rangees.forEach(function (g) {
       var n = g.saisie === undefined ? undefined : envoi[g.saisie];
       if (n !== undefined && n >= 0 && rangs[n] && !placees[n]) {
-        ligneSaisie(n, g.cellules);
+        ligneSaisie(n, g.cellules, g.ouvre || []);
         return;
       }
       if (g.saisie !== undefined) return;
@@ -533,7 +542,7 @@ var dire = null;
       r.append(el("td"));
       corps.append(r);
     });
-    rangs.forEach(function (r, n) { if (!placees[n]) ligneSaisie(n, null); });
+    rangs.forEach(function (r, n) { if (!placees[n]) ligneSaisie(n, null, []); });
     table.append(corps);
     var d = el("div", "tableau");
     d.append(table);
