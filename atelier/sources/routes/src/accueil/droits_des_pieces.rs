@@ -50,7 +50,7 @@ use import::attestes::{BlocDImport, Registre};
 use import::reponse::Source;
 use import::tri::Sorte;
 use socle::date::{Duree, Jour, Periode};
-use socle::ecran::{ColonneRendue, TableauRendu};
+use socle::ecran::{ColonneRendue, RangeeRendue, SaisieDuTableau, SorteDeRangee, TableauRendu};
 use socle::echec::{Classe, R};
 use socle::fichiers::NomDeFichier;
 use socle::grandeurs::ecrit::sans_zero::dit;
@@ -219,8 +219,12 @@ fn ecran(
     }
     let anniversaire = BlocDesDroits::Case(case_simple(cle!(ChargeDroitsDesPieces, anniversaire), c.anniversaire.as_ref().and_then(ValeurDeCase::de))?);
     let depot = BlocDesDroits::Depot(DepotDit { dossier, libelle: DEPOSER, aide: DEPOSER_AIDE });
+    // Les lignes prevues : leurs parties et ce que la charge en dit ; elles se saisissent dans le tableau des paies, qui
+    // dit ou chacune se pose, et ses boutons (`tableau_des_paies`).
+    let nom = cle!(ChargeDroitsDesPieces, previsionnel);
     let parties = PARTIES_D_UNE_LIGNE_PREVUE.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
-    let lignes = case_en_rangees(cle!(ChargeDroitsDesPieces, previsionnel), c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_LIGNE, RETIRER_LA_LIGNE)?;
+    let champ_des_lignes = champ(nom)?;
+    let lignes = crate::fiches::CaseDeLaFiche::de_rangees(nom, champ_des_lignes.libelle, c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties).disant(vec![champ_des_lignes.sens.to_string()]);
     match calcul {
         Some((personne, tableau, embauches)) => {
             let visee_offerte = !personne.estimations.is_empty();
@@ -583,7 +587,9 @@ struct PaieComptee {
     jours: Option<Jours>,
     brut: Option<Montant>,
     plafond: SourceDuPlafond,
-    prevue: bool,
+    /// Une ligne prevue : son rang dans les lignes prevues de la charge (la rangee qui se saisit dans le tableau des
+    /// paies) ; aucun : une paie qu'une piece atteste.
+    prevue: Option<usize>,
 }
 
 impl PaieComptee {
@@ -683,7 +689,7 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
                 enseignement: a.heures_enseignement,
                 jours: a.jours,
                 brut: a.brut,
-                prevue: false,
+                prevue: None,
             });
         }
     }
@@ -693,7 +699,7 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
 /// Les lignes prevues de la charge, en paies comptees ; une ligne qui ne se compte pas le dit dans `notes`.
 fn prevues(lignes: &[LignePrevue], notes: &mut Vec<String>) -> R<Vec<PaieComptee>> {
     let mut out = Vec::new();
-    for l in lignes {
+    for (rang, l) in lignes.iter().enumerate() {
         if l.cachets.is_none() && l.heures.is_none() {
             notes.push(format!("La ligne prévue qui finit le {} ne dit ni cachets ni heures : elle ne compte rien.", l.fin.jj_mm_aaaa()));
             continue;
@@ -718,7 +724,7 @@ fn prevues(lignes: &[LignePrevue], notes: &mut Vec<String>) -> R<Vec<PaieComptee
             jours: None,
             brut: l.brut,
             plafond: SourceDuPlafond::DuContrat { contrat: Some(periode), paie: periode },
-            prevue: true,
+            prevue: Some(rang),
         });
     }
     Ok(out)
@@ -731,10 +737,10 @@ fn prevues(lignes: &[LignePrevue], notes: &mut Vec<String>) -> R<Vec<PaieComptee
 fn declaree(p: &PaieComptee, cle: &droit::contexte::IdSalarie) -> Option<Declare> {
     let (heures, cachets) = match (p.heures, p.cachets, p.prevue) {
         (Some(h), Some(c), _) => (h, c),
-        (h, c, true) => (h.into_iter().sum(), c.into_iter().sum()),
-        (_, _, false) => return None,
+        (h, c, Some(_)) => (h.into_iter().sum(), c.into_iter().sum()),
+        (_, _, None) => return None,
     };
-    if !p.prevue && p.brut.is_none() {
+    if p.prevue.is_none() && p.brut.is_none() {
         return None;
     }
     Some(Declare { salarie: cle.clone(), periode: p.periode, heures: heures.entieres(), cachets, brut: p.brut, heures_enseignement: p.heures_d_enseignement() })
@@ -743,21 +749,31 @@ fn declaree(p: &PaieComptee, cle: &droit::contexte::IdSalarie) -> Option<Declare
 // ------------------------------------------------------------------ ce que la route rend
 
 /// UNE LIGNE PAR PAIE, en tableau (`socle::ecran::TableauRendu`) : sa periode, son employeur, sa piece, ses cachets, ses
-/// heures dont l'enseignement, son brut ; un compteur que la piece ne dit pas reste vide.
+/// heures dont l'enseignement, son brut ; un compteur que la piece ne dit pas reste vide. Les lignes prevues s'y
+/// saisissent, chacune a sa place parmi les paies (son rang dans la case `previsionnel`) : la periode tient leur debut
+/// et leur fin, les cachets, les heures, l'enseignement et le brut les leurs ; « Ajouter une ligne » en ajoute une.
 fn tableau_des_paies(paies: &[PaieComptee]) -> TableauRendu {
     let colonnes = vec![
-        ColonneRendue::de_texte("Période"),
+        ColonneRendue::de_texte("Période").tenant(&["debut", "fin"]),
         ColonneRendue::de_texte("Employeur"),
         ColonneRendue::discrete("Pièce"),
-        ColonneRendue::de_nombres("Cachets"),
-        ColonneRendue::de_nombres("Heures"),
-        ColonneRendue::de_nombres("Enseignement"),
-        ColonneRendue::de_nombres("Brut"),
+        ColonneRendue::de_nombres("Cachets").tenant(&["cachets"]),
+        ColonneRendue::de_nombres("Heures").tenant(&["heures"]),
+        ColonneRendue::de_nombres("Enseignement").tenant(&["enseignement"]),
+        ColonneRendue::de_nombres("Brut").tenant(&["brut"]),
     ];
-    let lignes = paies.iter().map(|p| {
-        vec![Some(p.dates()), Some(p.employeur.clone()), Some(p.piece.to_string()), p.cachets.map(dit), p.heures.map(dit), p.enseignement.map(dit), p.brut.map(euros)]
-    });
-    TableauRendu::de_lignes(colonnes, lignes).intitule("Une ligne par paie")
+    let rangees = paies
+        .iter()
+        .map(|p| {
+            let cellules = vec![Some(p.dates()), Some(p.employeur.clone()), Some(p.piece.to_string()), p.cachets.map(dit), p.heures.map(dit), p.enseignement.map(dit), p.brut.map(euros)];
+            match p.prevue {
+                Some(rang) => RangeeRendue::saisie(cellules, rang),
+                None => RangeeRendue::de(SorteDeRangee::Ligne, cellules),
+            }
+        })
+        .collect();
+    let saisie = SaisieDuTableau { case: cle!(ChargeDroitsDesPieces, previsionnel), ajouter: AJOUTER_UNE_LIGNE.texte(), retirer: RETIRER_LA_LIGNE.texte() };
+    TableauRendu::de(colonnes, rangees).intitule("Une ligne par paie").saisissant(saisie)
 }
 
 /// LES PAIES DU SALAIRE DE REFERENCE D'UNE ANNEXE, en tableau : le brut de chacune, son plafond et sa limite (quatre
@@ -879,8 +895,8 @@ enum BlocDesDroits {
     Pieces(PiecesDites),
 }
 
-/// LE TABLEAU DES PAIES : une ligne par paie, et la case des lignes prevues qu'on y saisit (ses parties, ses rangees,
-/// l'ajout et le retrait d'une ligne).
+/// LE TABLEAU DES PAIES : une ligne par paie, les lignes prevues s'y saisissant (`TableauRendu::saisie`), et la case des
+/// lignes prevues (son libelle, son sens, ses parties et leurs formes, ses rangees).
 #[derive(Debug, Serialize)]
 struct PaiesDites {
     tableau: TableauRendu,
@@ -1143,8 +1159,8 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
 /// n'en a pas : son nom et ses dates).
 fn choix_d_embauche(x: &PaieComptee) -> String {
     match x.prevue {
-        true => format!("{} : {}", x.id, x.dates()),
-        false => format!("{} : paie {} chez {}", x.id, x.dates(), x.employeur),
+        Some(_) => format!("{} : {}", x.id, x.dates()),
+        None => format!("{} : paie {} chez {}", x.id, x.dates(), x.employeur),
     }
 }
 

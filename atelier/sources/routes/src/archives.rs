@@ -723,7 +723,7 @@ fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> TableauRendu {
         // Un total n'a pas de mois.
         let mut cellules = vec![None, Some(titre.to_string()), Some(t.bulletins_dit())];
         cellules.extend(t.sommes_dites().into_iter().map(Some));
-        RangeeRendue { sorte, cellules }
+        RangeeRendue::de(sorte, cellules)
     };
     let mut rangees = Vec::new();
     for g in &l.groupes {
@@ -735,7 +735,7 @@ fn ecran_du_livre(l: &documents::etats_paie::LivreDePaie) -> TableauRendu {
                 Some(m) => Some(socle::grandeurs::ecrit::texte::dit(m)),
                 None => Some(MONTANT_TU.to_string()),
             }));
-            rangees.push(RangeeRendue { sorte: SorteDeRangee::Ligne, cellules });
+            rangees.push(RangeeRendue::de(SorteDeRangee::Ligne, cellules));
         }
         rangees.push(total(SorteDeRangee::SousTotal, &g.total_dit, &g.totaux));
     }

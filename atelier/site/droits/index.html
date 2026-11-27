@@ -33,6 +33,11 @@ h3{font-size:1rem;font-weight:500;margin:1.6rem 0 .5rem}
 .pour-lecteur{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 /* Les blocs de l'écran, dans l'ordre que la route leur donne. */
 .bloc{margin:0 0 1.8rem}
+/* Le tableau des paies, où les lignes prévues se saisissent (il défile dans sa boîte, pas la page). */
+table.saisie td{vertical-align:middle}
+table.saisie input[type=text]{min-width:4.5rem;padding:.35rem .45rem}
+table.saisie input[type=date]{display:block;min-width:9.5rem;padding:.35rem .45rem;margin:.15rem 0}
+tr.prevue{background:var(--voile)}
 /* Le dépôt des bulletins. */
 .depot{display:block;padding:1.6rem 1rem;border:1.5px dashed #C9C7C2;border-radius:var(--rayon);text-align:center;
   cursor:pointer;background:var(--papier)}

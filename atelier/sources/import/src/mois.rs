@@ -626,14 +626,16 @@ fn carte(
     let lignes: Vec<RangeeRendue> = p
         .iter()
         .flat_map(|p| p.lignes.iter())
-        .map(|l: &LigneImprimee| RangeeRendue {
-            sorte: SorteDeRangee::Ligne,
-            cellules: vec![
-                Some(l.libelle.clone()),
-                l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite),
-                l.paiement.map(|x| x.taux().dit()),
-                l.montant.map(socle::texte::euros),
-            ],
+        .map(|l: &LigneImprimee| {
+            RangeeRendue::de(
+                SorteDeRangee::Ligne,
+                vec![
+                    Some(l.libelle.clone()),
+                    l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite),
+                    l.paiement.map(|x| x.taux().dit()),
+                    l.montant.map(socle::texte::euros),
+                ],
+            )
         })
         .collect();
     let lignes = (!lignes.is_empty()).then(|| {

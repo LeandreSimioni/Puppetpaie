@@ -153,28 +153,27 @@
     document.addEventListener(t, function (e) { e.preventDefault(); });
   });
 
-  // Les rangées d'une case, telles qu'elles partent : chacune ses parties remplies ; une rangée vide ne part pas.
-  function rangeesEnvoyees(v) {
-    return v.map(function (r) {
-      var o = {};
-      Object.keys(r).forEach(function (k) { if (r[k] !== "" && r[k] !== null && r[k] !== false) o[k] = r[k]; });
-      return o;
-    }).filter(function (o) { return Object.keys(o).length > 0; });
-  }
-
-  // La charge : ce qui est saisi dans les cases que la route a rendues, et rien d'autre ; une case vide n'y est pas.
+  // La charge : ce qui est saisi dans les cases que la route a rendues, et rien d'autre ; une case vide n'y est pas, une
+  // rangée vide non plus (chaque rangée, ses parties remplies). `envoi` : pour chaque case en rangées, la rangée saisie
+  // que porte chaque rang envoyé (la route nomme une rangée par son rang dans la charge).
   function charge() {
-    var c = {};
+    var c = {}, envoi = {};
     rendues.forEach(function (cle) {
       var v = saisie[cle];
       if (Array.isArray(v)) {
-        var rangees = rangeesEnvoyees(v);
+        var rangees = [], rangs = [];
+        v.forEach(function (r, n) {
+          var o = {};
+          Object.keys(r).forEach(function (k) { if (r[k] !== "" && r[k] !== null && r[k] !== false) o[k] = r[k]; });
+          if (Object.keys(o).length) { rangees.push(o); rangs.push(n); }
+        });
         if (rangees.length) c[cle] = rangees;
+        envoi[cle] = rangs;
       } else if (v !== "" && v !== null && v !== undefined) {
         c[cle] = v;
       }
     });
-    return c;
+    return { charge: c, envoi: envoi };
   }
 
   // ---------------------------------------------------------------- le calcul
@@ -195,9 +194,14 @@
       });
     }
     // Une erreur, où qu'elle tombe, se dit dans l'avis et ne fige rien : le calcul suivant part.
-    suite.then(function () { return route(charge()); }).then(function (r) {
+    var envoi = null;
+    suite.then(function () {
+      var x = charge();
+      envoi = x.envoi;
+      return route(x.charge);
+    }).then(function (r) {
       if (r.ok && r.resultat) {
-        montrer(r.resultat);
+        montrer(r.resultat, envoi);
       } else if (r.refus) {
         montrerRefus(r.refus.phrase);
       } else {
@@ -266,22 +270,26 @@
     return i;
   }
 
-  // Le bouton qui retire la rangée `n` d'une case (son libellé, celui de la route ; son nom, avec le rang).
-  function boutonRetirer(c, n) {
-    var b = el("button", "lien", c.retirer);
+  // Le bouton qui retire la rangée `n` de la case `cle` (`libelle`, celui de la route ; son nom, avec le rang). Les rangs
+  // envoyés qui la suivent reculent d'un cran, pour que chaque rangée rendue retrouve la sienne.
+  function boutonRetirer(cle, libelle, n) {
+    var b = el("button", "lien", libelle);
     b.type = "button";
-    b.setAttribute("aria-label", c.retirer + " " + (n + 1));
+    b.setAttribute("aria-label", libelle + " " + (n + 1));
     b.addEventListener("click", function () {
-      saisie[c.cle].splice(n, 1);
+      saisie[cle].splice(n, 1);
+      if (envoiRendu[cle]) {
+        envoiRendu[cle] = envoiRendu[cle].map(function (k) { return k === n ? -1 : k > n ? k - 1 : k; });
+      }
       redessiner();
       calculer();
     });
     return b;
   }
 
-  // Le bouton qui ajoute une rangée vide à une case (son libellé, celui de la route).
-  function boutonAjouter(c) {
-    var b = el("button", null, c.ajouter);
+  // Le bouton qui ajoute une rangée vide à la case `c` (`libelle`, celui de la route).
+  function boutonAjouter(c, libelle) {
+    var b = el("button", null, libelle);
     b.type = "button";
     b.addEventListener("click", function () {
       saisie[c.cle].push(rangeeVide(c));
@@ -315,10 +323,10 @@
         if (p.forme === "oui_non") { cellule.append(i, lp); } else { cellule.append(lp, i); }
         ligne.append(cellule);
       });
-      if (c.retirer) ligne.append(boutonRetirer(c, n));
+      if (c.retirer) ligne.append(boutonRetirer(c.cle, c.retirer, n));
       bloc.append(ligne);
     });
-    if (c.ajouter) bloc.append(boutonAjouter(c));
+    if (c.ajouter) bloc.append(boutonAjouter(c, c.ajouter));
     return bloc;
   }
 
@@ -401,12 +409,66 @@
     return r;
   }
 
-  // LE TABLEAU DES PAIES, et sous lui la case des lignes prévues.
+  // LE TABLEAU DES PAIES : les paies lues, et les lignes prévues qui s'y saisissent (`tableau.saisie` : la case, ses
+  // boutons). Une rangée qui se saisit (`saisie`, son rang dans la charge envoyée) pose, sous chaque colonne qui tient
+  // des parties, leurs cases ; ailleurs, ses cellules dites. Une rangée saisie que le tableau ne place pas (vide, ou qui
+  // ne se compte pas) se pose après les autres. « Ajouter une ligne » sous le tableau.
   function paies(b) {
+    var t = b.tableau, c = b.lignes, cle = t.saisie.case;
+    var parties = {};
+    c.parties.forEach(function (p) { parties[p.cle] = p; });
+    var rangs = saisie[cle], envoi = envoiRendu[cle] || [], placees = {};
+    var classe = function (col) { return col.a_droite ? "n" : col.discrete ? "discret" : null; };
     var s = el("section", "bloc");
-    if (b.tableau.titre) s.append(el("h3", null, b.tableau.titre));
-    if (b.tableau.rangees.length) s.append(tableau(b.tableau));
-    s.append(dessinerCase(b.lignes));
+    if (t.titre) s.append(el("h3", null, t.titre));
+    (c.dit || []).forEach(function (d) { s.append(el("p", "aide", d)); });
+    var table = el("table", "saisie");
+    var tr = el("tr");
+    t.colonnes.forEach(function (col) { tr.append(el("th", classe(col), col.libelle)); });
+    tr.append(el("th"));
+    var tete = el("thead");
+    tete.append(tr);
+    table.append(tete);
+    var corps = el("tbody");
+    var ligneSaisie = function (n, cellules) {
+      placees[n] = true;
+      var r = el("tr", "prevue");
+      t.colonnes.forEach(function (col, i) {
+        var td = el("td", classe(col));
+        if (col.parties && col.parties.length) {
+          col.parties.forEach(function (k) {
+            var p = parties[k];
+            var i2 = champ(p.forme, p.choix, rangs[n][k], function (v) { rangs[n][k] = v; calculer(); }, "case-" + cle + "-" + n + "-" + k);
+            i2.setAttribute("aria-label", p.libelle + " " + (n + 1));
+            td.append(i2);
+          });
+        } else if (cellules) {
+          td.textContent = cellules[i] || "";
+        }
+        r.append(td);
+      });
+      var fin = el("td");
+      fin.append(boutonRetirer(cle, t.saisie.retirer, n));
+      r.append(fin);
+      corps.append(r);
+    };
+    t.rangees.forEach(function (g) {
+      var n = g.saisie === undefined ? undefined : envoi[g.saisie];
+      if (n !== undefined && n >= 0 && rangs[n] && !placees[n]) {
+        ligneSaisie(n, g.cellules);
+        return;
+      }
+      if (g.saisie !== undefined) return;
+      var r = el("tr", g.sorte === "ligne" ? null : "total");
+      g.cellules.forEach(function (v, i) { r.append(el("td", classe(t.colonnes[i]), v)); });
+      r.append(el("td"));
+      corps.append(r);
+    });
+    rangs.forEach(function (r, n) { if (!placees[n]) ligneSaisie(n, null); });
+    table.append(corps);
+    var d = el("div", "tableau");
+    d.append(table);
+    s.append(d, boutonAjouter(c, t.saisie.ajouter));
     return s;
   }
 
@@ -471,11 +533,14 @@
   }
 
   var dernier = null;
+  // Pour le dernier écran rendu : la rangée saisie que porte chaque rang envoyé, par case (`charge`).
+  var envoiRendu = {};
 
   // L'ÉCRAN : les blocs que la route rend, dans son ordre. Une case que la route ne rend plus perd ce qui y était saisi
   // (rendue de nouveau, elle repart de ce que la route dit) ; ce qui est saisi dans les autres reste.
-  function montrer(d) {
+  function montrer(d, envoi) {
     dernier = d;
+    envoiRendu = envoi;
     $("refus").classList.add("cache");
     annoncer(d.phrase);
     var cases = [];
