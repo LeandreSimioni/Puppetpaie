@@ -1503,6 +1503,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | plafond de l'allocation (art. 16 : une part de 1/365e de quatre plafonds annuels) | `PlafondDeLAllocation` | `droit/src/allocation.rs` |
 | réadmission : les heures de plus par période de jours au-delà de la fenêtre (art. 9 §1 b) | `Readmission` | `droit/src/allocation.rs` |
 | limite du salaire de référence : les plafonds d'une paie qu'il compte au plus (art. 11 §3, art. 49) | `LimiteDuSalaire` | `droit/src/allocation.rs` |
+| activité reprise pendant l'indemnisation (art. 30) : les heures d'un cachet, le plafond du cumul, et par annexe les heures d'un jour de travail (aussi celles du salaire journalier moyen, art. 19), le coefficient, le seuil ; la participation de 0,93 % (art. 19) ; le délai d'attente (art. 22) ; la franchise de congés payés et celle de salaires (art. 21, 23 §2) ; la CSG et la CRDS sur l'allocation (circulaire Unédic 2026-06) : des formes de `allocation-intermittents.json`, que lisent l'année de chômage et les conseils | `ActivitesReprises`, `ActiviteReprise` ; `Participation` ; `DelaiDAttente` ; `FranchiseDeConges`, `FranchiseDeSalaires` ; `ContributionsSurLAllocation` | `droit/src/allocation.rs` |
+| année d'indemnisation d'un intermittent, estimée mois par mois, du lendemain de la fin de contrat à sa date anniversaire (`annee`) : ce que l'ouverture lui donne, le travail d'un mois, l'allocation d'un jour payé (participation, CSG et CRDS), les franchises comptées, un mois (son activité, art. 30, et le plafond du cumul), l'année, et ce qui lui manque pour se compter entière ; le taux de CSG de la personne, une liste fermée | `OuvertureDesDroits` ; `TravailDuMois` ; `AllocationDuJour` ; `FranchiseComptee`, `FranchiseDeSalairesComptee` ; `ActiviteDuMois`, `Cumul`, `MoisDeChomage` ; `AnneeDeChomage` ; `Manque` ; `TauxDeCsg` | `droit/src/annee_de_chomage.rs` |
+| l'année de chômage telle que l'écran de `droits-des-pieces` la dit : sans aucun travail, ce que coûte un jour de travail et ses exemples, l'année comme la dernière et ses barres, un calcul en lignes | `AnneeDite` ; `SansTravailDit` ; `CoutDit`, `ExempleDit` ; `CommeLaDerniereDite`, `BarreDite` ; `CalculDit` | `routes/src/accueil/droits_des_pieces.rs` |
+| heures retenues par mois d'un technicien pour ses 507 heures (la banque des conseils) | `HeuresRetenuesDesTechniciens` | `routes/src/gestes/conseils.rs` |
 | contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) ; sa nature, une liste fermée (artiste, technicien, enseignement, formation) | `LignePrevue` ; `NatureDUneLigne` | `routes/src/accueil/droits_des_pieces.rs` |
 | date de début du contrat d'une paie des pièces, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas (une ligne prévue ne dit que sa fin) | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
 | les annexes des paies d'un intermittent (l'annexe de base, les heures de chaque annexe dans les 12 mois, celles qui ne se disent pas, d'où chacune se lit) ; l'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), l'égalité, ou ce qui ne se dit pas | `AnnexesDesPaies` ; `AnnexeAppliquee` | `routes/src/accueil/droits_des_pieces.rs` |
@@ -2953,6 +2957,16 @@ de chacune (chaque paie de la fenêtre augmentée dans la même proportion) ; ce
 DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du salaire de référence,
 et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui porte une personne, les
 lignes prévues se comptent seules.
+Quand l'allocation s'estime, la route dit aussi l'année de chômage qui vient (`droit::annee_de_chomage`, Léandre,
+27/11/2026 : le chiffre principal est l'année sans aucun travail) : du lendemain de la dernière fin de contrat à sa date
+anniversaire, mois par mois, le délai d'attente (art. 22), la franchise de congés payés (les jours de travail de l'AEM)
+et celle de salaires (le SMIC du dernier jour de la période), dans l'ordre de l'art. 23, la participation de 0,93 %
+(art. 19) et, quand la personne dit son taux (une liste fermée), la CSG et la CRDS ; une franchise qui ne se compte pas
+(une paie sans ses jours ou sans son brut) ne devient pas zéro : le chômage est « au plus ». Puis ce que retire un jour
+de travail (art. 30 : les heures du mois, cachets à 12 heures, font des jours de travail, chacun retirant 1,3 ou 1,4
+jour), et l'année si elle ressemble à la dernière : le même travail aux mêmes mois, sous le plafond du cumul (1,18 fois
+le plafond mensuel de la Sécurité sociale de l'année du mois ; inconnu, il ne se compte pas). L'article 30 n'est que
+dans `allocation-intermittents.json` : les conseils de saisie le lisent là.
 La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : la réponse,
 l'allocation visée, les cases de sa charge, chacune tirée de la déclaration de son champ, le tableau des paies où les
 lignes prévues se saisissent, le dépôt, les pièces, le détail du calcul, replié) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,

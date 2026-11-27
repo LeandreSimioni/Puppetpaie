@@ -107,6 +107,12 @@ impl AllocationDuJour {
             None => (self.apres_participation, false),
         }
     }
+
+    /// Ce que versent les jours payes `jours` (`versee`), au centime : ce qu'un mois de ces jours touche, ou ce que des
+    /// jours retires lui font perdre.
+    pub fn pour_les_jours(&self, jours: Jours) -> Montant {
+        pour(jours, self.versee().0).au_centime()
+    }
 }
 
 /// UNE FRANCHISE, quand elle se compte (art. 21, art. 23 §2) : ses jours, et ce qu'elle prend par mois.
@@ -148,18 +154,19 @@ pub struct ActiviteDuMois {
     pub indemnisables: Jours,
 }
 
-/// LE PLAFOND DU CUMUL D'UN MOIS (art. 30) : sans activite, il ne joue pas ; sinon le plafond, et s'il a ramene
-/// l'allocation ; ou il ne se connait pas (le salaire du mois ou le plafond de l'annee manquent).
+/// LE PLAFOND DU CUMUL D'UN MOIS (art. 30) : il ne joue pas (aucune activite, ou rien a verser) ; sinon le plafond, et
+/// s'il a ramene l'allocation ; ou il ne se connait pas (le salaire du mois ou le plafond de l'annee manquent).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Cumul {
-    SansActivite,
+    NeJouePas,
     SousLePlafond(Montant),
     Plafonne(Montant),
     Inconnu,
 }
 
 /// UN MOIS DE L'ANNEE D'INDEMNISATION : son activite, ce que le delai d'attente et les franchises y prennent, les jours
-/// payes, l'allocation brute et versee (`AllocationDuJour::versee`), le plafond du cumul, et son salaire.
+/// payes, l'allocation brute, la participation et les contributions qu'elle retient (aucune : le taux de CSG ne se
+/// connait pas), ce qu'elle verse (`AllocationDuJour::versee`), le plafond du cumul, et son salaire.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MoisDeChomage {
     pub mois: Mois,
@@ -169,6 +176,8 @@ pub struct MoisDeChomage {
     pub franchise_salaires: Jours,
     pub jours_payes: Jours,
     pub brute: Montant,
+    pub participation: Montant,
+    pub contributions: Option<Montant>,
     pub versee: Montant,
     pub cumul: Cumul,
     pub salaire: Option<Montant>,
@@ -186,6 +195,8 @@ pub struct AnneeDeChomage {
     pub mois: Vec<MoisDeChomage>,
     pub jours_payes: Jours,
     pub brute: Montant,
+    pub participation: Montant,
+    pub contributions: Option<Montant>,
     pub versee: Montant,
     pub manques: Vec<Manque>,
 }
@@ -352,9 +363,6 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
     let mut delai = AConsommer { reste: delai_total, du: Jours::ZERO };
     let mut cp = conges.map(|f| (AConsommer { reste: f.jours, du: Jours::ZERO }, f.par_mois));
     let mut fs = salaires.map(|f| (AConsommer { reste: f.franchise.jours, du: Jours::ZERO }, f.franchise.par_mois));
-    // Ce qu'un jour paye retient de l'allocation brute : la participation, la CSG et la CRDS.
-    let (versee_du_jour, _) = jour.versee();
-    let retenu = jour.brute - versee_du_jour;
     let mut out = Vec::new();
     for (k, m) in mois.iter().enumerate() {
         let dans = match Periode::du_mois(*m).croise(&periode) {
@@ -388,7 +396,7 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
         let mut jours_payes = indemnisables;
         let mut brute = pour(indemnisables, jour.brute).au_centime();
         let cumul = match (heures.est_nul() || brute.est_nul(), salaire) {
-            (true, _) => Cumul::SansActivite,
+            (true, _) => Cumul::NeJouePas,
             (false, None) => {
                 manques.push(Manque::SalaireDuMois(*m));
                 Cumul::Inconnu
@@ -414,7 +422,14 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
                 }
             },
         };
-        let versee = (brute - pour(jours_payes, retenu)).max(Montant::ZERO).au_centime();
+        // Ce que chaque jour paye retient, jamais plus que ce que le mois verse.
+        let participation = pour(jours_payes, jour.participation).au_centime().min(brute);
+        let apres = brute - participation;
+        let contributions = jour.contributions.map(|x| pour(jours_payes, x).au_centime().min(apres));
+        let versee = match contributions {
+            Some(x) => apres - x,
+            None => apres,
+        };
         out.push(MoisDeChomage {
             mois: *m,
             activite,
@@ -423,6 +438,8 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
             franchise_salaires: pris_fs,
             jours_payes,
             brute,
+            participation,
+            contributions,
             versee,
             cumul,
             salaire: if heures.est_nul() { None } else { salaire },
@@ -430,6 +447,8 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
     }
     let jours_payes = out.iter().map(|m| m.jours_payes).sum();
     let brute = out.iter().map(|m| m.brute).sum();
+    let participation = out.iter().map(|m| m.participation).sum();
+    let contributions = out.iter().map(|m| m.contributions).sum();
     let versee = out.iter().map(|m| m.versee).sum();
-    Ok(AnneeDeChomage { periode, jour, delai: delai_total, conges, salaires, mois: out, jours_payes, brute, versee, manques })
+    Ok(AnneeDeChomage { periode, jour, delai: delai_total, conges, salaires, mois: out, jours_payes, brute, participation, contributions, versee, manques })
 }

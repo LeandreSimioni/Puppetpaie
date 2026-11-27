@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
-use droit::allocation::Affiliation;
+use droit::allocation::{ActiviteReprise, Affiliation};
 use droit::cumul::{self, Constantes, Declare};
 use droit::forme_bareme::Pile;
 use socle::date::{Jour, Periode};
@@ -143,9 +143,6 @@ struct HeuresRetenuesDesTechniciens {
     heures_retenues_plusieurs_employeurs: Heures,
 }
 
-/// Les constantes de l'article 30 pour une annexe, telles que la table de l'allocation les livre.
-type Art30 = droit::allocation::ActiviteReprise;
-
 /// La phrase de la fenetre des droits que la phrase nomme : `{debut}` et `{fin}`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -239,7 +236,7 @@ impl Banque {
 }
 
 /// L'article 30 d'une annexe (`allocation-intermittents.json`).
-fn art30(annexe: Annexe) -> R<Art30> {
+fn art30(annexe: Annexe) -> R<ActiviteReprise> {
     Ok(droit::allocation::allocation()?.activite(annexe).clone())
 }
 
@@ -682,7 +679,7 @@ fn annexe_de(sal: &droit::fiche::ChampsSalarie) -> R<Option<Annexe>> {
 
 /// Les jours d'allocation qu'un nombre d'heures retire un mois indemnise (art. 30 : heures / heures par jour x
 /// coefficient), sans arrondi : une somme sur plusieurs paies s'arrondit une fois (`environ`).
-fn jours_bruts(heures: Heures, a: &Art30) -> R<Jours> {
+fn jours_bruts(heures: Heures, a: &ActiviteReprise) -> R<Jours> {
     match heures.en_jours(a.heures_par_jour) {
         Some(j) => Ok(j * a.coefficient),
         None => Err(socle::refus!("la banque des conseils dit des jours de travail de zéro heure : le signaler au développeur")),
@@ -994,7 +991,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
 /// Ce que les conseils de saisie auraient change aux paies de ce salarie sur la fenetre : (heures, jours d'allocation,
 /// avant arrondi). Chaque mois de la fenetre se lit dans les paies ecrites de ses engagements valides
 /// (`engagement::etats::validees_du_mois`) : rien ne se recalcule ; un mois sans engagement valide n'en a pas.
-fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Periode, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Heures, Jours)> {
+fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Periode, a30: &ActiviteReprise, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Heures, Jours)> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let heures_cachet = c.heures_par_cachet;
     let mut gain = Heures::ZERO;
