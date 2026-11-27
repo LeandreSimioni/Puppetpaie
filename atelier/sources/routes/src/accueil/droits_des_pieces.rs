@@ -61,7 +61,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::allocation::{Affiliation, Allocation, Borne, Visee};
-use droit::annee_de_chomage::{Cumul, Manque, OuvertureDesDroits, TauxDeCsg, TravailDuMois};
+use droit::annee_de_chomage::{ManqueDeLAnnee, OuvertureDesDroits, PlafondDuCumul, TauxDeCsg, TravailDuMois};
 use droit::cumul::{Constantes, Declare};
 use droit::emplois::AnnexeChomage;
 use droit::fiche::{Nir, Siren};
@@ -1212,7 +1212,7 @@ struct AnneeDite {
     titre: &'static str,
     sans_travail: SansTravailDit,
     case: crate::fiches::CaseDeLaFiche<&'static str>,
-    cout: CoutDit,
+    cout: CoutDUnJourDit,
     #[serde(skip_serializing_if = "Option::is_none")]
     comme: Option<CommeLaDerniereDite>,
     notes: Vec<String>,
@@ -1239,7 +1239,7 @@ struct SansTravailDit {
 /// CE QUE COUTE UN JOUR DE TRAVAIL : son titre, l'explication chiffree (art. 30), et des exemples, chacun son titre, son
 /// calcul et ce qui s'en dit.
 #[derive(Debug, Serialize)]
-struct CoutDit {
+struct CoutDUnJourDit {
     titre: &'static str,
     aide: String,
     exemples: Vec<ExempleDit>,
@@ -2219,18 +2219,18 @@ fn taux_dit(t: socle::grandeurs::Taux) -> String {
     format!("{}\u{a0}%", socle::texte::virgule(t))
 }
 
-/// CE QUI MANQUE A L'ANNEE, en une phrase (`droit::annee_de_chomage::Manque`) : le calcul dit ce qu'il ne peut pas
-/// dire, et son chomage est « au plus ».
-fn manque_dit(m: &Manque, fin: Jour) -> String {
+/// CE QUI MANQUE A L'ANNEE, en une phrase (`droit::annee_de_chomage::ManqueDeLAnnee`) : le calcul dit ce qu'il ne peut
+/// pas dire, et son chomage est « au plus ».
+fn manque_dit(m: &ManqueDeLAnnee, fin: Jour) -> String {
     match m {
-        Manque::JoursTravailles => "La franchise de congés payés ne se compte pas : une paie ne dit pas ses jours de travail (ceux de l'attestation employeur) ; le chômage dit est au plus.".to_string(),
-        Manque::SalairesDeLaPeriode => "La franchise de salaires ne se compte pas : une paie ou une ligne prévue des 12 mois ne dit pas son brut ; le chômage dit est au plus.".to_string(),
-        Manque::Smic => format!("La franchise de salaires ne se compte pas : le logiciel n'a pas le SMIC du {} ; le chômage dit est au plus.", fin.jj_mm_aaaa()),
-        Manque::SalaireDuMois(mois) => format!(
+        ManqueDeLAnnee::JoursTravailles => "La franchise de congés payés ne se compte pas : une paie ne dit pas ses jours de travail (ceux de l'attestation employeur) ; le chômage dit est au plus.".to_string(),
+        ManqueDeLAnnee::SalairesDeLaPeriode => "La franchise de salaires ne se compte pas : une paie ou une ligne prévue des 12 mois ne dit pas son brut ; le chômage dit est au plus.".to_string(),
+        ManqueDeLAnnee::Smic => format!("La franchise de salaires ne se compte pas : le logiciel n'a pas le SMIC du {} ; le chômage dit est au plus.", fin.jj_mm_aaaa()),
+        ManqueDeLAnnee::SalaireDuMois(mois) => format!(
             "En {}, une paie ne dit pas son brut : le plafond du cumul ne se compte pas, et le chômage du mois est au plus.",
             mois.libelle(socle::mois::Graphie::Accentuee)
         ),
-        Manque::PlafondDeLAnnee(an) => format!(
+        ManqueDeLAnnee::PlafondDeLAnnee(an) => format!(
             "Le logiciel n'a pas encore le plafond de la Sécurité sociale de {} : le plafond du cumul ne se compte pas en {}, et le chômage d'un mois travaillé est au plus.",
             an, an
         ),
@@ -2450,7 +2450,7 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, e: &EstimationDite, aff: &A
             )),
         });
     }
-    let cout = CoutDit { titre: UN_JOUR_DE_TRAVAIL, aide: cout, exemples };
+    let cout = CoutDUnJourDit { titre: UN_JOUR_DE_TRAVAIL, aide: cout, exemples };
     // L'ANNEE SI ELLE RESSEMBLE A LA DERNIERE.
     let mut notes = vec![
         "Le travail d'un mois compte au mois où le contrat finit ; la formation qu'on suit n'est pas un travail et ne retire rien.".to_string(),
@@ -2508,10 +2508,10 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, e: &EstimationDite, aff: &A
                 }
             }
             // Le plafond du cumul (art. 30) : les mois ou il ramene le chomage, ou qu'il ne joue pas.
-            let plafonnes: Vec<String> = cm.mois.iter().filter(|m| matches!(m.cumul, Cumul::Plafonne(_))).map(|m| m.mois.libelle(socle::mois::Graphie::Accentuee)).collect();
+            let plafonnes: Vec<String> = cm.mois.iter().filter(|m| matches!(m.cumul, PlafondDuCumul::Plafonne(_))).map(|m| m.mois.libelle(socle::mois::Graphie::Accentuee)).collect();
             let un_plafond = cm.mois.iter().find_map(|m| match m.cumul {
-                Cumul::Plafonne(p) | Cumul::SousLePlafond(p) => Some(p),
-                Cumul::NeJouePas | Cumul::Inconnu => None,
+                PlafondDuCumul::Plafonne(p) | PlafondDuCumul::SousLePlafond(p) => Some(p),
+                PlafondDuCumul::NeJouePas | PlafondDuCumul::Inconnu => None,
             });
             if let Some(p) = un_plafond {
                 notes.push(match plafonnes.is_empty() {

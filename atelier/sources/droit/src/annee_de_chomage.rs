@@ -13,7 +13,7 @@
 //!   conges payes, puis celle de salaires, chacun sur les jours indemnisables du mois, ce qu'un mois n'a pas pris passant
 //!   au suivant. La franchise de conges compte les jours travailles de l'AEM ; celle de salaires, les salaires de la
 //!   periode de reference et le SMIC de son dernier jour. Ce qui manque pour l'une ou l'autre ne devient pas zero : elle
-//!   ne se deduit pas, et l'annee le dit (`Manque`) : son chomage est alors « au plus ».
+//!   ne se deduit pas, et l'annee le dit (`ManqueDeLAnnee`) : son chomage est alors « au plus ».
 //! - UN MOIS TRAVAILLE (art. 30 ; `activite_du_mois`) : ses heures font des jours de travail, qui retirent chacun un
 //!   coefficient de jours indemnisables ; au seuil de l'annexe, rien n'est verse ; le salaire et l'allocation brute du mois
 //!   ne passent pas 1,18 fois le plafond mensuel de la Securite sociale, et l'allocation est alors la difference, ses jours
@@ -134,7 +134,7 @@ pub struct FranchiseDeSalairesComptee {
 /// compte pas), ses salaires ou le SMIC (la franchise de salaires ne se compte pas), le salaire d'un mois travaille ou le
 /// plafond de la Securite sociale d'une annee (le plafond du cumul ne se compte pas ce mois-la).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Manque {
+pub enum ManqueDeLAnnee {
     JoursTravailles,
     SalairesDeLaPeriode,
     Smic,
@@ -145,7 +145,7 @@ pub enum Manque {
 /// UN MOIS DE L'ANNEE (art. 30) : la part du mois que l'annee couvre ; les jours de travail que ses heures font, et ceux
 /// qu'ils retirent ; s'il passe le seuil ; les jours indemnisables qui restent.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ActiviteDuMois {
+pub struct ActiviteIndemnisee {
     pub jours_du_mois: Jours,
     pub heures: Heures,
     pub jours_de_travail: Jours,
@@ -157,7 +157,7 @@ pub struct ActiviteDuMois {
 /// LE PLAFOND DU CUMUL D'UN MOIS (art. 30) : il ne joue pas (aucune activite, ou rien a verser) ; sinon le plafond, et
 /// s'il a ramene l'allocation ; ou il ne se connait pas (le salaire du mois ou le plafond de l'annee manquent).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Cumul {
+pub enum PlafondDuCumul {
     NeJouePas,
     SousLePlafond(Montant),
     Plafonne(Montant),
@@ -170,7 +170,7 @@ pub enum Cumul {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MoisDeChomage {
     pub mois: Mois,
-    pub activite: ActiviteDuMois,
+    pub activite: ActiviteIndemnisee,
     pub delai: Jours,
     pub conges: Jours,
     pub franchise_salaires: Jours,
@@ -179,7 +179,7 @@ pub struct MoisDeChomage {
     pub participation: Montant,
     pub contributions: Option<Montant>,
     pub versee: Montant,
-    pub cumul: Cumul,
+    pub cumul: PlafondDuCumul,
     pub salaire: Option<Montant>,
 }
 
@@ -198,7 +198,7 @@ pub struct AnneeDeChomage {
     pub participation: Montant,
     pub contributions: Option<Montant>,
     pub versee: Montant,
-    pub manques: Vec<Manque>,
+    pub manques: Vec<ManqueDeLAnnee>,
 }
 
 impl AnneeDeChomage {
@@ -276,8 +276,8 @@ pub fn retires(t: &Allocation, annexe: AnnexeChomage, heures: Heures) -> R<Jours
 }
 
 /// UN MOIS DE `jours_du_mois` JOURS (la part que l'annee en couvre) OU L'ON TRAVAILLE `heures` (art. 30) : voir
-/// `ActiviteDuMois`.
-pub fn activite_du_mois(t: &Allocation, annexe: AnnexeChomage, jours_du_mois: Jours, heures: Heures) -> R<ActiviteDuMois> {
+/// `ActiviteIndemnisee`.
+pub fn activite_du_mois(t: &Allocation, annexe: AnnexeChomage, jours_du_mois: Jours, heures: Heures) -> R<ActiviteIndemnisee> {
     let a = t.activite(annexe);
     let jt = jours_de_travail(a, heures)?;
     let retires = jt * a.coefficient;
@@ -286,7 +286,7 @@ pub fn activite_du_mois(t: &Allocation, annexe: AnnexeChomage, jours_du_mois: Jo
         true => Jours::ZERO,
         false => (jours_du_mois - retires).max(Jours::ZERO),
     };
-    Ok(ActiviteDuMois { jours_du_mois, heures, jours_de_travail: jt, retires, au_dela_du_seuil, indemnisables })
+    Ok(ActiviteIndemnisee { jours_du_mois, heures, jours_de_travail: jt, retires, au_dela_du_seuil, indemnisables })
 }
 
 /// LA FRANCHISE DE CONGES PAYES (art. 21 §1 a, art. 23 §2) pour `jours_travailles` jours de l'AEM.
@@ -344,18 +344,18 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
     let conges = match o.jours_travailles {
         Some(j) => Some(franchise_de_conges(t, j)?),
         None => {
-            manques.push(Manque::JoursTravailles);
+            manques.push(ManqueDeLAnnee::JoursTravailles);
             None
         }
     };
     let salaires = match (o.salaires_de_la_periode, o.smic_horaire) {
         (Some(s), Some(smic)) => Some(franchise_de_salaires(t, s, jour.salaire_journalier_moyen, smic, mois.len())?),
         (None, _) => {
-            manques.push(Manque::SalairesDeLaPeriode);
+            manques.push(ManqueDeLAnnee::SalairesDeLaPeriode);
             None
         }
         (Some(_), None) => {
-            manques.push(Manque::Smic);
+            manques.push(ManqueDeLAnnee::Smic);
             None
         }
     };
@@ -396,27 +396,27 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
         let mut jours_payes = indemnisables;
         let mut brute = pour(indemnisables, jour.brute).au_centime();
         let cumul = match (heures.est_nul() || brute.est_nul(), salaire) {
-            (true, _) => Cumul::NeJouePas,
+            (true, _) => PlafondDuCumul::NeJouePas,
             (false, None) => {
-                manques.push(Manque::SalaireDuMois(*m));
-                Cumul::Inconnu
+                manques.push(ManqueDeLAnnee::SalaireDuMois(*m));
+                PlafondDuCumul::Inconnu
             }
             (false, Some(s)) => match pmss(m.annee())? {
                 None => {
-                    if !manques.contains(&Manque::PlafondDeLAnnee(m.annee())) {
-                        manques.push(Manque::PlafondDeLAnnee(m.annee()));
+                    if !manques.contains(&ManqueDeLAnnee::PlafondDeLAnnee(m.annee())) {
+                        manques.push(ManqueDeLAnnee::PlafondDeLAnnee(m.annee()));
                     }
-                    Cumul::Inconnu
+                    PlafondDuCumul::Inconnu
                 }
                 Some(p) => {
                     let plafond = (p * t.activite_reprise.plafond_du_cumul).au_centime();
                     match s + brute > plafond {
-                        false => Cumul::SousLePlafond(plafond),
+                        false => PlafondDuCumul::SousLePlafond(plafond),
                         true => {
                             brute = (plafond - s).max(Montant::ZERO);
                             let part = brute.rapport(jour.brute).ok_or_else(|| socle::fichiers::absent("l'allocation journalière"))?;
                             jours_payes = (Jours::UN * part).a_l_entier_superieur();
-                            Cumul::Plafonne(plafond)
+                            PlafondDuCumul::Plafonne(plafond)
                         }
                     }
                 }
