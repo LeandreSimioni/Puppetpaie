@@ -49,7 +49,9 @@ cadre « / »            la page du logiciel, inchangée : `/`, `/js/…`, `/api
 
 - `index.html` (le style y est), `demo.js` : la page de la démo.
 - `moteur.js` : le worker du moteur. Il corrige au passage deux manques du disque en mémoire du shim : les dates des
-  fichiers (aucune, et rangées aux mauvais octets de `filestat`) et son journal de débogage, allumé par défaut.
+  fichiers (aucune, et rangées aux mauvais octets de `filestat`) et son journal de débogage, allumé par défaut. La page
+  des droits (`/droits/`, `droits/LISEZ-MOI.md`) prend le même worker, sans relais ni cadre : elle tient le port
+  elle-même, et lui fait poser des fichiers dans un dossier du disque en mémoire (le message `poser`).
 - `relais.js` : le service worker.
 - `wasi-shim/` : `@bjorn3/browser_wasi_shim` **0.4.2** (MIT ou Apache-2.0, `LICENSE-MIT`, `LICENSE-APACHE`), les
   fichiers de `dist/` du paquet npm dont la démo a besoin (`wasi.js`, `wasi_defs.js`, `fd.js`, `fs_mem.js`,

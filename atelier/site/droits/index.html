@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Mes droits d'intermittent — PuppetPaie</title>
+<meta name="description" content="Vos heures, ce qui vous manque et jusqu'à quand, et votre allocation estimée, depuis vos bulletins de paie.">
+<link rel="icon" href="/favicon.svg?v=20261103" type="image/svg+xml" sizes="any">
+<link rel="icon" href="/favicon.ico?v=20261103" sizes="32x32">
+<style>
+/* La page des droits d'un intermittent : elle ne décide rien, elle montre ce que la route `droits-des-pieces` du
+   moteur rend (ses cases, ses phrases, ses chiffres), le moteur tournant dans l'onglet comme la démo. Les couleurs et
+   les polices sont celles de puppetpaie.fr. Le style est ici : la politique du site n'admet pas de feuille à part. */
+@font-face{font-family:"EB Garamond";font-style:normal;font-weight:400 800;
+  font-display:swap;src:url("/assets/fonts/eb-garamond-v33-latin-variable.woff2") format("woff2")}
+@font-face{font-family:"Libre Franklin";font-style:normal;font-weight:100 900;
+  font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable.woff2") format("woff2")}
+:root{
+  --papier:#FFFFFF; --encre:#141413; --gris:#6E6B66; --filet:#E6E5E2;
+  --bleu:#2350C4; --voile:#F3F6FD; --rayon:4px;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papier);color:var(--encre);
+     font:400 1rem/1.5 "Libre Franklin",system-ui,sans-serif}
+main{max-width:46rem;margin:0 auto;padding:2.5rem 16px 4rem}
+h1{font:400 clamp(1.7rem,6vw,2.2rem)/1.2 "EB Garamond",Georgia,serif;margin:0 0 .4rem}
+h2{font:400 1.45rem/1.25 "EB Garamond",Georgia,serif;margin:2.4rem 0 .8rem}
+h3{font-size:1rem;font-weight:500;margin:1.6rem 0 .5rem}
+.chapeau{margin:0 0 2rem;color:var(--gris)}
+.cache{display:none}
+/* Le dépôt des bulletins. */
+.depot{display:block;padding:1.6rem 1rem;border:1.5px dashed #C9C7C2;border-radius:var(--rayon);text-align:center;
+  cursor:pointer;background:var(--papier)}
+.depot:hover,.depot.survol{border-color:var(--bleu);background:var(--voile)}
+.depot strong{display:block;font-weight:500;color:var(--bleu)}
+.depot span{font-size:.9rem;color:var(--gris)}
+.depot input{position:absolute;width:1px;height:1px;opacity:0}
+.fichiers{list-style:none;margin:.8rem 0 0;padding:0}
+.fichiers li{display:flex;align-items:baseline;gap:.6rem;padding:.35rem 0;border-bottom:1px solid var(--filet);
+  overflow-wrap:anywhere}
+.fichiers li span{flex:1}
+.phrases{margin:.6rem 0 0;padding:0 0 0 1.1rem;font-size:.9rem;color:var(--gris)}
+.phrases li{margin:.2rem 0;overflow-wrap:anywhere}
+/* Les cases que la route rend. */
+.case{margin:0 0 1.3rem}
+.case > label,.case > .libelle{display:block;font-weight:500;margin:0 0 .35rem}
+.aide{margin:.3rem 0 0;font-size:.85rem;color:var(--gris)}
+input[type=text],input[type=date],select{width:100%;font:inherit;font-size:1rem;padding:.55rem .65rem;
+  border:1px solid #C9C7C2;border-radius:var(--rayon);background:var(--papier);color:var(--encre)}
+input[type=text]:focus,input[type=date]:focus,select:focus{border-color:var(--encre);outline:none}
+input[type=checkbox]{width:1.15rem;height:1.15rem;margin:0;accent-color:var(--bleu)}
+.rangee{display:grid;grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:.5rem .7rem;align-items:end;
+  padding:.8rem;margin:0 0 .6rem;background:var(--voile);border-radius:var(--rayon)}
+.rangee label{display:block;font-size:.85rem;color:var(--gris);margin:0 0 .2rem}
+.rangee .oui-non{display:flex;align-items:center;gap:.5rem;font-size:.9rem;padding:.55rem 0}
+.rangee .oui-non label{margin:0;color:var(--encre)}
+button{font:500 .95rem/1.2 "Libre Franklin",sans-serif;padding:.6rem 1rem;border-radius:var(--rayon);
+  border:1px solid #C9C7C2;background:var(--papier);color:var(--encre);cursor:pointer}
+button:hover{border-color:var(--bleu);color:var(--bleu)}
+button.lien{border:0;padding:0;background:none;color:var(--bleu);font-weight:400;font-size:.9rem;text-decoration:underline;
+  text-underline-offset:2px}
+/* Ce que la route dit. */
+.phrase{margin:0 0 1rem;font-size:1.1rem}
+.butoir{margin:0 0 1.2rem;padding:.9rem 1.1rem;border-left:3px solid var(--bleu);background:var(--voile)}
+.butoir p{margin:0 0 .5rem}
+.butoir p:first-child{font-weight:500}
+.butoir .reference{margin:0;font-size:.82rem;color:var(--gris)}
+.tableau{overflow-x:auto;margin:0 0 1rem}
+table{border-collapse:collapse;width:100%;font-size:.9rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--filet);vertical-align:top}
+th{font-weight:500;color:var(--gris);white-space:nowrap}
+td.n,th.n{text-align:right;white-space:nowrap}
+.estimation{margin:0 0 1rem}
+.estimation p{margin:0 0 .4rem}
+details{margin:.3rem 0 1rem;font-size:.9rem}
+summary{cursor:pointer;color:var(--bleu)}
+.avis{margin:1rem 0;padding:.8rem 1rem;border-left:3px solid var(--bleu);background:var(--voile)}
+.pied{margin:3rem 0 0;font-size:.8rem;color:var(--gris)}
+.pied.signature{margin-top:.6rem;padding-top:.8rem;border-top:1px solid var(--filet)}
+a{color:var(--bleu);text-underline-offset:2px}
+.pied a{color:inherit}
+:focus-visible{outline:2px solid var(--bleu);outline-offset:3px}
+</style>
+<main>
+  <h1>Mes droits d'intermittent</h1>
+  <p class="chapeau">Déposez vos bulletins de paie, de tous vos employeurs, ou remplissez des lignes : la page compte vos heures, dit ce qui vous manque et jusqu'à quand, et estime votre allocation. Elle ne garde rien : fermer l'onglet efface tout.</p>
+
+  <div id="avis" class="avis cache" role="alert"></div>
+
+  <label class="depot" id="depot">
+    <strong>Déposer mes bulletins</strong>
+    <span>Glissez-les ici, ou cliquez pour les choisir.</span>
+    <input type="file" id="choisir" multiple>
+  </label>
+  <ul class="fichiers" id="fichiers"></ul>
+  <ul class="phrases" id="pieces"></ul>
+
+  <div id="cases"></div>
+
+  <section id="resultat" aria-live="polite"></section>
+
+  <noscript><p class="avis">Cette page a besoin de JavaScript.</p></noscript>
+  <p class="pied signature">Une page de <a href="https://puppetpaie.fr/">PuppetPaie</a>, le logiciel de paie libre et gratuit, codé et maintenu par la <a href="https://ueueue.eu/">Compagnie UEUEUE</a>.</p>
+</main>
+<script src="droits.js"></script>
+</html>

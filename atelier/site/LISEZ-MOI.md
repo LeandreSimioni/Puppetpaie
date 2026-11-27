@@ -3,7 +3,8 @@
 Ce dossier **est** puppetpaie.fr : ce qui est ici, sur `main`, est ce que le site sert. Sa racine est la racine du
 domaine (`index.html` est la page d'accueil, `utilisation/` et `confidentialite/` ses deux pages, `fiche/` la page où
 un salarié prépare sa réponse à « Remplir ma fiche », `demo/` la démo du logiciel dans le navigateur, qui a sa propre
-politique de sécurité : `demo/LISEZ-MOI.md`).
+politique de sécurité : `demo/LISEZ-MOI.md` ; `droits/` la page où un intermittent voit ses droits depuis ses
+bulletins, par le moteur de la démo, qui a aussi la sienne : `droits/LISEZ-MOI.md`).
 
 ## Comment il part en ligne
 

@@ -2927,7 +2927,10 @@ se connaît pas ne compte que si le brut passe quatre fois le plus bas possible,
 l'estimation attend, et la route demande le début du contrat de la paie), et une allocation
 visée dit le salaire de référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion, et ce qui
 arrête la hausse. Une DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du
-salaire de référence, et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures.
+salaire de référence, et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui
+porte une personne, les lignes prévues se comptent seules. La route rend les cases de sa charge telles qu'on les saisit
+(`cases`, chacune tirée de la déclaration de son champ) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les
+dessine, le moteur tournant dans l'onglet par le worker de la démo, et pose les bulletins déposés dans `mes-pieces/`.
 
 ### Le modèle d'un contrat, et le contrat parti
 
