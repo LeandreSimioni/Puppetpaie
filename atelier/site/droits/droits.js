@@ -558,6 +558,10 @@ var dire = null;
       corps.append(r);
     });
     rangs.forEach(function (r, n) { if (!placees[n]) ligneSaisie(n, null); });
+    // Dans le tableau, la nature se dit court (« Technicien », « Artiste ») : l'annexe est dite en haut.
+    var court = function (x) { return x.replace(/ \(annexe \d+\)$/, ""); };
+    corps.querySelectorAll("option").forEach(function (o) { o.textContent = court(o.textContent); });
+    corps.querySelectorAll("td").forEach(function (td) { if (!td.children.length) td.textContent = court(td.textContent); });
     table.append(corps);
     var d = el("div", "tableau");
     d.append(table);
