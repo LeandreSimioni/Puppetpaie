@@ -46,17 +46,9 @@
     "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#evenements-dsn-2013": "Arrêté du 2 juillet 2013 (délai des signalements de la DSN)"
   },
   "annexes": {
-    "quoi": "Ce que l'article 30 des annexes dit d'un mois travaillé pendant l'indemnisation : les heures font des jours de travail (10 h par jour en X, 8 h en VIII), chaque jour retire un coefficient de jours d'allocation, et au-delà d'un nombre de jours aucune allocation n'est versée ; un technicien n'a que 208 heures retenues par mois pour ses 507 heures (250 avec plusieurs employeurs).",
-    "note": "Textes : atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt et unedic-annexe8-convention-20241115.txt, art. 3 §1 et art. 30 ; le guide France Travail (chomage-intermittents/francetravail-guide-intermittents-20261020.txt) pour les 208 heures et les 12 heures d'un cachet à l'article 30.",
-    "X": {
-      "heures_par_jour": 10,
-      "coefficient": 1.3,
-      "jours_sans_allocation": 27
-    },
+    "quoi": "Un technicien n'a que 208 heures retenues par mois pour ses 507 heures (250 avec plusieurs employeurs). Ce que l'article 30 des annexes dit d'un mois travaillé pendant l'indemnisation (les heures d'un jour de travail, le coefficient, le seuil) est dans allocation-intermittents.json (`activite_reprise`).",
+    "note": "Textes : le guide France Travail (chomage-intermittents/francetravail-guide-intermittents-20261020.txt) pour les 208 heures.",
     "VIII": {
-      "heures_par_jour": 8,
-      "coefficient": 1.4,
-      "jours_sans_allocation": 26,
       "heures_retenues_par_mois": 208,
       "heures_retenues_plusieurs_employeurs": 250
     }

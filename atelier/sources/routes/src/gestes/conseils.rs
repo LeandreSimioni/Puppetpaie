@@ -121,7 +121,9 @@ struct Banque {
     conseils: Vec<Conseil>,
 }
 
-/// Ce que l'article 30 des annexes dit d'un mois travaille pendant l'indemnisation, par annexe.
+/// Les heures retenues par mois d'un technicien pour ses 507 heures (208, 250 avec plusieurs employeurs). L'article 30
+/// lui-meme (les heures d'un jour de travail, le coefficient, le seuil) est dans `allocation-intermittents.json`
+/// (`droit::allocation::ActiviteReprise`).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Annexes {
@@ -129,32 +131,20 @@ struct Annexes {
     quoi: socle::forme::NonLue,
     #[serde(default, deserialize_with = "socle::forme::non_lue")]
     note: socle::forme::NonLue,
-    #[serde(rename = "X")]
-    x: Art30,
     #[serde(rename = "VIII")]
-    viii: Art30Techniciens,
+    viii: HeuresRetenuesDesTechniciens,
 }
 
-/// Les constantes de l'article 30 pour une annexe.
+/// Les heures retenues par mois d'un technicien pour ses 507 heures.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Art30 {
-    heures_par_jour: HeuresParUnite,
-    coefficient: Coefficient,
-    jours_sans_allocation: Jours,
-}
-
-/// L'article 30 de l'annexe VIII, et les heures retenues par mois d'un technicien pour ses 507 heures (208, 250 avec
-/// plusieurs employeurs).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Art30Techniciens {
-    heures_par_jour: HeuresParUnite,
-    coefficient: Coefficient,
-    jours_sans_allocation: Jours,
+struct HeuresRetenuesDesTechniciens {
     heures_retenues_par_mois: Heures,
     heures_retenues_plusieurs_employeurs: Heures,
 }
+
+/// Les constantes de l'article 30 pour une annexe, telles que la table de l'allocation les livre.
+type Art30 = droit::allocation::ActiviteReprise;
 
 /// La phrase de la fenetre des droits que la phrase nomme : `{debut}` et `{fin}`.
 #[derive(Deserialize)]
@@ -246,13 +236,11 @@ impl Banque {
         })
     }
 
-    /// L'article 30 d'une annexe.
-    fn art30(&self, annexe: Annexe) -> Art30 {
-        match annexe {
-            Annexe::X => Art30 { heures_par_jour: self.annexes.x.heures_par_jour, coefficient: self.annexes.x.coefficient, jours_sans_allocation: self.annexes.x.jours_sans_allocation },
-            Annexe::Viii => Art30 { heures_par_jour: self.annexes.viii.heures_par_jour, coefficient: self.annexes.viii.coefficient, jours_sans_allocation: self.annexes.viii.jours_sans_allocation },
-        }
-    }
+}
+
+/// L'article 30 d'une annexe (`allocation-intermittents.json`).
+fn art30(annexe: Annexe) -> R<Art30> {
+    Ok(droit::allocation::allocation()?.activite(annexe).clone())
 }
 
 /// Les annexes dont parle un conseil sur ce salarie : la sienne, lue de son metier ; les deux quand son metier ne la
@@ -875,7 +863,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
             continue;
         }
         let Some(annexe) = annexe_de(&p.salarie)? else { continue };
-        let a30 = b.art30(annexe);
+        let a30 = art30(annexe)?;
         let cle = p.salarie.id.to_string();
         // Chaque paie comptee ici l'a ete au mois de son salarie, juste avant.
         let Some(&(heures_mois, cachets_mois)) = du_mois.get(&cle) else { continue };
@@ -1062,7 +1050,10 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
     let qui = prenom(fiche, cle);
     let fenetre = phrase_fenetre(&b, &pos, anniv);
     let annexe = annexe_de(fiche)?;
-    let a30 = annexe.map(|a| b.art30(a));
+    let a30 = match annexe {
+        Some(a) => Some(art30(a)?),
+        None => None,
+    };
     let heures = pos.heures_ouverture()?;
     let base = |extra: Vec<(&str, Valeur)>| -> Valeurs {
         let mut v = Valeurs::new();

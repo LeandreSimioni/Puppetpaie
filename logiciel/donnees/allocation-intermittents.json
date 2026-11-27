@@ -93,5 +93,129 @@
       ],
       "raisonnement": "Les annexes limitent l'allocation à 34,4 % de 1/365e du plafond annuel des contributions, que l'article 49 fixe à quatre fois le plafond de la Sécurité sociale ; le guide de France Travail en donne la valeur depuis le 1er janvier 2024, 174,80 €, soit 34,4 % de 4 x 46 368 € (le plafond annuel de 2024) divisés par 365."
     }
+  },
+  "activite_reprise": {
+    "heures_par_cachet": 12,
+    "plafond_du_cumul": 1.18,
+    "quoi": "Un mois travaillé pendant l'indemnisation (art. 30) : ses heures, un cachet comptant 12 heures, font des jours de travail ; chaque jour de travail retire un coefficient de jours indemnisables ; au-delà d'un seuil de jours de travail, rien n'est versé ; le salaire et l'allocation du mois ne passent pas 1,18 fois le plafond mensuel de la Sécurité sociale : au-delà, l'allocation est la différence, et ses jours s'arrondissent à l'entier supérieur. Lue par `droit::allocation::ActivitesReprises` ; `droit::annee_de_chomage` en tire l'année qui vient.",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "sont cumulables avec les allocations journalières à servir au titre du nombre de jours indemnisables déterminé à l'alinéa précédent au cours du même mois, dans la limite de 1,18 fois le plafond mensuel de la sécurité sociale"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "VIII", "citation": "sont cumulables avec les allocations journalières à servir au titre du nombre de jours indemnisables déterminé à l'alinéa précédent au cours du même mois, dans la limite de 1,18 fois le plafond mensuel de la sécurité sociale"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "l'allocataire est indemnisé de la différence entre le plafond de cumul et la somme des rémunérations perçues pour le mois civil considéré. En cas d'application de ce plafond, le nombre de jours indemnisables, arrondi à l'entier supérieur, correspond au quotient de la différence mentionnée à l'alinéa ci-dessus par le montant de l'allocation journalière"},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "Le cachet est valorisé/comptabilisé à hauteur […] de 12 heures quelle que soit la qualification"}
+      ],
+      "raisonnement": "Les annexes (art. 30) comptent les jours de travail du mois en heures et bornent le cumul du salaire et de l'allocation à 1,18 fois le plafond mensuel ; le guide de France Travail, qui décrit le même calcul mois par mois (p. 16), y compte un cachet pour 12 heures, quelle que soit la qualification que l'employeur lui donne."
+    },
+    "VIII": {
+      "heures_par_jour": 8,
+      "coefficient": 1.4,
+      "jours_sans_allocation": 26,
+      "quoi": "Annexe VIII (les techniciens) : huit heures font un jour de travail, au mois (art. 30) comme au salaire journalier moyen (art. 19) ; un jour de travail retire 1,4 jour indemnisable ; à 26 jours de travail dans le mois, rien n'est versé.",
+      "source": {
+        "sources": [
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "VIII", "citation": "le nombre de jours de travail au cours du mois civil est déterminé en fonction du nombre d'heures de travail effectuées à raison de huit heures par jour"},
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "VIII", "citation": "est égal à la différence entre le nombre de jours calendaires du mois et le nombre de jours de travail affecté du coefficient 1,4"},
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "VIII", "citation": "En cas d'exercice d'une activité au moins égale à 26 jours de travail par mois calendaire"},
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "19", "annexe": "VIII", "citation": "par le nombre de jours de travail déterminé en fonction des heures de travail à raison de huit heures par jour"}
+        ]
+      }
+    },
+    "X": {
+      "heures_par_jour": 10,
+      "coefficient": 1.3,
+      "jours_sans_allocation": 27,
+      "quoi": "Annexe X (les artistes) : dix heures font un jour de travail, au mois (art. 30) comme au salaire journalier moyen (art. 19) ; un jour de travail retire 1,3 jour indemnisable ; à 27 jours de travail dans le mois, rien n'est versé.",
+      "source": {
+        "sources": [
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "le nombre de jours de travail au cours du mois civil est déterminé en fonction du nombre d'heures de travail effectuées à raison de dix heures par jour"},
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "est égal à la différence entre le nombre de jours calendaires du mois et le nombre de jours de travail affecté du coefficient 1,3"},
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "En cas d'exercice d'une activité au moins égale à 27 jours de travail par mois calendaire"},
+          {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "19", "annexe": "X", "citation": "par le nombre de jours de travail déterminé en fonction des heures de travail à raison de dix heures par jour"}
+        ]
+      }
+    }
+  },
+  "participation": {
+    "taux": 0.93,
+    "quoi": "La participation au financement des retraites complémentaires (art. 19) : 0,93 % du salaire journalier moyen (le salaire de référence sur les jours de travail que font ses heures), retenue sur l'allocation sans la faire passer sous l'allocation journalière minimale.",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "19", "annexe": "X", "citation": "Une participation de 0,93 % assise sur le salaire journalier moyen est retenue sur l'allocation déterminée en application des articles 14 à 18."},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "19", "annexe": "VIII", "citation": "Une participation de 0,93 % assise sur le salaire journalier moyen est retenue sur l'allocation déterminée en application des articles 14 à 18."},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "19", "annexe": "X", "citation": "Le prélèvement de cette participation ne peut avoir pour effet de déterminer une allocation journalière inférieure à l'allocation journalière minimale mentionnée à l'article 14."}
+      ]
+    }
+  },
+  "delai_d_attente": {
+    "jours": 7,
+    "quoi": "Le délai d'attente (art. 22) : sept jours, à l'ouverture des droits, sur les premiers jours indemnisables ; il vient avant les franchises (art. 23 §1).",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "22", "annexe": "X", "citation": "La prise en charge est reportée au terme d'un délai d'attente de sept jours."},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "23", "annexe": "VIII", "citation": "L'application des dispositions des articles 21 et 22 s'effectue dans l'ordre suivant : différé d'indemnisation, délai d'attente, franchise de congés payés, franchise."}
+      ]
+    }
+  },
+  "franchise_conges": {
+    "jours_de_conges": 2.5,
+    "par_jours_travailles": 24,
+    "plafond": 30,
+    "forfait": 2,
+    "forfait_au_dela": 3,
+    "seuil_du_forfait": 24,
+    "quoi": "La franchise de congés payés (art. 21 §1 a, art. 23 §2) : 2,5 jours par 24 jours travaillés de la période de référence (les jours de travail effectifs de l'AEM), au plus 30, arrondis au nombre entier obtenu ; elle se prend sur les jours indemnisables, 2 jours par mois quand elle ne passe pas 24 jours, 3 au-delà, ce qu'un mois n'a pas pris s'ajoutant au suivant.",
+    "note": "À 24 jours tout juste, les annexes ne disent ni 2 ni 3 (« inférieur à 24 », « supérieur à 24 ») ; le guide de France Travail dit 2 (« ≤ à 24 jours »), la circulaire Unédic 2016-25 disait 3 (« supérieur ou égal ») : le moteur suit le guide, le texte de l'opérateur en vigueur.",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "21", "annexe": "X", "citation": "à raison de 2,5 jours de congés par période de 24 jours travaillés, dans la limite de 30 jours"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "23", "annexe": "X", "citation": "deux jours par mois, lorsque le nombre de jours de congés acquis est inférieur à 24 jours ; - ou de trois jours par mois, lorsque le nombre de jours de congés acquis est supérieur à 24 jours"},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "2 jours par mois si la franchise totale […] est ≤ à 24 jours"},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "Elle correspond à un nombre de jours (arrondi […] au nombre entier obtenu) déterminé de la"},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "AEM : ce sont les jours de travail effectifs […] indiqués sur l'AEM."},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "Tout forfait non appliqué sur un mois sera […] reporté sur le mois suivant et s'ajoutera au"}
+      ],
+      "raisonnement": "Les annexes fixent la franchise (2,5 jours par 24 jours travaillés, 30 au plus) et son rythme (2 ou 3 jours par mois) ; le guide de France Travail dit qu'elle s'arrondit au nombre entier obtenu (exemple 10 : 176 jours travaillés font 18 jours), que les jours travaillés sont ceux de l'AEM, qu'à 24 jours le forfait est de 2, et que ce qu'un mois n'a pas pris passe au suivant."
+    }
+  },
+  "franchise_salaires": {
+    "jours_deduits": 27,
+    "heures_par_semaine": 35,
+    "semaines_par_an": 52,
+    "mois_par_an": 12,
+    "jours_par_semaine": 7,
+    "smic_journaliers": 3,
+    "mois_de_repartition": 8,
+    "quoi": "La franchise de salaires (art. 21 §1 b, art. 23 §2) : [salaires de la période de référence ÷ SMIC mensuel] x [salaire journalier moyen ÷ 3 x SMIC journalier] - 27 jours, arrondie à l'entier inférieur ; le SMIC est celui du dernier jour de la période de référence, sur 35 heures par semaine : le mensuel, SMIC horaire x 35 x 52 / 12, le journalier, SMIC horaire x 35 / 7, l'un et l'autre au centime. Elle se répartit sur les huit premiers mois, chaque mois un huitième arrondi à l'entier supérieur, ce qu'un mois n'a pas pris s'ajoutant au suivant ; ce qui reste au bout des huit mois passe aux suivants.",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "21", "annexe": "X", "citation": "de la valeur du salaire journalier minimum interprofessionnel de croissance au dernier jour de la période de référence déterminé sur la base de 35 heures par semaine, diminuée de 27 jours selon la formule suivante : [Salaire de la période de référence ÷ SMIC mensuel] x [Salaire journalier moyen ÷ 3 x SMIC journalier] - 27 jours"},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "23", "annexe": "X", "citation": "Le délai de franchise prévu au b du §1er de l'article 21 est réparti sur les huit premiers mois de la période d'indemnisation en fonction du nombre de jours déterminé. Lorsqu'à l'expiration de ces huit mois, la franchise n'est pas épuisée, elle est reportée sur les mois suivants."},
+        {"fichier": "atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt", "emetteur": "unedic", "citation": "Le résultat obtenu est arrondi au nombre entier immédiatement inférieur."},
+        {"fichier": "atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt", "emetteur": "unedic", "citation": "SMIC mensuel sur la base de 35 heures hebdomadaires = (SMIC horaire x 35 x 52) / 12, arrondi au centime le plus proche"},
+        {"fichier": "atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt", "emetteur": "unedic", "citation": "SMIC journalier = SMIC horaire multiplié par 35/7 arrondi au centime le plus proche"},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "à un nombre de jours (arrondi à l'entier […] supérieur) déterminé de la manière suivante"},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "Franchise salaires totale / nombre de mois […] civils de la période d'indemnisation, limité à"}
+      ],
+      "raisonnement": "Les annexes de 2024 donnent la formule, le SMIC du dernier jour de la période de référence sur 35 heures par semaine et la répartition sur huit mois ; la circulaire Unédic 2016-25, sur la même formule des annexes de 2016, dit le SMIC mensuel (35 x 52 / 12 heures) et le SMIC journalier (35 / 7 heures), au centime, et l'arrondi du total à l'entier inférieur ; le guide de France Travail dit la franchise du mois, le total sur le nombre de mois civils limité à huit, arrondi à l'entier supérieur."
+    }
+  },
+  "contributions": {
+    "abattement": 1.75,
+    "csg": 6.2,
+    "csg_reduite": 3.8,
+    "crds": 0.5,
+    "plancher": 62,
+    "quoi": "La CSG et la CRDS sur l'allocation (circulaire Unédic 2026-06, fiche 2, § 7) : sur l'allocation brute abattue de 1,75 %, la CSG à 6,2 % ou au taux réduit de 3,8 %, et la CRDS à 0,5 % ; exonérées l'une et l'autre selon le revenu fiscal de référence ; elles ne font pas passer l'allocation versée sous 62 € (au 1er juin 2026). Le taux dépend de la personne : la case qu'elle choisit (`droit::annee_de_chomage::TauxDeCsg`).",
+    "note": "INFÉRENCE : l'allocation « versée » sous laquelle elles ne la font pas passer est celle qui reste après la participation de 0,93 % (art. 19).",
+    "source": {
+      "sources": [
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "La contribution sociale généralisée de 6,2 % est prélevée sur le montant brut de l'allocation d'aide au retour à l'emploi, après abattement de 1,75 % au titre des frais professionnels."},
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "soit d'une exonération partielle de la CSG en étant assujettis à la CSG au taux réduit de 3,8 %."},
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "Une contribution pour le remboursement de la dette sociale de 0,5 % est précomptée sur le montant brut de l'allocation d'aide au retour à l'emploi après abattement de 1,75 %"},
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "Le prélèvement de la CSG ne doit pas avoir pour conséquence de réduire le montant de l'allocation versée à un montant inférieur déterminé à partir du SMIC journalier, soit 62 €"},
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "certains allocataires peuvent bénéficier d'une exonération totale de la CRDS"}
+      ]
+    }
   }
 }
