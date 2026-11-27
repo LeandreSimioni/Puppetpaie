@@ -82,6 +82,11 @@
       }
     };
     worker.postMessage({ quoi: "demarrer" });
+    // LE DÉPÔT SE VOIT TOUT DE SUITE (Léandre, 27/11/2026 : « Le dépôt doit être visible tout de suite ») : le moteur
+    // met quelques secondes à se charger ; en attendant sa première réponse, la page pose le dépôt avec les mots que la
+    // route lui donne (`DEPOSER`, `DEPOSER_AIDE`, routes/src/accueil/droits_des_pieces.rs). Les bulletins déposés
+    // attendent le moteur ; sa première réponse remplace l'écran par les blocs qu'elle rend.
+    $("ecran").append(depot({ libelle: "Déposer mes bulletins", aide: "Glissez-les ici, ou cliquez pour les choisir.", dossier: null }));
   }
 
   // La route, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }). Une réponse qui ne se lit pas est une
@@ -211,7 +216,8 @@
       avis("Défaut du logiciel : " + texteDErreur(e));
     }).then(function () {
       enCours = false;
-      if (encore) calculer();
+      // Des bulletins déposés avant que la route ait nommé leur dossier se posent maintenant.
+      if (encore || (aPoser && dossier !== null)) calculer();
     });
   }
 
