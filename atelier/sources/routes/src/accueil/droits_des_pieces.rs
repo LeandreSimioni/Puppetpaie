@@ -18,7 +18,8 @@
 //!
 //! L'ANNEXE (artiste, annexe X ; technicien, annexe VIII) : la charge la dit (`annexe`, une liste fermee) ; sinon, celle
 //! que les pieces disent toutes (`annexe_lue` : la case d'une AEM, le statut ou l'emploi d'un bulletin, des cachets) se
-//! propose ; sans l'une ni l'autre, les heures se disent et l'allocation attend le choix.
+//! propose, la reponse la nomme et sa case passe dans le detail ; sans l'une ni l'autre, les heures se disent et
+//! l'allocation attend le choix.
 //!
 //! LES CASES : la route rend les cases de sa charge telles qu'on les saisit (`cases` : libelle, forme, valeur, choix,
 //! parties des rangees), chacune tiree de la declaration de son champ ; la page de puppetpaie.fr les dessine, et qui lit
@@ -81,7 +82,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"annexe":"X","allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "phrase (la réponse : les heures, jusqu'à quand, l'allocation), et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), la réponse, l'allocation visée (quand une allocation s'estime), l'annexe (une case), la date anniversaire (une case), les paies, le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces, le détail ; sans calcul : la personne, l'annexe, la date anniversaire, les paies (vides, quand aucune pièce ne porte de personne), le dépôt, les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), prerempli (l'annexe que les pièces disent), choix, parties, ajouter et retirer d'une rangée, dit. reponse : nom (seulement quand les pièces portent plusieurs personnes), couleur (vert : les heures sont là), heures (les 507 h sur les 12 mois avant la dernière fin de contrat, ou ce qui manque, compté à partir d'aujourd'hui quand cette fin est passée), jusqu_a (quand il en manque : la date anniversaire à venir, sinon le jour où la plus ancienne paie sort des 12 mois), allocation (celle de l'annexe, ou ce qui l'attend), sous. visee : case (« Je voudrais »), unite, reponse (ce qu'il faudrait par cachet ou de l'heure), reinitialiser (vide la case). paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie, dans l'ordre des fins : fin, cachets, heures, enseignement, formation, brut, et le brut visé quand l'allocation visée est remplie ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. details (replié ; la personne choisie, ou les lignes prévues seules sans pièce) : libelle, nir, fenetre, compte [quoi, valeur], heures_exigees, manque, estimation (de l'annexe : a, b, c, calculee, salaire_de_reference, retenue, paies : un tableau avec plafond, limite, ce qui compte), lignes (le jour butoir, l'estimation, ce qui arrête la hausse, les notes)",
+    rend: "phrase (la réponse : les heures, jusqu'à quand, l'allocation), et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), la réponse, l'allocation visée (quand une allocation s'estime), l'annexe (une case, quand les pièces ne la disent pas ou en disent deux ; sinon dans le détail), la date anniversaire (une case), les paies, le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces, le détail ; sans calcul : la personne, l'annexe, la date anniversaire, les paies (vides, quand aucune pièce ne porte de personne), le dépôt, les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), prerempli (l'annexe que les pièces disent), choix, parties, ajouter et retirer d'une rangée, dit. reponse : nom (seulement quand les pièces portent plusieurs personnes), couleur (vert : les heures sont là), heures (les 507 h sur les 12 mois avant la dernière fin de contrat, ou ce qui manque, compté à partir d'aujourd'hui quand cette fin est passée), jusqu_a (quand il en manque : la date anniversaire à venir, sinon le jour où la plus ancienne paie sort des 12 mois), allocation (celle de l'annexe, ou ce qui l'attend), sous. visee : case (« Je voudrais »), unite, reponse (ce qu'il faudrait par cachet ou de l'heure), reinitialiser (vide la case). paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie que les 12 mois comptent, dans l'ordre des fins : fin, cachets, heures, enseignement, formation, brut, et le brut visé quand l'allocation visée est remplie ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. details (replié ; la personne choisie, ou les lignes prévues seules sans pièce) : libelle, annexe (sa case, quand les pièces la disent), nir, fenetre, compte [quoi, valeur], heures_exigees, manque, estimation (de l'annexe : a, b, c, calculee, salaire_de_reference, retenue, paies : un tableau avec plafond, limite, ce qui compte), lignes (le jour butoir, l'estimation, ce qui arrête la hausse, les notes)",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -218,8 +219,8 @@ const REINITIALISER: &str = "Réinitialiser";
 /// viennent là pour savoir s'ils ont leurs heures […] c'est la première information qu'il faut voir ») ; chaque case
 /// porte ce que la charge y dit, ses nombres tels qu'on les lit (`a_lire`).
 /// - Avec un calcul (`CalculDesDroits`) : la personne quand elle se choisit ; la reponse (les heures, l'allocation) ;
-///   l'allocation visee quand une allocation s'estime ou que la charge en dit une ; l'annexe ; la date anniversaire ; le
-///   tableau des paies, ou les lignes prevues se saisissent ; le depot ; les dates d'embauche quand la route en demande
+///   l'allocation visee quand une allocation s'estime ou que la charge en dit une ; l'annexe, quand les pieces ne la disent
+///   pas (sinon sa case est dans le detail) ; la date anniversaire ; le tableau des paies, ou les lignes prevues se saisissent ; le depot ; les dates d'embauche quand la route en demande
 ///   ou que la charge en dit ; les pieces deposees ; le detail du calcul, replie.
 /// - Sans calcul : la personne quand elle se choisit ; l'annexe ; la date anniversaire ; le tableau des paies, vide, ou
 ///   les lignes prevues se saisissent, quand aucune piece ne porte de personne (`sans_personne`) ; le depot ; les pieces
@@ -266,7 +267,14 @@ fn ecran(
                 let case = case_simple(cle!(ChargeDroitsDesPieces, allocation_visee), valeur)?;
                 ecran.push(BlocDesDroits::Visee(ViseeDite { case, unite: PAR_JOUR, reponse: x.visee, reinitialiser: REINITIALISER }));
             }
-            ecran.push(BlocDesDroits::Case(annexe));
+            // La case de l'annexe ne se montre que si les paies ne la disent pas (ou en disent deux) ; quand elles la
+            // disent, la reponse la nomme et la case passe dans le detail (Léandre, 27/11/2026 : « technicien, c'est
+            // seulement dans le cas où il n'aurait pas deviné sur le bulletin »).
+            let mut annexe_au_detail = None;
+            match x.annexe.proposee {
+                Some(_) => annexe_au_detail = Some(annexe),
+                None => ecran.push(BlocDesDroits::Case(annexe)),
+            }
             ecran.push(anniversaire);
             ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: x.paies, lignes }));
             ecran.push(depot);
@@ -278,7 +286,7 @@ fn ecran(
                 let case = case_en_rangees(cle!(ChargeDroitsDesPieces, debuts), c.debuts.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_EMBAUCHE, RETIRER_LA_DATE)?;
                 ecran.push(BlocDesDroits::Case(case.disant(x.demande.into_iter().collect())));
             }
-            details = Some(x.details);
+            details = Some(DetailsDits { annexe: annexe_au_detail, ..x.details });
         }
         None => {
             ecran.push(BlocDesDroits::Case(annexe));
@@ -955,7 +963,8 @@ fn declaree(p: &PaieComptee, cle: &droit::contexte::IdSalarie) -> Option<Declare
 
 // ------------------------------------------------------------------ ce que la route rend
 
-/// UNE LIGNE PAR PAIE, en tableau (`socle::ecran::TableauRendu`), dans l'ordre des fins (`droits_d_une_personne`) : sa
+/// UNE LIGNE PAR PAIE `paies` (celles que la fenetre compte, `droits_d_une_personne`), en tableau
+/// (`socle::ecran::TableauRendu`), dans l'ordre des fins : sa
 /// fin, ses cachets, ses heures (hors enseignement), ses heures d'enseignement et de formation, son brut ; un compteur
 /// que la piece ne dit pas reste vide. L'employeur et la piece ne s'y montrent pas (Leandre, 27/11/2026 : « ça
 /// alourdit ») : la liste des pieces les dit. Avec une allocation visee (`visee` : son montant, et le brut vise de
@@ -964,7 +973,7 @@ fn declaree(p: &PaieComptee, cle: &droit::contexte::IdSalarie) -> Option<Declare
 /// Les lignes prevues s'y saisissent, chacune a sa place parmi les paies (son rang dans la case `previsionnel`) ; une
 /// ligne prevue qui ne se compte pas (ni cachets ni heures) prend aussi sa place, a sa fin : `lignes`, celles de la
 /// charge.
-fn tableau_des_paies(paies: &[PaieComptee], lignes: &[LignePrevue], visee: Option<(Montant, &BTreeMap<String, Montant>)>) -> TableauRendu {
+fn tableau_des_paies(paies: &[&PaieComptee], lignes: &[LignePrevue], visee: Option<(Montant, &BTreeMap<String, Montant>)>) -> TableauRendu {
     let mut colonnes = vec![
         ColonneRendue::de_texte("Fin").tenant(&["fin"]),
         ColonneRendue::de_nombres("Cachets").tenant(&["cachets"]),
@@ -1077,9 +1086,12 @@ struct ViseeDite {
 /// LE DETAIL DU CALCUL, replie en bas de l'ecran : son libelle ; la fenetre ; le compte des heures (`[quoi, valeur]`,
 /// jusqu'au seuil) ; le seuil et ce qui manque ; l'estimation de l'annexe de la personne (ses parties et les paies du
 /// salaire de reference) ; et une phrase par ligne (le jour butoir, l'estimation, ce que les pieces ont d'etrange).
+/// Quand les pieces disent l'annexe, sa case y est, en tete (`annexe`) : pour qui la lecture tromperait.
 #[derive(Debug, Serialize)]
 struct DetailsDits {
     libelle: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annexe: Option<crate::fiches::CaseDeLaFiche<&'static str>>,
     /// Le numero de la personne ; aucun : les lignes prevues seules, sans piece (`LIGNES_SEULES`).
     #[serde(skip_serializing_if = "Option::is_none")]
     nir: Option<Nir>,
@@ -1411,6 +1423,8 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
                 (None, _) => "Votre allocation dépend de votre métier : dites si vous êtes artiste ou technicien".to_string(),
             };
             let sous = match annexe {
+                // Lue sur les paies, elle le dit : sa case est dans le detail (`ecran`).
+                Some(a) if c.annexe.is_none() => format!("Sur les 12 mois au {} · {}, lue sur vos paies", fin.jj_mm_aaaa(), annexe_en_petit(a)),
                 Some(a) => format!("Sur les 12 mois au {} · {}", fin.jj_mm_aaaa(), annexe_en_petit(a)),
                 None => format!("Sur les 12 mois au {}", fin.jj_mm_aaaa()),
             };
@@ -1470,7 +1484,11 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     }
     // La colonne de l'allocation visee, quand une paie s'y augmente.
     let par_paie = visee.as_ref().map(|v| &v.par_paie).filter(|p| !p.is_empty());
-    let paies = tableau_des_paies(&comptees, lignes_prevues, c.allocation_visee.zip(par_paie));
+    // Le tableau ne montre que les paies des pieces que la fenetre compte, celle des heures dites (Léandre, 27/11/2026 :
+    // « Si elle ne compte pas, elle n'a pas à être affichée »), et les lignes prevues, qui s'y saisissent.
+    let comptent = |i: usize| declarees.iter().any(|(d, j)| *j == i && a_partir.position.engagements.contains(d));
+    let du_tableau: Vec<&PaieComptee> = comptees.iter().enumerate().filter(|(i, p)| p.prevue.is_some() || comptent(*i)).map(|(_, p)| p).collect();
+    let paies = tableau_des_paies(&du_tableau, lignes_prevues, c.allocation_visee.zip(par_paie));
     Ok(CalculDesDroits {
         reponse,
         visee_offerte: estimation.is_some(),
@@ -1481,6 +1499,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         demande,
         details: DetailsDits {
             libelle: DETAILS,
+            annexe: None,
             nir: nir.cloned(),
             fenetre: aff.position.libelle_fenetre.clone(),
             compte: lignes_du_compte,
@@ -1679,12 +1698,11 @@ fn estimer(
                     }
                     Err(bas) => (None, format!("son plafond ne se connaît pas ({}), ni le plus bas qu'il puisse être ({}) : il compte entier, comme s'il ne passait pas sa limite", inconnu.raison, bas.raison)),
                 };
-                if x.prevue.is_none() {
-                    if au_plus_bas.is_none_or(|l| brut > l) {
-                        supposer(supposees, x, au_plus_bas, inconnu.le_debut_le_dit);
-                    }
-                    inconnues.push(PlafondSuppose { rang: bruts.len(), limite: au_plus_bas, le_debut_le_dit: inconnu.le_debut_le_dit, paie: x });
+                if x.prevue.is_none() && au_plus_bas.is_none_or(|l| brut > l) {
+                    supposer(supposees, x, au_plus_bas, inconnu.le_debut_le_dit);
                 }
+                // Une ligne prevue aussi : la visee dit ce qu'elle suppose d'elle (`viser`), sans rien demander.
+                inconnues.push(PlafondSuppose { rang: bruts.len(), limite: au_plus_bas, le_debut_le_dit: inconnu.le_debut_le_dit, paie: x });
                 (None, None, Some(note))
             }
         };
@@ -1799,7 +1817,10 @@ fn viser(
     // visee suppose qu'elle ne la passe pas, et le dit avec ce qui arrete la hausse.
     let mut suppose = false;
     for s in inconnues.iter().filter(|s| bruts.get(s.rang).is_some_and(|(b, _)| s.limite.is_none_or(|l| *b * k > l))) {
-        supposer(supposees, s.paie, s.limite, s.le_debut_le_dit);
+        // Une ligne prevue ne dit que sa fin : rien ne se demande pour elle (Léandre, 27/11/2026).
+        if s.paie.prevue.is_none() {
+            supposer(supposees, s.paie, s.limite, s.le_debut_le_dit);
+        }
         suppose = true;
     }
     let arret = match suppose {

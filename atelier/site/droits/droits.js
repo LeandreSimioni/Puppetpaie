@@ -465,6 +465,8 @@ var dire = null;
     det.open = detailOuvert;
     det.addEventListener("toggle", function () { detailOuvert = det.open; });
     det.append(el("summary", null, d.libelle));
+    // La case de l'annexe, quand la route l'y pose (les pièces la disent).
+    if (d.annexe) det.append(dessinerCase(d.annexe));
     det.append(el("p", "aide", d.fenetre));
     det.append(paires(d.compte));
     if (d.estimation && d.estimation.paies.rangees.length) {
@@ -520,6 +522,8 @@ var dire = null;
             }, "case-" + cle + "-" + n + "-" + k);
             i2.setAttribute("aria-label", p.libelle + " " + (n + 1));
             td.append(i2);
+            // Un montant porte « € », le dessin de sa forme.
+            if (p.forme === "montant") td.append(el("span", "unite", "€"));
           });
         } else if (cellules) {
           td.textContent = cellules[i] || "";
@@ -631,6 +635,7 @@ var dire = null;
       if (b.est === "case") cases.push(b);
       if (b.est === "visee") cases.push(b.case);
       if (b.est === "paies") cases.push(b.lignes);
+      if (b.est === "details" && b.annexe) cases.push(b.annexe);
     });
     rendues = cases.map(function (c) { return c.cle; });
     Object.keys(saisie).forEach(function (cle) { if (rendues.indexOf(cle) < 0) delete saisie[cle]; });

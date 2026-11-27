@@ -10,9 +10,10 @@ lui manque et jusqu'à quand. Elle ne garde rien : fermer l'onglet efface tout.
   décide rien : elle demande la route `droits-des-pieces` (`atelier/sources/routes/src/accueil/droits_des_pieces.rs`)
   et pose son écran bloc par bloc, dans l'ordre où la route le rend (`ecran`). Avec un calcul : la réponse (sa
   couleur, celle que la route dit), l'allocation visée (« Je voudrais … € par jour », « Réinitialiser » vide la case),
-  l'annexe (une liste déroulante, celle que les pièces disent montrée tant que rien n'est choisi), la date
-  anniversaire, le tableau des paies où les lignes prévues se saisissent, le dépôt, les dates d'embauche, les pièces,
-  et « Détails du calcul », replié. Sans calcul : l'annexe, la date anniversaire, le tableau vide, le dépôt.
+  l'annexe (une liste déroulante, quand les pièces ne la disent pas ou en disent deux), la date anniversaire, le
+  tableau des paies (celles que les 12 mois comptent) où les lignes prévues se saisissent, le dépôt, les dates
+  d'embauche, les pièces, et « Détails du calcul », replié (en tête, la case de l'annexe quand les pièces la disent,
+  celle qu'elles disent montrée tant que rien n'est choisi). Sans calcul : l'annexe, la date anniversaire, le tableau vide, le dépôt.
 - `premier-ecran.json` : ce que la route rend sans charge (l'annexe, la date anniversaire, le tableau vide, le dépôt), le dossier
   du dépôt à `null`. La page le pose dès l'ouverture, avec les mêmes fonctions que toute réponse, pendant que le moteur
   se charge : on y tape, on y dépose, on y ajoute des lignes. Un test de structure le tient égal à la route
