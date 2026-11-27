@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Mes droits d'intermittent — PuppetPaie</title>
-<meta name="description" content="Vos heures, ce qui vous manque et jusqu'à quand, et votre allocation estimée, depuis vos bulletins de paie.">
+<meta name="description" content="Avez-vous vos heures, et quelle est votre allocation : depuis vos bulletins de paie.">
 <link rel="icon" href="/favicon.svg?v=20261103" type="image/svg+xml" sizes="any">
 <link rel="icon" href="/favicon.ico?v=20261103" sizes="32x32">
 <style>
@@ -17,7 +17,7 @@
   font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable.woff2") format("woff2")}
 :root{
   --papier:#FFFFFF; --encre:#141413; --gris:#6E6B66; --filet:#E6E5E2;
-  --bleu:#2350C4; --voile:#F3F6FD; --rayon:4px;
+  --bleu:#2350C4; --voile:#F3F6FD; --rayon:4px; --vert:#1E7A46; --vert-fond:#E8F5EC;
   color-scheme:light;
 }
 *{box-sizing:border-box}
@@ -37,8 +37,22 @@ h3{font-size:1rem;font-weight:500;margin:1.6rem 0 .5rem}
 table.saisie td{vertical-align:middle}
 table.saisie input[type=text]{min-width:4.5rem;padding:.35rem .45rem}
 table.saisie input[type=date]{display:block;min-width:9.5rem;padding:.35rem .45rem;margin:.15rem 0}
-table.saisie label.partie{display:block;font-size:.85rem;color:var(--gris);margin:.15rem 0}
 tr.prevue{background:var(--voile)}
+/* La réponse, en tête : verte quand la route le dit (les heures sont là). */
+.reponse{border:2px solid var(--filet);border-radius:8px;padding:1.3rem 1.4rem;margin:0 0 1.8rem}
+.reponse.vert{background:var(--vert-fond);border-color:var(--vert)}
+.reponse h2{margin:0 0 .5rem}
+.reponse .heures{font-size:1.5rem;font-weight:500;line-height:1.3;margin:0}
+.reponse.vert .heures{color:var(--vert)}
+.reponse.vert .heures::before{content:"✓ "}
+.reponse .jusqu,.reponse .allocation{font-size:1.25rem;margin:.6rem 0 0}
+.reponse .sous{font-size:.85rem;color:var(--gris);margin:.4rem 0 0}
+/* L'allocation visée : la case sur une ligne, la réponse dessous. */
+.visee{border:1px solid var(--filet);border-radius:8px;padding:1rem 1.4rem;margin:-1rem 0 1.8rem}
+.visee .ligne{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;font-size:1.05rem}
+.visee .ligne input{width:6rem}
+.visee p{margin:.7rem 0 0}
+.details{margin:1.4rem 0}
 /* Le dépôt des bulletins. */
 .depot{display:block;padding:1.6rem 1rem;border:1.5px dashed #C9C7C2;border-radius:var(--rayon);text-align:center;
   cursor:pointer;background:var(--papier)}
@@ -76,7 +90,6 @@ button:hover{border-color:var(--bleu);color:var(--bleu)}
 button.lien{border:0;padding:0;background:none;color:var(--bleu);font-weight:400;font-size:.9rem;text-decoration:underline;
   text-underline-offset:2px}
 /* Ce que la route dit. */
-.phrase{margin:0 0 1rem;font-size:1.1rem}
 .tableau{overflow-x:auto;margin:0 0 1rem}
 table{border-collapse:collapse;width:100%;font-size:.9rem;font-variant-numeric:tabular-nums}
 th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--filet);vertical-align:top}
@@ -84,8 +97,6 @@ th{font-weight:500;color:var(--gris);white-space:nowrap}
 td.n,th.n{text-align:right;white-space:nowrap}
 td.discret{color:var(--gris)}
 tr.total td{font-weight:500}
-.estimation{margin:0 0 1rem}
-.estimation p{margin:0 0 .4rem}
 details{margin:.3rem 0 1rem;font-size:.9rem}
 summary{cursor:pointer;color:var(--bleu)}
 .avis{margin:1rem 0;padding:.8rem 1rem;border-left:3px solid var(--bleu);background:var(--voile)}
@@ -120,7 +131,7 @@ button.primaire:disabled,button.secondaire:disabled,button.lien:disabled{opacity
 <link rel="stylesheet" href="logiciel/filet.css">
 <main data-ecran="Mes droits d'intermittent">
   <h1>Mes droits d'intermittent</h1>
-  <p class="chapeau">Déposez vos bulletins de paie, de tous vos employeurs, ou remplissez des lignes : la page compte vos heures, dit ce qui vous manque et jusqu'à quand, et estime votre allocation. Elle ne garde rien : fermer l'onglet efface tout.</p>
+  <p class="chapeau">Déposez vos bulletins de paie, de tous vos employeurs, ou remplissez des lignes : la page dit si vous avez vos heures et calcule votre allocation. Elle ne garde rien : fermer l'onglet efface tout.</p>
 
   <div id="avis" class="avis cache" role="alert"></div>
 

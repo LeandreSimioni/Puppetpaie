@@ -2,19 +2,18 @@
 
 Le site puppetpaie.fr l'héberge sous `https://puppetpaie.fr/droits/` : son déploiement prend ce dossier sur `main`
 (sans ce fichier). Aucun lien de l'accueil n'y mène pour l'instant. Un intermittent y dépose ses bulletins de paie (de
-tous ses employeurs) ou remplit des lignes, et voit ses heures, ce qui lui manque et jusqu'à quand, et son allocation
-estimée. Elle ne garde rien : fermer l'onglet efface tout.
+tous ses employeurs) ou remplit des lignes, et voit d'abord s'il a ses heures (en vert) et son allocation, ou ce qui
+lui manque et jusqu'à quand. Elle ne garde rien : fermer l'onglet efface tout.
 
 - `index.html` (le style y est, sauf celui de la boîte « Un problème, une idée ? », `logiciel/filet.css`) et
   `droits.js` : la page. Elle ne
   décide rien : elle demande la route `droits-des-pieces` (`atelier/sources/routes/src/accueil/droits_des_pieces.rs`)
-  et pose son écran bloc par bloc, dans l'ordre où la route le rend (`ecran` : une case, le résumé, le tableau des
-  paies où les lignes prévues se saisissent, leur début dans la rangée que la route ouvre (deux cases sous une colonne :
-  chacune sous le libellé de sa partie), le dépôt, les pièces
-  déposées ; le détail du résumé, replié sous « Détails »). Sans calcul : la date anniversaire, le
-  dépôt, le tableau vide ; avec un calcul : le résumé en tête, puis le tableau, la date anniversaire et le dépôt, les
-  dates d'embauche, les pièces.
-- `premier-ecran.json` : ce que la route rend sans charge (la date anniversaire, le dépôt, le tableau vide), le dossier
+  et pose son écran bloc par bloc, dans l'ordre où la route le rend (`ecran`). Avec un calcul : la réponse (sa
+  couleur, celle que la route dit), l'allocation visée (« Je voudrais … € par jour », « Réinitialiser » vide la case),
+  l'annexe (une liste déroulante, celle que les pièces disent montrée tant que rien n'est choisi), la date
+  anniversaire, le tableau des paies où les lignes prévues se saisissent, le dépôt, les dates d'embauche, les pièces,
+  et « Détails du calcul », replié. Sans calcul : l'annexe, la date anniversaire, le tableau vide, le dépôt.
+- `premier-ecran.json` : ce que la route rend sans charge (l'annexe, la date anniversaire, le tableau vide, le dépôt), le dossier
   du dépôt à `null`. La page le pose dès l'ouverture, avec les mêmes fonctions que toute réponse, pendant que le moteur
   se charge : on y tape, on y dépose, on y ajoute des lignes. Un test de structure le tient égal à la route
   (`moteur/tests/fichiers/structure.rs`) : la route changée, il se recopie. Le moteur prêt, le bouton « Calculer »

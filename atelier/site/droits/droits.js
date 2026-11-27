@@ -1,8 +1,8 @@
 // LA PAGE DES DROITS D'UN INTERMITTENT (puppetpaie.fr/droits/). Elle s'ouvre tout de suite ; le moteur se charge
 // derrière, dans le worker de la démo (/demo/moteur.js : les deux mêmes fichiers, onglet.wasm.gz et demo.tar.gz).
 // Elle ne décide rien : elle demande la route `droits-des-pieces` et pose son écran, bloc par bloc dans l'ordre où la
-// route le rend (`ecran` : les cases, dessinées depuis la forme que la route leur donne, le résumé, le tableau des
-// paies, le dépôt, les pièces). Avant que le moteur soit prêt, elle pose ce que la route rend sans charge
+// route le rend (`ecran` : la réponse, l'allocation visée, les cases, dessinées depuis la forme que la route leur
+// donne, le tableau des paies, le dépôt, les pièces, le détail du calcul). Avant que le moteur soit prêt, elle pose ce que la route rend sans charge
 // (`premier-ecran.json`) ; le moteur prêt, « Calculer » fait le premier calcul. Ensuite, chaque changement (un bulletin
 // déposé ou retiré, une case) redemande la route. Les
 // bulletins déposés vont dans le dossier que le dépôt nomme (`dossier`), sur le disque en mémoire du moteur. Elle ne
@@ -289,10 +289,12 @@ var dire = null;
     return texteDe(c.valeur);
   }
 
-  // UNE CASE SIMPLE, par sa forme : une date, un montant ou un nombre tapé, oui-non coché, un choix dans une liste.
-  function champ(forme, choix, valeur, changer, id) {
+  // UNE CASE SIMPLE, par sa forme : une date, un montant ou un nombre tapé, oui-non coché, un choix dans une liste
+  // déroulante (une liste fermée, `choix`, ou des choix que la route rend, `choix_rendu`). `propose` : ce que la route
+  // prend pour la case vide (`prerempli`), montré tant que rien n'est choisi.
+  function champ(forme, choix, valeur, changer, id, propose) {
     var i;
-    if (forme === "choix_rendu") {
+    if (forme === "choix_rendu" || forme === "choix") {
       i = el("select");
       i.append(el("option", null, ""));
       (choix || []).forEach(function (x) {
@@ -300,7 +302,7 @@ var dire = null;
         o.value = x.code;
         i.append(o);
       });
-      i.value = valeur;
+      i.value = valeur === "" && propose ? propose : valeur;
       i.addEventListener("change", function () { changer(i.value); });
     } else if (forme === "oui_non") {
       i = el("input");
@@ -353,7 +355,7 @@ var dire = null;
       var l = el("label", null, c.libelle);
       l.htmlFor = id;
       bloc.append(l);
-      bloc.append(champ(c.forme, c.choix, saisie[c.cle], function (v) { saisie[c.cle] = v; calculer(); }, id));
+      bloc.append(champ(c.forme, c.choix, saisie[c.cle], function (v) { saisie[c.cle] = v; calculer(); }, id, texteDe(c.prerempli)));
       if (c.aide) bloc.append(el("p", "aide", c.aide));
       (c.dit || []).forEach(function (d) { bloc.append(el("p", "aide", d)); });
       return bloc;
@@ -423,47 +425,54 @@ var dire = null;
     return ul;
   }
 
-  // LE BILAN de la personne, au-dessus du tableau : son nom, quand la route le dit (les pièces portent plusieurs
-  // personnes), et son bilan.
-  function bilan(p) {
-    var r = el("section", "bloc");
+  // LA RÉPONSE, en tête : son nom, quand la route le dit (les pièces portent plusieurs personnes), les heures (ou ce
+  // qui manque) et jusqu'à quand, l'allocation, et en petit la fenêtre ; sa couleur, celle que la route dit.
+  function reponse(p) {
+    var r = el("section", "reponse " + p.couleur);
     if (p.nom) r.append(el("h2", null, p.nom));
-    r.append(el("p", "phrase", p.bilan));
+    r.append(el("p", "heures", p.heures));
+    if (p.jusqu_a) r.append(el("p", "jusqu", p.jusqu_a));
+    if (p.allocation) r.append(el("p", "allocation", p.allocation));
+    r.append(el("p", "sous", p.sous));
     return r;
   }
 
-  // LE RÉSUMÉ de la personne, sous le tableau : sa fenêtre, le compte des heures, ce que l'estimation suppose,
-  // l'allocation estimée et visée (chacune son tableau replié), puis « Détails », replié.
-  function resume(p) {
-    var r = el("section", "bloc");
-    r.append(el("p", "aide", p.fenetre));
-    r.append(paires(p.lignes));
-    var replie = function (t) {
-      var det = el("details");
-      det.append(el("summary", null, t.titre), tableau(t));
-      return det;
-    };
-    // La phrase qui dit ce que l'estimation suppose, et ce qu'il faut dire pour en être sûr, avant ses chiffres.
-    if (p.demande) r.append(el("p", "phrase", p.demande));
-    p.estimations.forEach(function (e) {
-      var bloc = el("div", "estimation");
-      bloc.append(el("p", null, e.phrase));
-      if (e.paies.rangees.length) bloc.append(replie(e.paies));
-      r.append(bloc);
-    });
-    p.visee.forEach(function (v) {
-      var bloc = el("div", "estimation");
-      bloc.append(el("p", null, v.phrase), el("p", "aide", v.arret));
-      if (v.paies && v.paies.rangees.length) bloc.append(replie(v.paies));
-      r.append(bloc);
-    });
-    // Ce qui n'est pas la réponse elle-même : replié, sous le libellé de la route.
-    if (p.details.lignes.length) {
-      var det = el("details");
-      det.append(el("summary", null, p.details.libelle), liste(p.details.lignes));
-      r.append(det);
+  // L'ALLOCATION VISÉE : sa case sur une ligne (son libellé, la case, son unité), le bouton qui la vide, et la réponse
+  // de la route quand elle est remplie.
+  function visee(b) {
+    var c = b.case, id = "case-" + c.cle;
+    var s = el("section", "visee");
+    var ligne = el("div", "ligne");
+    var l = el("label", null, c.libelle);
+    l.htmlFor = id;
+    ligne.append(l, champ(c.forme, c.choix, saisie[c.cle], function (v) { saisie[c.cle] = v; calculer(); }, id), el("span", null, b.unite));
+    var vider = el("button", "lien", b.reinitialiser);
+    vider.type = "button";
+    vider.addEventListener("click", function () { saisie[c.cle] = ""; redessiner(); calculer(); });
+    ligne.append(vider);
+    s.append(ligne);
+    if (b.reponse) s.append(el("p", null, b.reponse));
+    return s;
+  }
+
+  var detailOuvert = false;
+
+  // LE DÉTAIL DU CALCUL, replié en bas : la fenêtre, le compte des heures, ce qui manque, l'estimation (son tableau,
+  // paie par paie) et les phrases.
+  function details(d) {
+    var det = el("details", "details");
+    // Ouvert, il le reste d'un calcul à l'autre (le confort de la main).
+    det.open = detailOuvert;
+    det.addEventListener("toggle", function () { detailOuvert = det.open; });
+    det.append(el("summary", null, d.libelle));
+    det.append(el("p", "aide", d.fenetre));
+    det.append(paires(d.compte));
+    if (d.estimation && d.estimation.paies.rangees.length) {
+      if (d.estimation.paies.titre) det.append(el("h3", null, d.estimation.paies.titre));
+      det.append(tableau(d.estimation.paies));
     }
-    return r;
+    if (d.lignes.length) det.append(liste(d.lignes));
+    return det;
   }
 
   // LE TABLEAU DES PAIES : les paies lues, et les lignes prévues qui s'y saisissent (`tableau.saisie` : la case, ses
@@ -494,16 +503,14 @@ var dire = null;
     tete.append(tr);
     table.append(tete);
     var corps = el("tbody");
-    // Une partie se saisit dans une rangée quand elle est ouverte, ou que la rangée l'ouvre (`ouvre` : le début d'une
-    // ligne prévue dont la route le demande).
-    var ligneSaisie = function (n, cellules, ouvre) {
+    // Sous chaque colonne qui tient des parties ouvertes, leurs cases ; ailleurs, la cellule que la route dit.
+    var ligneSaisie = function (n, cellules) {
       placees[n] = true;
       var r = el("tr", "prevue");
       t.colonnes.forEach(function (col, i) {
         var td = el("td", classe(col));
         if (col.parties && col.parties.length) {
-          var montrees = col.parties.filter(function (k) { return parties[k].ouverte || ouvre.indexOf(k) >= 0; });
-          montrees.forEach(function (k) {
+          col.parties.filter(function (k) { return parties[k].ouverte; }).forEach(function (k) {
             var p = parties[k];
             var i2 = champ(p.forme, p.choix, rangs[n][k], function (v) {
               rangs[n][k] = v;
@@ -512,14 +519,7 @@ var dire = null;
               calculer();
             }, "case-" + cle + "-" + n + "-" + k);
             i2.setAttribute("aria-label", p.libelle + " " + (n + 1));
-            // Plusieurs cases sous une colonne : chacune porte le libellé de sa partie (« Début », « Fin »).
-            if (montrees.length > 1) {
-              var lp = el("label", "partie", p.libelle);
-              lp.append(i2);
-              td.append(lp);
-            } else {
-              td.append(i2);
-            }
+            td.append(i2);
           });
         } else if (cellules) {
           td.textContent = cellules[i] || "";
@@ -534,7 +534,7 @@ var dire = null;
     t.rangees.forEach(function (g) {
       var n = g.saisie === undefined ? undefined : envoi[g.saisie];
       if (n !== undefined && n >= 0 && rangs[n] && !placees[n]) {
-        ligneSaisie(n, g.cellules, g.ouvre || []);
+        ligneSaisie(n, g.cellules);
         return;
       }
       if (g.saisie !== undefined) return;
@@ -543,7 +543,7 @@ var dire = null;
       r.append(el("td"));
       corps.append(r);
     });
-    rangs.forEach(function (r, n) { if (!placees[n]) ligneSaisie(n, null, []); });
+    rangs.forEach(function (r, n) { if (!placees[n]) ligneSaisie(n, null); });
     table.append(corps);
     var d = el("div", "tableau");
     d.append(table);
@@ -629,6 +629,7 @@ var dire = null;
     var cases = [];
     d.ecran.forEach(function (b) {
       if (b.est === "case") cases.push(b);
+      if (b.est === "visee") cases.push(b.case);
       if (b.est === "paies") cases.push(b.lignes);
     });
     rendues = cases.map(function (c) { return c.cle; });
@@ -647,11 +648,12 @@ var dire = null;
     ecran.replaceChildren();
     dernier.ecran.forEach(function (b) {
       if (b.est === "case") ecran.append(dessinerCase(b));
-      else if (b.est === "bilan") ecran.append(bilan(b));
-      else if (b.est === "resume") ecran.append(resume(b));
+      else if (b.est === "reponse") ecran.append(reponse(b));
+      else if (b.est === "visee") ecran.append(visee(b));
       else if (b.est === "paies") ecran.append(paies(b));
       else if (b.est === "depot") ecran.append(depot(b));
       else if (b.est === "pieces") ecran.append(pieces(b));
+      else if (b.est === "details") ecran.append(details(b));
       else throw new Error("bloc inconnu de la route : " + b.est);
     });
     if (ici && $(ici)) {
