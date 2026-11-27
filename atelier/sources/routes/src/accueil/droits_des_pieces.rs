@@ -2,7 +2,8 @@
 //! La personne pose dans un seul dossier, `mes-pieces/` de l'installation (cree vide s'il manque, comme la boite de
 //! l'import), les pieces de tous ses employeurs : bulletins en PDF, AEM en PDF ou deposees. La route les lit par les
 //! lecteurs de l'import (`import::tri`, `bulletin_lu`, `aem_lu`, `dsn_aem`), PAR PERSONNE (le NIR), jamais en melant deux
-//! personnes : plusieurs NIR, et la route fait choisir la personne (une case a choix), puis ne montre qu'elle.
+//! personnes : plusieurs NIR, et la route fait choisir la personne (une case a choix), puis ne montre qu'elle. Une
+//! personne choisie qu'aucune piece ne porte plus ne compte pas, et la route le dit ; sa case reste, pour la vider.
 //!
 //! UN CONTRAT NE S'ATTESTE QU'UNE FOIS, CHEZ SON EMPLOYEUR : le registre de l'import (`import::attestes::Registre`)
 //! tient les contrats d'un employeur (son Siren, sinon sa raison sociale), un registre par employeur : deux employeurs
@@ -71,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","debut":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "dossier (mes-pieces/, où poser les pièces), pieces (une phrase par fichier), cases (les cases de la charge telles qu'on les saisit : la personne quand les pièces en portent plusieurs, la date anniversaire, les lignes prévues, l'allocation visée quand une allocation s'estime, les dates d'embauche quand la route en demande ; chacune libelle, forme, valeur, choix, parties), personne (celle choisie, ou les lignes prévues seules sans pièce : nir, nom, fenetre, paies (un tableau : titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut), lignes [quoi, valeur], heures_exigees, manque, butoir [jour, phrase, pourquoi, reference], phrase, notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]), phrase",
+    rend: "dossier (mes-pieces/, où poser les pièces), pieces (une phrase par fichier), cases (les cases de la charge telles qu'on les saisit : la personne quand les pièces en portent plusieurs ou que la charge en dit une, la date anniversaire, les lignes prévues, l'allocation visée quand une allocation s'estime, les dates d'embauche quand la route en demande ; chacune libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée), personne (celle choisie, ou les lignes prévues seules sans pièce : nir, nom, fenetre, paies (un tableau : titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut), lignes [quoi, valeur], heures_exigees, manque, butoir [jour, phrase, pourquoi, reference], phrase, notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]), phrase",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -85,7 +86,7 @@ charge! {
     /// vise), les lignes prevues (aucune : les pieces seules).
     #[derive(Debug)]
     struct ChargeDroitsDesPieces {
-        personne: Option<Nir> = legende("Personne", "son numéro de sécurité sociale, parmi ceux que portent les pièces ; absent : la seule qu'elles portent").rendue(),
+        personne: Option<Nir> = legende("Personne", "son numéro de sécurité sociale, parmi ceux que portent les pièces ; absent : la seule qu'elles portent ; un numéro qu'elles ne portent plus ne compte pas").rendue(),
         anniversaire: Option<Jour> = legende("Date anniversaire", "celle du droit en cours ou du dernier droit, que France Travail a notifiée : la réadmission, la fin de contrat qui a ouvert ce droit étant douze mois avant ; absente : une première ouverture"),
         allocation_visee: Option<Montant> = legende("Allocation visée", "l'allocation journalière qu'on voudrait, en euros ; absente : rien ne se vise"),
         previsionnel: Option<Vec<LignePrevue>> = legende("Lignes prévues", "le travail à venir, une ligne par engagement : ses dates, ses cachets ou ses heures, l'enseignement, son brut ; rien ne s'écrit"),
@@ -117,19 +118,28 @@ impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for De
 /// contrat a les deux : la ligne declaree a sa periode, `droit::cumul::Declare`, et la paie son plafond) ; des cachets
 /// ou des heures ; si ses heures sont de l'enseignement ; son brut, facultatif (sans lui, la ligne compte pour les
 /// heures, pas pour l'allocation).
-/// Elle s'ecrit aussi, telle qu'elle est saisie, dans la valeur de sa case (`cases`).
+/// Elle s'ecrit aussi dans la valeur de sa case (`cases`), ses nombres tels qu'on les lit (`a_lire`).
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct LignePrevue {
     fin: Jour,
     debut: Jour,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    #[serde(serialize_with = "a_lire")]
     cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    #[serde(serialize_with = "a_lire")]
     heures: Option<Heures>,
     enseignement: Option<bool>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    #[serde(serialize_with = "a_lire")]
     brut: Option<Montant>,
+}
+
+/// UN NOMBRE DANS LA VALEUR D'UNE CASE, tel qu'on le lit et qu'on le retape (`socle::texte::virgule` : « 2,5 »,
+/// « 1250 ») ; la charge le relit comme tout nombre tape (`lu::tapee`). Vide, `null`.
+fn a_lire<G: socle::grandeurs::Grandeur, S: serde::Serializer>(g: &Option<G>, s: S) -> Result<S::Ok, S::Error> {
+    match g {
+        Some(g) => s.serialize_str(&socle::texte::virgule(*g)),
+        None => s.serialize_none(),
+    }
 }
 
 /// Les cases d'une ligne prevue, chacune la forme de son type.
@@ -147,9 +157,11 @@ impl crate::declaration::ValeurDeLaCharge<crate::declaration::ParSaForme> for Li
     const FORME: Forme = Forme::Parties(PARTIES_D_UNE_LIGNE_PREVUE);
 }
 
-/// Le bouton qui ajoute une ligne prevue, et celui qui ajoute une date d'embauche.
+/// Les boutons qui ajoutent et retirent une ligne prevue, et une date d'embauche.
 const AJOUTER_UNE_LIGNE: Affiche = Affiche::new("Ajouter une ligne");
+const RETIRER_LA_LIGNE: Affiche = Affiche::new("Retirer la ligne");
 const AJOUTER_UNE_EMBAUCHE: Affiche = Affiche::new("Ajouter une date d'embauche");
+const RETIRER_LA_DATE: Affiche = Affiche::new("Retirer la date d'embauche");
 
 /// LES LIGNES PREVUES SANS PIECE : quand aucune piece ne porte de personne, les lignes de la charge se comptent seules, sous
 /// cette cle (celle de `droit::cumul::Declare`, que la position range ; elle ne se montre pas) et ce nom.
@@ -172,16 +184,18 @@ fn case_simple(nom: &'static str, valeur: Option<socle::ecriture::ValeurDeCase>)
 }
 
 /// LA CASE DES RANGEES D'UN CHAMP de la charge (les lignes prevues, les dates d'embauche) : ses parties, ce que la charge y
-/// porte, et le bouton qui ajoute une rangee.
-fn case_en_rangees(nom: &'static str, valeur: Option<socle::ecriture::ValeurDeCase>, parties: Vec<crate::fiches::PartieDeLaFiche>, ajouter: Affiche) -> R<crate::fiches::CaseDeLaFiche<&'static str>> {
+/// porte, le bouton qui ajoute une rangee et celui qui en retire une.
+fn case_en_rangees(nom: &'static str, valeur: Option<socle::ecriture::ValeurDeCase>, parties: Vec<crate::fiches::PartieDeLaFiche>, ajouter: Affiche, retirer: Affiche) -> R<crate::fiches::CaseDeLaFiche<&'static str>> {
     let c = champ(nom)?;
-    Ok(crate::fiches::CaseDeLaFiche::de_rangees(nom, c.libelle, valeur, parties).ajoutant(ajouter).disant(vec![c.sens.to_string()]))
+    Ok(crate::fiches::CaseDeLaFiche::de_rangees(nom, c.libelle, valeur, parties).ajoutant(ajouter).retirant(retirer).disant(vec![c.sens.to_string()]))
 }
 
 /// LES CASES QUE LA ROUTE REND, chacune un champ de sa charge, avec ce que la charge y porte : la personne quand les
-/// pieces en portent plusieurs (`personnes`, ses choix) ; la date anniversaire ; les lignes prevues ; l'allocation visee
+/// pieces en portent plusieurs ou que la charge en dit une, meme qu'elles ne portent plus (`personnes`, ses choix :
+/// celles des pieces ; on la vide pour en sortir) ; la date anniversaire ; les lignes prevues ; l'allocation visee
 /// quand une allocation s'estime (`visee_offerte`) ou que la charge en dit une ; les dates d'embauche quand la route en
-/// demande ou que la charge en dit (`embauches`, les paies qui se choisissent).
+/// demande ou que la charge en dit (`embauches`, les paies qui se choisissent). Les nombres s'y ecrivent tels qu'on les
+/// lit (`a_lire`).
 fn les_cases(c: &ChargeDroitsDesPieces, personnes: Option<Vec<crate::ouverture::Choix>>, visee_offerte: bool, embauches: Vec<crate::ouverture::Choix>) -> R<Vec<crate::fiches::CaseDeLaFiche<&'static str>>> {
     use socle::ecriture::ValeurDeCase;
     let mut cases = Vec::new();
@@ -190,16 +204,17 @@ fn les_cases(c: &ChargeDroitsDesPieces, personnes: Option<Vec<crate::ouverture::
     }
     cases.push(case_simple(cle!(ChargeDroitsDesPieces, anniversaire), c.anniversaire.as_ref().and_then(ValeurDeCase::de))?);
     let parties = PARTIES_D_UNE_LIGNE_PREVUE.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
-    cases.push(case_en_rangees(cle!(ChargeDroitsDesPieces, previsionnel), c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_LIGNE)?);
+    cases.push(case_en_rangees(cle!(ChargeDroitsDesPieces, previsionnel), c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_LIGNE, RETIRER_LA_LIGNE)?);
     if visee_offerte || c.allocation_visee.is_some() {
-        cases.push(case_simple(cle!(ChargeDroitsDesPieces, allocation_visee), ValeurDeCase::de(&socle::ecriture::CaseEcrite(&c.allocation_visee)))?);
+        let visee = c.allocation_visee.map(|m| ValeurDeCase::texte(socle::texte::virgule(m)));
+        cases.push(case_simple(cle!(ChargeDroitsDesPieces, allocation_visee), visee)?);
     }
     if !embauches.is_empty() || c.debuts.as_ref().is_some_and(|d| !d.is_empty()) {
         let parties = PARTIES_D_UN_DEBUT
             .iter()
             .map(|p| crate::fiches::PartieDeLaFiche::de(p, (p.forme == Forme::ChoixRendu).then(|| embauches.clone())))
             .collect();
-        cases.push(case_en_rangees(cle!(ChargeDroitsDesPieces, debuts), c.debuts.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_EMBAUCHE)?);
+        cases.push(case_en_rangees(cle!(ChargeDroitsDesPieces, debuts), c.debuts.as_ref().and_then(ValeurDeCase::de), parties, AJOUTER_UNE_EMBAUCHE, RETIRER_LA_DATE)?);
     }
     Ok(cases)
 }
@@ -617,8 +632,8 @@ fn retenues(attestees: &[Attestee], nir: &Nir, notes: &mut Vec<String>) -> R<Vec
             let (id, plafond) = match siennes().find(|x| x.periode == periode && x.ligne.contrat.fichier == a.fichier && x.ligne.contrat.page == a.page) {
                 Some(x) => (x.piece.clone(), x.plafond.clone()),
                 None => {
-                    let id = format!("contrat du {} au {} chez {}", periode.debut().jj_mm_aaaa(), periode.fin().jj_mm_aaaa(), employeur);
-                    notes.push(format!("La pièce du {} ne se retrouve pas : son plafond se calcule sur ses dates. Le signaler au développeur.", id));
+                    let id = format!("paie du {} au {} chez {}", periode.debut().jj_mm_aaaa(), periode.fin().jj_mm_aaaa(), employeur);
+                    notes.push(format!("La pièce de la {} ne se retrouve pas : son plafond se calcule sur ses dates. Le signaler au développeur.", id));
                     (id, SourceDuPlafond::DuContrat { contrat: None, paie: periode })
                 }
             };
@@ -868,17 +883,22 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
         Some(n) => n,
         None => format!("NIR {}", &**nir),
     };
-    let choisie: Option<Nir> = match (&c.personne, personnes.len()) {
+    // Une personne que la charge choisit et qu'aucune piece ne porte plus (ses bulletins retires) ne compte pas, et se
+    // dit : les autres et les lignes seules se comptent comme sans choix, et sa case reste pour qu'on la vide.
+    let mut phrases: Vec<String> = Vec::new();
+    let choisie: Option<Nir> = match (c.personne.as_ref().filter(|n| personnes.contains_key(*n)), personnes.len()) {
         (Some(n), _) => Some(n.clone()),
         (None, 1) => personnes.keys().next().cloned(),
         (None, _) => None,
     };
-    let offerts = (personnes.len() > 1).then(|| personnes.keys().map(|k| crate::ouverture::Choix::de(&**k, nom_de(k))).collect());
+    if let Some(n) = c.personne.as_ref().filter(|n| !personnes.contains_key(*n)) {
+        phrases.push(format!("Aucune pièce ne porte le numéro de sécurité sociale {} choisi dans « Personne » : ce choix ne compte pas.", &**n));
+    }
+    let offerts = (personnes.len() > 1 || c.personne.is_some()).then(|| personnes.keys().map(|k| crate::ouverture::Choix::de(&**k, nom_de(k))).collect());
     // Sans piece qui porte une personne, les lignes prevues se comptent seules.
     let lignes_seules = personnes.is_empty() && c.previsionnel.as_ref().is_some_and(|v| !v.is_empty());
     let calcul = match &choisie {
-        Some(nir) if personnes.contains_key(nir) => Some(droits_d_une_personne(inst, &attestees, Some(nir), nom_de(nir), &c)?),
-        Some(_) => None,
+        Some(nir) => Some(droits_d_une_personne(inst, &attestees, Some(nir), nom_de(nir), &c)?),
         None if lignes_seules => Some(droits_d_une_personne(inst, &attestees, None, LIGNES_SEULES.to_string(), &c)?),
         None => None,
     };
@@ -886,13 +906,12 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
         Some((p, e)) => (Some(p), e),
         None => (None, Vec::new()),
     };
-    let phrase = match (&personne, &choisie, personnes.len()) {
-        (Some(p), _, _) => socle::phrase!("{} ({}) : {}", p.nom, p.fenetre, p.phrase),
-        (None, Some(_), _) => Phrase::fixe("Les pièces ne portent pas ce numéro de sécurité sociale : choisissez une personne parmi celles qu'elles portent."),
-        (None, None, 0) => Phrase::fixe("Aucune pièce ne se compte encore : posez vos bulletins, de tous vos employeurs, ou remplissez des lignes prévues."),
-        (None, None, n) => socle::phrase!("Les pièces portent {} personnes : choisissez-en une, ses droits se comptent seuls.", n),
+    let phrase = match (&personne, personnes.len()) {
+        (Some(p), _) => socle::phrase!("{} ({}) : {}", p.nom, p.fenetre, p.phrase),
+        (None, 0) => Phrase::fixe("Aucune pièce ne se compte encore : posez vos bulletins, de tous vos employeurs, ou remplissez des lignes prévues."),
+        (None, n) => socle::phrase!("Les pièces portent {} personnes : choisissez-en une, ses droits se comptent seuls.", n),
     };
-    let phrases = personne.iter().flat_map(|p| p.notes.iter().cloned()).collect();
+    phrases.extend(personne.iter().flat_map(|p| p.notes.iter().cloned()));
     let visee_offerte = personne.as_ref().is_some_and(|p| !p.estimations.is_empty());
     let cases = les_cases(&c, offerts, visee_offerte, embauches)?;
     Ok(DroitsDesPieces { phrase, dossier, pieces, phrases, cases, personne })
@@ -926,7 +945,7 @@ fn plafond_de(s: &SourceDuPlafond, artiste: bool) -> Result<Montant, PlafondInco
     let court = match contrat {
         Some(c) => engagement_court(c, artiste),
         None if !artiste || paie.duree() >= JOURS_ENGAGEMENT_CONTINU => false,
-        None => return Err(inconnu("la pièce ne dit pas le contrat entier : l'engagement de l'artiste peut être de moins de cinq jours", true)),
+        None => return Err(inconnu("la pièce ne dit pas la date d'embauche : l'engagement de l'artiste peut être de moins de cinq jours", true)),
     };
     let r = match (court, contrat) {
         (false, _) => plafond_de_la_periode(paie, &JoursSansRemuneration::aucun(), None, &pss),
@@ -1038,9 +1057,13 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     Ok((personne, embauches))
 }
 
-/// Le libelle d'une paie parmi les choix des dates d'embauche : son nom, ses dates, son employeur.
+/// Le libelle d'une paie parmi les choix des dates d'embauche : son nom, ses dates, son employeur (une ligne prevue, qui
+/// n'en a pas : son nom et ses dates).
 fn choix_d_embauche(x: &PaieComptee) -> String {
-    format!("{} : paie {} chez {}", x.id, x.dates(), x.employeur)
+    match x.prevue {
+        true => format!("{} : {}", x.id, x.dates()),
+        false => format!("{} : paie {} chez {}", x.id, x.dates(), x.employeur),
+    }
 }
 
 /// LE JOUR BUTOIR EN MOTS : ce qui manque et jusqu'a quand ; pourquoi la date se deplace, chiffre depuis les paies (celles
@@ -1060,8 +1083,9 @@ fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::alloc
         let heures: Heures = sortent.iter().map(|d| d.heures_equivalentes(c)).sum();
         let fins: Vec<String> = sortent.iter().map(|d| d.periode.fin().jj_mm_aaaa()).collect();
         raisons.push(format!(
-            "les {} h de votre contrat qui finit le {} ne comptent plus : la fenêtre ne remonte qu'à {} jours avant la fin de contrat",
+            "les {} h {} le {} ne comptent plus : la fenêtre ne remonte qu'à {} jours avant la fin de contrat",
             dit(heures),
+            if fins.len() > 1 { "des paies qui finissent" } else { "de la paie qui finit" },
             fins.join(" et le "),
             c.fenetre_jours.jours_a_ecrire() + apres.periodes_en_plus * r.jours_par_periode
         ));
@@ -1162,7 +1186,7 @@ fn estimer(
         if let SourceDuPlafond::DuContrat { contrat: None, paie } = &s {
             if *paie == Periode::du_mois(paie.debut().mois_civil()) {
                 notes.push(format!(
-                    "La paie {} chez {} n'imprime pas son plafond et paie le mois entier : sa limite (art. 11 §3) se calcule sur le plafond du mois, peut-être plus haut que celui de son contrat ; l'estimation peut être trop haute.",
+                    "La paie {} chez {} n'imprime pas son plafond et paie le mois entier : sa limite (art. 11 §3) se calcule sur le plafond du mois, peut-être plus haut que celui de son emploi ; l'estimation peut être trop haute.",
                     x.dates(),
                     x.employeur
                 ));
@@ -1188,7 +1212,7 @@ fn estimer(
                 Err(inconnu) => match plafond_le_plus_bas(x.periode.fin(), artiste) {
                     Ok(bas) if brut <= t.limite_de_la_paie(bas) => {
                         let au_plus_bas = t.limite_de_la_paie(bas);
-                        let note = format!("son plafond ne se connaît pas ({}) ; son brut ne passe pas {}, quatre fois le plafond d'un contrat d'un jour : il compte entier", inconnu.raison, euros(au_plus_bas));
+                        let note = format!("son plafond ne se connaît pas ({}) ; son brut ne passe pas {}, quatre fois le plafond d'un emploi d'un jour : il compte entier", inconnu.raison, euros(au_plus_bas));
                         sous_le_plus_bas.push(SousLePlusBas { rang: bruts.len(), limite: au_plus_bas, inconnu, paie: x });
                         (None, None, Some(note))
                     }

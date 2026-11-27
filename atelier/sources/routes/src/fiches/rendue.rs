@@ -234,7 +234,8 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
 /// sa valeur (celle de la fiche, ou ce que le moteur propose d'y ecrire : « Pour démarrer »), ce que le moteur prend pour
 /// elle vide (`prerempli`), les choix d'une case qui se choisit (code et libelle), s'ils se montrent en boutons a cocher,
 /// chacun avec le document qui le montre quand il en a un (`boutons`, le modele du bulletin), ses parties (une case faite de cases,
-/// ou chaque rangee d'une liste), le bouton qui ajoute une rangee, ce que le moteur dit sous elle (`dit`) et ou elle
+/// ou chaque rangee d'une liste), le bouton qui ajoute une rangee et celui qui en retire une (`retirer`, quand la route
+/// le nomme), ce que le moteur dit sous elle (`dit`) et ou elle
 /// renvoie (`renvoi`), ses temps (la valeur d'avant et celle a venir, en mots) et sa faute. Sa cle est celle d'une case
 /// de fiche, ou d'une case d'un ecran qu'une route rend (`EcranRendu` : un contrat de la DSN, par sa cle).
 #[derive(Debug, Clone, Serialize)]
@@ -259,6 +260,8 @@ pub(crate) struct CaseDeLaFiche<K = CaseDeFiche> {
     parties: Option<Vec<PartieDeLaFiche>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ajouter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retirer: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     dit: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -313,6 +316,7 @@ impl<K> CaseDeLaFiche<K> {
             boutons: false,
             parties: Some(parties),
             ajouter: None,
+            retirer: None,
             dit,
             renvoi: None,
             temps,
@@ -341,6 +345,7 @@ impl<K> CaseDeLaFiche<K> {
             boutons: false,
             parties: None,
             ajouter: None,
+            retirer: None,
             dit: Vec::new(),
             renvoi: None,
             temps: None,
@@ -362,6 +367,11 @@ impl<K> CaseDeLaFiche<K> {
     /// Les memes rangees, que le bouton `ajouter` allonge d'une rangee (et que chacune peut quitter).
     pub(crate) fn ajoutant(self, ajouter: crate::catalogue::Affiche) -> CaseDeLaFiche<K> {
         CaseDeLaFiche { ajouter: Some(ajouter.texte().to_string()), ..self }
+    }
+
+    /// Les memes rangees, chacune quittee par le bouton `retirer` (son libelle, que la route dit comme celui de l'ajout).
+    pub(crate) fn retirant(self, retirer: crate::catalogue::Affiche) -> CaseDeLaFiche<K> {
+        CaseDeLaFiche { retirer: Some(retirer.texte().to_string()), ..self }
     }
 
     /// La meme case, rangee sous « Avancé » (repliee tant qu'on ne l'ouvre pas).
@@ -672,6 +682,7 @@ fn case_du_champ(c: &Champ, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(&[&str
         boutons: false,
         parties,
         ajouter: c.ligne.as_ref().map(|l| format!("+ Ajouter un {}", l)),
+        retirer: None,
         dit: Vec::new(),
         renvoi: None,
         temps: None,
