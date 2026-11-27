@@ -990,7 +990,10 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     comptees.sort_by(|a, b| (a.periode.fin(), &a.employeur).cmp(&(b.periode.fin(), &b.employeur)));
     // La personne se range sous son NIR (les lignes seules, sous `LIGNES_SEULES`) : une seule, que `position` ne mele a
     // personne.
-    let cle = droit::contexte::IdSalarie::lire(nir.map_or(LIGNES_SEULES, |n| &**n))?;
+    let cle = droit::contexte::IdSalarie::lire(match nir {
+        Some(n) => &**n,
+        None => LIGNES_SEULES,
+    })?;
     let mut declarees: Vec<(Declare, usize)> = Vec::new();
     for (i, p) in comptees.iter().enumerate() {
         match declaree(p, &cle) {
@@ -1074,7 +1077,7 @@ fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::alloc
     let phrase = if aff.manque.est_nul() {
         format!("Les {} h sont atteintes ; sans contrat de plus, elles ne le sont plus après le {}.", dit(aff.heures_exigees), jour)
     } else {
-        format!("Il vous manque {} h, à faire d'ici le {} : ce n'est pas une échéance de France Travail, c'est le jour où, sans contrat de plus, il en faudra davantage.", dit(aff.manque), jour)
+        format!("Il vous manque {} h d'ici le {} : passé ce jour, sans contrat de plus, il en faudra davantage.", dit(aff.manque), jour)
     };
     let c = &aff.position.constantes;
     let sortent: Vec<&Declare> = aff.position.engagements.iter().filter(|d| !apres.position.engagements.contains(d)).collect();
@@ -1100,8 +1103,8 @@ fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::alloc
         ));
     }
     let pourquoi = match raisons.is_empty() {
-        true => format!("Après le {}, il vous manquera {} h.", jour, dit(apres.manque)),
-        false => format!("Après le {}, {} : il vous manquera {} h.", jour, raisons.join(" ; "), dit(apres.manque)),
+        true => format!("Ce n'est pas une échéance de France Travail. Après le {}, il vous manquera {} h.", jour, dit(apres.manque)),
+        false => format!("Ce n'est pas une échéance de France Travail. Après le {}, {} : il vous manquera {} h.", jour, raisons.join(" ; "), dit(apres.manque)),
     };
     let reference = match aff.precedente {
         None => "Annexes VIII et X au règlement d'assurance chômage, art. 3 : 507 heures sur les 365 jours qui précèdent la fin de contrat.".to_string(),
