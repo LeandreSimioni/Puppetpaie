@@ -427,7 +427,9 @@ var dire = null;
   // l'allocation estimée et visée (chacune son détail replié), les notes.
   function resume(p) {
     var r = el("section", "bloc");
-    r.append(el("h2", null, p.nom), el("p", "phrase", p.bilan), el("p", "aide", p.fenetre));
+    // Le nom, quand la route le dit (les pièces portent plusieurs personnes).
+    if (p.nom) r.append(el("h2", null, p.nom));
+    r.append(el("p", "phrase", p.bilan), el("p", "aide", p.fenetre));
     if (p.butoir) {
       var b = el("div", "butoir");
       b.append(el("p", null, p.butoir.phrase), el("p", null, p.butoir.pourquoi), el("p", "reference", p.butoir.reference));
@@ -566,6 +568,9 @@ var dire = null;
       var li = el("li");
       var quoi = el("div");
       quoi.append(el("span", "nom", p.fichier));
+      // Sa nature et ses employeurs, quand la route les dit.
+      var qui = (p.nature ? [p.nature] : []).concat(p.employeurs);
+      if (qui.length) quoi.append(el("div", "aide", qui.join(" · ")));
       if (p.dit.length) quoi.append(liste(p.dit));
       var x = el("button", "lien", b.retirer);
       x.type = "button";

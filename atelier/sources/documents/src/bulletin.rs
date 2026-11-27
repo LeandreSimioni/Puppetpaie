@@ -1363,7 +1363,8 @@ pub fn jeux_et_description(
     let mut engagements = passe.engagements(Some(courantes))?;
     if borne_au_mois {
         let fin = mois.dernier_jour();
-        engagements.retain(|e| e.periode.debut() <= fin);
+        // Une ligne qui ne dit pas son debut ne vient que d'un contrat prevu, qu'une compagnie ne declare pas.
+        engagements.retain(|e| e.debut.is_none_or(|d| d <= fin));
     }
     for pa in paies {
         let cle = pa.salarie.id.clone();

@@ -53,10 +53,14 @@ pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_da
 }
 
 /// Une ligne declaree : un contrat de l'historique ou un mois de nos paies. Ses heures se comptent en heures entieres.
+/// Elle se situe par sa fin (la fenetre d'affiliation compte les contrats qui y finissent, les cachets se rattachent au
+/// mois de la fin) ; son debut, quand il se dit : un contrat prevu peut ne dire que sa fin
+/// (`routes::accueil::droits_des_pieces`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Declare {
     pub salarie: IdSalarie,
-    pub periode: Periode,
+    pub debut: Option<Jour>,
+    pub fin: Jour,
     pub heures: Heures,
     pub cachets: Cachets,
     /// Son brut ; aucun : un contrat prevu qui ne le dit pas (`routes::accueil::droits_des_pieces`).
@@ -68,7 +72,7 @@ pub struct Declare {
 impl Declare {
     /// Le mois de la fin, auquel se rattachent les cachets.
     pub fn mois(&self) -> socle::mois::Mois {
-        self.periode.fin().mois_civil()
+        self.fin.mois_civil()
     }
 
     pub fn heures_equivalentes(&self, c: &Constantes) -> Heures {
@@ -229,7 +233,7 @@ pub fn position(
         salarie: salarie.clone(),
         periode: *periode,
         libelle_fenetre: libelle.clone(),
-        engagements: engagements.iter().filter(|e| e.salarie == *salarie && periode.contient(&e.periode.fin())).cloned().collect(),
+        engagements: engagements.iter().filter(|e| e.salarie == *salarie && periode.contient(&e.fin)).cloned().collect(),
         date_naissance,
     }
 }
@@ -241,7 +245,7 @@ pub fn naissance(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<Jour>> {
 
 /// Fin du dernier contrat declare : le depart de la fenetre par defaut.
 pub fn derniere_fin(engagements: &[Declare], salarie: &IdSalarie) -> Option<Jour> {
-    engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.periode.fin()).max()
+    engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.fin).max()
 }
 
 /// L'AFFILIATION D'UN SALARIE D'UNE COMPAGNIE au regard des annexes 8 et 10 : le meme compte que les droits d'un

@@ -1277,7 +1277,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | rangée d'un tableau qu'une route rend à l'écran (ce qu'elle est : une ligne, le sous-total d'un groupe, le total général ; ses cellules déjà dites, une par colonne ; dans un tableau qui se saisit, son rang dans la case) | `socle::ecran::RangeeRendue`, `socle::ecran::SorteDeRangee` | `socle/src/ecran.rs` |
 | rangées qui se saisissent dans un tableau rendu (la case de la charge dont elles sont les rangées, le bouton qui en ajoute une, celui qui en retire une ; chaque colonne dit les parties qu'elle tient, chaque rangée son rang : les lignes prévues dans le tableau des paies de `droits-des-pieces`) | `socle::ecran::SaisieDuTableau` | `socle/src/ecran.rs` |
 | ce que le lecteur des AEM déposées dit d'un fichier du dossier lu (son nom, la phrase : un enregistrement illisible, une case laissée vide) | `import::dsn_aem::NoteDUneAem` | `import/src/dsn_aem.rs` |
-| pièce déposée sur l'écran des droits d'un intermittent (le fichier posé dans `mes-pieces/`, ce que la route en lit ; ce que dit chaque fichier se range sous lui, `DitDesPieces`) | `PieceDite` | `routes/src/accueil/droits_des_pieces.rs` |
+| pièce déposée sur l'écran des droits d'un intermittent (le fichier posé dans `mes-pieces/`, sa nature, ses employeurs, ce que la route en lit ; ce que dit chaque fichier se range sous lui, `DitDesPieces`, `CeQuiSeDitDUnFichier`) | `PieceDite` | `routes/src/accueil/droits_des_pieces.rs` |
 | bloc de l'écran des droits d'un intermittent, dans l'ordre que la route `droits-des-pieces` lui donne (une case de sa charge, le résumé de la personne, le tableau des paies et ses lignes prévues, le dépôt des pièces, les pièces déposées ; pas un rang d'un `EcranRendu`, qui n'a ni tableau ni dépôt) | `BlocDesDroits` | `routes/src/accueil/droits_des_pieces.rs` |
 | quand, sur une carte fermée (celle d'un engagement validé, celle d'une paie importée : ses jours du mois en clair et au plus court, un seul compositeur ; une période quand ils ne sont pas lus ; s'ils sont épars ; au survol, ce qu'ils sont ; le mois abrégé) | `socle::ecran::QuandDeLaCarte` | `socle/src/ecran.rs` |
 | carte fermée d'une paie importée (quand, et au survol ses dates ; si ses jours sont épars ; le mois abrégé ; qui, le mot « importé », ce qu'il est ; ses pastilles ; le montant qu'elle dit et ce qu'il est) | `ResumeDeLaCarte` | `import/src/mois.rs` |
@@ -1506,7 +1506,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | date de début du contrat d'une paie, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
 | employeur d'une pièce d'un intermittent, qui range ses contrats (son Siren, sa raison sociale, ou la pièce seule) ; et le compte des pièces seules | `CleDEmployeur` ; `Seules` | `routes/src/accueil/droits_des_pieces.rs` |
 | pièce d'un intermittent lue, avant son registre (de qui, chez quel employeur, son nom, sa naissance, le contrat qu'elle atteste, d'où vient son plafond) ; elle entre dans le registre de son employeur, `import::attestes::Atteste`, qui ne garde ni l'employeur, ni le nom de la pièce, ni le plafond | `Attestee` | `routes/src/accueil/droits_des_pieces.rs` |
-| d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, ou à calculer du contrat d'un bulletin) ; pourquoi il ne se connaît pas ; une paie qui compte entière sous la plus basse limite possible | `SourceDuPlafond` ; `PlafondInconnu` ; `SousLePlusBas` | `routes/src/accueil/droits_des_pieces.rs` |
+| d'où vient le plafond d'une paie des pièces (imprimé, calculé du contrat, à calculer du contrat d'un bulletin, ou inconnu d'une ligne prévue qui ne dit que sa fin) ; pourquoi il ne se connaît pas ; une paie qui compte entière sous la plus basse limite possible | `SourceDuPlafond` ; `PlafondInconnu` ; `SousLePlusBas` | `routes/src/accueil/droits_des_pieces.rs` |
 | paie d'un intermittent comptée depuis ses pièces ou un contrat prévu : ce que sa pièce dit (un compteur qu'elle tait reste vide), son employeur, d'où vient son plafond ; elle devient une ligne déclarée (`droit::cumul::Declare`) quand elle dit ce que la ligne demande | `PaieComptee` | `routes/src/accueil/droits_des_pieces.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
@@ -2919,7 +2919,9 @@ leur mois. Les conseils (`routes/src/gestes/conseils.rs`) et la position des dro
 `routes/src/accueil/droits_des_pieces.rs`) : la personne pose les pièces de tous ses employeurs (bulletins, AEM en PDF
 ou déposées) dans `mes-pieces/` de l'installation ; les lecteurs de l'import les lisent, par NIR, et le registre de
 l'import (`import::attestes::Registre::vide`, un par employeur : deux employeurs ne font jamais un contrat) ne garde
-chaque contrat qu'une fois ; la charge peut y ajouter des contrats prévus, qui se comptent pareil et ne s'écrivent pas.
+chaque contrat qu'une fois ; la charge peut y ajouter des contrats prévus, qui se comptent pareil et ne s'écrivent pas
+(une ligne prévue ne se saisit qu'avec sa fin : une ligne déclarée, `droit::cumul::Declare`, se situe par sa fin, son
+début facultatif ; la route ne le demande que pour le plafond, quand il compte).
 Le compte est un seul, `droit::allocation::affiliation_des_droits` : celui de la route `droits` d'une compagnie (par
 `droit::cumul::position_droits`), de ses conseils, de la colonne « Droits » du bulletin, et de celle-ci ; il se dit par
 `archives::comptes_de_la_position` : à la dernière fin de contrat (sinon aujourd'hui), sur 365 jours, allongés de 30

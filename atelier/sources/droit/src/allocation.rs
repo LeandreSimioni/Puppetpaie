@@ -326,7 +326,7 @@ pub struct Affiliation {
 /// retenue pour l'ouverture » ; INFERENCE, dite dans `allocation-intermittents.json`).
 #[allow(clippy::too_many_arguments)]
 pub fn affiliation_des_droits(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, anniversaire: Option<Jour>, jusqu_au: Option<Jour>, naissance: Option<Jour>) -> R<Affiliation> {
-    let siennes: Vec<Declare> = lignes.iter().filter(|l| l.salarie == *salarie && jusqu_au.is_none_or(|j| l.periode.fin() <= j)).cloned().collect();
+    let siennes: Vec<Declare> = lignes.iter().filter(|l| l.salarie == *salarie && jusqu_au.is_none_or(|j| l.fin <= j)).cloned().collect();
     let fin = match (derniere_fin(&siennes, salarie), jusqu_au) {
         (Some(j), _) | (None, Some(j)) => j,
         (None, None) => crate::contexte::aujourdhui()?,
@@ -346,7 +346,7 @@ pub fn affiliation_des_droits(racine: &Path, c: &Constantes, r: &Readmission, li
 #[allow(clippy::too_many_arguments)]
 pub fn affiliation(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, fin: Jour, precedente: Option<Jour>, naissance: Option<Jour>) -> R<Affiliation> {
     let siennes: Vec<Declare> = match precedente {
-        Some(p) => lignes.iter().filter(|l| l.periode.fin() > p).cloned().collect(),
+        Some(p) => lignes.iter().filter(|l| l.fin > p).cloned().collect(),
         None => lignes.to_vec(),
     };
     let mut meilleure: Option<Affiliation> = None;
@@ -405,7 +405,7 @@ pub fn butoir(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare]
     for k in 0..=derniere {
         let fenetre = c.fenetre_jours.plus(pas.fois(k));
         for l in lignes {
-            jours.push(l.periode.fin().apres(fenetre)?);
+            jours.push(l.fin.apres(fenetre)?);
         }
         if let Some(p) = precedente {
             jours.push(p.apres(fenetre)?);
