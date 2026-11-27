@@ -245,7 +245,8 @@ struct Attestee {
 /// paie. Le contrat ne se demande que quand la periode ne suffit pas : un artiste dont la paie fait moins de cinq jours
 /// (`plafond_de`). La periode d'un bulletin est celle qu'il paie (R. 3243-1, 5°) : elle peut etre le mois entier quand le
 /// contrat est plus court ; le plafond s'y calcule alors au mois, plus haut que celui du contrat, et la limite de la paie
-/// est trop haute (INFERENCE : la periode payee d'un intermittent est celle de son contrat).
+/// est trop haute (INFERENCE : la periode payee d'un intermittent est celle de son contrat) ; une note de l'estimation le
+/// dit, pour chaque paie dont la periode est un mois entier (`estimer`).
 #[derive(Clone, Debug)]
 enum SourceDuPlafond {
     Imprime(Montant),
@@ -1150,7 +1151,7 @@ fn estimer(
     // D'ou vient le plafond de chaque paie, avec le debut de son contrat quand la charge le dit (`debuts`).
     let mut sources = Vec::new();
     for x in &du_salaire {
-        sources.push(match debuts.get(&x.id) {
+        let s = match debuts.get(&x.id) {
             Some(d) => match x.plafond.avec_le_debut(*d) {
                 Some(s) => s,
                 None => {
@@ -1159,7 +1160,19 @@ fn estimer(
                 }
             },
             None => x.plafond.clone(),
-        });
+        };
+        // Une paie sans plafond imprime ni contrat dont la periode est un mois entier : le plafond est celui du mois
+        // (`SourceDuPlafond`, l'inference qu'elle ne fait que dire).
+        if let SourceDuPlafond::DuContrat { contrat: None, paie } = &s {
+            if *paie == Periode::du_mois(paie.debut().mois_civil()) {
+                notes.push(format!(
+                    "La paie {} chez {} n'imprime pas son plafond et paie le mois entier : sa limite (art. 11 §3) se calcule sur le plafond du mois, peut-être plus haut que celui de son contrat ; l'estimation peut être trop haute.",
+                    x.dates(),
+                    x.employeur
+                ));
+            }
+        }
+        sources.push(s);
     }
     let mut estimations = Vec::new();
     let mut visees = Vec::new();
