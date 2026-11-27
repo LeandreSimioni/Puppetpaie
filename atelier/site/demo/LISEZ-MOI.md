@@ -36,8 +36,9 @@ cadre « / »            la page du logiciel, inchangée : `/`, `/js/…`, `/api
 - **Si le moteur tombe** (l'appel au module lève une exception), le worker le dit, la page l'affiche et propose de
   relancer la démo, qui repart de zéro.
 - **Le seul envoi qui sort** va au filet (l'import `poster`, une requête synchrone du worker) ; le moteur ne laisse
-  partir que les adresses du filet (`socle::garde_reseau`), et le filet n'admet de la démo que l'identité d'un poste
-  et ses incidents (`poste`, `rapport`) : un message de « Un problème, une idée ? » écrit dans la démo ne part pas.
+  partir que les adresses du filet (`socle::garde_reseau`), et le filet n'admet de la démo que l'identité d'un poste,
+  ses incidents et ses messages de « Un problème, une idée ? » (`poste`, `rapport`, `retour` ; les messages venus de
+  puppetpaie.fr, trois par jour et par adresse).
 - **Ce que le logiciel « ouvre »** (un PDF, un dossier) : sur un poste, un programme du poste le montre ; ici, le
   moteur le passe à la page (l'import `montrer`, `compagnie::poste`), qui l'affiche par-dessus le logiciel : un PDF
   dans un cadre, tout fichier à ouvrir dans un autre onglet ou à télécharger, un dossier par la liste de ce qu'il

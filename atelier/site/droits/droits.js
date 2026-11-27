@@ -6,7 +6,8 @@
 // (`premier-ecran.json`) ; le moteur prêt, « Calculer » fait le premier calcul. Ensuite, chaque changement (un bulletin
 // déposé ou retiré, une case) redemande la route. Les
 // bulletins déposés vont dans le dossier que le dépôt nomme (`dossier`), sur le disque en mémoire du moteur. Elle ne
-// garde rien : ni stockage, ni cache ; fermer l'onglet efface tout.
+// garde rien : ni stockage, ni cache ; fermer l'onglet efface tout. Le moteur prêt, elle offre aussi « Un problème, une
+// idée ? », la boîte du logiciel par ses routes (en bas de ce fichier).
 "use strict";
 
 (function () {
@@ -71,6 +72,7 @@
         };
         pret = true;
         offrirLeCalcul();
+        $("signaler").classList.remove("cache");
       } else if (m.quoi === "pose") {
         var f = poses.shift();
         if (f) f(m.ok);
@@ -112,9 +114,9 @@
     });
   }
 
-  // La route, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }). Une réponse qui ne se lit pas est une
-  // faute technique : elle remonte telle quelle (son code, son texte), sans phrase de plus.
-  function route(charge) {
+  // La route `nom`, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }). Une réponse qui ne se lit pas est
+  // une faute technique : elle remonte telle quelle (son code, son texte), sans phrase de plus.
+  function route(nom, charge) {
     return new Promise(function (rendre, rejeter) {
       var id = prochain++;
       attentes[id] = function (r) {
@@ -126,7 +128,7 @@
         }
       };
       var corps = new TextEncoder().encode(JSON.stringify(charge)).buffer;
-      port.postMessage({ id: id, methode: "POST", adresse: "/api/droits-des-pieces", entetes: { "content-type": "application/json" }, corps: corps }, [corps]);
+      port.postMessage({ id: id, methode: "POST", adresse: "/api/" + nom, entetes: { "content-type": "application/json" }, corps: corps }, [corps]);
     });
   }
 
@@ -226,7 +228,7 @@
     suite.then(function () {
       var x = charge();
       envoi = x.envoi;
-      return route(x.charge);
+      return route("droits-des-pieces", x.charge);
     }).then(function (r) {
       if (r.ok && r.resultat) {
         montrer(r.resultat, envoi);
@@ -617,6 +619,143 @@
       $(ici).focus();
     }
   }
+
+  // ---------------------------------------------------------------- « Un problème, une idée ? »
+
+  // LA BOÎTE DU LOGICIEL (logiciel/interface/js/filet.js), par les mêmes routes, que le moteur sert sans compagnie :
+  // `signalements` (ce que la boîte dit), `signalement-apercu` (voir ce qui part), `signalement-envoyer` (le message
+  // part aussitôt : dans l'onglet, le départ se fait sur place, avant la réponse). La page ne capture pas l'écran (le
+  // logiciel le fait par html2canvas, qu'il sert lui-même) : on joint des images choisies. Rien ne se garde ici : la
+  // boîte ne liste pas les messages et n'attend aucune réponse (Léandre, 27/11/2026 : « Les gens n'auront pas de
+  // réponse, c'est pas grave, ils peuvent juste m'envoyer un retour »).
+
+  // Ce que la route rend, ou son refus levé en erreur (sa phrase, telle quelle).
+  function rendu(r) {
+    if (r.ok && r.resultat) return r.resultat;
+    if (r.refus) throw new Error(r.refus.phrase);
+    throw new Error("réponse du moteur sans résultat ni refus : " + JSON.stringify(r));
+  }
+
+  function boiteSignalement() {
+    var bouton = $("signaler");
+    bouton.classList.add("cache");
+    var images = [];                       // { nom, type, donnees (data URL) }
+    var boite = el("section", "signalement");
+    boite.id = "sg-boite";
+    var titre = el("h2", null, "Un problème, une idée ?");
+    var question = el("label", "libelle");
+    question.htmlFor = "sg-texte";
+    var texte = el("textarea");
+    texte.id = "sg-texte";
+    texte.rows = 6;
+    texte.maxLength = 5000;
+    var liste = el("ul", "fichiers");
+    var ajout = el("label", "lien", "joindre des images");
+    var fichier = el("input");
+    fichier.type = "file";
+    fichier.accept = "image/png,image/jpeg";
+    fichier.multiple = true;
+    ajout.append(fichier);
+    var ceQuiPart = el("p", "aide");
+    var erreur = el("p", "avis cache");
+    var resultat = el("p", "phrase cache");
+    resultat.setAttribute("aria-live", "polite");
+    var voir = el("button", "lien", "voir ce qui part");
+    var fermer = el("button", null, "Fermer");
+    var envoyer = el("button", "primaire", "Envoyer");
+    [voir, fermer, envoyer].forEach(function (b) { b.type = "button"; });
+    var actions = el("div", "actions");
+    actions.append(voir, fermer, envoyer);
+    var apercu = el("pre", "cache");
+    boite.append(titre, question, texte, liste, ajout, ceQuiPart, erreur, resultat, actions, apercu);
+    bouton.parentNode.after(boite);
+
+    var montrerErreur = function (m) { erreur.textContent = m; erreur.classList.toggle("cache", !m); };
+    var changement = function () {
+      envoyer.disabled = voir.disabled = !texte.value.trim();
+      apercu.classList.add("cache");      // l'aperçu montré n'est plus le bon
+    };
+    var chargeDuMessage = function () {
+      return { texte: texte.value, ecran: document.querySelector("h1").textContent,
+        captures: images.map(function (i) { return { type: i.type, donnees: i.donnees }; }) };
+    };
+    // Les images jointes, par leur nom (la politique du site n'admet pas d'image `data:` dans la page).
+    var dessinerImages = function () {
+      liste.replaceChildren();
+      images.forEach(function (i, n) {
+        var li = el("li");
+        var retirer = el("button", "lien", "retirer");
+        retirer.type = "button";
+        retirer.addEventListener("click", function () { images.splice(n, 1); dessinerImages(); });
+        li.append(el("div", "nom", i.nom), retirer);
+        liste.append(li);
+      });
+      changement();
+    };
+    fichier.addEventListener("change", function () {
+      montrerErreur("");
+      Array.prototype.forEach.call(fichier.files, function (f) {
+        var lecteur = new FileReader();
+        lecteur.onload = function () { images.push({ nom: f.name, type: f.type, donnees: lecteur.result }); dessinerImages(); };
+        lecteur.onerror = function () { montrerErreur("Le fichier " + f.name + " ne se lit pas : " + texteDErreur(lecteur.error)); };
+        lecteur.readAsDataURL(f);
+      });
+      fichier.value = "";
+    });
+    texte.addEventListener("input", function () {
+      resultat.classList.add("cache");
+      changement();
+    });
+    changement();
+
+    route("signalements", {}).then(function (r) {
+      var e = rendu(r).ecran;
+      question.textContent = e.question;
+      ceQuiPart.textContent = e.ce_qui_part;
+    }).catch(function (e) { montrerErreur(texteDErreur(e)); });
+
+    fermer.addEventListener("click", function () {
+      boite.remove();
+      bouton.classList.remove("cache");
+      bouton.focus();
+    });
+    voir.addEventListener("click", function () {
+      if (!apercu.classList.contains("cache")) { apercu.classList.add("cache"); return; }
+      montrerErreur("");
+      route("signalement-apercu", chargeDuMessage()).then(function (r) {
+        apercu.textContent = JSON.stringify(rendu(r).corps, null, 2);
+        apercu.classList.remove("cache");
+      }).catch(function (e) { montrerErreur(texteDErreur(e)); });
+    });
+    // ENVOYER : le message part, puis la boîte dit où il en est, comme le moteur le dit (`signalements` : son départ,
+    // et pourquoi il n'est pas parti), et se vide pour un message neuf.
+    envoyer.addEventListener("click", function () {
+      montrerErreur("");
+      envoyer.disabled = true;
+      var envoye = null;
+      route("signalement-envoyer", chargeDuMessage()).then(function (r) {
+        envoye = rendu(r);
+        return route("signalements", {});
+      }).then(function (r) {
+        var l = rendu(r);
+        var s = l.signalements.filter(function (x) { return x.id === envoye.id; })[0];
+        var dit = [l.ecran.merci];
+        if (s) dit.push(s.depart.mots + (s.etat === "pas-parti" && s.raison ? " — " + s.raison : ""));
+        if (envoye.deja) dit.push(l.ecran.deja);
+        resultat.textContent = dit.join(" ");
+        resultat.classList.remove("cache");
+        texte.value = "";
+        images = [];
+        dessinerImages();
+        texte.focus();
+      }).catch(function (e) {
+        montrerErreur(texteDErreur(e));
+        changement();
+      });
+    });
+    texte.focus();
+  }
+  $("signaler").addEventListener("click", boiteSignalement);
 
   demarrer();
 })();

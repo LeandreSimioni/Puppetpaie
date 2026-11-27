@@ -21,6 +21,12 @@ estimée. Elle ne garde rien : fermer l'onglet efface tout.
   `/api/droits-des-pieces`, et fait poser les bulletins déposés dans le dossier que le dépôt nomme (`dossier`, le
   message `poser` du worker). Elle s'ouvre tout de suite ; le moteur se charge derrière, et le premier calcul part
   à l'appui sur « Calculer ». Un envoi au filet, s'il y en a, est celui de la démo (l'import `poster` du worker).
+- « Un problème, une idée ? » (le bouton du bas, qui arrive avec le moteur) : la boîte du logiciel
+  (`logiciel/interface/js/filet.js`), par les mêmes routes, que le moteur sert sans compagnie (`signalements` pour ce
+  qu'elle dit, `signalement-apercu` pour « voir ce qui part », `signalement-envoyer`) ; dans l'onglet, le message part
+  sur place, et la boîte dit où il en est. Pas de capture d'écran (le logiciel la fait par html2canvas, qu'il sert
+  lui-même) : on joint des images choisies, montrées par leur nom (la politique n'admet pas d'image `data:`). Ni liste
+  des messages, ni réponse : rien n'est gardé.
 
 ## Ce que le serveur doit servir sous `/droits/`
 

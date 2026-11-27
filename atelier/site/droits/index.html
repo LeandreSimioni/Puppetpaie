@@ -96,6 +96,21 @@ summary{cursor:pointer;color:var(--bleu)}
 .pied.signature{margin-top:.6rem;padding-top:.8rem;border-top:1px solid var(--filet)}
 a{color:var(--bleu);text-underline-offset:2px}
 .pied a{color:inherit}
+/* « Un problème, une idée ? » : la boîte du logiciel, posée sous le bouton. */
+.signalement{margin:1rem 0 0;padding:1rem;border:1px solid var(--filet);border-radius:var(--rayon)}
+.signalement h2{margin:0 0 .8rem}
+.signalement textarea{display:block;width:100%;font:inherit;padding:.55rem .65rem;border:1px solid #C9C7C2;
+  border-radius:var(--rayon);margin:0 0 .6rem}
+.signalement textarea:focus{border-color:var(--encre);outline:none}
+.signalement label.lien{display:inline-block;color:var(--bleu);font-size:.9rem;text-decoration:underline;
+  text-underline-offset:2px;cursor:pointer}
+.signalement label.lien:focus-within{outline:2px solid var(--bleu);outline-offset:3px}
+.signalement label.lien input{position:absolute;width:1px;height:1px;opacity:0}
+.signalement .actions{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:1rem 0 0}
+.signalement .primaire{border-color:var(--bleu);background:var(--bleu);color:var(--papier)}
+.signalement .primaire:disabled,.signalement button:disabled{opacity:.5;cursor:default}
+.signalement pre{margin:1rem 0 0;padding:.8rem;background:var(--voile);font-size:.8rem;overflow-x:auto;
+  white-space:pre-wrap;overflow-wrap:anywhere}
 :focus-visible{outline:2px solid var(--bleu);outline-offset:3px}
 </style>
 <main>
@@ -108,6 +123,8 @@ a{color:var(--bleu);text-underline-offset:2px}
   <p id="refus" class="avis cache"></p>
   <div id="ecran"></div>
   <button type="button" id="calculer" class="cache">Calculer</button>
+
+  <p class="pied"><button type="button" id="signaler" class="lien cache">Un problème, une idée ?</button></p>
 
   <noscript><p class="avis">Cette page a besoin de JavaScript.</p></noscript>
   <p class="pied signature">Une page de <a href="https://puppetpaie.fr/">PuppetPaie</a>, le logiciel de paie libre et gratuit, codé et maintenu par la <a href="https://ueueue.eu/">Compagnie UEUEUE</a>.</p>
