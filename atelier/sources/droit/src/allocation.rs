@@ -1,21 +1,31 @@
-//! L'ALLOCATION JOURNALIERE D'UN INTERMITTENT, ESTIMEE (annexes VIII et X au reglement d'assurance chomage, art. 14 et
-//! 16 ; `atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt`, `…annexe10…`) :
-//! AJ = A + B + C, A du salaire de reference, B des heures travaillees, C de l'allocation journaliere minimale ; pas moins
-//! que le plancher de l'annexe, pas plus que le plafond (34,4 % de 1/365e de quatre plafonds annuels de la Securite
-//! sociale). Les valeurs et leurs textes sont dans `allocation-intermittents.json` ; ce module n'a que la formule.
+//! LES DROITS D'UN INTERMITTENT, SANS COMPAGNIE (annexes VIII et X au reglement d'assurance chomage ;
+//! `atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt`, `…annexe10…`) :
 //!
-//! Une estimation : ni la readmission (art. 9), ni le salaire annuel de reference (art. 11 §2), ni la limite du salaire
-//! de reference (art. 11 §3), ni la participation de 0,93 % (art. 19). Chaque partie s'arrondit au centime, puis
-//! s'ajoute : INFERENCE depuis l'exemple 6 du guide de France Travail
+//! - L'AFFILIATION (art. 3, art. 9 §1 a et b) : 507 heures sur les 365 jours qui precedent la fin de contrat ; a la
+//!   readmission, 42 heures de plus par periode de 30 jours au-dela du 365e jour, jamais avant la fin de contrat qui a
+//!   ouvert le droit precedent (`affiliation`) ; et le jour ou, sans contrat de plus, il en faudra davantage (`butoir`).
+//! - L'ALLOCATION JOURNALIERE, ESTIMEE (art. 14 et 16) : AJ = A + B + C, A du salaire de reference, B des heures
+//!   travaillees, C de l'allocation journaliere minimale ; pas moins que le plancher de l'annexe, pas plus que le plafond ;
+//!   a la readmission, les diviseurs de A et B deviennent les heures exigees (fois le SMIC horaire pour A : `Diviseurs`).
+//! - LA LIMITE DU SALAIRE DE REFERENCE (art. 11 §3) : chaque paie n'y compte qu'a quatre fois son plafond
+//!   (`salaire_limite`, `facteur_vise`).
+//!
+//! Les valeurs et leurs textes sont dans `allocation-intermittents.json` ; ce module n'a que les formules. Ni le salaire
+//! annuel de reference (art. 11 §2), ni la participation de 0,93 % (art. 19), ni la clause de rattrapage. Chaque partie
+//! s'arrondit au centime, puis s'ajoute : INFERENCE depuis l'exemple 6 du guide de France Travail
 //! (`chomage-intermittents/francetravail-guide-intermittents-20261020.txt` : « 39,80 + 12,20 + 12,78 = 64,78 € »).
 
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+use crate::contexte::IdSalarie;
+use crate::cumul::{position, Constantes, Declare, Position};
 use crate::emplois::AnnexeChomage;
 use crate::source::forme_notee;
+use socle::date::{Duree, Jour, Periode};
 use socle::echec::R;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
-use socle::grandeurs::{Coefficient, Heures, Montant, Taux};
+use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
 
 forme_notee! {
     /// `allocation-intermittents.json`, entier.
@@ -25,6 +35,8 @@ forme_notee! {
         pub viii: Formule,
         #[serde(rename = "X")]
         pub x: Formule,
+        pub readmission: Readmission,
+        pub limite_du_salaire: LimiteDuSalaire,
         pub plafond: PlafondDeLAllocation,
     }
 }
@@ -53,6 +65,21 @@ forme_notee! {
 }
 
 forme_notee! {
+    /// La readmission (art. 9 §1 b) : les heures de plus par periode de jours au-dela de la fenetre.
+    pub struct Readmission {
+        pub heures_par_periode: Heures,
+        pub jours_par_periode: u32,
+    }
+}
+
+forme_notee! {
+    /// La limite du salaire de reference (art. 11 §3, art. 49) : les plafonds d'une paie qu'il compte au plus.
+    pub struct LimiteDuSalaire {
+        pub plafonds_par_paie: Coefficient,
+    }
+}
+
+forme_notee! {
     /// Le plafond de l'allocation (art. 16) : `part` de 1/`jours` de `plafonds_de_la_securite_sociale` plafonds annuels.
     pub struct PlafondDeLAllocation {
         pub part: Taux,
@@ -65,6 +92,14 @@ forme_notee! {
 pub fn allocation() -> R<Arc<Allocation>> {
     static CACHE: OnceLock<FormeGardee<Allocation>> = OnceLock::new();
     forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("allocation-intermittents.json") }, "La table livrée de l'allocation des intermittents ne se lit pas : le signaler au développeur.", Ok)
+}
+
+/// LES DIVISEURS DES PARTIES A ET B : ceux de l'annexe, ou, quand la fenetre s'allonge (art. 9 §1 b), les heures exigees
+/// (fois le SMIC horaire pour A : art. 14).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Diviseurs {
+    DeLAnnexe,
+    Allonges { heures_exigees: Heures, smic_horaire: MontantUnitaire },
 }
 
 impl Allocation {
@@ -84,25 +119,33 @@ impl Allocation {
 
     /// LA PARTIE A : l'allocation minimale fois la part du salaire de reference `sr`, jusqu'au seuil puis au-dela, sur le
     /// diviseur.
-    fn partie_a(&self, f: &Formule, sr: Montant) -> R<Montant> {
+    fn partie_a(&self, f: &Formule, sr: Montant, d: Diviseurs) -> R<Montant> {
+        let diviseur = match d {
+            Diviseurs::DeLAnnexe => f.diviseur_du_salaire,
+            Diviseurs::Allonges { heures_exigees, smic_horaire } => heures_exigees * smic_horaire,
+        };
         let (bas, haut) = (sr.min(f.seuil_du_salaire), (sr - f.seuil_du_salaire).max(Montant::ZERO));
-        let part = |m: Montant| m.rapport(f.diviseur_du_salaire).ok_or_else(|| socle::fichiers::absent("diviseur_du_salaire"));
+        let part = |m: Montant| m.rapport(diviseur).ok_or_else(|| socle::fichiers::absent("diviseur_du_salaire"));
         Ok((self.aj_minimale.montant * (part(bas)? * f.part_du_salaire + part(haut)? * f.part_du_salaire_au_dela)).au_centime())
     }
 
     /// LA PARTIE B : l'allocation minimale fois la part des heures travaillees `nht`, jusqu'au seuil puis au-dela, sur le
     /// diviseur.
-    fn partie_b(&self, f: &Formule, nht: Heures) -> R<Montant> {
+    fn partie_b(&self, f: &Formule, nht: Heures, d: Diviseurs) -> R<Montant> {
+        let diviseur = match d {
+            Diviseurs::DeLAnnexe => f.diviseur_des_heures,
+            Diviseurs::Allonges { heures_exigees, .. } => heures_exigees,
+        };
         let (bas, haut) = (nht.min(f.seuil_des_heures), (nht - f.seuil_des_heures).max(Heures::ZERO));
-        let part = |h: Heures| h.rapport(f.diviseur_des_heures).ok_or_else(|| socle::fichiers::absent("diviseur_des_heures"));
+        let part = |h: Heures| h.rapport(diviseur).ok_or_else(|| socle::fichiers::absent("diviseur_des_heures"));
         Ok((self.aj_minimale.montant * (part(bas)? * f.part_des_heures + part(haut)? * f.part_des_heures_au_dela)).au_centime())
     }
 
     /// L'ALLOCATION DE L'ANNEXE `annexe` pour le salaire de reference `sr` et les heures travaillees `nht`, sous le plafond
-    /// `plafond` (`Allocation::plafond`).
-    pub fn estimer(&self, annexe: AnnexeChomage, sr: Montant, nht: Heures, plafond: Montant) -> R<Estimation> {
+    /// `plafond` (`Allocation::plafond`), avec les diviseurs `d`.
+    pub fn estimer(&self, annexe: AnnexeChomage, sr: Montant, nht: Heures, plafond: Montant, d: Diviseurs) -> R<Estimation> {
         let f = self.formule(annexe);
-        let (a, b) = (self.partie_a(f, sr)?, self.partie_b(f, nht)?);
+        let (a, b) = (self.partie_a(f, sr, d)?, self.partie_b(f, nht, d)?);
         let c = (self.aj_minimale.montant * f.part_fixe).au_centime();
         let calculee = a + b + c;
         let (retenue, borne) = if calculee < f.plancher {
@@ -117,7 +160,7 @@ impl Allocation {
 
     /// LE SALAIRE DE REFERENCE QU'UNE ALLOCATION VISEE `visee` DEMANDE, sous l'annexe `annexe`, les heures `nht` restant
     /// ce qu'elles sont : la partie A qu'il faut (`visee` moins B et C), ramenee a son salaire, la formule lue a l'envers.
-    pub fn salaire_vise(&self, annexe: AnnexeChomage, visee: Montant, nht: Heures, plafond: Montant) -> R<Visee> {
+    pub fn salaire_vise(&self, annexe: AnnexeChomage, visee: Montant, nht: Heures, plafond: Montant, d: Diviseurs) -> R<Visee> {
         let f = self.formule(annexe);
         if visee > plafond {
             return Ok(Visee::AuDelaDuPlafond);
@@ -125,21 +168,30 @@ impl Allocation {
         if visee <= f.plancher {
             return Ok(Visee::DesLePlancher);
         }
-        let b = self.partie_b(f, nht)?;
+        let b = self.partie_b(f, nht, d)?;
         let c = (self.aj_minimale.montant * f.part_fixe).au_centime();
         let a = visee - b - c;
         if a <= Montant::ZERO {
             return Ok(Visee::SansSalaire);
         }
         let aj = self.aj_minimale.montant;
-        let du_seuil = self.partie_a(f, f.seuil_du_salaire)?;
-        // La part du diviseur qu'une partie A demande, a la part `p` du salaire.
+        let du_seuil = self.partie_a(f, f.seuil_du_salaire, d)?;
+        let diviseur = match d {
+            Diviseurs::DeLAnnexe => f.diviseur_du_salaire,
+            Diviseurs::Allonges { heures_exigees, smic_horaire } => heures_exigees * smic_horaire,
+        };
+        // Le salaire qu'une partie A demande, a la part `p` du salaire.
         let salaire = |reste: Montant, p: Coefficient| -> R<Montant> {
             let fois = reste.rapport(aj).and_then(|r| r.sur(p)).ok_or_else(|| socle::fichiers::absent("part_du_salaire"))?;
-            Ok(f.diviseur_du_salaire * fois)
+            Ok(diviseur * fois)
         };
         let sr = if a <= du_seuil { salaire(a, f.part_du_salaire)? } else { f.seuil_du_salaire + salaire(a - du_seuil, f.part_du_salaire_au_dela)? };
         Ok(Visee::Salaire(sr.au_centime()))
+    }
+
+    /// LA LIMITE D'UNE PAIE dans le salaire de reference (art. 11 §3) : quatre fois son plafond.
+    pub fn limite_de_la_paie(&self, plafond_de_la_paie: Montant) -> Montant {
+        (plafond_de_la_paie * self.limite_du_salaire.plafonds_par_paie).au_centime()
     }
 }
 
@@ -175,4 +227,161 @@ pub enum Visee {
     DesLePlancher,
     SansSalaire,
     AuDelaDuPlafond,
+}
+
+// ------------------------------------------------------------------ la limite du salaire de reference
+
+/// LE SALAIRE DE REFERENCE QUE COMPTENT LES PAIES `paies` (chacune son brut, et sa limite, `Allocation::limite_de_la_paie` ;
+/// aucune : son plafond ne se connait pas, elle compte entiere), chacune augmentee du facteur `k` : la somme, chaque paie
+/// sous sa limite (art. 11 §3).
+pub fn salaire_limite(paies: &[(Montant, Option<Montant>)], k: Coefficient) -> Montant {
+    paies
+        .iter()
+        .map(|(brut, limite)| {
+            let b = *brut * k;
+            match limite {
+                Some(l) => b.min(*l),
+                None => b,
+            }
+        })
+        .fold(Montant::ZERO, |a, b| a + b)
+}
+
+/// LE PLUS HAUT SALAIRE DE REFERENCE QUE LES PAIES PEUVENT COMPTER : la somme de leurs limites ; aucun quand une paie qui a
+/// un brut n'a pas de limite connue (elle monte sans fin).
+pub fn salaire_au_plus(paies: &[(Montant, Option<Montant>)]) -> Option<Montant> {
+    let mut total = Montant::ZERO;
+    for (_, limite) in paies.iter().filter(|(b, _)| *b > Montant::ZERO) {
+        match limite {
+            Some(l) => total += *l,
+            None => return None,
+        }
+    }
+    Some(total)
+}
+
+/// LE FACTEUR qui porte le salaire de reference des paies `paies` a `cible`, chaque paie sous sa limite
+/// (`salaire_limite`) ; aucun quand les limites l'arretent avant (`salaire_au_plus`), ou qu'aucune paie n'a de brut. La
+/// somme croit par morceaux droits : chaque paie monte jusqu'a sa limite, puis s'arrete ; on cherche le morceau ou elle
+/// passe la cible.
+pub fn facteur_vise(paies: &[(Montant, Option<Montant>)], cible: Montant) -> Option<Coefficient> {
+    if salaire_au_plus(paies).is_some_and(|m| m < cible) {
+        return None;
+    }
+    // Le facteur ou chaque paie touche sa limite (son coude), du plus bas au plus haut ; apres le dernier, plus rien
+    // n'arrete les paies sans limite.
+    let coude = |b: &Montant, l: &Option<Montant>| l.and_then(|l| l.rapport(*b));
+    let mut coudes: Vec<Coefficient> = paies.iter().filter_map(|(b, l)| coude(b, l)).collect();
+    coudes.sort();
+    let mut bas = Coefficient::ZERO;
+    for haut in coudes.into_iter().map(Some).chain(std::iter::once(None)) {
+        // Sur le morceau de `bas` a `haut`, une paie dont le coude est passe compte sa limite ; les autres, leur brut fois
+        // le facteur.
+        let (mut fixe, mut pente) = (Montant::ZERO, Montant::ZERO);
+        for (b, l) in paies {
+            match (coude(b, l), l) {
+                (Some(t), Some(limite)) if t <= bas => fixe += *limite,
+                _ => pente += *b,
+            }
+        }
+        if let Some(k) = (cible - fixe).rapport(pente) {
+            if k >= bas && haut.is_none_or(|h| k <= h) {
+                return Some(k);
+            }
+        }
+        if let Some(h) = haut {
+            bas = h;
+        }
+    }
+    None
+}
+
+// ------------------------------------------------------------------ l'affiliation
+
+/// L'AFFILIATION D'UNE PERSONNE A UNE FIN DE CONTRAT : sa position dans la fenetre retenue (365 jours, ou allongee), les
+/// periodes de 30 jours de plus, les heures exigees, et ce qui manque.
+#[derive(Debug, Clone)]
+pub struct Affiliation {
+    pub position: Position,
+    pub periodes_en_plus: u32,
+    pub heures_exigees: Heures,
+    pub manque: Heures,
+}
+
+/// L'AFFILIATION A LA FIN DE CONTRAT `fin` (art. 3 ; art. 9 §1 a et b) : les lignes `lignes` de `salarie` dont la fin
+/// est dans les 365 jours qui la precedent, 507 heures exigees ; a la readmission (`precedente` : la fin de contrat qui a
+/// ouvert le droit precedent), seules comptent les lignes qui finissent apres elle, et, faute des 507 heures, la fenetre
+/// s'allonge de 30 jours en 30 jours (42 heures de plus chaque fois) tant qu'elle ne remonte pas a `precedente`. Rendue :
+/// la fenetre ou il manque le moins, la plus courte a egalite.
+#[allow(clippy::too_many_arguments)]
+pub fn affiliation(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, fin: Jour, precedente: Option<Jour>, naissance: Option<Jour>) -> R<Affiliation> {
+    let siennes: Vec<Declare> = match precedente {
+        Some(p) => lignes.iter().filter(|l| l.periode.fin() > p).cloned().collect(),
+        None => lignes.to_vec(),
+    };
+    let base = fin.avant(c.fenetre_jours)?;
+    let mut meilleure: Option<Affiliation> = None;
+    let mut k = 0u32;
+    loop {
+        let debut = base.avant(Duree::jours(r.jours_par_periode).fois(k))?;
+        if k > 0 && !precedente.is_some_and(|p| debut > p) {
+            break;
+        }
+        let exigees = c.seuil_heures + r.heures_par_periode.fois(k as usize);
+        let libelle = if k == 0 {
+            format!("12 mois au {}", fin.jj_mm_aaaa())
+        } else {
+            format!("{} jours au {}, réadmission", c.fenetre_jours.plus(Duree::jours(r.jours_par_periode).fois(k)).jours_a_ecrire(), fin.jj_mm_aaaa())
+        };
+        let p = position(racine, c, &siennes, salarie, &(Periode::du_au(debut, fin)?, libelle), naissance);
+        let manque = (exigees - p.heures_ouverture()?).max(Heures::ZERO);
+        let atteinte = manque.est_nul();
+        if meilleure.as_ref().is_none_or(|m| manque < m.manque) {
+            meilleure = Some(Affiliation { position: p, periodes_en_plus: k, heures_exigees: exigees, manque });
+        }
+        if atteinte {
+            break;
+        }
+        k += 1;
+    }
+    meilleure.ok_or_else(|| socle::fichiers::absent("la fenêtre des 365 jours"))
+}
+
+/// LE JOUR BUTOIR : le dernier jour ou, sans contrat de plus, l'affiliation a une fin de contrat demande ce qu'elle
+/// demande a `fin` ; le lendemain, il en faut davantage (une ligne sort de la fenetre, ou la fenetre s'allonge et exige
+/// 42 heures de plus). Ce n'est pas une echeance de France Travail. Rendu : ce jour, et l'affiliation du lendemain ; aucun
+/// quand rien ne change dans les trois ans (plus aucune ligne a perdre).
+#[derive(Debug, Clone)]
+pub struct Butoir {
+    pub jour: Jour,
+    pub lendemain: Affiliation,
+}
+
+/// Le jour butoir apres `fin` (voir `Butoir`) : les jours ou une ligne sort d'une fenetre, ou ou la fenetre peut
+/// s'allonger, du plus proche au plus lointain, jusqu'au premier ou il manque davantage qu'a `fin`.
+#[allow(clippy::too_many_arguments)]
+pub fn butoir(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, fin: Jour, precedente: Option<Jour>, naissance: Option<Jour>, a_la_fin: &Affiliation) -> R<Option<Butoir>> {
+    const PERIODES: u32 = 36;
+    let pas = Duree::jours(r.jours_par_periode);
+    let mut jours: Vec<Jour> = Vec::new();
+    for k in 0..=PERIODES {
+        let fenetre = c.fenetre_jours.plus(pas.fois(k)).plus(Duree::jours(1));
+        for l in lignes {
+            jours.push(l.periode.fin().apres(fenetre)?);
+        }
+        if let Some(p) = precedente {
+            jours.push(p.apres(fenetre)?);
+        }
+    }
+    let horizon = fin.apres(Duree::annees(3))?;
+    jours.retain(|j| *j > fin && *j <= horizon);
+    jours.sort();
+    jours.dedup();
+    for j in jours {
+        let a = affiliation(racine, c, r, lignes, salarie, j, precedente, naissance)?;
+        if a.manque > a_la_fin.manque {
+            return Ok(Some(Butoir { jour: j.avant(Duree::jours(1))?, lendemain: a }));
+        }
+    }
+    Ok(None)
 }

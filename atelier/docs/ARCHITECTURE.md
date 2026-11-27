@@ -1489,7 +1489,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
-| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne` ; la table livrée qui la fonde, `allocation-intermittents.json`, est sa forme, `Allocation`) ; et ce qu'une allocation visée demande au salaire de référence | `Estimation` ; `Visee` | `droit/src/allocation.rs` |
+| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne` ; la table livrée qui la fonde, `allocation-intermittents.json`, est sa forme, `Allocation`) ; et ce qu'une allocation visée demande au salaire de référence ; les diviseurs de ses parties A et B, ceux de l'annexe ou ceux d'une fenêtre allongée | `Estimation` ; `Visee` ; `Diviseurs` | `droit/src/allocation.rs` |
+| affiliation d'un intermittent à une fin de contrat (art. 3, art. 9 §1 a et b : sa position dans la fenêtre de 365 jours, allongée de 30 jours en 30 jours à la réadmission, les heures exigées, ce qui manque ; les valeurs de la réadmission, `Readmission`, et la limite du salaire de référence, `LimiteDuSalaire`, sont des formes de `allocation-intermittents.json`) ; et le jour butoir, le dernier où, sans contrat de plus, il n'en faut pas davantage | `Affiliation` ; `Butoir` | `droit/src/allocation.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
 | jauge de la salle qu'une grille de cachets vise, et celle des autres jauges qu'elle porte pour mémoire (`autres_jauges`) | `JaugeDeLaGrille` | `droit/src/minima.rs` |
@@ -2901,12 +2902,16 @@ leur mois. Les conseils (`routes/src/gestes/conseils.rs`) et la position des dro
 `routes/src/accueil/droits_des_pieces.rs`) : la personne pose les pièces de tous ses employeurs (bulletins, AEM en PDF
 ou déposées) dans `mes-pieces/` de l'installation ; les lecteurs de l'import les lisent, par NIR, et le registre de
 l'import (`import::attestes::Registre::vide`, un par employeur : deux employeurs ne font jamais un contrat) ne garde
-chaque contrat qu'une fois. Le compte est celui de la route `droits` (`droit::cumul::position`, qui ne prend que la
-racine où lire le catalogue, et `archives::comptes_de_la_position`) ; l'allocation journalière s'estime par annexe
-(`droit::allocation`, `allocation-intermittents.json` : art. 14 et 16), et une allocation visée dit le salaire de
-référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion. Une DSN, un certificat Congés
-Spectacles ne s'y comptent pas ; l'estimation se tait quand la fenêtre porte de l'enseignement (son salaire n'est pas
-dit à part).
+chaque contrat qu'une fois ; la charge peut y ajouter des contrats prévus, qui se comptent pareil et ne s'écrivent pas.
+Le compte est celui de la route `droits` (`droit::cumul::position`, qui ne prend que la racine où lire le catalogue, et
+`archives::comptes_de_la_position`), à la dernière fin de contrat, sur 365 jours, allongés de 30 jours en 30 jours à la
+réadmission (`droit::allocation::affiliation`, art. 9 §1 b ; la date anniversaire dite dit la réadmission) ; le jour
+butoir (`droit::allocation::butoir`) est le dernier où, sans contrat de plus, il n'en faut pas davantage, et la route
+dit pourquoi. L'allocation journalière s'estime par annexe (`allocation-intermittents.json` : art. 14 et 16), chaque paie
+sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon `droit::plafond`), et une allocation
+visée dit le salaire de référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion, et ce qui
+arrête la hausse. Une DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du
+salaire de référence, et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures.
 
 ### Le modèle d'un contrat, et le contrat parti
 
