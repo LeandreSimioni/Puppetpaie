@@ -9,6 +9,16 @@
 // garde rien : ni stockage, ni cache ; fermer l'onglet efface tout.
 "use strict";
 
+// « UN PROBLÈME, UNE IDÉE ? » : la boîte du logiciel elle-même (logiciel/js/filet.js et ce qu'elle prend, servis sous
+// logiciel/ par le déploiement depuis demo.tar.gz : droits/LISEZ-MOI.md). Ce qu'elle attend de la page qui la porte,
+// la page le lui donne comme l'accueil des compagnies : le catalogue (aucune route automatique ici), l'état d'une
+// compagnie (aucune), `api` (une route du moteur : son résultat, ou son refus levé) et `dire` (une phrase à montrer).
+// `api` se pose quand le moteur est prêt, avec le bouton.
+var CATALOGUE = {};
+var ETAT = null;
+var api = null;
+var dire = null;
+
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var el = function (nom, classe, texte) {
@@ -41,6 +51,8 @@
     a.classList.remove("cache");
   }
 
+  dire = function (texte) { avis(texte); };
+
   // Le texte d'une erreur attrapée, tel qu'elle le porte.
   function texteDErreur(e) {
     return String((e && e.message) || e);
@@ -71,6 +83,13 @@
         };
         pret = true;
         offrirLeCalcul();
+        api = function (nom, charge) {
+          return route(nom, charge || {}).then(function (r) {
+            if (!r.ok) throw new Error(r.refus.phrase);
+            return r.resultat;
+          });
+        };
+        $("signaler").classList.remove("cache");
       } else if (m.quoi === "pose") {
         var f = poses.shift();
         if (f) f(m.ok);
@@ -112,9 +131,9 @@
     });
   }
 
-  // La route, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }). Une réponse qui ne se lit pas est une
-  // faute technique : elle remonte telle quelle (son code, son texte), sans phrase de plus.
-  function route(charge) {
+  // La route `nom`, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }). Une réponse qui ne se lit pas est
+  // une faute technique : elle remonte telle quelle (son code, son texte), sans phrase de plus.
+  function route(nom, charge) {
     return new Promise(function (rendre, rejeter) {
       var id = prochain++;
       attentes[id] = function (r) {
@@ -126,7 +145,7 @@
         }
       };
       var corps = new TextEncoder().encode(JSON.stringify(charge)).buffer;
-      port.postMessage({ id: id, methode: "POST", adresse: "/api/droits-des-pieces", entetes: { "content-type": "application/json" }, corps: corps }, [corps]);
+      port.postMessage({ id: id, methode: "POST", adresse: "/api/" + nom, entetes: { "content-type": "application/json" }, corps: corps }, [corps]);
     });
   }
 
@@ -226,7 +245,7 @@
     suite.then(function () {
       var x = charge();
       envoi = x.envoi;
-      return route(x.charge);
+      return route("droits-des-pieces", x.charge);
     }).then(function (r) {
       if (r.ok && r.resultat) {
         montrer(r.resultat, envoi);

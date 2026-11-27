@@ -348,7 +348,7 @@ function departDuMessage(s) {
     return `${pastilleDeLEtat(s.depart)} ${echapper(m.merci_parti)}${deja}`;
   }
   return `<b>${echapper(m.merci)}</b> ${pastilleDeLEtat(s.depart)}${
-    s.etat === "pas-parti" ? ` — ${echapper(s.raison || m.renverra)}` : ""}${deja}`;
+    s.etat === "pas-parti" ? ` — ${echapper(s.raison || m.pas_parti)}` : ""}${deja}`;
 }
 
 /** Où en est un message (l'état vient du moteur, `problemes::signalements`). */

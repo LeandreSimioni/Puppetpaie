@@ -97,8 +97,31 @@ summary{cursor:pointer;color:var(--bleu)}
 a{color:var(--bleu);text-underline-offset:2px}
 .pied a{color:inherit}
 :focus-visible{outline:2px solid var(--bleu);outline-offset:3px}
+/* « Un problème, une idée ? » : la boîte du logiciel (logiciel/js/filet.js, son style logiciel/filet.css). Ici, ce que
+   la page qui la porte lui donne, comme l'accueil des compagnies : le voile, la boîte, ses boutons et ses notes
+   (logiciel/js/boites.js, logiciel/js/montrer.js). */
+.ecrire{margin:2rem 0 0;text-align:center}
+.cachee{display:none !important}
+.voile{position:fixed;inset:0;background:rgba(20,20,19,.45);display:flex;align-items:center;justify-content:center;z-index:50}
+.boite{background:var(--papier);border-radius:var(--rayon);padding:22px;width:440px;max-width:92vw;max-height:86vh;overflow:auto}
+.boite h3{margin:0 0 10px;font-size:1rem}
+.boite button{width:auto;margin:0;padding:6px 14px}
+.boite textarea{font:inherit;padding:.55rem .65rem;border:1px solid #C9C7C2;border-radius:var(--rayon)}
+.champ-boite{display:block}
+.champ-boite > span{display:block;margin:0 0 .35rem}
+button.primaire{border-color:var(--bleu);background:var(--bleu);color:var(--papier)}
+button.primaire:disabled,button.secondaire:disabled,button.lien:disabled{opacity:.5;cursor:default}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;justify-content:flex-end;align-items:center}
+.note{font-size:.8rem;color:var(--gris);margin:8px 0 0}
+.discret{color:var(--gris);font-size:.8rem}
+.encart{border-left:3px solid var(--filet);padding:7px 11px;margin:0 0 10px;font-size:.85rem}
+.encart.erreur{border-left-color:#B22222}
+.pastille{display:inline-block;padding:1px 7px;border-radius:9px;font-size:.75rem;background:var(--filet)}
+.pastille.bien{color:#2E7D4F}.pastille.alerte{color:#C77700}.pastille.erreur{color:#B22222}.pastille.info{color:var(--gris)}
+.d-pre{font-size:.75rem;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--voile);padding:.6rem}
 </style>
-<main>
+<link rel="stylesheet" href="logiciel/filet.css">
+<main data-ecran="Mes droits d'intermittent">
   <h1>Mes droits d'intermittent</h1>
   <p class="chapeau">Déposez vos bulletins de paie, de tous vos employeurs, ou remplissez des lignes : la page compte vos heures, dit ce qui vous manque et jusqu'à quand, et estime votre allocation. Elle ne garde rien : fermer l'onglet efface tout.</p>
 
@@ -108,9 +131,25 @@ a{color:var(--bleu);text-underline-offset:2px}
   <p id="refus" class="avis cache"></p>
   <div id="ecran"></div>
   <button type="button" id="calculer" class="cache">Calculer</button>
+  <div class="ecrire">
+    <button type="button" class="signaler cache" id="signaler" title="Écrire à l'éditeur">Un problème, une idée ?</button>
+  </div>
 
   <noscript><p class="avis">Cette page a besoin de JavaScript.</p></noscript>
   <p class="pied signature">Une page de <a href="https://puppetpaie.fr/">PuppetPaie</a>, le logiciel de paie libre et gratuit, codé et maintenu par la <a href="https://ueueue.eu/">Compagnie UEUEUE</a>.</p>
 </main>
+<div class="voile cachee" id="voile">
+  <button type="button" class="signaler sur-voile" id="signaler-voile" title="Écrire à l'éditeur">Un problème, une idée ?</button>
+  <div class="boite" id="boite"></div>
+</div>
 <script src="droits.js"></script>
+<!-- La boîte du logiciel et ce qu'elle prend, dans l'ordre de l'accueil des compagnies ; html2canvas d'abord : sa
+     capture le trouve posé (filet.js le chargerait de la racine du logiciel, que le site n'a pas). -->
+<script src="logiciel/html2canvas.min.js"></script>
+<script src="logiciel/js/montrer.js"></script>
+<script src="logiciel/js/boites.js"></script>
+<script src="logiciel/js/dates.js"></script>
+<script src="logiciel/js/calendrier.js"></script>
+<script src="logiciel/js/avance.js"></script>
+<script src="logiciel/js/filet.js"></script>
 </html>

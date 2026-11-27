@@ -208,7 +208,7 @@ pub const ROUTES: &[Fiche] = &[
 ];
 /// Une route de ce module, pour la compagnie de la porte, branchee sur l'enveloppe.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
-    route_de(&porte.ctx.racine, porte.route, charge)
+    route_de(&porte.ctx.racine, porte.route, charge, false)
 }
 
 /// LE DOSSIER DE L'INSTALLATION QUI GARDE CE QU'ON ECRIT AU DEVELOPPEUR SANS COMPAGNIE (depuis l'accueil, ou en ligne de
@@ -230,7 +230,7 @@ pub(crate) fn route_sans_compagnie(o: &super::enveloppe::Options, nom: Route, ch
             compagnie::diagnostic::noter_moteur(&format!("Réponses de l'éditeur, sans compagnie : {}", e));
         }
     }
-    route_de(&racine, nom, charge)
+    route_de(&racine, nom, charge, true)
 }
 
 // ------------------------------------------------------------------ les charges
@@ -439,11 +439,12 @@ impl Dite for IncidentNote {
 
 // ------------------------------------------------------------------ les routes
 
-fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
+/// `sans_compagnie` : la boîte écrit depuis le dossier de l'installation (`sans_compagnie`), aucune compagnie n'est lue.
+fn route_de(racine: &Path, nom: Route, charge: &Charge, sans_compagnie: bool) -> R<Rendu> {
     match nom {
         Route::Signalements => {
             let SansCharge {} = charge.lire()?;
-            en_json(signalements_route(racine)?)
+            en_json(signalements_route(racine, sans_compagnie)?)
         }
         Route::IncidentNavigateur => {
             // Ce que la page a vu (`incidents::RapportNavigateur`), que le journal des incidents met en forme.
@@ -512,7 +513,7 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::SignalementEnvoyer => {
             let c: ChargeMessage = charge.lire()?;
             let e = problemes::envoyer(racine, &c.texte, c.ecran.as_deref(), c.captures())?;
-            let liste = signalements_route(racine)?;
+            let liste = signalements_route(racine, sans_compagnie)?;
             let depart = liste.signalements.iter().find(|s| s.vu.garde.id == e.id).map(|s| s.depart.mots.clone());
             let dit = if e.deja { "Ce message est déjà enregistré." } else { "Message enregistré pour le développeur." };
             let phrase = match depart {
@@ -673,15 +674,15 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
 }
 
 /// La route `signalements` : les messages faits depuis ce poste, et les reponses non lues.
-pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
+pub(crate) fn signalements_route(racine: &Path, sans_compagnie: bool) -> R<Signalements> {
     let liste = problemes::signalements(racine)?;
     // Les reponses que la boite n'a pas encore montrees.
     let non_lues = liste.iter().filter(|s| s.garde.reponse.is_some() && s.garde.lu != Some(true)).count();
     let dits: Vec<SignalementDit> = liste
         .into_iter()
         .map(|vu| {
-            // Son depart, que la boite du message dit juste apres l'envoi : PuppetPaie renvoie de lui-meme ce qui n'est
-            // pas parti, rien n'est a faire (une information).
+            // Son depart, que la boite du message dit juste apres l'envoi (une information ; pourquoi il n'est pas
+            // parti, `problemes::passage` le note).
             let (pastille, depart) = match vu.etat {
                 EtatDuMessage::EnCours => (Some(Pastille::de(socle::ecran::EtatDEcran::Information, "en cours d'envoi")), Pastille::de(socle::ecran::EtatDEcran::Information, "Envoi en cours…")),
                 EtatDuMessage::PasParti => (Some(Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti")), Pastille::de(socle::ecran::EtatDEcran::Information, "Pas encore parti")),
@@ -702,7 +703,7 @@ pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
         non_lues,
         reponses_dit,
         phrases,
-        ecran: ecran_du_message(),
+        ecran: ecran_du_message(sans_compagnie, compagnie::bridage::paquet_soude()),
     })
 }
 
@@ -738,24 +739,31 @@ pub(crate) struct EcranDuMessage {
     ratee: &'static str,
     merci: &'static str,
     merci_parti: &'static str,
-    renverra: &'static str,
+    pas_parti: &'static str,
     deja: &'static str,
     attente: &'static str,
 }
 
-fn ecran_du_message() -> EcranDuMessage {
+/// `sans_compagnie` : aucune compagnie n'est lue, rien des salariés ne part (`diagnostic::texte_en_forme` ne connaît
+/// personne). `soude` : le paquet soudé (la démo, la page des droits) ne garde rien d'une ouverture à l'autre, et
+/// rien ne repasse de lui-même (pas de veille) : il ne promet ni réponse ni renvoi.
+fn ecran_du_message(sans_compagnie: bool, soude: bool) -> EcranDuMessage {
     EcranDuMessage {
         question: "Ce qui ne va pas, ce qui vous manque, ce que vous aimeriez :",
         captures: format!("Captures d'écran, {} au plus : collez-les (Ctrl+V), choisissez des images ou capturez l'écran.", problemes::CAPTURES_MAX),
-        ce_qui_part: "Pour qu'on trouve la panne sans vous redemander, partent avec votre message : cet ordinateur (système, version, mémoire, disque, écran), tout ce que vous et PuppetPaie avez fait ces 3 dernières minutes, et les derniers dysfonctionnements notés. Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones de vos salariés y sont remplacés par leur forme (« salarié n°2 ») et la compagnie n'est pas nommée ; montants, dates et codes restent tels quels.",
+        ce_qui_part: if sans_compagnie {
+            "Pour qu'on trouve la panne sans vous redemander, partent avec votre message : cet ordinateur (système, version, mémoire, disque, écran), tout ce que vous et PuppetPaie avez fait ces 3 dernières minutes, et les derniers dysfonctionnements notés. Les NIR, IBAN, courriels et téléphones y sont remplacés par leur forme ; noms, montants, dates et codes restent tels quels."
+        } else {
+            "Pour qu'on trouve la panne sans vous redemander, partent avec votre message : cet ordinateur (système, version, mémoire, disque, écran), tout ce que vous et PuppetPaie avez fait ces 3 dernières minutes, et les derniers dysfonctionnements notés. Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones de vos salariés y sont remplacés par leur forme (« salarié n°2 ») et la compagnie n'est pas nommée ; montants, dates et codes restent tels quels."
+        },
         trop: format!("{} captures au plus.", problemes::CAPTURES_MAX),
         format: "Une capture doit être une image PNG ou JPEG.",
         taille: "Une capture dépasse 1,5 Mo : réduisez-la, ou découpez-la.",
         ratee: "La capture n'a pas pu se faire.",
         merci: "Merci, votre message est enregistré.",
-        merci_parti: "Merci ! La réponse de l'éditeur viendra ici, dans « Vos messages ».",
-        renverra: "PuppetPaie le renverra de lui-même.",
+        merci_parti: if soude { "Merci ! Votre message est parti chez l'éditeur." } else { "Merci ! La réponse de l'éditeur viendra ici, dans « Vos messages »." },
+        pas_parti: if soude { "Il n'est pas parti." } else { "PuppetPaie le renverra de lui-même." },
         deja: "Ce message était déjà enregistré : il ne part qu'une fois.",
-        attente: "arrivé, en attente de réponse",
+        attente: if soude { "arrivé" } else { "arrivé, en attente de réponse" },
     }
 }

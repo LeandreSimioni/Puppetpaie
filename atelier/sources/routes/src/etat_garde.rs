@@ -583,7 +583,7 @@ pub struct ACote {
 impl ACote {
     /// Ce qui se lit a cote pour `racine` ; `veille` : celle de la fenetre, s'il y en a une.
     pub fn de(racine: &Path, veille: Option<crate::veille::EtatDeLaVeille>) -> ACote {
-        let signalements = Reponse::de(Route::Signalements, crate::filet::signalements_route(racine).and_then(en_json));
+        let signalements = Reponse::de(Route::Signalements, crate::filet::signalements_route(racine, false).and_then(en_json));
         ACote { veille, maj: compagnie::maj::RECHERCHE.etat(), signalements }
     }
 }
