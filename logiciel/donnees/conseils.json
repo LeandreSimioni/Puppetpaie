@@ -3064,7 +3064,7 @@
       "id": "saisie-507-assurees",
       "domaine": "chômage / travail pendant l'indemnisation",
       "public": "employeur",
-      "texte": "Vos seuls contrats assurent déjà les 507 heures de {prenom} : mieux vaut un travail intense que dilué.",
+      "texte": "Vos seuls contrats assurent déjà les heures qu'exigent les droits de {prenom} : mieux vaut un travail intense que dilué.",
       "source": [
         {
           "fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt",
@@ -3095,7 +3095,7 @@
           "annexe": "VIII"
         }
       ],
-      "ciblage": "à la place des deux conseils « plus d'heures » quand vos seuls contrats (historique et paies, ce mois compris) font au moins 507 heures au salarié sur la fenêtre de ses droits",
+      "ciblage": "à la place des deux conseils « plus d'heures » quand vos seuls contrats (historique et paies, ce mois compris) font au salarié les heures qu'exige son affiliation (507, davantage quand la fenêtre de la réadmission s'allonge)",
       "certitude": "sourcé (seul cas de certitude : vos contrats suffisent)",
       "detail": "Vos contrats font compter {heures} heures à {prenom} {fenetre}. Des heures de plus pour la même somme ne servent donc plus à ses droits, et un mois où {prenom} touche ses allocations, chaque tranche de {heures_par_jour} heures déclarées retire {coefficient} jour d'allocation."
     },
@@ -3191,7 +3191,7 @@
           "annexe": "VIII"
         }
       ],
-      "ciblage": "vos seuls contrats (historique importé et paies) font au moins 507 heures au salarié sur la fenêtre",
+      "ciblage": "vos seuls contrats (historique importé et paies) font au salarié les heures qu'exige son affiliation, sur sa fenêtre",
       "certitude": "sourcé (seul cas de certitude)"
     },
     {
@@ -3216,7 +3216,7 @@
           "annexe": "VIII"
         }
       ],
-      "ciblage": "le salarié a des heures chez vous sur la fenêtre, sans atteindre 507",
+      "ciblage": "le salarié a des heures chez vous sur la fenêtre, sans atteindre les heures qu'exige son affiliation",
       "certitude": "sourcé (ses autres employeurs ne sont pas connus : ce sont les heures chez vous)"
     },
     {
@@ -3351,7 +3351,7 @@
           "annexe": "VIII"
         }
       ],
-      "ciblage": "les 507 heures du salarié sont assurées par vos seuls contrats",
+      "ciblage": "les heures qu'exige l'affiliation du salarié sont assurées par vos seuls contrats",
       "certitude": "sourcé"
     },
     {

@@ -422,10 +422,7 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
     ];
     if enseigne {
         rangs.push(("dont enseignement (droits seuls, pas le montant)".into(), |c| Some(dit(c.enseignement)), " h"));
-        // Les heures exigees : 507, davantage dans la colonne des droits a la readmission allongee (la plus haute).
-        if let Some(exigees) = colonnes.iter().map(|c| c.heures_exigees).max() {
-            rangs.push((format!("Heures retenues pour les {} h", dit(exigees)), |c| c.heures_ouverture.map(dit), " h"));
-        }
+        rangs.push(("Heures retenues pour l'ouverture des droits".into(), |c| c.heures_ouverture.map(dit), " h"));
     }
     rangs.push(("Salaire brut".into(), |c| Some(euros(c.brut)), ""));
     let lignes = rangs
