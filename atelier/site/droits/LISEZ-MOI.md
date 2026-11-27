@@ -3,7 +3,7 @@
 Le site puppetpaie.fr l'héberge sous `https://puppetpaie.fr/droits/` : son déploiement prend ce dossier sur `main`
 (sans ce fichier). Aucun lien de l'accueil n'y mène pour l'instant. Un intermittent y dépose ses bulletins de paie (de
 tous ses employeurs) ou remplit des lignes, et voit d'abord s'il a ses heures (en vert) et son allocation, ou ce qui
-lui manque et jusqu'à quand. Elle ne garde rien : fermer l'onglet efface tout.
+lui manque et jusqu'à quand. Elle ne garde rien ailleurs que dans cet onglet : recharger la page reprend ce que vous avez saisi, fermer l'onglet efface tout.
 
 - `index.html` (le style y est, sauf celui de la boîte « Un problème, une idée ? », `logiciel/filet.css`) et
   `droits.js` : la page. Elle ne

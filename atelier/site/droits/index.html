@@ -41,7 +41,11 @@ table.saisie td{vertical-align:middle}
 table.saisie input{width:3.2rem;min-width:0;font:inherit;line-height:inherit;padding:0 .15rem;border:0;
   border-bottom:1px solid #C9C7C2;border-radius:0;background:transparent;color:inherit}
 table.saisie td.n input{text-align:right}
-table.saisie input[type=date]{width:7.4rem}
+table.saisie .date input{width:6.6rem}
+/* Une date : la case JJ/MM/AAAA, et derrière elle le calendrier du navigateur, caché, qu'un toucher ouvre. */
+.date{position:relative;display:block}
+table.saisie .date{display:inline-block}
+.date input.natif{position:absolute;left:0;bottom:0;width:1px;height:1px;padding:0;border:0;opacity:0;pointer-events:none}
 table.saisie select{font:inherit;line-height:inherit;padding:0;border:0;border-bottom:1px solid #C9C7C2;border-radius:0;
   background:transparent;color:inherit;max-width:10rem}
 table.saisie input:hover,table.saisie input:focus,table.saisie select:hover,table.saisie select:focus{background:var(--papier);border-bottom-color:var(--encre)}
@@ -144,7 +148,7 @@ button.primaire:disabled,button.secondaire:disabled,button.lien:disabled{opacity
 <link rel="stylesheet" href="logiciel/filet.css">
 <main data-ecran="Mes droits d'intermittent">
   <h1>Mes droits d'intermittent</h1>
-  <p class="chapeau">Déposez vos bulletins de paie, de tous vos employeurs, ou remplissez des lignes : la page dit si vous avez vos heures et calcule votre allocation. Elle ne garde rien : fermer l'onglet efface tout.</p>
+  <p class="chapeau">Déposez vos bulletins de paie, de tous vos employeurs, ou remplissez des lignes : la page dit si vous avez vos heures et calcule votre allocation. Elle ne garde rien ailleurs que dans cet onglet : recharger la page reprend ce que vous avez saisi, fermer l'onglet efface tout.</p>
 
   <div id="avis" class="avis cache" role="alert"></div>
 
