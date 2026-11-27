@@ -732,7 +732,10 @@ fn phrase_de_paquet(p: &Paquet) -> String {
 pub(crate) struct EcranDuMessage {
     question: &'static str,
     captures: String,
-    ce_qui_part: &'static str,
+    /// Aucun dans le paquet soudé (la démo, la page des droits) : la page de confidentialité du site le dit (Léandre,
+    /// 27/11/2026 : « si les gens décident d'envoyer un message ils envoient un message »).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ce_qui_part: Option<&'static str>,
     trop: String,
     format: &'static str,
     taille: &'static str,
@@ -751,10 +754,12 @@ fn ecran_du_message(sans_compagnie: bool, soude: bool) -> EcranDuMessage {
     EcranDuMessage {
         question: "Ce qui ne va pas, ce qui vous manque, ce que vous aimeriez :",
         captures: format!("Captures d'écran, {} au plus : collez-les (Ctrl+V), choisissez des images ou capturez l'écran.", problemes::CAPTURES_MAX),
-        ce_qui_part: if sans_compagnie {
-            "Pour qu'on trouve la panne sans vous redemander, partent avec votre message : cet ordinateur (système, version, mémoire, disque, écran), tout ce que vous et PuppetPaie avez fait ces 3 dernières minutes, et les derniers dysfonctionnements notés. Les NIR, IBAN, courriels et téléphones y sont remplacés par leur forme ; noms, montants, dates et codes restent tels quels."
+        ce_qui_part: if soude {
+            None
+        } else if sans_compagnie {
+            Some("Pour qu'on trouve la panne sans vous redemander, partent avec votre message : cet ordinateur (système, version, mémoire, disque, écran), tout ce que vous et PuppetPaie avez fait ces 3 dernières minutes, et les derniers dysfonctionnements notés. Les NIR, IBAN, courriels et téléphones y sont remplacés par leur forme ; noms, montants, dates et codes restent tels quels.")
         } else {
-            "Pour qu'on trouve la panne sans vous redemander, partent avec votre message : cet ordinateur (système, version, mémoire, disque, écran), tout ce que vous et PuppetPaie avez fait ces 3 dernières minutes, et les derniers dysfonctionnements notés. Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones de vos salariés y sont remplacés par leur forme (« salarié n°2 ») et la compagnie n'est pas nommée ; montants, dates et codes restent tels quels."
+            Some("Pour qu'on trouve la panne sans vous redemander, partent avec votre message : cet ordinateur (système, version, mémoire, disque, écran), tout ce que vous et PuppetPaie avez fait ces 3 dernières minutes, et les derniers dysfonctionnements notés. Les noms, NIR, adresses, IBAN, naissances, courriels et téléphones de vos salariés y sont remplacés par leur forme (« salarié n°2 ») et la compagnie n'est pas nommée ; montants, dates et codes restent tels quels.")
         },
         trop: format!("{} captures au plus.", problemes::CAPTURES_MAX),
         format: "Une capture doit être une image PNG ou JPEG.",

@@ -143,7 +143,9 @@ function boiteSignalement() {
       const l = retenirSignalements(await api("signalements")).signalements;
       $("sg-question").textContent = ECRAN_MESSAGE.question;
       $("sg-captures").textContent = ECRAN_MESSAGE.captures;
-      $("sg-ce-qui-part").textContent = ECRAN_MESSAGE.ce_qui_part;
+      // Ce qui part avec le message, quand la route le dit (la démo et la page des droits ne le disent pas).
+      if (ECRAN_MESSAGE.ce_qui_part) $("sg-ce-qui-part").textContent = ECRAN_MESSAGE.ce_qui_part;
+      else $("sg-ce-qui-part").remove();
       $("sg-messages").innerHTML = vosMessages(l);
       if (l.some((s) => s.reponse && !s.lu)) {
         await api("signalements-lus");

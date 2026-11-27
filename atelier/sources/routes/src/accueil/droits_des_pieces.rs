@@ -215,7 +215,10 @@ fn ecran(
     use socle::ecriture::ValeurDeCase;
     let mut ecran = Vec::new();
     if let Some((offerts, dit)) = personnes {
-        ecran.push(BlocDesDroits::Case(case_simple(cle!(ChargeDroitsDesPieces, personne), c.personne.as_ref().and_then(ValeurDeCase::de))?.offrant(offerts).disant(dit)));
+        // Sans aide : la liste des noms se comprend seule (Léandre, 27/11/2026).
+        let p = champ(cle!(ChargeDroitsDesPieces, personne))?;
+        let case = crate::fiches::CaseDeLaFiche::de_la_boite(cle!(ChargeDroitsDesPieces, personne), p.libelle, p.forme, "", c.personne.as_ref().and_then(ValeurDeCase::de));
+        ecran.push(BlocDesDroits::Case(case.offrant(offerts).disant(dit)));
     }
     let anniversaire = BlocDesDroits::Case(case_simple(cle!(ChargeDroitsDesPieces, anniversaire), c.anniversaire.as_ref().and_then(ValeurDeCase::de))?);
     let depot = BlocDesDroits::Depot(DepotDit { dossier, libelle: DEPOSER, aide: DEPOSER_AIDE });
@@ -224,7 +227,7 @@ fn ecran(
     let nom = cle!(ChargeDroitsDesPieces, previsionnel);
     let parties = PARTIES_D_UNE_LIGNE_PREVUE.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
     let champ_des_lignes = champ(nom)?;
-    let lignes = crate::fiches::CaseDeLaFiche::de_rangees(nom, champ_des_lignes.libelle, c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties).disant(vec![champ_des_lignes.sens.to_string()]);
+    let lignes = crate::fiches::CaseDeLaFiche::de_rangees(nom, champ_des_lignes.libelle, c.previsionnel.as_ref().and_then(ValeurDeCase::de), parties);
     match calcul {
         Some((personne, tableau, embauches)) => {
             let visee_offerte = !personne.estimations.is_empty();
