@@ -354,10 +354,24 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     ContratLu { salarie, periode: Some(c.periode.into()), numero: None, contrat: a }
 }
 
+/// CE QUE LE LECTEUR DES AEM DIT D'UN FICHIER du dossier lu : son nom, et la phrase (« un enregistrement illisible »).
+/// Ecrite, « fichier : phrase ».
+#[derive(Debug, Clone)]
+pub struct NoteDUneAem {
+    pub fichier: String,
+    pub phrase: String,
+}
+
+impl std::fmt::Display for NoteDUneAem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} : {}", self.fichier, self.phrase)
+    }
+}
+
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, les fichiers ou enregistrements illisibles (ignores),
-/// et les fautes des cases laissees vides d'un enregistrement repris (un numero d'objet hors de sa forme). Un
-/// `CalculImpossible` (un brut qui n'est pas un nombre) n'est pas rattrape.
-pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec<String>), socle::echec::Echec> {
+/// et les fautes des cases laissees vides d'un enregistrement repris (un numero d'objet hors de sa forme), chacun sous
+/// son fichier. Un `CalculImpossible` (un brut qui n'est pas un nombre) n'est pas rattrape.
+pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<NoteDUneAem>, Vec<NoteDUneAem>), socle::echec::Echec> {
     use socle::grandeurs::ecrit::sans_zero::dit;
     use socle::grandeurs::lu::texte_entier;
     let mut vus: Vec<(Vec<String>, ContratAtteste)> = Vec::new();
@@ -371,7 +385,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
         let octets = match std::fs::read(&f) {
             Ok(o) => o,
             Err(e) => {
-                illisibles.push(format!("{} : {}", nom, e));
+                illisibles.push(NoteDUneAem { fichier: nom.clone(), phrase: e.to_string() });
                 continue;
             }
         };
@@ -380,7 +394,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
             if l.len() < 700 {
                 continue;
             }
-            let illisible = |illisibles: &mut Vec<String>| illisibles.push(format!("{} : un enregistrement illisible", nom));
+            let illisible = |illisibles: &mut Vec<NoteDUneAem>| illisibles.push(NoteDUneAem { fichier: nom.clone(), phrase: "un enregistrement illisible".to_string() });
             let nir_ecrit: String = champ(&l, 375, 390).chars().take(13).collect();
             let Ok(nir) = Nir::lire(&nir_ecrit) else {
                 illisible(&mut illisibles);
@@ -413,7 +427,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
             let numero_objet = match NumeroObjetSpectacle::d_une_piece(&objet_ecrit) {
                 Ok(n) => n,
                 Err(e) => {
-                    fautes.push(format!("{} : {} ; le contrat se reprend sans lui.", nom, e.phrase));
+                    fautes.push(NoteDUneAem { fichier: nom.clone(), phrase: format!("{} ; le contrat se reprend sans lui.", e.phrase) });
                     None
                 }
             };

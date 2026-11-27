@@ -72,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","debut":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le résumé, l'allocation visée (une case, quand une allocation s'estime), les paies, la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : une phrase par fichier. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut) et lignes (la case des lignes prévues). resume (la personne choisie, ou les lignes prévues seules sans pièce) : nir, nom, fenetre, lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
+    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le résumé, l'allocation visée (une case, quand une allocation s'estime), les paies, la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie : période, employeur, pièce, cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent : saisie [case, ajouter, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). resume (la personne choisie, ou les lignes prévues seules sans pièce) : nir, nom, fenetre, lignes [quoi, valeur], bilan (à la dernière fin de contrat), heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée), notes, estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase, paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure]",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -210,7 +210,7 @@ fn ecran(
     calcul: Option<(DroitsDUnePersonne, TableauRendu, Vec<crate::ouverture::Choix>)>,
     sans_personne: bool,
     dossier: PathBuf,
-    pieces: Vec<String>,
+    pieces: DitDesPieces,
 ) -> R<Vec<BlocDesDroits>> {
     use socle::ecriture::ValeurDeCase;
     let mut ecran = Vec::new();
@@ -252,8 +252,9 @@ fn ecran(
             }
         }
     }
+    let pieces = pieces.dites();
     if !pieces.is_empty() {
-        ecran.push(BlocDesDroits::Pieces(PiecesDites { phrases: pieces }));
+        ecran.push(BlocDesDroits::Pieces(PiecesDites { pieces, retirer: RETIRER_LA_PIECE }));
     }
     Ok(ecran)
 }
@@ -352,22 +353,23 @@ fn cle_d_employeur(siren: Option<Siren>, raison_sociale: Option<&String>) -> Opt
 #[derive(Default)]
 struct Seules {
     rang: usize,
-    dites: std::collections::BTreeSet<String>,
+    dites: std::collections::BTreeSet<(String, Option<usize>)>,
 }
 
 impl Seules {
-    /// La cle d'un contrat de la piece `piece` : celle que dit `lue`, sinon une a lui seul ; la piece se dit une fois dans
-    /// `phrases`, avec `pourquoi` et l'effet.
-    fn cle(&mut self, lue: Option<CleDEmployeur>, piece: &str, pourquoi: &str, phrases: &mut Vec<String>) -> CleDEmployeur {
+    /// La cle d'un contrat de la piece `chemin` (a sa page `page`) : celle que dit `lue`, sinon une a lui seul ; la piece
+    /// se dit une fois dans `pieces`, avec `pourquoi` et l'effet.
+    fn cle(&mut self, lue: Option<CleDEmployeur>, chemin: &str, page: Option<usize>, pourquoi: &str, pieces: &mut DitDesPieces) -> CleDEmployeur {
         if let Some(c) = lue {
             return c;
         }
         self.rang += 1;
-        if self.dites.insert(piece.to_string()) {
-            phrases.push(format!(
-                "{} : {} ; son contrat compte à part, sans se rapprocher d'aucune autre pièce : ses heures peuvent compter deux fois si une autre pièce dit le même contrat, et le seuil paraître atteint à tort.",
-                piece, pourquoi
-            ));
+        if self.dites.insert((chemin.to_string(), page)) {
+            pieces.dire(
+                chemin,
+                page,
+                &format!("{} ; son contrat compte à part, sans se rapprocher d'aucune autre pièce : ses heures peuvent compter deux fois si une autre pièce dit le même contrat, et le seuil paraître atteint à tort.", pourquoi),
+            );
         }
         CleDEmployeur::Seule(self.rang)
     }
@@ -385,7 +387,46 @@ fn nom_de(identite: &declarations::identite::IdentiteDeclaree) -> Option<String>
 /// CE QUE LE DOSSIER DIT : les pieces lues, et une phrase par fichier.
 struct DossierDesPieces {
     attestees: Vec<Attestee>,
-    phrases: Vec<String>,
+    pieces: DitDesPieces,
+}
+
+/// CE QUE LA ROUTE DIT DES PIECES DEPOSEES, fichier par fichier : chaque fichier pose a la racine de `mes-pieces/` (une
+/// archive tient ce qu'elle contient), meme s'il n'y a rien a en dire, et ses phrases.
+#[derive(Default)]
+struct DitDesPieces(BTreeMap<String, Vec<String>>);
+
+/// Le fichier pose d'ou vient le chemin `chemin` (relatif au dossier ; dans une archive, `lot.zip/x.pdf` : `lot.zip`).
+fn fichier_pose(chemin: &str) -> &str {
+    chemin.split('/').next().unwrap_or(chemin)
+}
+
+impl DitDesPieces {
+    /// Le fichier d'ou vient `chemin`, sans rien en dire.
+    fn fichier(&mut self, chemin: &str) {
+        self.0.entry(fichier_pose(chemin).to_string()).or_default();
+    }
+
+    /// Ce que la route dit de `chemin`, a sa page `page` quand elle en a une : la phrase, sous le fichier pose, precedee
+    /// du chemin dans l'archive et de la page.
+    fn dire(&mut self, chemin: &str, page: Option<usize>, phrase: &str) {
+        let pose = fichier_pose(chemin);
+        let dedans = chemin.strip_prefix(pose).and_then(|r| r.strip_prefix('/')).map(str::to_string);
+        let ou: Vec<String> = dedans.into_iter().chain(page.map(|p| format!("page {}", p))).collect();
+        let dite = match ou.is_empty() {
+            true => {
+                // La phrase seule commence par une capitale ; le reste tel qu'il s'ecrit (« AEM », « DSN »).
+                let mut c = phrase.chars();
+                c.next().into_iter().flat_map(char::to_uppercase).chain(c).collect()
+            }
+            false => format!("{} : {}", ou.join(", "), phrase),
+        };
+        self.0.entry(pose.to_string()).or_default().push(dite);
+    }
+
+    /// Les pieces, telles que la route les rend.
+    fn dites(self) -> Vec<PieceDite> {
+        self.0.into_iter().map(|(fichier, dit)| PieceDite { fichier, dit }).collect()
+    }
 }
 
 /// LE DOSSIER LU, fichier par fichier, par les lecteurs de l'import ; `travail` : le dossier de travail (les archives
@@ -393,7 +434,18 @@ struct DossierDesPieces {
 fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesPieces> {
     let tri = import::tri::trier(dossier, &travail.join("tri"))?;
     let table = import::bulletin_lu::Table::livree()?;
-    let mut phrases: Vec<String> = tri.mises_de_cote.iter().map(import::tri::MiseDeCote::dit).collect();
+    let mut pieces = DitDesPieces::default();
+    // Une entree mise de cote se dit sous le fichier pose qui la porte (l'archive), ou sous son nom ; une entree sans nom
+    // a la racine, sous le dossier.
+    for m in &tri.mises_de_cote {
+        let sous = match (&m.dans, &m.entree) {
+            (Some(d), _) => d.texte().to_string(),
+            (None, import::tri::EntreeDeCote::Nommee(n)) => n.clone(),
+            (None, import::tri::EntreeDeCote::SansNom(_)) => MES_PIECES.texte().to_string(),
+        };
+        pieces.fichier(&sous);
+        pieces.0.entry(fichier_pose(&sous).to_string()).or_default().push(m.dit());
+    }
     let mut attestees = Vec::new();
     let mut bulletins: Vec<(String, usize, NomDeFichier, import::bulletin_lu::BulletinLu, Nir)> = Vec::new();
     let aem_dir = travail.join("aem");
@@ -402,6 +454,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
     let mut seules = Seules::default();
     for f in &tri.fichiers {
         let nom = f.chemin.texte().to_string();
+        pieces.fichier(&nom);
         match f.sorte {
             Sorte::Aem => {
                 let Some(copie) = nom_copie(f)? else { continue };
@@ -411,7 +464,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                 let e = import::dsn_aem::employeur_aem(&f.disque)?;
                 let siren = (e.sirens.len() == 1).then(|| e.sirens.iter().next().cloned()).flatten();
                 aem_employeurs.insert(copie.texte().to_string(), (nom.clone(), cle_d_employeur(siren, None), e.sirens.len()));
-                phrases.push(format!("{} : AEM déposée, lue.", nom));
+                pieces.dire(&nom, None, "AEM déposée, lue.");
             }
             Sorte::PdfTexte => {
                 let Some(copie) = nom_copie(f)? else { continue };
@@ -421,7 +474,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                     for p in aem {
                         let import::aem_lu::Lecture::Lue(a) = p.lecture else {
                             if let import::aem_lu::Lecture::Refusee { raison, .. } = p.lecture {
-                                phrases.push(format!("{}, page {} : {}.", nom, p.page, raison));
+                                pieces.dire(&nom, Some(p.page), &format!("{}.", raison));
                             }
                             continue;
                         };
@@ -431,7 +484,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                                 (false, true) => "pas de numéro de sécurité sociale",
                                 (true, _) => "pas de période",
                             };
-                            phrases.push(format!("{}, page {} : l'AEM n'imprime {} : elle ne se compte pas.", nom, p.page, manque));
+                            pieces.dire(&nom, Some(p.page), &format!("l'AEM n'imprime {} : elle ne se compte pas.", manque));
                             continue;
                         };
                         let (ligne, _) = contrat_de_l_aem(&a, None, &copie)?;
@@ -442,7 +495,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                             (Some(d), Some(f)) => match Periode::du_au(d, f) {
                                 Ok(c) => Some(c),
                                 Err(_) => {
-                                    phrases.push(format!("{}, page {} : l'AEM imprime une embauche le {}, après la fin du contrat le {} : ses dates sont incohérentes.", nom, p.page, d.jj_mm_aaaa(), f.jj_mm_aaaa()));
+                                    pieces.dire(&nom, Some(p.page), &format!("l'AEM imprime une embauche le {}, après la fin du contrat le {} : ses dates sont incohérentes.", d.jj_mm_aaaa(), f.jj_mm_aaaa()));
                                     None
                                 }
                             },
@@ -450,7 +503,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                         };
                         let lue = cle_d_employeur(a.employeur.siret.as_ref().map(droit::fiche::Siret::siren), a.employeur.raison_sociale.as_ref());
                         let piece = format!("{}, page {}", nom, p.page);
-                        let employeur = seules.cle(lue, &piece, SANS_EMPLOYEUR, &mut phrases);
+                        let employeur = seules.cle(lue, &nom, Some(p.page), SANS_EMPLOYEUR, &mut pieces);
                         attestees.push(Attestee {
                             piece,
                             nir,
@@ -466,7 +519,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                         });
                         lues += 1;
                     }
-                    phrases.push(format!("{} : AEM en PDF, {} page(s) lue(s).", nom, lues));
+                    pieces.dire(&nom, None, &format!("AEM en PDF, {} page(s) lue(s).", lues));
                     continue;
                 }
                 let mut lues = 0usize;
@@ -475,7 +528,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                         Ok(b) => b,
                         Err(import::bulletin_lu::Refus::Annexe) => continue,
                         Err(r) => {
-                            phrases.push(format!("{}, page {} : ne se lit pas comme un bulletin ({}).", nom, l.page, r.message()));
+                            pieces.dire(&nom, Some(l.page), &format!("ne se lit pas comme un bulletin ({}).", r.message()));
                             continue;
                         }
                     };
@@ -484,25 +537,36 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                             bulletins.push((nom.clone(), l.page, copie.clone(), b, nir));
                             lues += 1;
                         }
-                        Ok(None) => phrases.push(format!("{}, page {} : le bulletin n'imprime pas de numéro de sécurité sociale, il ne se range à personne.", nom, l.page)),
-                        Err(e) => phrases.push(format!("{}, page {} : {}", nom, l.page, e.phrase)),
+                        Ok(None) => pieces.dire(&nom, Some(l.page), "le bulletin n'imprime pas de numéro de sécurité sociale, il ne se range à personne."),
+                        Err(e) => pieces.dire(&nom, Some(l.page), &e.phrase),
                     }
                 }
                 if lues > 0 {
-                    phrases.push(format!("{} : {} bulletin(s) lu(s).", nom, lues));
+                    pieces.dire(&nom, None, &format!("{} bulletin(s) lu(s).", lues));
                 }
             }
-            Sorte::Dsn => phrases.push(format!("{} : une DSN ne se compte pas ici ; déposez les bulletins de ses paies.", nom)),
-            Sorte::Archive | Sorte::Doublon => {}
-            Sorte::PdfSansTexte => phrases.push(format!("{} : {}.", nom, import::tri::IMAGE)),
-            Sorte::Contrat => phrases.push(format!("{} : {}.", nom, import::tri::CONTRAT)),
-            Sorte::Illisible | Sorte::Autre => phrases.push(format!("{} : ce fichier ne se lit pas. {}", nom, import::tri::ACCEPTE)),
+            Sorte::Dsn => pieces.dire(&nom, None, "une DSN ne se compte pas ici ; déposez les bulletins de ses paies."),
+            // Une archive se dit par ce qu'elle contient ; une copie exacte, par ce que le tri en dit.
+            Sorte::Archive | Sorte::Doublon => {
+                if let Some(r) = &f.raison {
+                    pieces.dire(&nom, None, r);
+                }
+            }
+            Sorte::PdfSansTexte => pieces.dire(&nom, None, &format!("{}.", import::tri::IMAGE)),
+            Sorte::Contrat => pieces.dire(&nom, None, &format!("{}.", import::tri::CONTRAT)),
+            Sorte::Illisible | Sorte::Autre => pieces.dire(&nom, None, &format!("ce fichier ne se lit pas. {}", import::tri::ACCEPTE)),
         }
     }
-    // Les AEM deposees, par le lecteur de l'import (`dsn_aem::lire_aem`), dans leur copie.
+    // Les AEM deposees, par le lecteur de l'import (`dsn_aem::lire_aem`), dans leur copie : ce qu'il dit d'une copie se
+    // dit du fichier pose.
     if aem_dir.is_dir() {
         let (contrats, illisibles, fautes) = import::dsn_aem::lire_aem(&aem_dir)?;
-        phrases.extend(illisibles.into_iter().chain(fautes));
+        for n in illisibles.into_iter().chain(fautes) {
+            match aem_employeurs.get(&n.fichier) {
+                Some((pose, _, _)) => pieces.dire(pose, None, &n.phrase),
+                None => pieces.dire(&n.fichier, None, &n.phrase),
+            }
+        }
         for c in contrats {
             let (piece, lue, sirens) = match aem_employeurs.get(c.fichier.texte()) {
                 Some((nom, e, n)) => (nom.clone(), e.clone(), *n),
@@ -512,7 +576,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
                 0 | 1 => SANS_EMPLOYEUR.to_string(),
                 n => format!("l'AEM porte {} employeurs (Siren), et la route ne lit pas lequel est celui de chaque contrat", n),
             };
-            let employeur = seules.cle(lue, &piece, &pourquoi, &mut phrases);
+            let employeur = seules.cle(lue, &piece, None, &pourquoi, &mut pieces);
             attestees.push(Attestee {
                 piece,
                 nir: c.nir.clone(),
@@ -542,14 +606,14 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
         let ligne = match compte {
             Ok((_, ligne)) => ligne,
             Err(e) => {
-                phrases.push(format!("{}, page {} : le contrat ne se compte pas ({}).", nom, page, e.phrase));
+                pieces.dire(nom, Some(*page), &format!("le contrat ne se compte pas ({}).", e.phrase));
                 continue;
             }
         };
         let raison = b.entreprise.employeur.raison_sociale.clone();
         let lue = cle_d_employeur(b.entreprise.employeur.siret.as_ref().map(droit::fiche::Siret::siren), raison.as_ref());
         let piece = format!("{}, page {}", nom, page);
-        let employeur = seules.cle(lue, &piece, SANS_EMPLOYEUR, &mut phrases);
+        let employeur = seules.cle(lue, nom, Some(*page), SANS_EMPLOYEUR, &mut pieces);
         attestees.push(Attestee {
             piece,
             nir: nir.clone(),
@@ -567,7 +631,7 @@ fn lire_le_dossier(inst: &Path, dossier: &Path, travail: &Path) -> R<DossierDesP
             },
         });
     }
-    Ok(DossierDesPieces { attestees, phrases })
+    Ok(DossierDesPieces { attestees, pieces })
 }
 
 // ------------------------------------------------------------------ les paies comptees
@@ -912,11 +976,22 @@ struct DepotDit {
     aide: &'static str,
 }
 
-/// LES PIECES DEPOSEES : ce que la route en lit.
+/// LES PIECES DEPOSEES, une par fichier pose, et le bouton qui en retire une.
 #[derive(Debug, Serialize)]
 struct PiecesDites {
-    phrases: Vec<String>,
+    pieces: Vec<PieceDite>,
+    retirer: &'static str,
 }
+
+/// UNE PIECE DEPOSEE : le fichier pose (son nom dans `mes-pieces/`), et ce que la route en lit, une phrase chacune.
+#[derive(Debug, Serialize)]
+struct PieceDite {
+    fichier: String,
+    dit: Vec<String>,
+}
+
+/// Le bouton qui retire une piece deposee.
+const RETIRER_LA_PIECE: &str = "Retirer";
 
 impl Dite for DroitsDesPieces {
     fn phrase(&self) -> &Phrase {
@@ -952,7 +1027,7 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
     if travail.exists() {
         std::fs::remove_dir_all(&travail).map_err(|e| socle::echec::du_disque(&travail, &e).reclasser(Classe::Disque))?;
     }
-    let DossierDesPieces { attestees, phrases: pieces } = lu?;
+    let DossierDesPieces { attestees, pieces } = lu?;
     // Les personnes des pieces, par leur NIR, chacune son nom tel qu'une piece l'imprime.
     let mut personnes: BTreeMap<Nir, Option<String>> = BTreeMap::new();
     for a in &attestees {

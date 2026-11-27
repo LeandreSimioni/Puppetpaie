@@ -7,10 +7,13 @@ estimée. Elle ne garde rien : fermer l'onglet efface tout.
 
 - `index.html` (le style y est : la politique du site n'admet pas de feuille à part) et `droits.js` : la page. Elle ne
   décide rien : elle demande la route `droits-des-pieces` (`atelier/sources/routes/src/accueil/droits_des_pieces.rs`)
-  et montre ce qu'elle rend, ses cases (`cases` : libellé, forme, valeur, choix, parties des rangées) comprises.
+  et pose son écran bloc par bloc, dans l'ordre où la route le rend (`ecran` : une case, le résumé, le tableau des
+  paies où les lignes prévues se saisissent, le dépôt, les pièces déposées). Sans calcul : la date anniversaire, le
+  dépôt, le tableau vide ; avec un calcul : le résumé en tête, puis le tableau, la date anniversaire et le dépôt, les
+  dates d'embauche, les pièces. Le dépôt n'apparaît qu'une fois le moteur chargé (c'est un bloc de la route).
 - Le moteur : le worker de la démo (`/demo/moteur.js`), avec les deux mêmes fichiers (`/demo/onglet.wasm.gz`,
   `/demo/demo.tar.gz`), sans relais ni cadre : la page tient elle-même le bout du port où elle demande
-  `/api/droits-des-pieces`, et fait poser les bulletins déposés dans le dossier que la route nomme (`dossier`, le
+  `/api/droits-des-pieces`, et fait poser les bulletins déposés dans le dossier que le dépôt nomme (`dossier`, le
   message `poser` du worker). Elle s'ouvre tout de suite ; le moteur se charge derrière, et le premier calcul part
   quand il est prêt. Un envoi au filet, s'il y en a, est celui de la démo (l'import `poster` du worker).
 

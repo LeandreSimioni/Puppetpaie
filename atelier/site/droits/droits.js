@@ -472,8 +472,7 @@
     return s;
   }
 
-  // LE DÉPÔT : la zone où l'on glisse ou choisit ses bulletins (son libellé et son aide, ceux de la route), puis les
-  // fichiers déposés, chacun avec « Retirer ».
+  // LE DÉPÔT : la zone où l'on glisse ou choisit ses bulletins (son libellé et son aide, ceux de la route).
   function depot(b) {
     dossier = b.dossier;
     var s = el("section", "bloc");
@@ -495,25 +494,27 @@
     });
     zone.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files.length) ajouterFichiers(e.dataTransfer.files); });
     s.append(zone);
-    var ul = el("ul", "fichiers");
-    fichiers.forEach(function (f) {
-      var li = el("li");
-      li.append(el("span", null, f.nom));
-      var x = el("button", "lien", "Retirer");
-      x.type = "button";
-      x.setAttribute("aria-label", "Retirer " + f.nom);
-      x.addEventListener("click", function () { retirerFichier(f.nom); });
-      li.append(x);
-      ul.append(li);
-    });
-    s.append(ul);
     return s;
   }
 
-  // LES PIÈCES DÉPOSÉES : ce que la route en lit.
+  // LES PIÈCES DÉPOSÉES, une ligne chacune : le fichier, ce que la route en lit, et le bouton qui le retire (son
+  // libellé, celui de la route ; son nom, avec le fichier).
   function pieces(b) {
     var s = el("section", "bloc");
-    s.append(liste(b.phrases));
+    var ul = el("ul", "fichiers");
+    b.pieces.forEach(function (p) {
+      var li = el("li");
+      var quoi = el("div");
+      quoi.append(el("span", "nom", p.fichier));
+      if (p.dit.length) quoi.append(liste(p.dit));
+      var x = el("button", "lien", b.retirer);
+      x.type = "button";
+      x.setAttribute("aria-label", b.retirer + " " + p.fichier);
+      x.addEventListener("click", function () { retirerFichier(p.fichier); });
+      li.append(quoi, x);
+      ul.append(li);
+    });
+    s.append(ul);
     return s;
   }
 
