@@ -1191,6 +1191,7 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
     }
     let mut apres = avant.clone();
     let nommees = changer(&mut apres);
+    refuser_les_fermees::<F>(ctx, &avant, &apres, &nommees)?;
     F::ajuster(&avant, &mut apres);
     let mut fautes = F::reconnaitre(ctx, &avant, &mut apres)?;
     F::refuser(ctx, cle, &avant, &apres)?;
@@ -1204,6 +1205,36 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
         return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
     }
     Ok(Preparee { cle: cle.cloned(), avant, apres, memoire })
+}
+
+/// LA CASE `c` EST-ELLE FERMEE DANS CETTE COMPAGNIE ? Seulement dans une compagnie reelle (Leandre, 27/11/2026 : « on
+/// accepte en mode démo mais pas en mode réel ») : une fictive, livree ou ajoutee (son marqueur,
+/// `compagnie::installation::est_fictive`), garde la case ouverte, qu'importe que le logiciel soit bride ou non. La
+/// seule lecture de la regle : la route `fiche` (`rendue::case_du_champ`) et l'ecriture (`refuser_les_fermees`) la
+/// prennent ici.
+pub(crate) fn fermee<'c>(ctx: &Contexte, c: &'c champs::Champ) -> R<Option<&'c champs::CaseFermee>> {
+    match &c.fermee {
+        Some(f) if !compagnie::installation::est_fictive(&ctx.racine)? => Ok(Some(f)),
+        Some(_) | None => Ok(None),
+    }
+}
+
+/// UNE CASE FERMEE NE SE COCHE PAS (`fermee`) : l'ecriture qui cocherait l'une des cases `nommees` se refuse, avec la
+/// phrase de la case, et n'ecrit rien. La laisser telle qu'elle est (decochee, ou ce qu'une fiche en ecrit deja) n'est
+/// jamais un refus.
+fn refuser_les_fermees<F: SorteDeFiche>(ctx: &Contexte, avant: &F::Plate, apres: &F::Plate, nommees: &[CaseDeFiche]) -> R<()> {
+    for &k in nommees {
+        let cochee = |p: &F::Plate| p.ecrite_au_chemin(k, &[]) == MotEcrit::OuiNon(true);
+        if cochee(avant) || !cochee(apres) {
+            continue;
+        }
+        if let Some(c) = champs::champ(F::NOM, k)? {
+            if let Some(f) = fermee(ctx, &c)? {
+                return Err(refus(format!("« {} » : {}. Rien n'a été enregistré.", c.libelle, f.pourquoi())));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Ce que l'ecriture d'une fiche a fait : sa cle (celle d'une fiche neuve est fabriquee ici), les anomalies, si le

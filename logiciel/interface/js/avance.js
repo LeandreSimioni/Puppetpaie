@@ -823,7 +823,7 @@ function lireLesLignes(bloc) {
 /** UNE CASE QU'UNE ROUTE DÉCRIT, et la seule façon d'en dessiner une (la carte d'un engagement, une fiche, la boîte d'un
  *  geste, les champs d'une route) : `c.cle`, `c.libelle`, `c.forme`, `c.aide` (la bulle au survol), `c.valeur`,
  *  `c.prerempli` (ce que le moteur prend pour elle vide), `c.choix` (en boutons à cocher quand `c.boutons`), `c.parties` (`caseDeForme`), `c.temps` (la valeur
- *  d'avant et celle à venir, en mots). Sous la case : ce que la valeur choisie dit d'elle-même (`dit` d'un choix : un
+ *  d'avant et celle à venir, en mots), `c.fermee` (fermée pour l'instant, et pourquoi). Sous la case : ce que la valeur choisie dit d'elle-même (`dit` d'un choix : un
  *  motif de rupture), puis ses temps ; sa faute se pose à part (`fautesDesCases`), à chaque réponse. */
 function caseDeRoute(c) {
   const choisi = (c.choix || []).find((o) => o.code !== "" && o.code === String(c.valeur));
@@ -833,8 +833,11 @@ function caseDeRoute(c) {
   const forme = c.boutons && c.choix ? "boutons" : c.forme;
   // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
   const balise = ["parties", "rangees", "html", "boutons", "plusieurs_choix", "plusieurs_choix_rendus"].includes(forme) ? "div" : "label";
-  return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
-    ${caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis, obligatoire: c.obligatoire })}${
+  // UNE CASE FERMÉE POUR L'INSTANT (`fermee` : pourquoi) se montre grisée, ne se coche pas, et le dit au survol.
+  const bulle = c.fermee || c.aide;
+  const dessin = caseDeForme(forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps, admis: c.admis, obligatoire: c.obligatoire });
+  return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}${c.fermee ? " fermee" : ""}" data-cle="${echapper(c.cle)}"${bulle ? ` title="${echapper(bulle)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
+    ${c.fermee ? dessin.replace("data-case", "data-case disabled") : dessin}${
     choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${
     c.renvoi ? `<button type="button" class="lien case-renvoi" data-renvoi="${echapper(JSON.stringify(c.renvoi))}">${echapper(c.renvoi.libelle)}</button>` : ""}</${balise}>`;
 }
