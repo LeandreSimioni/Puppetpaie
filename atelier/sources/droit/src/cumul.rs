@@ -10,7 +10,7 @@ use crate::fiche::Lue;
 use crate::contexte::{aujourdhui, Contexte, IdSalarie};
 use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
-use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Montant};
 
 /// Les constantes du decompte, lues dans les donnees livrees (le catalogue des rubriques et `annexes`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -59,8 +59,8 @@ pub struct Declare {
     pub periode: Periode,
     pub heures: Heures,
     pub cachets: Cachets,
-    pub jours: Jours,
-    pub brut: Montant,
+    /// Son brut ; aucun : un contrat prevu qui ne le dit pas (`routes::accueil::droits_des_pieces`).
+    pub brut: Option<Montant>,
     /// Part de `heures` qui est de l'enseignement (dedans, pas en plus).
     pub heures_enseignement: Heures,
 }
@@ -165,12 +165,9 @@ impl Position {
         Ok(self.heures_enseignement() - self.heures_enseignement_retenues()?)
     }
 
-    pub fn jours(&self) -> Jours {
-        self.engagements.iter().map(|e| e.jours).sum()
-    }
-
+    /// Le brut des lignes qui le disent.
     pub fn brut(&self) -> Montant {
-        self.engagements.iter().fold(Montant::ZERO, |a, e| a + e.brut)
+        self.engagements.iter().filter_map(|e| e.brut).fold(Montant::ZERO, |a, b| a + b)
     }
 
     /// Heures restant a acquerir pour atteindre le seuil ; 0 si atteint.

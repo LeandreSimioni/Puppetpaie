@@ -239,8 +239,8 @@ pub enum Visee {
 // ------------------------------------------------------------------ la limite du salaire de reference
 
 /// LE SALAIRE DE REFERENCE QUE COMPTENT LES PAIES `paies` (chacune son brut, et sa limite, `Allocation::limite_de_la_paie` ;
-/// aucune : son plafond ne se connait pas, elle compte entiere), chacune augmentee du facteur `k` : la somme, chaque paie
-/// sous sa limite (art. 11 §3).
+/// aucune : son plafond ne se connait pas, et l'appelant sait que son brut reste sous la plus basse limite qu'elle puisse
+/// avoir), chacune augmentee du facteur `k` : la somme, chaque paie sous sa limite (art. 11 §3).
 pub fn salaire_limite(paies: &[(Montant, Option<Montant>)], k: Coefficient) -> Montant {
     paies
         .iter()

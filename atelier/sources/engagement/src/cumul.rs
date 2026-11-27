@@ -41,16 +41,15 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
             (None, Some(p)) => p,
             (None, None) => continue,
         };
-        // Une piece d'intermittent atteste ses compteurs et son brut (l'AEM, le bulletin, le certificat : `import`) ; les
-        // heures d'enseignement, seulement celles qu'elle distingue.
+        // Une piece d'intermittent atteste ses heures, ses cachets et son brut (l'AEM, le bulletin, le certificat :
+        // `import`) ; les heures d'enseignement, seulement celles qu'elle distingue. Ses jours, les droits ne les lisent pas.
         let a = &c.contrat;
         out.push(Declare {
             salarie: c.salarie.clone(),
             periode,
             heures: a.heures.ok_or_else(|| socle::fichiers::absent("heures"))?,
             cachets: a.cachets.ok_or_else(|| socle::fichiers::absent("cachets"))?,
-            jours: a.jours.ok_or_else(|| socle::fichiers::absent("jours"))?,
-            brut: a.brut.ok_or_else(|| socle::fichiers::absent("brut"))?,
+            brut: Some(a.brut.ok_or_else(|| socle::fichiers::absent("brut"))?),
             heures_enseignement: a.heures_enseignement.into_iter().sum(),
         });
     }
@@ -70,8 +69,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         periode: e.periode_payee()?,
         heures,
         cachets: e.cachets,
-        jours: e.jours,
-        brut: p.brut,
+        brut: Some(p.brut),
         heures_enseignement: heures_enseignement(ctx, &e.lignes)?.min(heures),
     }))
 }
