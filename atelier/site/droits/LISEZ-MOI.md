@@ -10,12 +10,17 @@ estimée. Elle ne garde rien : fermer l'onglet efface tout.
   et pose son écran bloc par bloc, dans l'ordre où la route le rend (`ecran` : une case, le résumé, le tableau des
   paies où les lignes prévues se saisissent, le dépôt, les pièces déposées). Sans calcul : la date anniversaire, le
   dépôt, le tableau vide ; avec un calcul : le résumé en tête, puis le tableau, la date anniversaire et le dépôt, les
-  dates d'embauche, les pièces. Le dépôt n'apparaît qu'une fois le moteur chargé (c'est un bloc de la route).
+  dates d'embauche, les pièces.
+- `premier-ecran.json` : ce que la route rend sans charge (la date anniversaire, le dépôt, le tableau vide), le dossier
+  du dépôt à `null`. La page le pose dès l'ouverture, avec les mêmes fonctions que toute réponse, pendant que le moteur
+  se charge : on y tape, on y dépose, on y ajoute des lignes. Un test de structure le tient égal à la route
+  (`moteur/tests/fichiers/structure.rs`) : la route changée, il se recopie. Le moteur prêt, le bouton « Calculer »
+  apparaît ; son appui fait le premier calcul, et ensuite tout se recalcule seul.
 - Le moteur : le worker de la démo (`/demo/moteur.js`), avec les deux mêmes fichiers (`/demo/onglet.wasm.gz`,
   `/demo/demo.tar.gz`), sans relais ni cadre : la page tient elle-même le bout du port où elle demande
   `/api/droits-des-pieces`, et fait poser les bulletins déposés dans le dossier que le dépôt nomme (`dossier`, le
   message `poser` du worker). Elle s'ouvre tout de suite ; le moteur se charge derrière, et le premier calcul part
-  quand il est prêt. Un envoi au filet, s'il y en a, est celui de la démo (l'import `poster` du worker).
+  à l'appui sur « Calculer ». Un envoi au filet, s'il y en a, est celui de la démo (l'import `poster` du worker).
 
 ## Ce que le serveur doit servir sous `/droits/`
 

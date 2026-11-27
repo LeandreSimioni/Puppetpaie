@@ -70,6 +70,8 @@ input[type=checkbox]{width:1.15rem;height:1.15rem;margin:0;accent-color:var(--bl
 button{font:500 .95rem/1.2 "Libre Franklin",sans-serif;padding:.6rem 1rem;border-radius:var(--rayon);
   border:1px solid #C9C7C2;background:var(--papier);color:var(--encre);cursor:pointer}
 button:hover{border-color:var(--bleu);color:var(--bleu)}
+#calculer{border-color:var(--bleu);background:var(--bleu);color:var(--papier)}
+#calculer:hover{background:var(--papier);color:var(--bleu)}
 button.lien{border:0;padding:0;background:none;color:var(--bleu);font-weight:400;font-size:.9rem;text-decoration:underline;
   text-underline-offset:2px}
 /* Ce que la route dit. */
@@ -105,6 +107,7 @@ a{color:var(--bleu);text-underline-offset:2px}
   <p id="annonce" class="pour-lecteur" aria-live="polite"></p>
   <p id="refus" class="avis cache"></p>
   <div id="ecran"></div>
+  <button type="button" id="calculer" class="cache">Calculer</button>
 
   <noscript><p class="avis">Cette page a besoin de JavaScript.</p></noscript>
   <p class="pied signature">Une page de <a href="https://puppetpaie.fr/">PuppetPaie</a>, le logiciel de paie libre et gratuit, codé et maintenu par la <a href="https://ueueue.eu/">Compagnie UEUEUE</a>.</p>

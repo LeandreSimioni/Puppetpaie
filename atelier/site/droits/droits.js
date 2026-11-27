@@ -2,7 +2,9 @@
 // derrière, dans le worker de la démo (/demo/moteur.js : les deux mêmes fichiers, onglet.wasm.gz et demo.tar.gz).
 // Elle ne décide rien : elle demande la route `droits-des-pieces` et pose son écran, bloc par bloc dans l'ordre où la
 // route le rend (`ecran` : les cases, dessinées depuis la forme que la route leur donne, le résumé, le tableau des
-// paies, le dépôt, les pièces). Chaque changement (un bulletin déposé ou retiré, une case) redemande la route. Les
+// paies, le dépôt, les pièces). Avant que le moteur soit prêt, elle pose ce que la route rend sans charge
+// (`premier-ecran.json`) ; le moteur prêt, « Calculer » fait le premier calcul. Ensuite, chaque changement (un bulletin
+// déposé ou retiré, une case) redemande la route. Les
 // bulletins déposés vont dans le dossier que le dépôt nomme (`dossier`), sur le disque en mémoire du moteur. Elle ne
 // garde rien : ni stockage, ni cache ; fermer l'onglet efface tout.
 "use strict";
@@ -68,7 +70,7 @@
           if (f) f(r.data);
         };
         pret = true;
-        calculer();
+        offrirLeCalcul();
       } else if (m.quoi === "pose") {
         var f = poses.shift();
         if (f) f(m.ok);
@@ -82,11 +84,32 @@
       }
     };
     worker.postMessage({ quoi: "demarrer" });
-    // LE DÉPÔT SE VOIT TOUT DE SUITE (Léandre, 27/11/2026 : « Le dépôt doit être visible tout de suite ») : le moteur
-    // met quelques secondes à se charger ; en attendant sa première réponse, la page pose le dépôt avec les mots que la
-    // route lui donne (`DEPOSER`, `DEPOSER_AIDE`, routes/src/accueil/droits_des_pieces.rs). Les bulletins déposés
-    // attendent le moteur ; sa première réponse remplace l'écran par les blocs qu'elle rend.
-    $("ecran").append(depot({ libelle: "Déposer mes bulletins", aide: "Glissez-les ici, ou cliquez pour les choisir.", dossier: null }));
+    // LE PREMIER ÉCRAN, SANS ATTENDRE LE MOTEUR (Léandre, 27/11/2026 : « Il suffit de précharger juste ça ») : le moteur
+    // met quelques secondes à se charger ; en attendant, la page pose ce que la route rend sans charge (la date
+    // anniversaire, le dépôt, le tableau vide), figé dans `premier-ecran.json` (un test de structure le tient égal à la
+    // route : moteur/tests/fichiers/structure.rs), avec les mêmes fonctions que toute réponse. Ce qu'on y saisit ou
+    // dépose attend « Calculer ».
+    fetch("premier-ecran.json").then(function (r) {
+      if (!r.ok) throw new Error("premier-ecran.json : code " + r.status);
+      return r.json();
+    }).then(function (d) {
+      if (dernier === null) montrer(d, {});
+    }).catch(function (e) {
+      avis("Défaut du logiciel : " + texteDErreur(e));
+    });
+  }
+
+  // LE BOUTON « CALCULER » apparaît quand le moteur est prêt (Léandre, 27/11/2026 : « Le bouton calculer arrive avec
+  // le moteur ») ; un appui fait le premier calcul, et il s'en va : ensuite tout se recalcule seul à chaque changement.
+  var lance = false;
+  function offrirLeCalcul() {
+    var b = $("calculer");
+    b.classList.remove("cache");
+    b.addEventListener("click", function () {
+      lance = true;
+      b.remove();
+      calculer();
+    });
   }
 
   // La route, sa charge : la réponse du moteur, lue ({ ok, resultat, refus }). Une réponse qui ne se lit pas est une
@@ -187,7 +210,7 @@
   var encore = false;
 
   function calculer() {
-    if (!pret) return;
+    if (!pret || !lance) return;
     if (enCours) { encore = true; return; }
     enCours = true;
     encore = false;

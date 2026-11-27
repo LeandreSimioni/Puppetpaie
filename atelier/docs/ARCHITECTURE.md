@@ -2938,7 +2938,9 @@ reste à faire et le jour butoir, à partir d'aujourd'hui quand cette fin est pa
 La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : les cases de sa
 charge, chacune tirée de la déclaration de son champ, le résumé, le tableau des paies où les lignes prévues se
 saisissent, le dépôt, les pièces) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,
-le moteur tournant dans l'onglet par le worker de la démo, et pose les bulletins déposés dans `mes-pieces/`.
+le moteur tournant dans l'onglet par le worker de la démo, et pose les bulletins déposés dans `mes-pieces/`. Pendant
+que le moteur se charge, elle pose ce que la route rend sans charge, figé dans `premier-ecran.json` (un test de
+structure le tient égal à la route) ; le moteur prêt, « Calculer » fait le premier calcul.
 
 ### Le modèle d'un contrat, et le contrat parti
 
