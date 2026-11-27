@@ -215,9 +215,10 @@ pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> R<Fenetre> {
     ))
 }
 
-/// Les engagements du salarie dont la FIN est dans la fenetre.
+/// Les engagements du salarie dont la FIN est dans la fenetre. `racine` : la compagnie, dont le catalogue dit le plafond
+/// de l'enseignement ; sans compagnie (les pieces d'un intermittent), un dossier sans `config/` : le catalogue livre.
 pub fn position(
-    ctx: &Contexte,
+    racine: &Path,
     c: &Constantes,
     engagements: &[Declare],
     salarie: &IdSalarie,
@@ -227,7 +228,7 @@ pub fn position(
     let (periode, libelle) = fenetre;
     Position {
         constantes: *c,
-        racine: ctx.racine.clone(),
+        racine: racine.to_path_buf(),
         salarie: salarie.clone(),
         periode: *periode,
         libelle_fenetre: libelle.clone(),
@@ -267,7 +268,7 @@ pub fn position_droits(
             fenetre_douze_mois(&c, fin)?
         }
     };
-    Ok(position(ctx, &c, engagements, salarie, &f, naissance(ctx, salarie)?))
+    Ok(position(&ctx.racine, &c, engagements, salarie, &f, naissance(ctx, salarie)?))
 }
 
 // ------------------------------------------------------- bloc du bulletin
@@ -300,8 +301,8 @@ pub fn tableau_cumul(
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let annee = mois.annee();
     let ne = naissance(ctx, salarie)?;
-    let p_mois = position(ctx, &c, engagements, salarie, &(Periode::du_mois(mois), "periode".to_string()), ne);
-    let p_annee = position(ctx, &c, engagements, salarie, &fenetre_annee_civile(mois)?, ne);
+    let p_mois = position(&ctx.racine, &c, engagements, salarie, &(Periode::du_mois(mois), "periode".to_string()), ne);
+    let p_annee = position(&ctx.racine, &c, engagements, salarie, &fenetre_annee_civile(mois)?, ne);
 
     let col = |titre: &str, sous: String, p: &Position, reste: Option<Heures>, echeance: Option<Jour>| -> R<Colonne> {
         Ok(Colonne {
@@ -322,7 +323,7 @@ pub fn tableau_cumul(
         col("Cumul", format!("année {}", annee), &p_annee, None, None)?,
     ];
     if let Some(anniv) = anniversaire_configure(ctx, salarie)? {
-        let p_droits = position(ctx, &c, engagements, salarie, &fenetre_anniversaire(&c, anniv)?, ne);
+        let p_droits = position(&ctx.racine, &c, engagements, salarie, &fenetre_anniversaire(&c, anniv)?, ne);
         let reste = p_droits.manque()?;
         colonnes.push(col("Droits", format!("au {}", anniv.jj_mm_aaaa()), &p_droits, Some(reste), Some(anniv))?);
     }
