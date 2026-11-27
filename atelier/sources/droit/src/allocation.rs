@@ -3,10 +3,11 @@
 //!
 //! - L'AFFILIATION (art. 3, art. 9 §1 a et b) : 507 heures sur les 365 jours qui precedent la fin de contrat ; a la
 //!   readmission, 42 heures de plus par periode de 30 jours au-dela du 365e jour, jamais avant la fin de contrat qui a
-//!   ouvert le droit precedent (`affiliation`) ; et le jour ou, sans contrat de plus, il en faudra davantage (`butoir`).
+//!   ouvert le droit precedent (`affiliation`) ; et le jour ou, sans contrat de plus, une ligne sort des 365 jours et il
+//!   en faudra davantage (`butoir`).
 //! - L'ALLOCATION JOURNALIERE, ESTIMEE (art. 14 et 16) : AJ = A + B + C, A du salaire de reference, B des heures
 //!   travaillees, C de l'allocation journaliere minimale ; pas moins que le plancher de l'annexe, pas plus que le plafond ;
-//!   a la readmission, les diviseurs de A et B deviennent les heures exigees (fois le SMIC horaire pour A : `Diviseurs`).
+//!   sur les 365 jours, avec les diviseurs de l'annexe.
 //! - LA LIMITE DU SALAIRE DE REFERENCE (art. 11 §3) : chaque paie n'y compte qu'a quatre fois son plafond
 //!   (`salaire_limite`, `facteur_vise`).
 //!
@@ -27,7 +28,7 @@ use crate::source::forme_notee;
 use socle::date::{Duree, Jour};
 use socle::echec::R;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
-use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Coefficient, Heures, Montant, Taux};
 
 forme_notee! {
     /// `allocation-intermittents.json`, entier.
@@ -96,14 +97,6 @@ pub fn allocation() -> R<Arc<Allocation>> {
     forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("allocation-intermittents.json") }, "La table livrée de l'allocation des intermittents ne se lit pas : le signaler au développeur.", Ok)
 }
 
-/// LES DIVISEURS DES PARTIES A ET B : ceux de l'annexe, ou, quand la fenetre s'allonge (art. 9 §1 b), les heures exigees
-/// (fois le SMIC horaire pour A : art. 14).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Diviseurs {
-    DeLAnnexe,
-    Allonges { heures_exigees: Heures, smic_horaire: MontantUnitaire },
-}
-
 impl Allocation {
     /// La formule de l'annexe `annexe`.
     pub fn formule(&self, annexe: AnnexeChomage) -> &Formule {
@@ -120,24 +113,18 @@ impl Allocation {
     }
 
     /// LA PARTIE A : l'allocation minimale fois la part du salaire de reference `sr`, jusqu'au seuil puis au-dela, sur le
-    /// diviseur.
-    fn partie_a(&self, f: &Formule, sr: Montant, d: Diviseurs) -> R<Montant> {
-        let diviseur = match d {
-            Diviseurs::DeLAnnexe => f.diviseur_du_salaire,
-            Diviseurs::Allonges { heures_exigees, smic_horaire } => heures_exigees * smic_horaire,
-        };
+    /// diviseur de l'annexe.
+    fn partie_a(&self, f: &Formule, sr: Montant) -> R<Montant> {
+        let diviseur = f.diviseur_du_salaire;
         let (bas, haut) = (sr.min(f.seuil_du_salaire), (sr - f.seuil_du_salaire).max(Montant::ZERO));
         let part = |m: Montant| m.rapport(diviseur).ok_or_else(|| socle::fichiers::absent("diviseur_du_salaire"));
         Ok((self.aj_minimale.montant * (part(bas)? * f.part_du_salaire + part(haut)? * f.part_du_salaire_au_dela)).au_centime_vers_zero())
     }
 
     /// LA PARTIE B : l'allocation minimale fois la part des heures travaillees `nht`, jusqu'au seuil puis au-dela, sur le
-    /// diviseur.
-    fn partie_b(&self, f: &Formule, nht: Heures, d: Diviseurs) -> R<Montant> {
-        let diviseur = match d {
-            Diviseurs::DeLAnnexe => f.diviseur_des_heures,
-            Diviseurs::Allonges { heures_exigees, .. } => heures_exigees,
-        };
+    /// diviseur de l'annexe.
+    fn partie_b(&self, f: &Formule, nht: Heures) -> R<Montant> {
+        let diviseur = f.diviseur_des_heures;
         let (bas, haut) = (nht.min(f.seuil_des_heures), (nht - f.seuil_des_heures).max(Heures::ZERO));
         let part = |h: Heures| h.rapport(diviseur).ok_or_else(|| socle::fichiers::absent("diviseur_des_heures"));
         Ok((self.aj_minimale.montant * (part(bas)? * f.part_des_heures + part(haut)? * f.part_des_heures_au_dela)).au_centime_vers_zero())
@@ -149,10 +136,10 @@ impl Allocation {
     }
 
     /// L'ALLOCATION DE L'ANNEXE `annexe` pour le salaire de reference `sr` et les heures travaillees `nht`, sous le plafond
-    /// `plafond` (`Allocation::plafond`), avec les diviseurs `d`.
-    pub fn estimer(&self, annexe: AnnexeChomage, sr: Montant, nht: Heures, plafond: Montant, d: Diviseurs) -> R<Estimation> {
+    /// `plafond` (`Allocation::plafond`).
+    pub fn estimer(&self, annexe: AnnexeChomage, sr: Montant, nht: Heures, plafond: Montant) -> R<Estimation> {
         let f = self.formule(annexe);
-        let (a, b) = (self.partie_a(f, sr, d)?, self.partie_b(f, nht, d)?);
+        let (a, b) = (self.partie_a(f, sr)?, self.partie_b(f, nht)?);
         let c = self.partie_c(f);
         let calculee = a + b + c;
         let (retenue, borne) = if calculee < f.plancher {
@@ -167,7 +154,7 @@ impl Allocation {
 
     /// LE SALAIRE DE REFERENCE QU'UNE ALLOCATION VISEE `visee` DEMANDE, sous l'annexe `annexe`, les heures `nht` restant
     /// ce qu'elles sont : la partie A qu'il faut (`visee` moins B et C), ramenee a son salaire, la formule lue a l'envers.
-    pub fn salaire_vise(&self, annexe: AnnexeChomage, visee: Montant, nht: Heures, plafond: Montant, d: Diviseurs) -> R<Visee> {
+    pub fn salaire_vise(&self, annexe: AnnexeChomage, visee: Montant, nht: Heures, plafond: Montant) -> R<Visee> {
         let f = self.formule(annexe);
         if visee > plafond {
             return Ok(Visee::AuDelaDuPlafond);
@@ -175,18 +162,15 @@ impl Allocation {
         if visee <= f.plancher {
             return Ok(Visee::DesLePlancher);
         }
-        let b = self.partie_b(f, nht, d)?;
+        let b = self.partie_b(f, nht)?;
         let c = self.partie_c(f);
         let a = visee - b - c;
         if a <= Montant::ZERO {
             return Ok(Visee::SansSalaire);
         }
         let aj = self.aj_minimale.montant;
-        let du_seuil = self.partie_a(f, f.seuil_du_salaire, d)?;
-        let diviseur = match d {
-            Diviseurs::DeLAnnexe => f.diviseur_du_salaire,
-            Diviseurs::Allonges { heures_exigees, smic_horaire } => heures_exigees * smic_horaire,
-        };
+        let du_seuil = self.partie_a(f, f.seuil_du_salaire)?;
+        let diviseur = f.diviseur_du_salaire;
         // Le salaire qu'une partie A demande, a la part `p` du salaire.
         let salaire = |reste: Montant, p: Coefficient| -> R<Montant> {
             let fois = reste.rapport(aj).and_then(|r| r.sur(p)).ok_or_else(|| socle::fichiers::absent("part_du_salaire"))?;
@@ -338,67 +322,6 @@ pub fn affiliation_des_droits(racine: &Path, c: &Constantes, r: &Readmission, li
     affiliation(racine, c, r, &siennes, salarie, fin, precedente, naissance)
 }
 
-/// LE REEXAMEN DES DROITS A LA DATE ANNIVERSAIRE (art. 9 §1 c) : France Travail examine la readmission au lendemain de
-/// la date anniversaire, sur la fin de contrat qui la precede (guide de France Travail,
-/// `chomage-intermittents/francetravail-guide-intermittents-20261020.txt`, p. 6 : « Celle qui précède votre date
-/// anniversaire ») ; « Lorsque les conditions de la réadmission ne sont pas satisfaites à la date anniversaire […], la
-/// situation de l'allocataire est réexaminée en vue de sa réadmission dès la rupture d'un contrat de travail ». Le droit
-/// qui s'ouvre a sa date anniversaire douze mois apres la fin de contrat retenue (art. 9 §1 c ; guide, p. 9 : « au terme
-/// d'un délai de 12 mois (365 jours) à compter de la fin de contrat de travail prise en considération ») ; quand elle est
-/// deja passee, ce droit-la est fini, et le reexamen suivant se cherche de meme. Le report du reexamen quand un contrat
-/// est en cours a la date anniversaire (art. 9 §1 c, second tiret) ne se compte pas : une ligne declaree n'a que sa fin.
-#[derive(Debug, Clone)]
-pub enum Reexamen {
-    /// Les heures sont atteintes a la fin de contrat de `affiliation` : celle qui precede la date anniversaire
-    /// `anniversaire` (`a_la_date`), ou une fin qui la suit ; `suivante` : la date anniversaire du droit qu'elle ouvre.
-    Atteintes { anniversaire: Jour, a_la_date: bool, affiliation: Affiliation, suivante: Jour },
-    /// Les heures ne sont atteintes ni a la date anniversaire `anniversaire` (`a_la_date` : l'affiliation sur la fin de
-    /// contrat qui la precede), ni a une fin de contrat qui la suit.
-    PasAtteintes { anniversaire: Jour, a_la_date: Affiliation },
-}
-
-/// Le reexamen des lignes `lignes` de `salarie` a la date anniversaire `anniversaire` (voir `Reexamen`), le
-/// `aujourdhui` disant si la date anniversaire du droit qu'il ouvre est deja passee. La fin de contrat qui a ouvert le
-/// droit precedent est douze mois avant la date anniversaire (`affiliation_des_droits`), puis, d'un reexamen au suivant,
-/// celle que le reexamen a retenue.
-#[allow(clippy::too_many_arguments)]
-pub fn reexamen(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, anniversaire: Jour, aujourdhui: Jour, naissance: Option<Jour>) -> R<Reexamen> {
-    let siennes: Vec<Declare> = lignes.iter().filter(|l| l.salarie == *salarie).cloned().collect();
-    let mut da = anniversaire;
-    let mut precedente = anniversaire.avant(Duree::mois(12))?;
-    loop {
-        // Seules comptent les fins de contrat d'apres celle qui a ouvert le droit precedent (art. 9 §1 a).
-        let jusqu_au = |j: Jour| -> Vec<Declare> { siennes.iter().filter(|l| l.fin > precedente && l.fin <= j).cloned().collect() };
-        let avant = jusqu_au(da);
-        let fin = derniere_fin(&avant, salarie).unwrap_or(da);
-        let a_la_date = affiliation(racine, c, r, &avant, salarie, fin, Some(precedente), naissance)?;
-        let mut atteinte = a_la_date.manque.est_nul().then(|| (true, a_la_date.clone()));
-        if atteinte.is_none() {
-            let mut fins: Vec<Jour> = siennes.iter().map(|l| l.fin).filter(|f| *f > da).collect();
-            fins.sort();
-            fins.dedup();
-            for f in fins {
-                let a = affiliation(racine, c, r, &jusqu_au(f), salarie, f, Some(precedente), naissance)?;
-                if a.manque.est_nul() {
-                    atteinte = Some((false, a));
-                    break;
-                }
-            }
-        }
-        let Some((a_la_date, aff)) = atteinte else {
-            return Ok(Reexamen::PasAtteintes { anniversaire: da, a_la_date });
-        };
-        let retenue = aff.position.periode.fin();
-        let suivante = retenue.apres(Duree::mois(12))?;
-        if suivante < aujourdhui && suivante > da {
-            precedente = retenue;
-            da = suivante;
-            continue;
-        }
-        return Ok(Reexamen::Atteintes { anniversaire: da, a_la_date, affiliation: aff, suivante });
-    }
-}
-
 /// L'AFFILIATION A LA FIN DE CONTRAT `fin` (art. 3 ; art. 9 §1 a et b) : les lignes `lignes` de `salarie` dont la fin
 /// est dans les 365 jours qui la precedent, 507 heures exigees ; a la readmission (`precedente` : la fin de contrat qui a
 /// ouvert le droit precedent), seules comptent les lignes qui finissent apres elle, et, faute des 507 heures, la fenetre
@@ -436,47 +359,30 @@ pub fn affiliation(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Dec
 }
 
 /// LE JOUR BUTOIR : le dernier jour ou, sans contrat de plus, l'affiliation a une fin de contrat demande ce qu'elle
-/// demande a `fin` ; le lendemain, il en faut davantage (une ligne sort de la fenetre, ou la fenetre s'allonge et exige
-/// 42 heures de plus). Ce n'est pas une echeance de France Travail. Rendu : ce jour, et l'affiliation du lendemain ; aucun
-/// quand il ne manque jamais davantage (rien ne se compte : il manque deja toutes les heures).
+/// demande a `fin` ; le lendemain, une ligne sort des 365 jours (art. 3) et il en faut davantage. Ce n'est pas une
+/// echeance de France Travail. Rendu : ce jour, et l'affiliation du lendemain ; aucun quand il ne manque jamais davantage
+/// (rien ne se compte : il manque deja toutes les heures).
 #[derive(Debug, Clone)]
 pub struct Butoir {
     pub jour: Jour,
     pub lendemain: Affiliation,
 }
 
-/// Le jour butoir apres `fin` (voir `Butoir`) : les jours ou une ligne sort d'une fenetre, ou ou la fenetre peut
-/// s'allonger, du plus proche au plus lointain, jusqu'au premier ou il manque davantage qu'a `fin`. Une ligne qui finit
-/// le jour L est dans la fenetre allongee de k periodes jusqu'a L + 365 + 30 k - 1 (`cumul::fenetre_allongee`) ; la
-/// fenetre peut s'allonger de k periodes des le jour P + 365 + 30 k, P la fin de contrat precedente. Les periodes ne
-/// vont pas au-dela de la premiere ou les heures exigees passent toutes les heures des lignes et ce qui manque a `fin` :
-/// la, il manque forcement davantage (art. 9 §1 b, 42 heures par periode). Sans readmission, la fenetre ne s'allonge pas.
-#[allow(clippy::too_many_arguments)]
+/// Le jour butoir apres la fin de `a_la_fin` (voir `Butoir`), sur les 365 jours, sans readmission ni allongement (la
+/// page des droits compte sur un an, `droits-des-pieces`) : les jours ou une ligne sort de la fenetre, du plus proche au
+/// plus lointain, jusqu'au premier ou il manque davantage qu'a cette fin. Une ligne qui finit le jour L est dans la
+/// fenetre jusqu'a L + 364 (`cumul::fenetre_douze_mois`).
 pub fn butoir(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, naissance: Option<Jour>, a_la_fin: &Affiliation) -> R<Option<Butoir>> {
-    let (fin, precedente) = (a_la_fin.position.periode.fin(), a_la_fin.precedente);
-    let pas = Duree::jours(r.jours_par_periode);
-    let toutes: Heures = lignes.iter().map(|l| l.heures_equivalentes(c)).sum();
-    let mut derniere = 0u32;
-    if precedente.is_some() {
-        while c.seuil_heures + r.heures_par_periode.fois(derniere as usize) <= toutes + a_la_fin.manque {
-            derniere += 1;
-        }
-    }
+    let fin = a_la_fin.position.periode.fin();
     let mut jours: Vec<Jour> = Vec::new();
-    for k in 0..=derniere {
-        let fenetre = c.fenetre_jours.plus(pas.fois(k));
-        for l in lignes {
-            jours.push(l.fin.apres(fenetre)?);
-        }
-        if let Some(p) = precedente {
-            jours.push(p.apres(fenetre)?);
-        }
+    for l in lignes {
+        jours.push(l.fin.apres(c.fenetre_jours)?);
     }
     jours.retain(|j| *j > fin);
     jours.sort();
     jours.dedup();
     for j in jours {
-        let a = affiliation(racine, c, r, lignes, salarie, j, precedente, naissance)?;
+        let a = affiliation(racine, c, r, lignes, salarie, j, None, naissance)?;
         if a.manque > a_la_fin.manque {
             return Ok(Some(Butoir { jour: j.avant(Duree::jours(1))?, lendemain: a }));
         }

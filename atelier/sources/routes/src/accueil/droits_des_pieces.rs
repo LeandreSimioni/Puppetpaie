@@ -27,12 +27,11 @@
 //! par la case « Dates d'embauche » (`debuts`) pour une paie des pieces.
 //!
 //! CE QUE LA ROUTE REND, pour la personne : une ligne par paie retenue (la periode, l'employeur, les cachets, les heures
-//! dont l'enseignement, le brut, la piece) ; l'affiliation a la derniere fin de contrat (`droit::allocation::affiliation` :
-//! la fenetre de 365 jours, allongee a la readmission, compte par le meme code que la route `droits` d'une compagnie,
-//! `droit::cumul::Position`, `archives::comptes_de_la_position`), ce qui manque, et le jour butoir ou, sans contrat de
-//! plus, il en faudra davantage, et pourquoi ; avec une date anniversaire, le reexamen (`droit::allocation::reexamen`,
-//! art. 9 §1 c) : les heures atteintes a la fin qu'il retient et la prochaine date anniversaire, ou ce qui manque
-//! jusqu'a elle quand elle est a venir ; l'allocation journaliere estimee de l'annexe VIII et de l'annexe X
+//! dont l'enseignement, le brut, la piece) ; une seule question, les 507 heures sur les 12 mois (365 jours) avant la
+//! derniere fin de contrat, lignes prevues comprises (art. 3 ; `droit::allocation::affiliation_des_droits`, sans
+//! readmission ni allongement, compte par le meme code que la route `droits` d'une compagnie, `droit::cumul::Position`,
+//! `archives::comptes_de_la_position`) : les heures, ou ce qui manque et jusqu'a quand (la date anniversaire quand elle
+//! est a venir, sinon le jour ou la plus ancienne paie sort des 12 mois) ; l'allocation journaliere estimee de l'annexe VIII et de l'annexe X
 //! (`droit::allocation`), chaque paie sous sa limite (art. 11 §3) ; et, avec une allocation visee, le salaire de
 //! reference qu'elle demande, chaque paie augmentee dans la meme proportion, et ce qui arrete la hausse (la limite des
 //! paies, ou le plafond de l'allocation). Des chiffres, pas un conseil.
@@ -46,7 +45,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use droit::allocation::{Affiliation, Allocation, Borne, Diviseurs, Reexamen, Visee};
+use droit::allocation::{Affiliation, Allocation, Borne, Visee};
 use droit::cumul::{Constantes, Declare};
 use droit::emplois::AnnexeChomage;
 use droit::fiche::{Nir, Siren};
@@ -59,7 +58,7 @@ use socle::ecran::{ColonneRendue, RangeeRendue, SaisieDuTableau, SorteDeRangee, 
 use socle::echec::{Classe, R};
 use socle::fichiers::NomDeFichier;
 use socle::grandeurs::ecrit::sans_zero::dit;
-use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant};
 use socle::mois::Annee;
 use socle::texte::euros;
 
@@ -77,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","cachets":1,"brut":250}]}"#,
-    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le bilan, les paies, le résumé, l'allocation visée (une case, quand une allocation s'estime), la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie, dans l'ordre des fins : période (la fin d'une ligne prévue, et son début dans la rangée qui l'ouvre), cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue et les parties qu'elle ouvre) et lignes (la case des lignes prévues : ses parties, ses rangées). bilan (au-dessus des paies) : nom (seulement quand les pièces portent plusieurs personnes), bilan (d'abord si les heures sont atteintes, à la fin de contrat qui compte : la dernière ; avec une date anniversaire, celle que son réexamen retient, ou celle qui la précède). resume (sous les paies ; la personne choisie, ou les lignes prévues seules sans pièce) : nir, fenetre, lignes [quoi, valeur],heures_exigees, manque, butoir [jour, phrase, pourquoi, reference] et phrase (ce qui reste à faire, compté à partir d'aujourd'hui quand cette fin est passée, jusqu'à la date anniversaire quand elle est à venir ; les heures atteintes au réexamen, la prochaine date anniversaire), demande (une phrase, quand une paie que l'estimation suppose non limitée peut l'être), estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase (le chiffre, en une ligne), paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure], details (replié : libelle, lignes ; le détail des estimations et les notes)",
+    rend: "phrase, et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), le bilan, les paies, le résumé, l'allocation visée (une case, quand une allocation s'estime), la date anniversaire (une case), le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces ; sans calcul : la personne, la date anniversaire, le dépôt, les paies (vides, quand aucune pièce ne porte de personne), les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties, ajouter et retirer d'une rangée, dit. depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie, dans l'ordre des fins : période (la fin d'une ligne prévue, et son début dans la rangée qui l'ouvre), cachets, heures, enseignement, brut ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue et les parties qu'elle ouvre) et lignes (la case des lignes prévues : ses parties, ses rangées). bilan (au-dessus des paies) : nom (seulement quand les pièces portent plusieurs personnes), bilan (la réponse : les 507 h sur les 12 mois avant la dernière fin de contrat ; ou ce qui manque, compté à partir d'aujourd'hui quand cette fin est passée, d'ici la date anniversaire quand elle est à venir, sinon d'ici le jour où la plus ancienne paie sort des 12 mois). resume (sous les paies ; la personne choisie, ou les lignes prévues seules sans pièce) : nir, fenetre, lignes [quoi, valeur], heures_exigees, manque, demande (une phrase, quand une paie que l'estimation suppose non limitée peut l'être), estimations par annexe [a, b, c, calculee, salaire_de_reference, retenue, phrase (le chiffre, en une ligne), paies : un tableau avec plafond, limite, ce qui compte], visee par annexe [salaire_de_reference, allocation, phrase, arret, paies : un tableau avec brut visé, limite, par cachet, par heure], details (replié : libelle, lignes ; le détail des estimations et les notes)",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
@@ -87,12 +86,12 @@ pub const ROUTES: &[Fiche] = &[Fiche {
 
 charge! {
     /// La charge de `droits-des-pieces` : la personne (aucune : la seule des pieces, ou aucune s'il y en a plusieurs), la
-    /// date anniversaire du droit precedent (aucune : une premiere ouverture), l'allocation visee (aucune : rien ne se
+    /// date anniversaire (aucune : ce qui manque se compte jusqu'a la sortie de la plus ancienne paie), l'allocation visee (aucune : rien ne se
     /// vise), les lignes prevues (aucune : les pieces seules).
     #[derive(Debug)]
     struct ChargeDroitsDesPieces {
         personne: Option<Nir> = legende("Personne", "son numéro de sécurité sociale, parmi ceux que portent les pièces ; absent : la seule qu'elles portent ; un numéro qu'elles ne portent plus ne compte pas").rendue(),
-        anniversaire: Option<Jour> = legende("Date anniversaire", "celle du droit en cours ou du dernier droit, que France Travail a notifiée : les droits se réexaminent au lendemain, sur la fin de contrat qui la précède, puis à chaque fin de contrat tant que les heures manquent ; la fin de contrat qui a ouvert ce droit est douze mois avant ; absente : une première ouverture"),
+        anniversaire: Option<Jour> = legende("Date anniversaire", "celle que France Travail a notifiée : les heures qui manquent se comptent jusqu'à elle ; absente ou passée : jusqu'au jour où la plus ancienne paie sort des 12 mois"),
         allocation_visee: Option<Montant> = legende("Allocation visée", "l'allocation journalière qu'on voudrait, en euros ; absente : rien ne se vise"),
         previsionnel: Option<Vec<LignePrevue>> = legende("Lignes prévues", "le travail à venir, une ligne par engagement : sa fin (son début, dans la ligne qui le demande), ses cachets ou ses heures, l'enseignement, son brut ; rien ne s'écrit"),
         debuts: Option<Vec<DebutDUnContrat>> = legende("Dates d'embauche", "la date d'embauche d'une paie des pièces dont la route la demande (la case Dates d'embauche, ses choix), sous le nom de la paie ; absente : rien n'est dit"),
@@ -1020,18 +1019,10 @@ struct ViseeDite {
     paies: Option<TableauRendu>,
 }
 
-/// Le jour butoir, tel que la route le dit : le jour, sa phrase, pourquoi il se deplace, et le texte.
-#[derive(Debug, Serialize)]
-struct ButoirDit {
-    jour: Jour,
-    phrase: String,
-    pourquoi: String,
-    reference: String,
-}
-
 /// LE BILAN DE LA PERSONNE CHOISIE, au-dessus du tableau des paies : son nom, quand les pieces portent plusieurs
-/// personnes (celle qui est devant la page n'a pas a lire le sien, Leandre, 27/11/2026), et son bilan a la derniere fin
-/// de contrat.
+/// personnes (celle qui est devant la page n'a pas a lire le sien, Leandre, 27/11/2026), et la reponse a la seule
+/// question, les 507 heures sur les 12 mois avant la derniere fin de contrat : les heures, ou ce qui manque et jusqu'a
+/// quand.
 #[derive(Debug, Serialize)]
 struct BilanDit {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1049,13 +1040,10 @@ struct DroitsDUnePersonne {
     lignes: Vec<(String, String)>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     heures_exigees: Heures,
+    /// Ce qui manque, compte a partir d'aujourd'hui quand la derniere fin de contrat est passee (le bilan le dit :
+    /// `BilanDit`).
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     manque: Heures,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    butoir: Option<ButoirDit>,
-    /// `phrase`, `manque`, `heures_exigees` et `butoir` : ce qui reste a faire, compte a partir d'aujourd'hui quand la
-    /// derniere fin de contrat est passee (le bilan a cette fin : `BilanDit`).
-    phrase: String,
     /// Quand l'estimation suppose non limitee une paie qui peut l'etre (son plafond ne se connait pas), la phrase qui le
     /// dit, une fois, et demande son debut quand il le dirait ; aucune : rien n'est suppose.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1066,7 +1054,7 @@ struct DroitsDUnePersonne {
     details: DetailsDits,
 }
 
-/// LE DETAIL REPLIE DU RESUME : son libelle, et ses lignes (le detail de chaque estimation, la readmission, ce que
+/// LE DETAIL REPLIE DU RESUME : son libelle, et ses lignes (le detail de chaque estimation, le jour butoir, ce que
 /// l'estimation ne compte pas, ce que les pieces ont d'etrange), une phrase chacune.
 #[derive(Debug, Serialize)]
 struct DetailsDits {
@@ -1085,7 +1073,7 @@ struct DroitsDesPieces {
 }
 
 /// UN BLOC DE L'ECRAN DES DROITS, dans l'ordre que la route lui donne (`ecran`) : une case de la charge ; le resume de la
-/// personne (son bilan, ce qui lui manque et le jour butoir, son allocation estimee et visee, les notes) ; le tableau
+/// personne (son bilan : ses heures, ou ce qui lui manque et jusqu'a quand ; son allocation estimee et visee, les notes) ; le tableau
 /// des paies, ou les lignes prevues se saisissent ; le depot des pieces ; les pieces deposees et ce qui en est lu.
 #[derive(Debug, Serialize)]
 #[serde(tag = "est", rename_all = "snake_case")]
@@ -1197,9 +1185,9 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
         None => None,
     };
     let phrase = match (&calcul, personnes.len()) {
-        (Some((t, p, _, _)), _) => match &t.nom {
-            Some(nom) => socle::phrase!("{} : {} {}", nom, t.bilan, p.phrase),
-            None => socle::phrase!("{} {}", t.bilan, p.phrase),
+        (Some((t, _, _, _)), _) => match &t.nom {
+            Some(nom) => socle::phrase!("{} : {}", nom, t.bilan),
+            None => socle::phrase!("{}", t.bilan),
         },
         (None, 0) => Phrase::fixe("Aucune pièce ne se compte encore : posez vos bulletins, de tous vos employeurs, ou remplissez des lignes prévues."),
         (None, n) => socle::phrase!("Les pièces portent {} personnes : choisissez-en une, ses droits se comptent seuls.", n),
@@ -1216,11 +1204,6 @@ fn pss(an: Annee) -> R<droit::plafond::Pss> {
     }
 }
 
-/// Le SMIC horaire en vigueur le `jour`, tel que le bareme livre de son annee le porte ; aucun s'il ne le porte pas.
-fn smic_au(jour: Jour) -> R<Option<MontantUnitaire>> {
-    let Some(p) = droit::contexte::socle_livre_lu(jour.annee())? else { return Ok(None) };
-    Ok(droit::contexte::smic_en_vigueur(&p.smic_horaire, &jour)?.map(|(_, v)| v))
-}
 
 /// LE PLAFOND D'UNE PAIE (`droit::plafond`) : celui que le bulletin imprime ; sinon celui que le moteur calcule, pour un
 /// artiste (`artiste`, l'annexe X) ou un technicien ; ou la raison pour laquelle il ne se connait pas. Un artiste engage
@@ -1301,112 +1284,41 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         }
     }
     let lignes: Vec<Declare> = declarees.iter().map(|(d, _)| d.clone()).collect();
-    // L'AFFILIATION, par le seul compte des droits (`droit::allocation::affiliation_des_droits`, celui de la route
-    // `droits` d'une compagnie) : a la derniere fin des paies, prevues comprises, la date anniversaire disant la
-    // readmission.
+    // UNE SEULE QUESTION : la personne a-t-elle ses 507 heures sur les 12 mois (365 jours) avant sa derniere fin de
+    // contrat, lignes prevues comprises (art. 3) ? Ni readmission, ni allongement (Leandre, 27/11/2026 : « on fait sur
+    // 1 an […] les gens ils veulent savoir si ils ont leurs heures »). Par le seul compte des droits
+    // (`droit::allocation::affiliation_des_droits`), sans date anniversaire : elle ne dit ici que jusqu'a quand.
     let r = &t.readmission;
-    // AVEC UNE DATE ANNIVERSAIRE, LE REEXAMEN (`droit::allocation::reexamen`, art. 9 §1 c) : sur la fin de contrat qui la
-    // precede, puis sur chaque fin qui la suit. Le compte se fait a la fin que le reexamen retient ; sans les heures, sur
-    // la fin qui precede la date anniversaire quand elle est a venir, sinon sur la derniere fin (chaque fin de contrat
-    // est un reexamen). Sans date anniversaire (une premiere ouverture), a la derniere fin de contrat.
-    let reexamen = match c.anniversaire {
-        Some(da) => Some(droit::allocation::reexamen(inst, &constantes, r, &lignes, &cle, da, aujourdhui, naissance)?),
-        None => None,
-    };
-    let aff = match &reexamen {
-        Some(Reexamen::Atteintes { affiliation, .. }) => affiliation.clone(),
-        Some(Reexamen::PasAtteintes { anniversaire, a_la_date }) if *anniversaire >= aujourdhui => a_la_date.clone(),
-        Some(Reexamen::PasAtteintes { a_la_date, .. }) => {
-            let fin = match droit::cumul::derniere_fin(&lignes, &cle) {
-                Some(j) => j,
-                None => aujourdhui,
-            };
-            droit::allocation::affiliation(inst, &constantes, r, &lignes, &cle, fin, a_la_date.precedente, naissance)?
-        }
-        None => droit::allocation::affiliation_des_droits(inst, &constantes, r, &lignes, &cle, None, None, naissance)?,
-    };
+    let aff = droit::allocation::affiliation_des_droits(inst, &constantes, r, &lignes, &cle, None, None, naissance)?;
     let fin = aff.position.periode.fin();
-    // Les lignes qui finissent au plus tard a cette fin : celles d'apres (apres la date anniversaire) ne disent pas ce qui
-    // manque pour elle.
-    let jusqu_a_la_fin: Vec<Declare> = lignes.iter().filter(|l| l.fin <= fin).cloned().collect();
-    // CE QUI RESTE A FAIRE ET LE JOUR BUTOIR, a partir d'aujourd'hui quand cette fin est passee : un prochain contrat
-    // finira au plus tot aujourd'hui. Le meme compte (`droit::allocation::affiliation`, puis `butoir`), a une autre fin.
-    // Les heures atteintes au reexamen, rien ne reste a faire.
-    let atteintes = matches!(reexamen, Some(Reexamen::Atteintes { .. }));
+    let atteintes = aff.manque.est_nul();
+    // CE QUI MANQUE, compte a partir d'aujourd'hui quand cette fin est passee : un contrat de plus finira au plus tot
+    // aujourd'hui. Le meme compte (`droit::allocation::affiliation`), a une autre fin.
     let a_partir = match aujourdhui > fin && !atteintes {
-        true => droit::allocation::affiliation(inst, &constantes, r, &jusqu_a_la_fin, &cle, aujourdhui, aff.precedente, naissance)?,
+        true => droit::allocation::affiliation(inst, &constantes, r, &lignes, &cle, aujourdhui, None, naissance)?,
         false => aff.clone(),
     };
-    let butoir = match atteintes {
-        true => None,
-        false => droit::allocation::butoir(inst, &constantes, r, &jusqu_a_la_fin, &cle, naissance, &a_partir)?,
+    // JUSQU'A QUAND : la date anniversaire, quand elle est a venir ; sinon le jour ou la plus ancienne paie de la
+    // fenetre en sort (`droit::allocation::butoir`, sans allongement).
+    let anniversaire = c.anniversaire.filter(|da| *da >= aujourdhui);
+    let butoir = match (atteintes, anniversaire) {
+        (false, None) => droit::allocation::butoir(inst, &constantes, r, &lignes, &cle, naissance, &a_partir)?,
+        (true, _) | (false, Some(_)) => None,
     };
     let (lignes_du_compte, notes_du_compte) = crate::archives::comptes_de_la_position(&aff, "des pièces")?;
     notes.extend(notes_du_compte);
-    let heures_a_la_fin = dit(aff.position.heures_ouverture()?);
-    let exigees = dit(aff.heures_exigees);
-    let lendemain = |j: &Jour| -> R<String> { Ok(j.apres(Duree::jours(1))?.jj_mm_aaaa()) };
-    // LE BILAN dit d'abord si les heures sont atteintes, a la fin de contrat qui compte.
-    let bilan = match &reexamen {
-        Some(Reexamen::Atteintes { a_la_date: true, anniversaire, .. }) => {
-            format!("Réexamen du {} : {} h au {}, les {} h sont atteintes.", lendemain(anniversaire)?, heures_a_la_fin, fin.jj_mm_aaaa(), exigees)
-        }
-        Some(Reexamen::Atteintes { a_la_date: false, anniversaire, .. }) => {
-            format!("Réexamen à la fin de contrat du {}, après la date anniversaire du {} : {} h, les {} h sont atteintes.", fin.jj_mm_aaaa(), anniversaire.jj_mm_aaaa(), heures_a_la_fin, exigees)
-        }
-        Some(Reexamen::PasAtteintes { anniversaire, .. }) if *anniversaire >= aujourdhui => {
-            format!("Réexamen du {} : {} h au {}, sur {}.", lendemain(anniversaire)?, heures_a_la_fin, fin.jj_mm_aaaa(), exigees)
-        }
-        Some(Reexamen::PasAtteintes { .. }) => format!("Au {} (dernière fin de contrat, après la date anniversaire) : {} h sur {}.", fin.jj_mm_aaaa(), heures_a_la_fin, exigees),
-        None => match (fin <= aujourdhui, aff.manque.est_nul()) {
-            (true, true) => format!("Au {} (dernière fin de contrat) : {} h, les {} h étaient atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, exigees),
-            (true, false) => format!("Au {} (dernière fin de contrat) : {} h sur {}.", fin.jj_mm_aaaa(), heures_a_la_fin, exigees),
-            (false, true) => format!("Au {} (dernière fin prévue) : {} h, les {} h seront atteintes.", fin.jj_mm_aaaa(), heures_a_la_fin, exigees),
-            (false, false) => format!("Au {} (dernière fin prévue) : {} h sur {}.", fin.jj_mm_aaaa(), heures_a_la_fin, exigees),
-        },
+    // LE BILAN : la reponse, en une phrase.
+    let manque = dit(a_partir.manque);
+    let bilan = match (atteintes, anniversaire, &butoir) {
+        (true, _, _) => format!("Vous avez vos heures : {} h sur les 12 mois au {}.", dit(aff.position.heures_ouverture()?), fin.jj_mm_aaaa()),
+        (false, Some(da), _) => format!("Il vous manque {} h d'ici votre date anniversaire, le {}.", manque, da.jj_mm_aaaa()),
+        (false, None, Some(b)) => format!("Il vous manque {} h d'ici le {}.", manque, b.jour.jj_mm_aaaa()),
+        (false, None, None) => format!("Il vous manque {} h sur les 12 mois.", manque),
     };
-    // Les heures atteintes a la derniere fin, ce qui manque ensuite est la question d'un prochain contrat.
-    let prochain = aff.manque.est_nul();
-    // LA DATE ANNIVERSAIRE A VENIR, SANS LES HEURES : ce qui manque se compte jusqu'a elle ; un jour butoir qui la suit
-    // ne se dit pas (apres elle, le reexamen se fait a chaque fin de contrat, art. 9 §1 c).
-    let jusqu_a_l_anniversaire = match &reexamen {
-        Some(Reexamen::PasAtteintes { anniversaire, .. }) if *anniversaire >= aujourdhui && butoir.as_ref().is_none_or(|b| b.jour >= *anniversaire) => Some(*anniversaire),
-        _ => None,
-    };
-    let butoir_dit = match jusqu_a_l_anniversaire {
-        Some(_) => None,
-        None => butoir.as_ref().map(|b| butoir_dit(b, &a_partir, r, prochain)),
-    };
-    // Ce que le reexamen dit encore, replie dans les details (art. 9 §1 c).
-    if reexamen.is_some() {
-        notes.push("France Travail réexamine les droits au lendemain de la date anniversaire, sur la fin de contrat qui la précède (annexes VIII et X, art. 9 §1 c).".to_string());
+    // Pourquoi ce jour, replie dans les details : la paie qui sort des 12 mois, et ce qui manquera ensuite.
+    if let Some(b) = &butoir {
+        notes.push(pourquoi_le_butoir(b, &a_partir));
     }
-    match &reexamen {
-        Some(Reexamen::Atteintes { suivante, .. }) => notes.push(format!(
-            "La date anniversaire du droit que les heures ouvrent, le {}, est douze mois après la fin de contrat retenue, le {} (annexes VIII et X, art. 9 §1 c).",
-            suivante.jj_mm_aaaa(),
-            fin.jj_mm_aaaa()
-        )),
-        Some(Reexamen::PasAtteintes { anniversaire, .. }) => notes.push(format!(
-            "Sans les heures au lendemain de la date anniversaire du {}, les droits se réexaminent à chaque fin de contrat (annexes VIII et X, art. 9 §1 c).",
-            anniversaire.jj_mm_aaaa()
-        )),
-        None => {}
-    }
-    let phrase = match (&reexamen, jusqu_a_l_anniversaire, &butoir_dit) {
-        (Some(Reexamen::Atteintes { suivante, .. }), _, _) => format!("Prochaine date anniversaire : le {}.", suivante.jj_mm_aaaa()),
-        (_, Some(da), _) => format!("Il vous manque {} h d'ici la date anniversaire ({}) ; ensuite, réexamen à chaque fin de contrat.", dit(a_partir.manque), da.jj_mm_aaaa()),
-        (_, None, Some(b)) => b.phrase.clone(),
-        (_, None, None) => match (a_partir.manque.est_nul(), aujourdhui > fin) {
-            (true, _) => format!("Les {} h sont atteintes.", dit(a_partir.heures_exigees)),
-            (false, false) => format!("Il vous manque {} h sur la fenêtre.", dit(a_partir.manque)),
-            (false, true) if prochain => format!("Pour un prochain contrat, qui finirait aujourd'hui ou plus tard : {} h de plus.", dit(a_partir.manque)),
-            (false, true) => match a_partir.position.heures_ouverture()?.est_nul() {
-                true => format!("Pour un contrat qui finirait aujourd'hui ou plus tard, il vous manque {} h : plus aucune paie ne compte sur la fenêtre.", dit(a_partir.manque)),
-                false => format!("Pour un contrat qui finirait aujourd'hui ou plus tard, il vous manque {} h.", dit(a_partir.manque)),
-            },
-        },
-    };
     // Les paies que la fenetre compte : celles de la position retenue.
     let dans_la_fenetre: Vec<&PaieComptee> = declarees.iter().filter(|(d, _)| aff.position.engagements.contains(d)).map(|(_, i)| &comptees[*i]).collect();
     // Les debuts de contrat que la charge dit des paies des pieces, par le nom de leur paie ; un nom qu'aucune ne porte se
@@ -1443,8 +1355,6 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         lignes: lignes_du_compte,
         heures_exigees: a_partir.heures_exigees,
         manque: a_partir.manque,
-        butoir: butoir_dit,
-        phrase,
         demande,
         estimations,
         visee,
@@ -1476,49 +1386,21 @@ fn demande_dite(supposees: &BTreeMap<String, (Option<Montant>, bool)>) -> Option
     })
 }
 
-/// LE JOUR BUTOIR EN MOTS : ce qui manque et jusqu'a quand ; pourquoi la date se deplace, chiffre depuis les paies (celles
-/// qui sortent de la fenetre, la fenetre qui s'allonge) ; et le texte. `prochain` : les heures etaient atteintes a la
-/// derniere fin de contrat, et ce qui manque est la question d'un prochain contrat.
-fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::allocation::Readmission, prochain: bool) -> ButoirDit {
-    let jour = b.jour.en_clair();
-    let apres = &b.lendemain;
-    let phrase = match (aff.manque.est_nul(), prochain) {
-        (true, _) => format!("Les {} h sont atteintes ; sans contrat de plus, elles ne le sont plus après le {}.", dit(aff.heures_exigees), jour),
-        (false, true) => format!("Pour un prochain contrat : {} h de plus d'ici le {}, davantage après.", dit(aff.manque), jour),
-        (false, false) => format!("Il vous manque {} h d'ici le {} ; après, sans contrat de plus, il en faudra davantage.", dit(aff.manque), jour),
-    };
+/// POURQUOI LE JOUR BUTOIR, en une phrase des details : les paies qui sortent des 12 mois le lendemain, et ce qui
+/// manquera alors ; le texte (art. 3).
+fn pourquoi_le_butoir(b: &droit::allocation::Butoir, aff: &Affiliation) -> String {
     let c = &aff.position.constantes;
-    let sortent: Vec<&Declare> = aff.position.engagements.iter().filter(|d| !apres.position.engagements.contains(d)).collect();
-    let mut raisons = Vec::new();
-    if !sortent.is_empty() {
-        let heures: Heures = sortent.iter().map(|d| d.heures_equivalentes(c)).sum();
-        let fins: Vec<String> = sortent.iter().map(|d| d.fin.jj_mm_aaaa()).collect();
-        raisons.push(format!(
-            "les {} h {} le {} ne comptent plus : la fenêtre ne remonte qu'à {} jours avant la fin de contrat",
-            dit(heures),
-            if fins.len() > 1 { "des paies qui finissent" } else { "de la paie qui finit" },
-            fins.join(" et le "),
-            c.fenetre_jours.jours_a_ecrire() + apres.periodes_en_plus * r.jours_par_periode
-        ));
-    }
-    if apres.periodes_en_plus > aff.periodes_en_plus {
-        raisons.push(format!(
-            "la fenêtre s'allonge de {} jours, et il faut {} h ({} h de plus par {} jours)",
-            r.jours_par_periode * (apres.periodes_en_plus - aff.periodes_en_plus),
-            dit(apres.heures_exigees),
-            dit(r.heures_par_periode),
-            r.jours_par_periode
-        ));
-    }
-    let pourquoi = match raisons.is_empty() {
-        true => format!("Ce n'est pas une échéance de France Travail. Après le {}, il vous manquera {} h.", jour, dit(apres.manque)),
-        false => format!("Ce n'est pas une échéance de France Travail. Après le {}, {} : il vous manquera {} h.", jour, raisons.join(" ; "), dit(apres.manque)),
-    };
-    let reference = match aff.precedente {
-        None => "Annexes VIII et X au règlement d'assurance chômage, art. 3 : 507 heures sur les 365 jours qui précèdent la fin de contrat.".to_string(),
-        Some(_) => "Annexes VIII et X au règlement d'assurance chômage, art. 3, et art. 9 §1 a et b : à la réadmission, 42 heures de plus par période de 30 jours au-delà du 365e jour, sans remonter avant la fin de contrat qui a ouvert le droit précédent.".to_string(),
-    };
-    ButoirDit { jour: b.jour, phrase, pourquoi, reference }
+    let sortent: Vec<&Declare> = aff.position.engagements.iter().filter(|d| !b.lendemain.position.engagements.contains(d)).collect();
+    let heures: Heures = sortent.iter().map(|d| d.heures_equivalentes(c)).sum();
+    let fins: Vec<String> = sortent.iter().map(|d| d.fin.jj_mm_aaaa()).collect();
+    format!(
+        "Après le {}, les {} h {} le {} sortent des 12 mois : il vous manquera {} h (annexes VIII et X, art. 3).",
+        b.jour.jj_mm_aaaa(),
+        dit(heures),
+        if fins.len() > 1 { "des paies qui finissent" } else { "de la paie qui finit" },
+        fins.join(" et le "),
+        dit(b.lendemain.manque)
+    )
 }
 
 /// L'ALLOCATION ESTIMEE DE CHAQUE ANNEXE sur la fenetre de `aff`, et ce que demande l'allocation `visee`. Le salaire de
@@ -1527,9 +1409,7 @@ fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::alloc
 /// `chomage-intermittents/francetravail-guide-intermittents-20261020.txt` : « les salaires au titre des heures
 /// d'enseignement ne sont pas retenus dans le SR ») ; une paie qui mele l'enseignement a d'autres heures ne dit pas leur
 /// salaire a part : rien ne s'estime, et la note dit laquelle. Les heures travaillees : celles du montant (sans
-/// l'enseignement : `Position::heures_montant`). A la readmission (une fenetre allongee), les diviseurs de A et B sont
-/// les heures exigees, fois le SMIC horaire de la fin de contrat pour A : INFERENCE, l'article 14 ne dit pas a quelle
-/// date lire le SMIC.
+/// l'enseignement : `Position::heures_montant`). Sur les 365 jours, les diviseurs de A et B sont ceux de l'annexe.
 /// UNE PAIE DONT LE PLAFOND NE SE CONNAIT PAS compte entiere (Leandre, 27/11/2026 : « L'estimation sort toujours ») ;
 /// quand son brut passe quatre fois le plus bas plafond qu'elle puisse avoir (`plafond_le_plus_bas`), elle peut etre
 /// limitee : l'estimation le suppose, le dit dans sa phrase, et la paie entre dans `supposees` (son nom : cette plus
@@ -1568,16 +1448,6 @@ fn estimer(
             notes.push(format!("L'allocation ne s'estime pas : le logiciel n'a pas le plafond de la Sécurité sociale de {}.", annee));
             return Ok((Vec::new(), Vec::new()));
         }
-    };
-    let diviseurs = match aff.periodes_en_plus {
-        0 => Diviseurs::DeLAnnexe,
-        _ => match smic_au(fin)? {
-            Some(smic_horaire) => Diviseurs::Allonges { heures_exigees: aff.heures_exigees, smic_horaire },
-            None => {
-                notes.push(format!("L'allocation ne s'estime pas : à la réadmission, son diviseur prend le SMIC horaire, que le logiciel n'a pas au {}.", fin.jj_mm_aaaa()));
-                return Ok((Vec::new(), Vec::new()));
-            }
-        },
     };
     let plafond = t.plafond(pss_annuel);
     let nht = p.heures_montant();
@@ -1649,7 +1519,7 @@ fn estimer(
         }
         let total: Montant = bruts.iter().fold(Montant::ZERO, |a, (b, _)| a + *b);
         let sr = droit::allocation::salaire_limite(&bruts, Coefficient::UN);
-        let e = t.estimer(annexe, sr, nht, plafond, diviseurs)?;
+        let e = t.estimer(annexe, sr, nht, plafond)?;
         let borne = match e.borne {
             Some(Borne::Plancher) => format!(" ; le calcul donne {}, le plancher de l'annexe est de {}", euros(e.calculee), euros(e.plancher)),
             Some(Borne::Plafond) => format!(" ; le calcul donne {}, le plafond est de {}", euros(e.calculee), euros(e.plafond)),
@@ -1674,7 +1544,7 @@ fn estimer(
         ));
         estimations.push(EstimationDite { annexe: annexe_dite(annexe), a: e.a, b: e.b, c: e.c, calculee: e.calculee, salaire_de_reference: sr, retenue: e.retenue, phrase, paies: tableau_du_salaire(lignes) });
         if let Some(v) = visee {
-            visees.push(viser(t, annexe, v, sr, nht, plafond, diviseurs, &bruts, &a_viser, &inconnues, supposees)?);
+            visees.push(viser(t, annexe, v, sr, nht, plafond, &bruts, &a_viser, &inconnues, supposees)?);
         }
     }
     Ok((estimations, visees))
@@ -1714,7 +1584,6 @@ fn viser(
     sr: Montant,
     nht: Heures,
     plafond: Montant,
-    d: Diviseurs,
     bruts: &[(Montant, Option<Montant>)],
     a_viser: &[(&PaieComptee, Montant, Option<Montant>)],
     inconnues: &[PlafondSuppose],
@@ -1722,8 +1591,8 @@ fn viser(
 ) -> R<ViseeDite> {
     let nom = annexe_dite(annexe);
     let au_plus = droit::allocation::salaire_au_plus(bruts);
-    let aj_de = |s: Montant| t.estimer(annexe, s, nht, plafond, d).map(|e| e.retenue);
-    let pour_le_plafond = match t.salaire_vise(annexe, plafond, nht, plafond, d)? {
+    let aj_de = |s: Montant| t.estimer(annexe, s, nht, plafond).map(|e| e.retenue);
+    let pour_le_plafond = match t.salaire_vise(annexe, plafond, nht, plafond)? {
         Visee::Salaire(s) => Some(s),
         Visee::DesLePlancher | Visee::SansSalaire | Visee::AuDelaDuPlafond => None,
     };
@@ -1739,7 +1608,7 @@ fn viser(
         (None, None) => format!("Le plafond de l'allocation est de {} par jour (art. 16).", euros(plafond)),
     };
     let vide = |phrase: String| ViseeDite { annexe: nom, salaire_de_reference: None, allocation: None, phrase, arret: arret.clone(), paies: None };
-    let cible = match t.salaire_vise(annexe, v, nht, plafond, d)? {
+    let cible = match t.salaire_vise(annexe, v, nht, plafond)? {
         Visee::Salaire(s) => s,
         Visee::AuDelaDuPlafond => return Ok(vide(format!("{} : {} par jour dépasse le plafond ; aucun salaire n'y mène.", nom, euros(v)))),
         Visee::DesLePlancher => return Ok(vide(format!("{} : {} par jour ne passe pas le plancher de l'annexe, {} par jour, qui s'applique dès que le droit est ouvert.", nom, euros(v), euros(t.formule(annexe).plancher)))),

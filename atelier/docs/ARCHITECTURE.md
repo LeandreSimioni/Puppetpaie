@@ -1495,9 +1495,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
-| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne`) ; et ce qu'une allocation visée demande au salaire de référence ; les diviseurs de ses parties A et B, ceux de l'annexe ou ceux d'une fenêtre allongée | `Estimation` ; `Visee` ; `Diviseurs` | `droit/src/allocation.rs` |
-| affiliation d'un intermittent à une fin de contrat (art. 3, art. 9 §1 a et b : sa position dans la fenêtre de 365 jours, allongée de 30 jours en 30 jours à la réadmission, les heures exigées, ce qui manque ; les valeurs de la réadmission, `Readmission`, et la limite du salaire de référence, `LimiteDuSalaire`, sont des formes de `allocation-intermittents.json`) ; et le jour butoir, le dernier où, sans contrat de plus, il n'en faut pas davantage | `Affiliation` ; `Butoir` | `droit/src/allocation.rs` |
-| réexamen des droits d'un intermittent à sa date anniversaire (art. 9 §1 c : sur la fin de contrat qui la précède, puis à chaque fin de contrat qui la suit ; les heures atteintes, la fin retenue et la date anniversaire du droit qu'elle ouvre, ou rien d'atteint) | `Reexamen` | `droit/src/allocation.rs` |
+| allocation journalière estimée d'un intermittent (annexes VIII et X, art. 14 et 16 : ses parties A, B et C, son plancher, le plafond, la borne qui la ramène, `Borne`) ; et ce qu'une allocation visée demande au salaire de référence | `Estimation` ; `Visee` | `droit/src/allocation.rs` |
+| affiliation d'un intermittent à une fin de contrat (art. 3, art. 9 §1 a et b : sa position dans la fenêtre de 365 jours, allongée de 30 jours en 30 jours à la réadmission, les heures exigées, ce qui manque ; les valeurs de la réadmission, `Readmission`, et la limite du salaire de référence, `LimiteDuSalaire`, sont des formes de `allocation-intermittents.json`) ; et le jour butoir, le dernier où, sans contrat de plus, aucune ligne ne sort des 365 jours | `Affiliation` ; `Butoir` | `droit/src/allocation.rs` |
 | table livrée de l'allocation des intermittents, entière (`allocation-intermittents.json`) | `Allocation` | `droit/src/allocation.rs` |
 | allocation journalière minimale des annexes VIII et X (art. 14) | `AjMinimale` | `droit/src/allocation.rs` |
 | formule d'une annexe : ses seuils, ses parts, ses diviseurs, son plancher (art. 14) | `Formule` | `droit/src/allocation.rs` |
@@ -2927,14 +2926,13 @@ début facultatif ; la route ne l'ouvre, dans la ligne, que pour le plafond, qua
 Le compte est un seul, `droit::allocation::affiliation_des_droits` : celui de la route `droits` d'une compagnie (par
 `droit::cumul::position_droits`), de ses conseils, de la colonne « Droits » du bulletin, et de celle-ci ; il se dit par
 `archives::comptes_de_la_position` : à la dernière fin de contrat (sinon aujourd'hui), sur 365 jours, allongés de 30
-jours en 30 jours à la réadmission (`droit::allocation::affiliation`, art. 9 §1 b ; la date anniversaire, dite ou dans
-la fiche, dit la réadmission : la fin de contrat précédente est douze mois avant) ; le jour
-butoir (`droit::allocation::butoir`) est le dernier où, sans contrat de plus, il n'en faut pas davantage, et la route
-dit pourquoi. Avec une date anniversaire, la route dit le réexamen (`droit::allocation::reexamen`, art. 9 §1 c) : au
-lendemain de la date anniversaire, sur la fin de contrat qui la précède, puis, sans les heures, à chaque fin de contrat
-qui la suit ; les heures atteintes, le bilan le dit d'abord, avec la fin retenue, et la date anniversaire du droit
-qu'elle ouvre, douze mois après (passée, le réexamen suivant se cherche de même) ; sans elles et la date anniversaire
-à venir, ce qui manque se compte jusqu'à elle, et un jour butoir qui la suit ne se dit pas. L'allocation journalière s'estime par annexe (`allocation-intermittents.json` : art. 14 et 16), chaque paie
+jours en 30 jours à la réadmission (`droit::allocation::affiliation`, art. 9 §1 b ; la date anniversaire de la fiche
+dit la réadmission : la fin de contrat précédente est douze mois avant). La page, elle, ne pose qu'une question, sur
+un an (Léandre, 27/11/2026 : « on fait sur 1 an […] les gens ils veulent savoir si ils ont leurs heures ») : les
+507 heures sur les 365 jours avant la dernière fin de contrat, lignes prévues comprises, sans réadmission ni
+allongement. Le bilan dit les heures, ou ce qui manque (compté à partir d'aujourd'hui quand cette fin est passée) et
+jusqu'à quand : la date anniversaire dite, quand elle est à venir ; sinon le jour butoir (`droit::allocation::butoir`,
+le dernier où, sans contrat de plus, aucune paie ne sort des 365 jours), dont « Détails » dit pourquoi. L'allocation journalière s'estime par annexe (`allocation-intermittents.json` : art. 14 et 16), chaque paie
 sous quatre fois son plafond (art. 11 §3 ; celui que le bulletin imprime, sinon `droit::plafond` ; un plafond qui ne
 se connaît pas compte entier ; quand le brut passe quatre fois le plus bas possible, celui d'un contrat d'un jour, la
 paie peut être limitée : l'estimation sort quand même, en disant qu'elle la suppose non limitée, et la route demande,
@@ -2943,8 +2941,7 @@ le chiffre tient en une ligne par annexe, son détail et les notes dans un repli
 visée dit le salaire de référence qu'elle demande, chaque paie de la fenêtre augmentée dans la même proportion, et ce qui
 arrête la hausse. Une DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du
 salaire de référence, et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui
-porte une personne, les lignes prévues se comptent seules. Le bilan se compte à la dernière fin de contrat (avec une date
-anniversaire, à celle du réexamen) ; ce qui reste à faire et le jour butoir, à partir d'aujourd'hui quand cette fin est passée (le même compte, à une autre fin).
+porte une personne, les lignes prévues se comptent seules.
 La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : les cases de sa
 charge, chacune tirée de la déclaration de son champ, le bilan, le tableau des paies où les lignes prévues se
 saisissent, le résumé, le dépôt, les pièces) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,

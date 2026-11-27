@@ -432,18 +432,11 @@ var dire = null;
     return r;
   }
 
-  // LE RÉSUMÉ de la personne, sous le tableau : sa fenêtre, ce qui manque et le jour butoir, le compte des heures, ce
-  // que l'estimation suppose, l'allocation estimée et visée (chacune son tableau replié), puis « Détails », replié.
+  // LE RÉSUMÉ de la personne, sous le tableau : sa fenêtre, le compte des heures, ce que l'estimation suppose,
+  // l'allocation estimée et visée (chacune son tableau replié), puis « Détails », replié.
   function resume(p) {
     var r = el("section", "bloc");
     r.append(el("p", "aide", p.fenetre));
-    if (p.butoir) {
-      var b = el("div", "butoir");
-      b.append(el("p", null, p.butoir.phrase), el("p", null, p.butoir.pourquoi), el("p", "reference", p.butoir.reference));
-      r.append(b);
-    } else {
-      r.append(el("p", "phrase", p.phrase));
-    }
     r.append(paires(p.lignes));
     var replie = function (t) {
       var det = el("details");
