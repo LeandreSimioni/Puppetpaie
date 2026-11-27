@@ -509,7 +509,8 @@ var dire = null;
       t.colonnes.forEach(function (col, i) {
         var td = el("td", classe(col));
         if (col.parties && col.parties.length) {
-          col.parties.filter(function (k) { return parties[k].ouverte || ouvre.indexOf(k) >= 0; }).forEach(function (k) {
+          var montrees = col.parties.filter(function (k) { return parties[k].ouverte || ouvre.indexOf(k) >= 0; });
+          montrees.forEach(function (k) {
             var p = parties[k];
             var i2 = champ(p.forme, p.choix, rangs[n][k], function (v) {
               rangs[n][k] = v;
@@ -518,7 +519,14 @@ var dire = null;
               calculer();
             }, "case-" + cle + "-" + n + "-" + k);
             i2.setAttribute("aria-label", p.libelle + " " + (n + 1));
-            td.append(i2);
+            // Plusieurs cases sous une colonne : chacune porte le libellé de sa partie (« Début », « Fin »).
+            if (montrees.length > 1) {
+              var lp = el("label", "partie", p.libelle);
+              lp.append(i2);
+              td.append(lp);
+            } else {
+              td.append(i2);
+            }
           });
         } else if (cellules) {
           td.textContent = cellules[i] || "";

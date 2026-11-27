@@ -338,6 +338,67 @@ pub fn affiliation_des_droits(racine: &Path, c: &Constantes, r: &Readmission, li
     affiliation(racine, c, r, &siennes, salarie, fin, precedente, naissance)
 }
 
+/// LE REEXAMEN DES DROITS A LA DATE ANNIVERSAIRE (art. 9 §1 c) : France Travail examine la readmission au lendemain de
+/// la date anniversaire, sur la fin de contrat qui la precede (guide de France Travail,
+/// `chomage-intermittents/francetravail-guide-intermittents-20261020.txt`, p. 6 : « Celle qui précède votre date
+/// anniversaire ») ; « Lorsque les conditions de la réadmission ne sont pas satisfaites à la date anniversaire […], la
+/// situation de l'allocataire est réexaminée en vue de sa réadmission dès la rupture d'un contrat de travail ». Le droit
+/// qui s'ouvre a sa date anniversaire douze mois apres la fin de contrat retenue (art. 9 §1 c ; guide, p. 9 : « au terme
+/// d'un délai de 12 mois (365 jours) à compter de la fin de contrat de travail prise en considération ») ; quand elle est
+/// deja passee, ce droit-la est fini, et le reexamen suivant se cherche de meme. Le report du reexamen quand un contrat
+/// est en cours a la date anniversaire (art. 9 §1 c, second tiret) ne se compte pas : une ligne declaree n'a que sa fin.
+#[derive(Debug, Clone)]
+pub enum Reexamen {
+    /// Les heures sont atteintes a la fin de contrat de `affiliation` : celle qui precede la date anniversaire
+    /// `anniversaire` (`a_la_date`), ou une fin qui la suit ; `suivante` : la date anniversaire du droit qu'elle ouvre.
+    Atteintes { anniversaire: Jour, a_la_date: bool, affiliation: Affiliation, suivante: Jour },
+    /// Les heures ne sont atteintes ni a la date anniversaire `anniversaire` (`a_la_date` : l'affiliation sur la fin de
+    /// contrat qui la precede), ni a une fin de contrat qui la suit.
+    PasAtteintes { anniversaire: Jour, a_la_date: Affiliation },
+}
+
+/// Le reexamen des lignes `lignes` de `salarie` a la date anniversaire `anniversaire` (voir `Reexamen`), le
+/// `aujourdhui` disant si la date anniversaire du droit qu'il ouvre est deja passee. La fin de contrat qui a ouvert le
+/// droit precedent est douze mois avant la date anniversaire (`affiliation_des_droits`), puis, d'un reexamen au suivant,
+/// celle que le reexamen a retenue.
+#[allow(clippy::too_many_arguments)]
+pub fn reexamen(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, anniversaire: Jour, aujourdhui: Jour, naissance: Option<Jour>) -> R<Reexamen> {
+    let siennes: Vec<Declare> = lignes.iter().filter(|l| l.salarie == *salarie).cloned().collect();
+    let mut da = anniversaire;
+    let mut precedente = anniversaire.avant(Duree::mois(12))?;
+    loop {
+        // Seules comptent les fins de contrat d'apres celle qui a ouvert le droit precedent (art. 9 §1 a).
+        let jusqu_au = |j: Jour| -> Vec<Declare> { siennes.iter().filter(|l| l.fin > precedente && l.fin <= j).cloned().collect() };
+        let avant = jusqu_au(da);
+        let fin = derniere_fin(&avant, salarie).unwrap_or(da);
+        let a_la_date = affiliation(racine, c, r, &avant, salarie, fin, Some(precedente), naissance)?;
+        let mut atteinte = a_la_date.manque.est_nul().then(|| (true, a_la_date.clone()));
+        if atteinte.is_none() {
+            let mut fins: Vec<Jour> = siennes.iter().map(|l| l.fin).filter(|f| *f > da).collect();
+            fins.sort();
+            fins.dedup();
+            for f in fins {
+                let a = affiliation(racine, c, r, &jusqu_au(f), salarie, f, Some(precedente), naissance)?;
+                if a.manque.est_nul() {
+                    atteinte = Some((false, a));
+                    break;
+                }
+            }
+        }
+        let Some((a_la_date, aff)) = atteinte else {
+            return Ok(Reexamen::PasAtteintes { anniversaire: da, a_la_date });
+        };
+        let retenue = aff.position.periode.fin();
+        let suivante = retenue.apres(Duree::mois(12))?;
+        if suivante < aujourdhui && suivante > da {
+            precedente = retenue;
+            da = suivante;
+            continue;
+        }
+        return Ok(Reexamen::Atteintes { anniversaire: da, a_la_date, affiliation: aff, suivante });
+    }
+}
+
 /// L'AFFILIATION A LA FIN DE CONTRAT `fin` (art. 3 ; art. 9 §1 a et b) : les lignes `lignes` de `salarie` dont la fin
 /// est dans les 365 jours qui la precedent, 507 heures exigees ; a la readmission (`precedente` : la fin de contrat qui a
 /// ouvert le droit precedent), seules comptent les lignes qui finissent apres elle, et, faute des 507 heures, la fenetre

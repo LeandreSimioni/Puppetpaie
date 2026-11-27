@@ -9,7 +9,8 @@ estimée. Elle ne garde rien : fermer l'onglet efface tout.
   `droits.js` : la page. Elle ne
   décide rien : elle demande la route `droits-des-pieces` (`atelier/sources/routes/src/accueil/droits_des_pieces.rs`)
   et pose son écran bloc par bloc, dans l'ordre où la route le rend (`ecran` : une case, le résumé, le tableau des
-  paies où les lignes prévues se saisissent, leur début dans la rangée que la route ouvre, le dépôt, les pièces
+  paies où les lignes prévues se saisissent, leur début dans la rangée que la route ouvre (deux cases sous une colonne :
+  chacune sous le libellé de sa partie), le dépôt, les pièces
   déposées ; le détail du résumé, replié sous « Détails »). Sans calcul : la date anniversaire, le
   dépôt, le tableau vide ; avec un calcul : le résumé en tête, puis le tableau, la date anniversaire et le dépôt, les
   dates d'embauche, les pièces.
