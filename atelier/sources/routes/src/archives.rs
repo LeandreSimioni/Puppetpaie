@@ -1333,8 +1333,9 @@ struct Droits {
 
 /// LES HEURES ET CACHETS D'UN INTERMITTENT au regard des annexes 8 et 10 (`droit::cumul` : la fenetre, le plafond des
 /// cachets d'un mois, l'enseignement plafonne, le seuil, lus du bareme) : la case qui fait choisir le salarie, parmi ceux
-/// dont un engagement est connu (importe ou valide) ; pour celui qu'on a choisi, sa position dans sa fenetre (depuis sa
-/// date anniversaire si sa fiche la porte, sinon les 12 mois jusqu'a aujourd'hui) et le tableau du mois. Le compte ne
+/// dont un engagement est connu (importe ou valide) ; pour celui qu'on a choisi, son affiliation (`cumul::position_droits` :
+/// les 365 jours a sa derniere fin de contrat, sinon aujourd'hui, la date anniversaire de sa fiche disant la
+/// readmission) et le tableau du mois. Le compte ne
 /// porte que les engagements de cette compagnie : la phrase le dit.
 fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     use droit::cumul::{anniversaire_configure, position_droits, tableau_cumul};
@@ -1358,26 +1359,29 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     let mut salarie = None;
     if let Some(cle) = &c.salarie {
         let anniv = anniversaire_configure(ctx, cle)?;
-        let p = position_droits(ctx, cle, &engs, anniv, Some(ctx.aujourdhui))?;
-        let c = &p.constantes;
+        let a = position_droits(ctx, cle, &engs, anniv, None)?;
+        let p = &a.position;
         use socle::grandeurs::ecrit::sans_zero::dit;
         let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
-        let (mut lignes, mut notes) = comptes_de_la_position(&p, "de la fiche")?;
-        let jours = p.jours_restants(ctx.aujourdhui);
-        if anniv.is_some() && !jours.nulle() {
-            lignes.push(("Avant le réexamen".into(), jours.dite_en_abrege()));
+        let (mut lignes, mut notes) = comptes_de_la_position(&a, "de la fiche")?;
+        // Le reexamen se fait au lendemain de la date anniversaire (annexes VIII et X, art. 9 §1 c).
+        if let Some(anniversaire) = anniv {
+            let jours = socle::date::Duree::ecoulee(&ctx.aujourdhui, &anniversaire);
+            if !jours.nulle() {
+                lignes.push(("Avant le réexamen".into(), jours.dite_en_abrege()));
+            }
         }
-        let phrase = if p.atteint()? {
-            socle::phrase!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - c.seuil_heures))
+        let phrase = if a.manque.est_nul() {
+            socle::phrase!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - a.heures_exigees))
         } else {
-            socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_ouverture()?), dit(c.seuil_heures))
+            socle::phrase!("Chez nous : {} h. Les {} h se comptent chez tous ses employeurs.", dit(p.heures_ouverture()?), dit(a.heures_exigees))
         };
         if anniv.is_none() {
             let case = declarations::champs::champ(droit::fiche::NomDeFiche::Salarie, droit::fiche::CaseSalarie::AnniversaireDroits)?
                 .map(|ch| ch.libelle)
                 .filter(|l| !l.is_empty())
                 .ok_or_else(|| socle::fichiers::absent("anniversaire_droits (champs-base.json)"))?;
-            notes.push(format!("Sans « {} » dans sa fiche, on compte les 12 mois jusqu'à aujourd'hui ; la date que France Travail lui notifie prime.", case));
+            notes.push(format!("Sans « {} » dans sa fiche, on compte une première ouverture ; la date que France Travail lui notifie dit la réadmission.", case));
         }
         let colonnes = tableau_cumul(ctx, cle, mois, &engs)?;
         let rangee = |quoi: &'static str, valeur: &dyn Fn(&droit::cumul::Colonne) -> String| Rangee { quoi, valeurs: colonnes.iter().map(valeur).collect() };
@@ -1402,12 +1406,14 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
     Ok(Droits { phrase, mois, phrases, case, salarie })
 }
 
-/// CE QUE COMPTE LA POSITION D'UN INTERMITTENT DANS SA FENETRE (`droit::cumul::Position`), en `[quoi, valeur]` jusqu'au
-/// seuil, et les notes de ce qui ne compte pas (des cachets au-dela du plafond d'un mois, de l'enseignement au-dela du
-/// sien, une date de naissance absente `naissance_absente_de`). Les droits des salaries d'une compagnie (`droits`) et
+/// CE QUE COMPTE L'AFFILIATION D'UN INTERMITTENT (`droit::allocation::Affiliation`, sa position dans sa fenetre), en
+/// `[quoi, valeur]` jusqu'aux heures exigees (507, davantage a la readmission allongee), et les notes de ce qui ne compte
+/// pas (des cachets au-dela du plafond d'un mois, de l'enseignement au-dela du sien, une date de naissance absente
+/// `naissance_absente_de`) et de la readmission. Les droits des salaries d'une compagnie (`droits`) et
 /// ceux d'un intermittent depuis ses pieces (`accueil::droits_des_pieces`) se disent par elle.
-pub(crate) fn comptes_de_la_position(p: &droit::cumul::Position, naissance_absente_de: &str) -> R<(Vec<(String, String)>, Vec<String>)> {
+pub(crate) fn comptes_de_la_position(a: &droit::allocation::Affiliation, naissance_absente_de: &str) -> R<(Vec<(String, String)>, Vec<String>)> {
     use socle::grandeurs::ecrit::sans_zero::dit;
+    let p = &a.position;
     let c = &p.constantes;
     let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
     let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), dit(p.cachets()))];
@@ -1424,7 +1430,7 @@ pub(crate) fn comptes_de_la_position(p: &droit::cumul::Position, naissance_absen
         lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
         lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
     }
-    lignes.push(("Seuil des annexes 8 et 10".into(), h(c.seuil_heures)));
+    lignes.push(("Seuil des annexes 8 et 10".into(), h(a.heures_exigees)));
     let mut notes = Vec::new();
     if !p.cachets_perdus().est_nul() {
         notes.push(format!(
@@ -1439,6 +1445,9 @@ pub(crate) fn comptes_de_la_position(p: &droit::cumul::Position, naissance_absen
     }
     if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
         notes.push(format!("Date de naissance absente {} : le plafond bas de l'enseignement s'applique, peut-être à tort.", naissance_absente_de));
+    }
+    if let Some(precedente) = a.precedente {
+        notes.push(format!("Réadmission : seules comptent les paies qui finissent après le {}, la fin de contrat qui a ouvert le droit précédent.", precedente.jj_mm_aaaa()));
     }
     Ok((lignes, notes))
 }

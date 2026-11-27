@@ -21,7 +21,7 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use crate::contexte::IdSalarie;
-use crate::cumul::{fenetre_allongee, fenetre_douze_mois, position, Constantes, Declare, Position};
+use crate::cumul::{derniere_fin, fenetre_allongee, fenetre_douze_mois, position, Constantes, Declare, Position};
 use crate::emplois::AnnexeChomage;
 use crate::source::forme_notee;
 use socle::date::{Duree, Jour};
@@ -313,6 +313,29 @@ pub struct Affiliation {
     pub periodes_en_plus: u32,
     pub heures_exigees: Heures,
     pub manque: Heures,
+    /// A la readmission, la fin de contrat qui a ouvert le droit precedent ; aucune : une premiere ouverture.
+    pub precedente: Option<Jour>,
+}
+
+/// L'AFFILIATION DES DROITS D'UN INTERMITTENT, le seul compte (la route `droits` d'une compagnie, ses conseils, la colonne
+/// « Droits » du bulletin, et `droits-des-pieces`) : `affiliation` a la derniere fin des lignes `lignes` de `salarie`
+/// (art. 3 : « au cours des douze mois qui précèdent la fin du contrat de travail »), celles qui finissent au plus tard
+/// `jusqu_au` quand il est dit ; aucune ligne, a `jusqu_au`, sinon aujourd'hui. Une date anniversaire `anniversaire`
+/// (notifiee par France Travail) dit la readmission : la fin de contrat qui a ouvert le droit precedent est douze mois
+/// avant (art. 9 §1 c : « la date anniversaire correspondant au terme des douze mois suivant la fin du contrat de travail
+/// retenue pour l'ouverture » ; INFERENCE, dite dans `allocation-intermittents.json`).
+#[allow(clippy::too_many_arguments)]
+pub fn affiliation_des_droits(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, anniversaire: Option<Jour>, jusqu_au: Option<Jour>, naissance: Option<Jour>) -> R<Affiliation> {
+    let siennes: Vec<Declare> = lignes.iter().filter(|l| l.salarie == *salarie && jusqu_au.is_none_or(|j| l.periode.fin() <= j)).cloned().collect();
+    let fin = match (derniere_fin(&siennes, salarie), jusqu_au) {
+        (Some(j), _) | (None, Some(j)) => j,
+        (None, None) => crate::contexte::aujourdhui()?,
+    };
+    let precedente = match anniversaire {
+        Some(a) => Some(a.avant(Duree::mois(12))?),
+        None => None,
+    };
+    affiliation(racine, c, r, &siennes, salarie, fin, precedente, naissance)
 }
 
 /// L'AFFILIATION A LA FIN DE CONTRAT `fin` (art. 3 ; art. 9 §1 a et b) : les lignes `lignes` de `salarie` dont la fin
@@ -341,7 +364,7 @@ pub fn affiliation(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Dec
         let manque = (exigees - p.heures_ouverture()?).max(Heures::ZERO);
         let atteinte = manque.est_nul();
         if meilleure.as_ref().is_none_or(|m| manque < m.manque) {
-            meilleure = Some(Affiliation { position: p, periodes_en_plus: k, heures_exigees: exigees, manque });
+            meilleure = Some(Affiliation { position: p, periodes_en_plus: k, heures_exigees: exigees, manque, precedente });
         }
         if atteinte {
             break;
@@ -368,7 +391,8 @@ pub struct Butoir {
 /// vont pas au-dela de la premiere ou les heures exigees passent toutes les heures des lignes et ce qui manque a `fin` :
 /// la, il manque forcement davantage (art. 9 §1 b, 42 heures par periode). Sans readmission, la fenetre ne s'allonge pas.
 #[allow(clippy::too_many_arguments)]
-pub fn butoir(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, fin: Jour, precedente: Option<Jour>, naissance: Option<Jour>, a_la_fin: &Affiliation) -> R<Option<Butoir>> {
+pub fn butoir(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, naissance: Option<Jour>, a_la_fin: &Affiliation) -> R<Option<Butoir>> {
+    let (fin, precedente) = (a_la_fin.position.periode.fin(), a_la_fin.precedente);
     let pas = Duree::jours(r.jours_par_periode);
     let toutes: Heures = lignes.iter().map(|l| l.heures_equivalentes(c)).sum();
     let mut derniere = 0u32;

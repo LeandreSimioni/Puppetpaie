@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::catalogue::{annexes, rubrique};
 use crate::fiche::Lue;
-use crate::contexte::{aujourdhui, Contexte, IdSalarie};
+use crate::contexte::{Contexte, IdSalarie};
 use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
 use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Montant};
@@ -178,12 +178,6 @@ impl Position {
     pub fn atteint(&self) -> R<bool> {
         Ok(self.heures_ouverture()? >= self.constantes.seuil_heures)
     }
-
-    /// Les jours qui restent avant la fin de la fenetre, du lendemain d'`aujourdhui` a sa fin ; aucun quand elle est
-    /// passee ou finit aujourd'hui.
-    pub fn jours_restants(&self, aujourdhui: Jour) -> Duree<EnJours> {
-        Duree::ecoulee(&aujourdhui, &self.periode.fin())
-    }
 }
 
 
@@ -199,8 +193,9 @@ pub fn fenetre_annee_civile(jusqu_au: socle::mois::Mois) -> R<Fenetre> {
 }
 
 /// LES `jours` JOURS QUI FINISSENT A `fin`, bornes comprises : le guide de France Travail
-/// (`atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt`) : « FCT du 10
-/// février 2023. Période de référence : du 11 février 2022 au 10 février 2023 » (365 jours).
+/// (`atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt`, sur deux lignes de
+/// sa colonne de gauche) : « Exemple : FCT du 10 février 2023. Période de référence : du 11 février 2022 au 10 février
+/// 2023. » (365 jours).
 fn jours_jusqu_au(fin: Jour, jours: Duree<EnJours>) -> R<Periode> {
     Periode::du_au(fin.avant(jours)?.apres(Duree::jours(1))?, fin)
 }
@@ -208,12 +203,6 @@ fn jours_jusqu_au(fin: Jour, jours: Duree<EnJours>) -> R<Periode> {
 /// Les 12 mois (les 365 jours) qui finissent a une date.
 pub fn fenetre_douze_mois(c: &Constantes, fin: Jour) -> R<Fenetre> {
     Ok((jours_jusqu_au(fin, c.fenetre_jours)?, format!("12 mois au {}", fin.jj_mm_aaaa())))
-}
-
-/// Les 12 mois PRECEDANT la date anniversaire des droits : l'anniversaire est
-/// la fin de la fenetre, jamais son debut.
-pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> R<Fenetre> {
-    Ok((jours_jusqu_au(anniversaire, c.fenetre_jours)?, format!("12 mois au {} (anniversaire des droits)", anniversaire.jj_mm_aaaa())))
 }
 
 /// LA FENETRE ALLONGEE DE LA READMISSION (annexes VIII et X, art. 9 §1 b : « au-delà du 365ème jour précédant la fin du
@@ -255,28 +244,20 @@ pub fn derniere_fin(engagements: &[Declare], salarie: &IdSalarie) -> Option<Jour
     engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.periode.fin()).max()
 }
 
-/// Position au regard des annexes 8 et 10. `anniversaire` (notifie par France
-/// Travail) prime ; sinon la fenetre est les 12 mois precedant `a_la_date` ou
-/// la fin du dernier contrat declare.
+/// L'AFFILIATION D'UN SALARIE D'UNE COMPAGNIE au regard des annexes 8 et 10 : le meme compte que les droits d'un
+/// intermittent depuis ses pieces (`allocation::affiliation_des_droits`), sa date anniversaire (notifiee par France
+/// Travail, dans sa fiche) declenchant la readmission ; `jusqu_au` : le jour ou l'on se place (aucun : tout ce qui est
+/// declare).
 pub fn position_droits(
     ctx: &Contexte,
     salarie: &IdSalarie,
     engagements: &[Declare],
     anniversaire: Option<Jour>,
-    a_la_date: Option<Jour>,
-) -> R<Position> {
+    jusqu_au: Option<Jour>,
+) -> R<crate::allocation::Affiliation> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
-    let f = match anniversaire {
-        Some(a) => fenetre_anniversaire(&c, a)?,
-        None => {
-            let fin = match a_la_date.or_else(|| derniere_fin(engagements, salarie)) {
-                Some(j) => j,
-                None => aujourdhui()?,
-            };
-            fenetre_douze_mois(&c, fin)?
-        }
-    };
-    Ok(position(&ctx.racine, &c, engagements, salarie, &f, naissance(ctx, salarie)?))
+    let r = &crate::allocation::allocation()?.readmission;
+    crate::allocation::affiliation_des_droits(&ctx.racine, &c, r, engagements, salarie, anniversaire, jusqu_au, naissance(ctx, salarie)?)
 }
 
 // ------------------------------------------------------- bloc du bulletin
@@ -330,10 +311,11 @@ pub fn tableau_cumul(
         col("Période", format!("{:02}/{}", mois.numero(), annee), &p_mois, None, None)?,
         col("Cumul", format!("année {}", annee), &p_annee, None, None)?,
     ];
+    // La colonne des droits, quand la fiche porte la date anniversaire : le compte de la route `droits`
+    // (`position_droits`), a la derniere fin de contrat jusqu'a la fin du mois.
     if let Some(anniv) = anniversaire_configure(ctx, salarie)? {
-        let p_droits = position(&ctx.racine, &c, engagements, salarie, &fenetre_anniversaire(&c, anniv)?, ne);
-        let reste = p_droits.manque()?;
-        colonnes.push(col("Droits", format!("au {}", anniv.jj_mm_aaaa()), &p_droits, Some(reste), Some(anniv))?);
+        let a = position_droits(ctx, salarie, engagements, Some(anniv), Some(mois.dernier_jour()))?;
+        colonnes.push(col("Droits", format!("au {}", a.position.periode.fin().jj_mm_aaaa()), &a.position, Some(a.manque), Some(anniv))?);
     }
     Ok(colonnes)
 }

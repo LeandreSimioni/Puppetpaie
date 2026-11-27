@@ -826,11 +826,11 @@ fn phrase_fenetre(b: &Banque, f: &cumul::Position, anniversaire: bool) -> String
     g.replace("{debut}", &f.periode.debut().jj_mm_aaaa()).replace("{fin}", &f.periode.fin().jj_mm_aaaa())
 }
 
-/// La position du salarie sur la fenetre de ses droits : depuis sa date anniversaire si sa fiche la porte, sinon les
-/// 12 mois jusqu'a `a_la_date`.
+/// La position du salarie sur la fenetre de ses droits, a `a_la_date` : le compte de la route `droits`
+/// (`cumul::position_droits`).
 fn position(ctx: &Contexte, cle: &droit::contexte::IdSalarie, engs: &[Declare], a_la_date: Jour) -> R<(cumul::Position, bool)> {
     let anniv = cumul::anniversaire_configure(ctx, cle)?;
-    let p = cumul::position_droits(ctx, cle, engs, anniv, Some(a_la_date))?;
+    let p = cumul::position_droits(ctx, cle, engs, anniv, Some(a_la_date))?.position;
     Ok((p, anniv.is_some()))
 }
 

@@ -869,28 +869,16 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: &Nir, nom: St
         }
     }
     let lignes: Vec<Declare> = declarees.iter().map(|(d, _)| d.clone()).collect();
-    // LA FIN DE CONTRAT A LAQUELLE L'AFFILIATION SE RECHERCHE : la derniere fin des paies, prevues comprises (art. 3 :
-    // « au cours des douze mois qui précèdent la fin du contrat de travail »), comme `droit::cumul::position_droits` ;
-    // aucune paie, aujourd'hui. A la readmission, la fin de contrat qui a ouvert le droit precedent est douze mois avant
-    // la date anniversaire (art. 9 §1 c : « la date anniversaire correspondant au terme des douze mois suivant la fin du
-    // contrat de travail retenue pour l'ouverture ») : INFERENCE, dite dans `allocation-intermittents.json`.
-    let fin = match droit::cumul::derniere_fin(&lignes, &cle) {
-        Some(j) => j,
-        None => aujourdhui,
-    };
-    let precedente = match c.anniversaire {
-        Some(a) => Some(a.avant(Duree::mois(12))?),
-        None => None,
-    };
+    // L'AFFILIATION, par le seul compte des droits (`droit::allocation::affiliation_des_droits`, celui de la route
+    // `droits` d'une compagnie) : a la derniere fin des paies, prevues comprises, la date anniversaire disant la
+    // readmission.
     let r = &t.readmission;
-    let aff = droit::allocation::affiliation(inst, &constantes, r, &lignes, &cle, fin, precedente, naissance)?;
-    let butoir = droit::allocation::butoir(inst, &constantes, r, &lignes, &cle, fin, precedente, naissance, &aff)?;
-    let (lignes_du_compte, notes_du_compte) = crate::archives::comptes_de_la_position(&aff.position, "des pièces")?;
+    let aff = droit::allocation::affiliation_des_droits(inst, &constantes, r, &lignes, &cle, c.anniversaire, None, naissance)?;
+    let fin = aff.position.periode.fin();
+    let butoir = droit::allocation::butoir(inst, &constantes, r, &lignes, &cle, naissance, &aff)?;
+    let (lignes_du_compte, notes_du_compte) = crate::archives::comptes_de_la_position(&aff, "des pièces")?;
     notes.extend(notes_du_compte);
-    if let Some(p) = precedente {
-        notes.push(format!("Réadmission : seules comptent les paies qui finissent après le {}, la fin de contrat qui a ouvert le droit précédent.", p.jj_mm_aaaa()));
-    }
-    let butoir_dit = butoir.as_ref().map(|b| butoir_dit(b, &aff, r, precedente));
+    let butoir_dit = butoir.as_ref().map(|b| butoir_dit(b, &aff, r));
     let phrase = match (&butoir_dit, aff.manque.est_nul()) {
         (Some(b), _) => b.phrase.clone(),
         (None, true) => format!("{} h sur la fenêtre : les {} h sont atteintes.", dit(aff.position.heures_ouverture()?), dit(aff.heures_exigees)),
@@ -933,7 +921,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: &Nir, nom: St
 
 /// LE JOUR BUTOIR EN MOTS : ce qui manque et jusqu'a quand ; pourquoi la date se deplace, chiffre depuis les paies (celles
 /// qui sortent de la fenetre, la fenetre qui s'allonge) ; et le texte.
-fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::allocation::Readmission, precedente: Option<Jour>) -> ButoirDit {
+fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::allocation::Readmission) -> ButoirDit {
     let jour = b.jour.en_clair();
     let apres = &b.lendemain;
     let phrase = if aff.manque.est_nul() {
@@ -967,7 +955,7 @@ fn butoir_dit(b: &droit::allocation::Butoir, aff: &Affiliation, r: &droit::alloc
         true => format!("Après le {}, il vous manquera {} h.", jour, dit(apres.manque)),
         false => format!("Après le {}, {} : il vous manquera {} h.", jour, raisons.join(" ; "), dit(apres.manque)),
     };
-    let reference = match precedente {
+    let reference = match aff.precedente {
         None => "Annexes VIII et X au règlement d'assurance chômage, art. 3 : 507 heures sur les 365 jours qui précèdent la fin de contrat.".to_string(),
         Some(_) => "Annexes VIII et X au règlement d'assurance chômage, art. 3, et art. 9 §1 a et b : à la réadmission, 42 heures de plus par période de 30 jours au-delà du 365e jour, sans remonter avant la fin de contrat qui a ouvert le droit précédent.".to_string(),
     };
