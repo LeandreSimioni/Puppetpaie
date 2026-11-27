@@ -21,10 +21,10 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use crate::contexte::IdSalarie;
-use crate::cumul::{position, Constantes, Declare, Position};
+use crate::cumul::{fenetre_allongee, fenetre_douze_mois, position, Constantes, Declare, Position};
 use crate::emplois::AnnexeChomage;
 use crate::source::forme_notee;
-use socle::date::{Duree, Jour, Periode};
+use socle::date::{Duree, Jour};
 use socle::echec::R;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
@@ -326,21 +326,18 @@ pub fn affiliation(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Dec
         Some(p) => lignes.iter().filter(|l| l.periode.fin() > p).cloned().collect(),
         None => lignes.to_vec(),
     };
-    let base = fin.avant(c.fenetre_jours)?;
     let mut meilleure: Option<Affiliation> = None;
     let mut k = 0u32;
     loop {
-        let debut = base.avant(Duree::jours(r.jours_par_periode).fois(k))?;
-        if k > 0 && !precedente.is_some_and(|p| debut > p) {
+        let fenetre = match k {
+            0 => fenetre_douze_mois(c, fin)?,
+            _ => fenetre_allongee(c, fin, Duree::jours(r.jours_par_periode).fois(k))?,
+        };
+        if k > 0 && !precedente.is_some_and(|p| fenetre.0.debut() > p) {
             break;
         }
         let exigees = c.seuil_heures + r.heures_par_periode.fois(k as usize);
-        let libelle = if k == 0 {
-            format!("12 mois au {}", fin.jj_mm_aaaa())
-        } else {
-            format!("{} jours au {}, réadmission", c.fenetre_jours.plus(Duree::jours(r.jours_par_periode).fois(k)).jours_a_ecrire(), fin.jj_mm_aaaa())
-        };
-        let p = position(racine, c, &siennes, salarie, &(Periode::du_au(debut, fin)?, libelle), naissance);
+        let p = position(racine, c, &siennes, salarie, &fenetre, naissance);
         let manque = (exigees - p.heures_ouverture()?).max(Heures::ZERO);
         let atteinte = manque.est_nul();
         if meilleure.as_ref().is_none_or(|m| manque < m.manque) {
@@ -357,7 +354,7 @@ pub fn affiliation(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Dec
 /// LE JOUR BUTOIR : le dernier jour ou, sans contrat de plus, l'affiliation a une fin de contrat demande ce qu'elle
 /// demande a `fin` ; le lendemain, il en faut davantage (une ligne sort de la fenetre, ou la fenetre s'allonge et exige
 /// 42 heures de plus). Ce n'est pas une echeance de France Travail. Rendu : ce jour, et l'affiliation du lendemain ; aucun
-/// quand rien ne change dans les trois ans (plus aucune ligne a perdre).
+/// quand il ne manque jamais davantage (rien ne se compte : il manque deja toutes les heures).
 #[derive(Debug, Clone)]
 pub struct Butoir {
     pub jour: Jour,
@@ -365,14 +362,24 @@ pub struct Butoir {
 }
 
 /// Le jour butoir apres `fin` (voir `Butoir`) : les jours ou une ligne sort d'une fenetre, ou ou la fenetre peut
-/// s'allonger, du plus proche au plus lointain, jusqu'au premier ou il manque davantage qu'a `fin`.
+/// s'allonger, du plus proche au plus lointain, jusqu'au premier ou il manque davantage qu'a `fin`. Une ligne qui finit
+/// le jour L est dans la fenetre allongee de k periodes jusqu'a L + 365 + 30 k - 1 (`cumul::fenetre_allongee`) ; la
+/// fenetre peut s'allonger de k periodes des le jour P + 365 + 30 k, P la fin de contrat precedente. Les periodes ne
+/// vont pas au-dela de la premiere ou les heures exigees passent toutes les heures des lignes et ce qui manque a `fin` :
+/// la, il manque forcement davantage (art. 9 §1 b, 42 heures par periode). Sans readmission, la fenetre ne s'allonge pas.
 #[allow(clippy::too_many_arguments)]
 pub fn butoir(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare], salarie: &IdSalarie, fin: Jour, precedente: Option<Jour>, naissance: Option<Jour>, a_la_fin: &Affiliation) -> R<Option<Butoir>> {
-    const PERIODES: u32 = 36;
     let pas = Duree::jours(r.jours_par_periode);
+    let toutes: Heures = lignes.iter().map(|l| l.heures_equivalentes(c)).sum();
+    let mut derniere = 0u32;
+    if precedente.is_some() {
+        while c.seuil_heures + r.heures_par_periode.fois(derniere as usize) <= toutes + a_la_fin.manque {
+            derniere += 1;
+        }
+    }
     let mut jours: Vec<Jour> = Vec::new();
-    for k in 0..=PERIODES {
-        let fenetre = c.fenetre_jours.plus(pas.fois(k)).plus(Duree::jours(1));
+    for k in 0..=derniere {
+        let fenetre = c.fenetre_jours.plus(pas.fois(k));
         for l in lignes {
             jours.push(l.periode.fin().apres(fenetre)?);
         }
@@ -380,8 +387,7 @@ pub fn butoir(racine: &Path, c: &Constantes, r: &Readmission, lignes: &[Declare]
             jours.push(p.apres(fenetre)?);
         }
     }
-    let horizon = fin.apres(Duree::annees(3))?;
-    jours.retain(|j| *j > fin && *j <= horizon);
+    jours.retain(|j| *j > fin);
     jours.sort();
     jours.dedup();
     for j in jours {

@@ -764,14 +764,15 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: &Nir, nom: St
         }
     }
     let lignes: Vec<Declare> = declarees.iter().map(|(d, _)| d.clone()).collect();
-    // LA FIN DE CONTRAT A LAQUELLE L'AFFILIATION SE RECHERCHE : aujourd'hui, la date anniversaire si elle vient, ou la
-    // derniere fin des paies, prevues comprises. A la readmission, la fin de contrat qui a ouvert le droit precedent est
-    // douze mois avant la date anniversaire (art. 9 §1 c : « la date anniversaire correspondant au terme des douze mois
-    // suivant la fin du contrat de travail retenue pour l'ouverture »).
-    let mut fin = aujourdhui;
-    for j in [c.anniversaire, lignes.iter().map(|d| d.periode.fin()).max()].into_iter().flatten() {
-        fin = fin.max(j);
-    }
+    // LA FIN DE CONTRAT A LAQUELLE L'AFFILIATION SE RECHERCHE : la derniere fin des paies, prevues comprises (art. 3 :
+    // « au cours des douze mois qui précèdent la fin du contrat de travail »), comme `droit::cumul::position_droits` ;
+    // aucune paie, aujourd'hui. A la readmission, la fin de contrat qui a ouvert le droit precedent est douze mois avant
+    // la date anniversaire (art. 9 §1 c : « la date anniversaire correspondant au terme des douze mois suivant la fin du
+    // contrat de travail retenue pour l'ouverture ») : INFERENCE, dite dans `allocation-intermittents.json`.
+    let fin = match droit::cumul::derniere_fin(&lignes, &cle) {
+        Some(j) => j,
+        None => aujourdhui,
+    };
     let precedente = match c.anniversaire {
         Some(a) => Some(a.avant(Duree::mois(12))?),
         None => None,

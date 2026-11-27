@@ -201,18 +201,29 @@ pub fn fenetre_annee_civile(jusqu_au: socle::mois::Mois) -> R<Fenetre> {
     Ok((Periode::du_au(annee.premier_jour(), jusqu_au.dernier_jour())?, format!("annee civile {}", annee)))
 }
 
-/// Les 12 mois precedant une date.
+/// LES `jours` JOURS QUI FINISSENT A `fin`, bornes comprises : le guide de France Travail
+/// (`atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt`) : « FCT du 10
+/// février 2023. Période de référence : du 11 février 2022 au 10 février 2023 » (365 jours).
+fn jours_jusqu_au(fin: Jour, jours: Duree<EnJours>) -> R<Periode> {
+    Periode::du_au(fin.avant(jours)?.apres(Duree::jours(1))?, fin)
+}
+
+/// Les 12 mois (les 365 jours) qui finissent a une date.
 pub fn fenetre_douze_mois(c: &Constantes, fin: Jour) -> R<Fenetre> {
-    Ok((Periode::du_au(fin.avant(c.fenetre_jours)?, fin)?, format!("12 mois au {}", fin.jj_mm_aaaa())))
+    Ok((jours_jusqu_au(fin, c.fenetre_jours)?, format!("12 mois au {}", fin.jj_mm_aaaa())))
 }
 
 /// Les 12 mois PRECEDANT la date anniversaire des droits : l'anniversaire est
 /// la fin de la fenetre, jamais son debut.
 pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> R<Fenetre> {
-    Ok((
-        Periode::du_au(anniversaire.avant(c.fenetre_jours)?, anniversaire)?,
-        format!("12 mois au {} (anniversaire des droits)", anniversaire.jj_mm_aaaa()),
-    ))
+    Ok((jours_jusqu_au(anniversaire, c.fenetre_jours)?, format!("12 mois au {} (anniversaire des droits)", anniversaire.jj_mm_aaaa())))
+}
+
+/// LA FENETRE ALLONGEE DE LA READMISSION (annexes VIII et X, art. 9 §1 b : « au-delà du 365ème jour précédant la fin du
+/// contrat de travail ») : les 365 jours qui finissent a `fin`, plus `en_plus`.
+pub fn fenetre_allongee(c: &Constantes, fin: Jour, en_plus: Duree<EnJours>) -> R<Fenetre> {
+    let jours = c.fenetre_jours.plus(en_plus);
+    Ok((jours_jusqu_au(fin, jours)?, format!("{} jours au {}, réadmission", jours.jours_a_ecrire(), fin.jj_mm_aaaa())))
 }
 
 /// Les engagements du salarie dont la FIN est dans la fenetre. `racine` : la compagnie, dont le catalogue dit le plafond
