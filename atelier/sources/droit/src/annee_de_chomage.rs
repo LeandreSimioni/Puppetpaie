@@ -182,15 +182,13 @@ pub enum ManqueDeLAnnee {
     PlafondDeLAnnee(Annee),
 }
 
-/// UN MOIS DE L'ANNEE (art. 30) : la part du mois que l'annee couvre ; les jours de travail que ses heures font, et ceux
-/// qu'ils retirent ; s'il passe le seuil ; les jours indemnisables qui restent.
+/// UN MOIS DE L'ANNEE (art. 30) : ses heures de travail, les jours de travail qu'elles font, et les jours indemnisables
+/// qui restent de la part du mois que l'annee couvre (chaque jour de travail en retire le coefficient de l'annexe ; au
+/// seuil de l'annexe, aucun).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ActiviteIndemnisee {
-    pub jours_du_mois: Jours,
     pub heures: Heures,
     pub jours_de_travail: Jours,
-    pub retires: Jours,
-    pub au_dela_du_seuil: bool,
     pub indemnisables: Jours,
 }
 
@@ -343,7 +341,7 @@ pub fn activite_du_mois(t: &Allocation, annexe: AnnexeChomage, jours_du_mois: Jo
         true => Jours::ZERO,
         false => (jours_du_mois - retires).max(Jours::ZERO),
     };
-    Ok(ActiviteIndemnisee { jours_du_mois, heures, jours_de_travail: jt, retires, au_dela_du_seuil, indemnisables })
+    Ok(ActiviteIndemnisee { heures, jours_de_travail: jt, indemnisables })
 }
 
 /// LES JOURS TRAVAILLES D'UN MOIS QU'AUCUNE AEM NE DIT, ENVIRON (Léandre, 28/11/2026 : « si les gens mettent les bulletins
