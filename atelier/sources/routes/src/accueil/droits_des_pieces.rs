@@ -2288,12 +2288,18 @@ fn exemple_de_jours(t: &Allocation, annexe: AnnexeChomage, (bas, haut): (&Alloca
     let en_moins = droit::annee_de_chomage::retires(t, annexe, heures)?;
     let (chomage_bas, chomage_haut) = (bas.pour_les_jours(en_moins), haut.pour_les_jours(en_moins));
     let chomage = format!("−\u{a0}{}", bouts(chomage_bas, chomage_haut, euros::<Montant>));
-    let gain = signes(salaire - chomage_bas, salaire - chomage_haut);
+    // Ce que la personne y gagne ; quand le chomage en moins passe le salaire, ce qu'elle y perd, sans signe (Leandre,
+    // 28/11/2026 : « Vous perdez il faut écrire »).
+    let (g_bas, g_haut) = (salaire - chomage_bas, salaire - chomage_haut);
+    let (bilan, gain) = match g_bas.max(g_haut) < Montant::ZERO {
+        true => ("Vous perdez", bouts(g_bas.abs(), g_haut.abs(), euros::<Montant>)),
+        false => ("Vous gagnez", signes(g_bas, g_haut)),
+    };
     Ok(ExempleDit {
         titre: quoi,
         calcul: CalculDit {
             lignes: vec![("Salaire brut".to_string(), format!("+\u{a0}{}", euros(salaire))), ("Chômage en moins ce mois-là".to_string(), chomage.clone())],
-            total: ("Vous gagnez".to_string(), gain.clone()),
+            total: (bilan.to_string(), gain.clone()),
         },
         detail: CalculDit {
             lignes: vec![
@@ -2302,7 +2308,7 @@ fn exemple_de_jours(t: &Allocation, annexe: AnnexeChomage, (bas, haut): (&Alloca
                 (format!("Jours de chômage en moins ({} × {})", jours_dits(jt), socle::texte::virgule(a.coefficient)), jours_dits(en_moins)),
                 (format!("Chômage en moins ({} jours à {})", jours_dits(en_moins), bouts(bas.nette, haut.nette, euros::<Montant>)), chomage),
             ],
-            total: ("Vous gagnez".to_string(), gain),
+            total: (bilan.to_string(), gain),
         },
     })
 }
