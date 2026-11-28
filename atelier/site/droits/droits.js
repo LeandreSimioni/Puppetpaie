@@ -541,36 +541,21 @@ var dire = null;
 
   // ---------------------------------------------------------------- ce que la route dit
 
-  // UN TABLEAU QUE LA ROUTE REND (`socle::ecran::TableauRendu`) : ses colonnes (à droite, discrète), ses rangées de
-  // cellules déjà dites (vide : rien), les totaux en gras. Son titre se pose à part.
-  // Une colonne que la route marque `discrete` (une remarque, souvent longue) n'est pas une colonne : sa cellule passe
-  // sous sa ligne, en petit, sur toute la largeur, pour qu'un téléphone ne l'étire pas hors de l'écran.
+  // UN TABLEAU QUE LA ROUTE REND (`socle::ecran::TableauRendu`) : ses colonnes (à droite), ses rangées de cellules déjà
+  // dites (vide : rien), les totaux en gras.
   function tableau(t) {
     var table = el("table");
     var classe = function (c) { return c.a_droite ? "n" : null; };
-    var colonnes = t.colonnes.filter(function (c) { return !c.discrete; });
     var tr = el("tr");
-    colonnes.forEach(function (c) { tr.append(el("th", classe(c), c.libelle)); });
+    t.colonnes.forEach(function (c) { tr.append(el("th", classe(c), c.libelle)); });
     var tete = el("thead");
     tete.append(tr);
     table.append(tete);
     var corps = el("tbody");
     t.rangees.forEach(function (g) {
       var r = el("tr", g.sorte === "ligne" ? null : "total");
-      var remarques = [];
-      g.cellules.forEach(function (v, i) {
-        if (t.colonnes[i].discrete) { if (v) remarques.push(v); }
-        else r.append(el("td", classe(t.colonnes[i]), v));
-      });
+      g.cellules.forEach(function (v, i) { r.append(el("td", classe(t.colonnes[i]), v)); });
       corps.append(r);
-      if (remarques.length) {
-        r.classList.add("a-remarque");
-        var rr = el("tr", "remarque");
-        var td = el("td", null, remarques.join(" "));
-        td.colSpan = colonnes.length;
-        rr.append(td);
-        corps.append(rr);
-      }
     });
     table.append(corps);
     var d = el("div", "tableau");
@@ -705,9 +690,9 @@ var dire = null;
       s.append(lg);
       var e = el("div", "exemple");
       e.append(calcul(cm.calcul));
-      if (cm.dit.length) e.append(el("p", "aide", cm.dit[0]));
+      e.append(el("p", "aide", cm.bilan));
       s.append(e);
-      var dedans = [el("p", "aide", cm.aide), tableau(cm.tableau)].concat(cm.dit.slice(1).map(function (d) { return el("p", "aide", d); }));
+      var dedans = [el("p", "aide", cm.aide), tableau(cm.tableau)].concat(cm.dit.map(function (d) { return el("p", "aide", d); }));
       if (b.notes.length) dedans.push(liste(b.notes));
       s.append(replie("comme", dedans));
     } else if (b.notes.length) {

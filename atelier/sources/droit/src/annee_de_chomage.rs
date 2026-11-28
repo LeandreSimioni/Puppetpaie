@@ -134,13 +134,12 @@ pub struct TravailDuMois {
 }
 
 /// L'ALLOCATION D'UN JOUR PAYE : la brute ; le salaire journalier moyen (art. 19) et la participation qu'il donne, exacts ;
-/// ce qui reste apres elle ; la CSG et la CRDS ; et la nette, ce qu'un jour paye verse.
+/// la CSG et la CRDS ; et la nette, ce qu'un jour paye verse.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AllocationDuJour {
     pub brute: Montant,
     pub salaire_journalier_moyen: MontantUnitaire,
     pub participation: Montant,
-    pub apres_participation: Montant,
     pub contributions: Montant,
     pub nette: Montant,
 }
@@ -182,13 +181,14 @@ pub enum ManqueDeLAnnee {
     PlafondDeLAnnee(Annee),
 }
 
-/// UN MOIS DE L'ANNEE (art. 30) : ses heures de travail, les jours de travail qu'elles font, et les jours indemnisables
-/// qui restent de la part du mois que l'annee couvre (chaque jour de travail en retire le coefficient de l'annexe ; au
-/// seuil de l'annexe, aucun).
+/// UN MOIS DE L'ANNEE (art. 30) : ses heures de travail, les jours de travail qu'elles font, les jours qu'ils retirent
+/// (chaque jour de travail retire le coefficient de l'annexe), et les jours indemnisables qui restent de la part du mois
+/// que l'annee couvre (au seuil de l'annexe, aucun).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ActiviteIndemnisee {
     pub heures: Heures,
     pub jours_de_travail: Jours,
+    pub retires: Jours,
     pub indemnisables: Jours,
 }
 
@@ -313,7 +313,6 @@ pub fn allocation_du_jour(t: &Allocation, o: &OuvertureDesDroits) -> R<Allocatio
         brute: o.allocation,
         salaire_journalier_moyen: sjm,
         participation,
-        apres_participation,
         contributions,
         nette: apres_participation - contributions,
     })
@@ -322,12 +321,6 @@ pub fn allocation_du_jour(t: &Allocation, o: &OuvertureDesDroits) -> R<Allocatio
 /// LES JOURS DE TRAVAIL QUE FONT LES HEURES `heures` sous l'activite `a` (art. 30).
 fn jours_de_travail(a: &ActiviteReprise, heures: Heures) -> R<Jours> {
     heures.en_jours(a.heures_par_jour).ok_or_else(|| socle::fichiers::absent("heures_par_jour"))
-}
-
-/// LES JOURS INDEMNISABLES QUE RETIRENT LES HEURES `heures` d'un mois, sous l'annexe `annexe` (art. 30), sous le seuil.
-pub fn retires(t: &Allocation, annexe: AnnexeChomage, heures: Heures) -> R<Jours> {
-    let a = t.activite(annexe);
-    Ok(jours_de_travail(a, heures)? * a.coefficient)
 }
 
 /// UN MOIS DE `jours_du_mois` JOURS (la part que l'annee en couvre) OU L'ON TRAVAILLE `heures` (art. 30) : voir
@@ -341,7 +334,7 @@ pub fn activite_du_mois(t: &Allocation, annexe: AnnexeChomage, jours_du_mois: Jo
         true => Jours::ZERO,
         false => (jours_du_mois - retires).max(Jours::ZERO),
     };
-    Ok(ActiviteIndemnisee { heures, jours_de_travail: jt, indemnisables })
+    Ok(ActiviteIndemnisee { heures, jours_de_travail: jt, retires, indemnisables })
 }
 
 /// LES JOURS TRAVAILLES D'UN MOIS QU'AUCUNE AEM NE DIT, ENVIRON (Léandre, 28/11/2026 : « si les gens mettent les bulletins
