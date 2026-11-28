@@ -543,19 +543,34 @@ var dire = null;
 
   // UN TABLEAU QUE LA ROUTE REND (`socle::ecran::TableauRendu`) : ses colonnes (à droite, discrète), ses rangées de
   // cellules déjà dites (vide : rien), les totaux en gras. Son titre se pose à part.
+  // Une colonne que la route marque `discrete` (une remarque, souvent longue) n'est pas une colonne : sa cellule passe
+  // sous sa ligne, en petit, sur toute la largeur, pour qu'un téléphone ne l'étire pas hors de l'écran.
   function tableau(t) {
     var table = el("table");
-    var classe = function (c) { return c.a_droite ? "n" : c.discrete ? "discret" : null; };
+    var classe = function (c) { return c.a_droite ? "n" : null; };
+    var colonnes = t.colonnes.filter(function (c) { return !c.discrete; });
     var tr = el("tr");
-    t.colonnes.forEach(function (c) { tr.append(el("th", classe(c), c.libelle)); });
+    colonnes.forEach(function (c) { tr.append(el("th", classe(c), c.libelle)); });
     var tete = el("thead");
     tete.append(tr);
     table.append(tete);
     var corps = el("tbody");
     t.rangees.forEach(function (g) {
       var r = el("tr", g.sorte === "ligne" ? null : "total");
-      g.cellules.forEach(function (v, i) { r.append(el("td", classe(t.colonnes[i]), v)); });
+      var remarques = [];
+      g.cellules.forEach(function (v, i) {
+        if (t.colonnes[i].discrete) { if (v) remarques.push(v); }
+        else r.append(el("td", classe(t.colonnes[i]), v));
+      });
       corps.append(r);
+      if (remarques.length) {
+        r.classList.add("a-remarque");
+        var rr = el("tr", "remarque");
+        var td = el("td", null, remarques.join(" "));
+        td.colSpan = colonnes.length;
+        rr.append(td);
+        corps.append(rr);
+      }
     });
     table.append(corps);
     var d = el("div", "tableau");
@@ -666,9 +681,9 @@ var dire = null;
   }
 
   // L'ANNÉE DE CHÔMAGE. Se voient : le chiffre sans aucun travail, la case du taux de CSG quand la route la rend, ce que
-  // retire chaque exemple de travail, et, quand la fenêtre a du travail, les barres de l'année comme la dernière et son
-  // bilan. Se replie : le compte des jours, les phrases d'aide, le calcul de chaque exemple, le tableau des mois et les
-  // notes. Tout est dit par la route ; la page ne choisit que ce qu'elle replie.
+  // rapporte chaque exemple de travail (quand la route en rend), et, quand la fenêtre a du travail, les barres de
+  // l'année comme la dernière et son bilan. Se replie : le compte des jours, les phrases d'aide, le détail de chaque
+  // exemple, le tableau des mois et les notes. Tout est dit par la route ; la page ne choisit que ce qu'elle replie.
   function annee(b) {
     var s = el("section", "bloc annee");
     s.append(el("h2", null, b.titre));
@@ -679,20 +694,20 @@ var dire = null;
     s.append(ch);
     s.append(replie("sans-travail", st.calculs.map(calcul).concat(st.aide.map(function (a) { return el("p", "aide", a); }))));
     if (b.case) s.append(dessinerCase(b.case));
-    var co = b.cout;
-    s.append(el("h3", null, co.titre));
-    var ul = el("ul", "en-bref");
-    co.exemples.forEach(function (x) {
-      var li = el("li");
-      li.append(el("span", null, x.titre), el("b", null, x.aide || x.calcul.total[1]));
-      ul.append(li);
-    });
-    s.append(ul);
-    s.append(replie("cout", [el("p", "aide", co.aide)].concat(co.exemples.map(function (x) {
-      var e = el("div", "exemple");
-      e.append(el("p", null, x.titre), calcul(x.calcul));
-      return e;
-    }))));
+    if (b.rapporte) {
+      var ra = b.rapporte;
+      s.append(el("h3", null, ra.titre));
+      ra.exemples.forEach(function (x) {
+        var e = el("div", "exemple");
+        e.append(el("p", null, x.titre), calcul(x.calcul));
+        s.append(e);
+      });
+      s.append(replie("rapporte", [el("p", "aide", ra.aide)].concat(ra.exemples.map(function (x) {
+        var e = el("div", "exemple");
+        e.append(el("p", null, x.titre), calcul(x.detail));
+        return e;
+      }))));
+    }
     if (b.comme) {
       var cm = b.comme;
       s.append(el("h3", null, cm.titre));

@@ -79,10 +79,7 @@ tr.prevue{background:var(--voile)}
 .calcul .tot{font-weight:600;border-top:1px solid var(--encre);padding-top:.2rem}
 .exemple{background:var(--voile);border-radius:6px;padding:1rem 1.1rem;margin:.6rem 0 0}
 .exemple p{margin:0 0 .4rem}
-/* L'année de chômage : ce qu'un exemple de travail retire, en bref ; le reste se replie (« Le détail »). */
-.en-bref{list-style:none;margin:.4rem 0 0;padding:0}
-.en-bref li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.2rem 1rem;padding:.45rem 0;border-bottom:1px solid var(--filet)}
-.en-bref b{font-weight:500}
+/* L'année de chômage : le reste de ce qui se voit se replie (« Le détail »). */
 details.replie{margin:.6rem 0 0}
 details.replie[open]{margin-bottom:.8rem}
 details.replie .tableau{margin-top:.6rem}
@@ -136,6 +133,9 @@ th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--filet);v
 th{font-weight:500;color:var(--gris);white-space:nowrap}
 td.n,th.n{text-align:right;white-space:nowrap}
 td.discret{color:var(--gris)}
+/* La remarque d'une ligne (une colonne `discrete`), sous elle, en petit, sur toute la largeur. */
+tr.a-remarque td{border-bottom:0;padding-bottom:.1rem}
+tr.remarque td{font-size:.8rem;color:var(--gris);padding-top:0;white-space:normal}
 tr.total td{font-weight:500}
 details{margin:.3rem 0 1rem;font-size:.9rem}
 summary{cursor:pointer;color:var(--bleu)}
