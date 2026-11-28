@@ -1396,12 +1396,9 @@ impl AnnexesDesPaies {
         if !self.sans.est_nul() {
             heures.push(format!("annexe non dite : {} h ({})", dit(self.sans), self.non_dites.join(", ")));
         }
-        out.push(format!("Les heures de chaque annexe sur les 12 mois (cachets à 12 h, sans l'enseignement ni la formation) : {}.", heures.join(" ; ")));
+        out.push(format!("{}.", majuscule(&heures.join(" ; "))));
         out.push(match self.appliquee() {
-            AnnexeAppliquee::Une(a) => format!(
-                "L'annexe qui s'applique est celle qui a le plus d'heures, {} ; toutes vos heures et tous vos salaires comptent sous elle (annexes VIII et X, art. 65 §9).",
-                annexe_en_petit(a)
-            ),
+            AnnexeAppliquee::Une(a) => format!("C'est l'{} qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9).", annexe_en_petit(a)),
             AnnexeAppliquee::Egales => "Les deux annexes ont autant d'heures : le texte applique celle « ayant permis de constater l'affiliation la plus importante » (annexes VIII et X, art. 65 §9) et ne dit rien d'une égalité ; l'allocation ne s'estime pas.".to_string(),
             AnnexeAppliquee::NonDite => "L'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), dépend des paies dont l'annexe n'est pas dite.".to_string(),
         });
@@ -1873,6 +1870,11 @@ fn annexes_des_paies(comptees: &[PaieComptee], fenetre: &[(&Declare, &PaieCompte
             Some(a) => annexe_en_petit(a),
             None => "annexe non dite",
         };
+        // Une ligne prevue dont la personne a choisi la nature n'apprend rien que le tableau des paies ne montre deja
+        // (Leandre, 28/11/2026 : « beaucoup de redites ») : seule se dit l'annexe que le moteur a lue ou deduite.
+        if p.prevue.is_some() && p.annexe.is_some() {
+            continue;
+        }
         out.sources.push(format!("{}, {} h : {} ({}).", majuscule(&p.en_mots()), dit(heures), annexe, d_ou));
     }
     out
