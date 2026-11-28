@@ -15,10 +15,8 @@
 # D'INSTALLATION (`puppetpaie-<v>-<systeme>-installation.zip`, pour Linux, Mac et tous ; Windows a son installeur) :
 # `logiciel/` et `fictives/`, ce qu'on decompresse dans un dossier neuf pour installer.
 #
-# AU LANCEMENT, ON CHOISIT CE QU'ON PUBLIE (`systemes`, Leandre, 15/10/2026) : `tous` (les trois, par defaut),
-# `windows-linux`, ou `windows`. Seules les archives fabriquees sont publiees et nommees dans `derniere.json` ; celle de
-# tous les systemes porte ce qui a ete fabrique et le dit (`systemes`) ; une installation dont le systeme n'est pas publie
-# ne telecharge rien, garde sa version et le dit.
+# LES TROIS SYSTEMES PARTENT TOUJOURS (Leandre, 28/11/2026 : « publier simple ») : `derniere.json` les nomme, et
+# l'archive de tous les systemes le dit (`systemes`).
 #
 #   1. fabriquer      (Linux) compile le moteur Linux, qui marque les fictives livrees (`moteur maj --marquer-fictives` :
 #                     la livraison que l'installeur pose avec elles) et signera (toujours) ; puis la fenetre et le moteur
@@ -45,30 +43,12 @@
 
 name: Publier
 
+# AUCUNE CASE A REMPLIR (Leandre, 28/11/2026 : « Je veux pas ces cases, je veux publier simple ») : « Run workflow »,
+# puis « Approve ». Les notes sont les titres des PR fusionnees depuis la derniere Release (`fabriquer`, « Les notes ») ;
+# les trois systemes partent toujours. Le moteur garde ses options `--calcul` et `--exigee` (la forme de l'archive est
+# un contrat) ; le flux les passe vides.
 on:
   workflow_dispatch:
-    inputs:
-      notes:
-        description: "Ce qui change (une phrase, lue par les compagnies)"
-        required: false
-        default: ""
-      calcul:
-        description: "La phrase que la compagnie lit si la version change un calcul de paie (sinon laisser vide)"
-        required: false
-        default: ""
-      exigee:
-        description: "SEULEMENT si la version est exigee avant tout depot reel (sinon laisser vide)"
-        required: false
-        default: ""
-      systemes:
-        description: "Les systemes publies : Windows seul, Windows et Linux, ou les trois (et toujours l'archive de tous ceux-la)"
-        type: choice
-        required: true
-        default: tous
-        options:
-          - tous
-          - windows-linux
-          - windows
 
 permissions:
   contents: read
@@ -86,10 +66,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      notes: ${{ steps.notes.outputs.notes }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/../cible
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # LES NOTES : le titre de chaque PR fusionnee sur `main` depuis la derniere Release (le corps de son commit de
+      # fusion), une ligne chacune, dans l'ordre ou elles sont entrees. Aucune PR depuis : rien de neuf a publier.
+      - name: Les notes (les PR fusionnees depuis la derniere Release)
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          D="$(gh release list -R "$DEPOT" --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName // ""')"
+          if [ -n "$D" ]; then PLAGE="$D..HEAD"; else PLAGE="HEAD"; fi
+          TITRES="$(git log --merges --reverse --format='%b%x1e' "$PLAGE" | tr -d '\r' | tr '\036' '\n' | sed '/^$/d')"
+          if [ -z "$TITRES" ]; then echo "::error::Aucune PR fusionnee depuis ${D:-le debut} : rien de neuf a publier."; exit 1; fi
+          printf '%s\n' "$TITRES"
+          NOTES=""
+          while IFS= read -r T; do NOTES="${NOTES:+$NOTES · }$T"; done <<< "$TITRES"
+          { echo "notes<<FIN_DES_NOTES"; printf '%s\n' "$NOTES"; echo "FIN_DES_NOTES"; } >> "$GITHUB_OUTPUT"
 
       # LE NUMERO DE VERSION EST LA DATE DU JOUR (Paris), ecrite ici dans `logiciel/VERSION` avant de fabriquer : rien a
       # augmenter a la main (Leandre, 14/10/2026 : « je veux un truc simple »). Une deuxieme version le meme jour prend
@@ -184,7 +183,6 @@ jobs:
 
       # La fenetre Linux (Tauri, WebKitGTK), si Linux est publie.
       - name: La fenetre Linux
-        if: inputs.systemes != 'windows'
         run: |
           cargo build --release --locked --manifest-path atelier/sources/fenetre/Cargo.toml
           "$CARGO_TARGET_DIR/release/puppetpaie" --peut-ouvrir || echo "La fenetre Linux ne s'ouvre pas sur ce runner (pas d'ecran) : attendu."
@@ -195,7 +193,7 @@ jobs:
       # programmes Linux dans `logiciel/linux/`. Une archive tar garde les bits d'execution, qu'un artefact perdrait.
       - name: Rassembler
         env:
-          SYSTEMES: ${{ inputs.systemes }}
+          SYSTEMES: tous
         run: |
           V="${{ steps.version.outputs.version }}"
           L="${V:8:2}.${V:5:2}.${V:0:4}"; [ "${#V}" -gt 10 ] && L="$L-${V:11}"
@@ -224,7 +222,7 @@ jobs:
   # deux sortes de Mac (Intel et Apple : l'ancien flux « Moteur Rust », retire le 15/10/2026, faisait ainsi le moteur).
   # Ni secret ni version : le numero est dans `logiciel/VERSION`, que `fabriquer` ecrit et que `publier` rassemble.
   fabriquer-mac:
-    if: github.repository == 'LeandreSimioni/PuppetPaie' && github.ref == 'refs/heads/main' && inputs.systemes == 'tous'
+    if: github.repository == 'LeandreSimioni/PuppetPaie' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/../cible
@@ -272,7 +270,7 @@ jobs:
     needs: [fabriquer, fabriquer-mac]
     if: >-
       !cancelled() && needs.fabriquer.result == 'success' &&
-      (needs.fabriquer-mac.result == 'success' || (inputs.systemes != 'tous' && needs.fabriquer-mac.result == 'skipped'))
+      needs.fabriquer-mac.result == 'success'
     runs-on: ubuntu-latest
     environment: publication
     permissions:
@@ -283,7 +281,6 @@ jobs:
           name: publication
 
       - uses: actions/download-artifact@v4
-        if: inputs.systemes == 'tous'
         with:
           name: mac
 
@@ -291,7 +288,7 @@ jobs:
       # `logiciel/mac/` s'il est choisi.
       - name: Rassembler les systemes choisis
         env:
-          SYSTEMES: ${{ inputs.systemes }}
+          SYSTEMES: tous
         run: |
           tar -xf publication.tar
           if [ "$SYSTEMES" = tous ]; then tar -xf mac.tar; fi
@@ -312,18 +309,16 @@ jobs:
       - name: Signer (le moteur)
         env:
           PUPPETPAIE_CLE_SIGNATURE: ${{ secrets.PUPPETPAIE_CLE_SIGNATURE }}
-          NOTES: ${{ inputs.notes }}
-          CALCUL: ${{ inputs.calcul }}
-          EXIGEE: ${{ inputs.exigee }}
-        run: ./publication/moteur maj --publier-github --logiciel logiciel --sortie sortie --notes "$NOTES" --calcul "$CALCUL" --exigee "$EXIGEE"
+          NOTES: ${{ needs.fabriquer.outputs.notes }}
+        run: ./publication/moteur maj --publier-github --logiciel logiciel --sortie sortie --notes "$NOTES" --calcul "" --exigee ""
 
       # Exactement les archives choisies, ou rien : le moteur fait l'archive d'un systeme quand sa fenetre est dans
       # `logiciel/`, et celle de tous dit sous `systemes` ce qu'elle porte.
       - name: La Release
         env:
           GH_TOKEN: ${{ github.token }}
-          NOTES: ${{ inputs.notes }}
-          SYSTEMES: ${{ inputs.systemes }}
+          NOTES: ${{ needs.fabriquer.outputs.notes }}
+          SYSTEMES: tous
         run: |
           V="$(jq -r .version sortie/derniere.json)"
           test "$V" = "${{ needs.fabriquer.outputs.version }}"
