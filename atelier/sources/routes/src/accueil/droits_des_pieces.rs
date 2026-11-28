@@ -47,7 +47,16 @@
 //!
 //! CE QUI NE SE COMPTE PAS ICI, et la route le dit : une DSN (ses contrats se comptent par leurs AEM ou leurs bulletins),
 //! un certificat Congés Spectacles, une piece qui ne se lit pas ; et, dans l'estimation, le salaire annuel de reference
-//! (maternite, adoption, ALD), la participation de 0,93 % (art. 19), la clause de rattrapage, les franchises.
+//! (maternite, adoption, ALD), la clause de rattrapage, le differe d'indemnisation.
+//!
+//! L'ANNEE DE CHOMAGE QUI VIENT, quand l'allocation s'estime (Léandre, 27/11/2026 ; `droit::annee_de_chomage`,
+//! `annee_dite`) : sans aucun travail, du lendemain de la derniere fin de contrat (ou de la date anniversaire dite, quand
+//! elle vient apres) au terme des douze mois qui suivent cette fin, le delai d'attente, les franchises, la participation
+//! de 0,93 %, la CSG et la CRDS quand l'allocation brute passe leur plancher (au taux que la personne dit, `csg`, ou
+//! sinon du taux plein a l'exoneration) ;
+//! ce que rapporte un jour de travail (le salaire moyen de la personne, le chomage en moins ce mois-la, art. 30, et la
+//! difference) ; et l'annee si elle ressemble a la derniere (le meme travail aux memes mois, et ce qu'il donne de plus que
+//! sans travailler). La phrase de la reponse en dit le chiffre.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -55,6 +64,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::allocation::{Affiliation, Allocation, Borne, Visee};
+use droit::annee_de_chomage::{AllocationDuJour, ManqueDeLAnnee, OuvertureDesDroits, PlafondDuCumul, TauxDeCsg, TravailDuMois};
 use droit::cumul::{Constantes, Declare};
 use droit::emplois::AnnexeChomage;
 use droit::fiche::{Nir, Siren};
@@ -85,11 +95,11 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les droits d'un intermittent depuis ses pièces, et son allocation estimée.",
     charge: &ChargeDroitsDesPieces::CHARGE,
     exemple: r#"{"allocation_visee":80,"previsionnel":[{"fin":"2026-12-12","cachets":1,"nature":"artiste","brut":250}]}"#,
-    rend: "phrase (la réponse : les heures, jusqu'à quand, l'allocation), et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), la réponse, l'allocation visée (quand une allocation s'estime), la date anniversaire (une case), les paies, le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces, le détail ; sans calcul : la personne, la date anniversaire, les paies (vides, quand aucune pièce ne porte de personne), le dépôt, les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties (chacune sa forme, ses choix, et prerempli : la nature d'une ligne prévue vide prend l'annexe de base, quand les paies n'en disent qu'une), ajouter et retirer d'une rangée, dit. reponse : nom (seulement quand les pièces portent plusieurs personnes), couleur (vert : les heures sont là), heures (les 507 h sur les 12 mois avant la dernière fin de contrat, ou ce qui manque, compté à partir d'aujourd'hui quand cette fin est passée), jusqu_a (quand il en manque : la date anniversaire à venir, sinon le jour où la plus ancienne paie sort des 12 mois), allocation (celle de l'annexe qui s'applique, celle qui a le plus d'heures, ou ce qui l'attend), sous (la fenêtre, et l'annexe qui s'applique avec ses heures contre celles de l'autre). visee : case (« Je voudrais »), unite, reponse (ce qu'il faudrait par cachet ou de l'heure), reinitialiser (vide la case). paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie que les 12 mois comptent, dans l'ordre des fins : fin, cachets, heures, nature, brut, et le brut visé quand l'allocation visée est remplie ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. details (replié ; la personne choisie, ou les lignes prévues seules sans pièce) : libelle, annexes (les heures de chaque annexe, celle qui s'applique et pourquoi, l'annexe de chaque paie et d'où elle se lit), nir, fenetre, compte [quoi, valeur], heures_exigees, manque, estimation (de l'annexe : a, b, c, calculee, salaire_de_reference, retenue, paies : un tableau avec plafond, limite, ce qui compte), lignes (le jour butoir, l'estimation, ce qui arrête la hausse, les notes)",
+    rend: "phrase (la réponse : les heures, jusqu'à quand, l'allocation), et ecran : les blocs dans l'ordre où ils se lisent, chacun son `est`. Avec un calcul : la personne (une case, quand elle se choisit), la réponse, l'allocation visée (quand une allocation s'estime), l'année de chômage (quand une allocation s'estime), la date anniversaire (une case), les paies, le dépôt, les dates d'embauche (une case, quand la route en demande pour une paie des pièces), les pièces, le détail ; sans calcul : la personne, la date anniversaire, les paies (vides, quand aucune pièce ne porte de personne), le dépôt, les pièces. case : libelle, forme, valeur (les nombres tels qu'on les lit), choix, parties (chacune sa forme, ses choix, et prerempli : la nature d'une ligne prévue vide prend l'annexe de base, quand les paies n'en disent qu'une), ajouter et retirer d'une rangée, dit. reponse : nom (seulement quand les pièces portent plusieurs personnes), couleur (vert : les heures sont là), heures (les 507 h sur les 12 mois avant la dernière fin de contrat, ou ce qui manque, compté à partir d'aujourd'hui quand cette fin est passée), jusqu_a (quand il en manque : la date anniversaire à venir, sinon le jour où la plus ancienne paie sort des 12 mois), allocation (celle de l'annexe qui s'applique, celle qui a le plus d'heures, ou ce qui l'attend), annee (le chômage de l'année qui vient sans aucun travail, « au plus » quand une franchise ou le délai d'attente ne se compte pas, du taux plein à l'exonération quand la CSG peut jouer et que le taux n'est pas dit), sous (la fenêtre, et l'annexe qui s'applique avec ses heures contre celles de l'autre). visee : case (« Je voudrais »), unite, reponse (ce qu'il faudrait par cachet ou de l'heure), reinitialiser (vide la case). annee (l'année qui suit la dernière fin de contrat, ou la date anniversaire dite quand elle vient après, jusqu'au terme des douze mois qui suivent cette fin : annexes, art. 9, 19 à 23 et 30 ; absente quand la date anniversaire tombe à ce terme ou après, et une note le dit) : titre, sans_travail (titre, chiffre, sous, calculs [lignes [quoi, valeur], total [quoi, valeur]] : les jours payés, puis le montant ; aide), case (le taux de CSG, une liste fermée, vide par défaut ; seulement quand l'allocation brute passe le plancher de la CSG), rapporte (quand une paie dit le salaire moyen d'un exemple : un cachet au cachet moyen, une journée de 8 heures au salaire moyen de l'heure ; titre, aide : l'art. 30 en une phrase ; exemples [titre, calcul : le salaire brut, le chômage en moins ce mois-là, ce que la personne gagne ; detail : les heures, les jours de chômage en moins, puis le gain]), comme (quand la fenêtre a du travail : le même travail aux mêmes mois ; titre, aide, tableau des mois, barres [mois, chomage, salaire], calcul : le salaire brut de l'année plus le chômage avec ce travail, bilan : ce total de plus que sans travailler, et de plus que sans le chômage, dit : ce qui ne se dit que quand cela arrive), notes (de même), precisions (ce que le calcul suppose toujours, et le détail des formules). paies : tableau (titre, colonnes, rangées de cellules dites ; une ligne par paie que les 12 mois comptent, dans l'ordre des fins : fin, cachets, heures, nature, brut, et le brut visé quand l'allocation visée est remplie ; les lignes prévues s'y saisissent, chacune à sa fin, une ligne vide attendant en bas : saisie [case, retirer], les parties que tient chaque colonne, le rang de chaque rangée prévue) et lignes (la case des lignes prévues : ses parties, ses rangées). depot : dossier (mes-pieces/, où poser les pièces), libelle, aide. pieces : pieces [fichier (le nom posé dans mes-pieces/), nature (quand elle est reconnue), employeurs (ceux que ses pièces disent), dit (ce qui en est lu)], retirer. details (replié ; la personne choisie, ou les lignes prévues seules sans pièce) : libelle, resume (en bref : les heures et le seuil, l'annexe ou ce qui manque, le salaire de référence, l'allocation par jour A + B + C, ce qui la rend approchée), precisions (ce que l'estimation suppose toujours, et sa formule), annexes (les heures de chaque annexe, celle qui s'applique et pourquoi, l'annexe de chaque paie et d'où elle se lit), nir, fenetre, compte [quoi, valeur], heures_exigees, manque, estimation (de l'annexe : a, b, c, calculee, salaire_de_reference, retenue, resume, paies : un tableau avec plafond, limite, ce qui compte), lignes (le jour butoir, l'estimation, ce qui arrête la hausse, les notes)",
     refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, OPERATION],
     pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
     acte: Acte::Lit,
-    phrase: 200,
+    phrase: 290,
     ecran: Ecran::Lecture,
 }];
 
@@ -100,10 +110,11 @@ charge! {
     #[derive(Debug)]
     struct ChargeDroitsDesPieces {
         personne: Option<Nir> = legende("Personne", "son numéro de sécurité sociale, parmi ceux que portent les pièces ; absent : la seule qu'elles portent ; un numéro qu'elles ne portent plus ne compte pas").rendue(),
-        anniversaire: Option<Jour> = legende("Date anniversaire (si vous en avez une)", "celle que France Travail a notifiée : les heures qui manquent se comptent jusqu'à elle ; absente ou passée : jusqu'au jour où la plus ancienne paie sort des 12 mois"),
+        anniversaire: Option<Jour> = legende("Date anniversaire (si vous en avez une)", "celle que France Travail a notifiée : les heures qui manquent se comptent jusqu'à elle ; absente ou passée : jusqu'au jour où la plus ancienne paie sort des 12 mois ; elle dit aussi quand commence l'année de chômage, et son délai d'attente"),
         allocation_visee: Option<Montant> = legende("Je voudrais", "l'allocation journalière qu'on voudrait, en euros par jour ; absente : rien ne se vise"),
         previsionnel: Option<Vec<LignePrevue>> = legende("Lignes prévues", "le travail à venir, une ligne par engagement : sa fin, ses cachets ou ses heures, sa nature (artiste, technicien, enseignement ou formation ; vide : l'annexe de base, quand les paies n'en disent qu'une), son brut ; rien ne s'écrit"),
         debuts: Option<Vec<DebutDUnContrat>> = legende("Dates d'embauche", "la date d'embauche d'une paie des pièces dont la route la demande (la case Dates d'embauche, ses choix), sous le nom de la paie ; absente : rien n'est dit"),
+        csg: Option<TauxDeCsg> = legende("Votre CSG sur le chômage", "le taux de CSG de la personne sur son allocation, selon son revenu fiscal de référence ; elle ne compte que quand l'allocation brute passe le plancher de la CSG ; absente, l'année de chômage se dit du taux plein à l'exonération"),
     }
 }
 
@@ -321,6 +332,9 @@ fn ecran(
                 let valeur = c.allocation_visee.map(|m| ValeurDeCase::texte(socle::texte::virgule(m)));
                 let case = case_simple(cle!(ChargeDroitsDesPieces, allocation_visee), valeur)?;
                 ecran.push(BlocDesDroits::Visee(ViseeDite { case, unite: PAR_JOUR, reponse: x.visee, reinitialiser: REINITIALISER }));
+            }
+            if let Some(a) = x.annee {
+                ecran.push(BlocDesDroits::Annee(Box::new(a)));
             }
             ecran.push(anniversaire);
             ecran.push(BlocDesDroits::Paies(PaiesDites { tableau: x.paies, lignes }));
@@ -1159,6 +1173,8 @@ struct EstimationDite {
     salaire_de_reference: Montant,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     retenue: Montant,
+    /// En bref : le salaire de reference, l'allocation par jour (A + B + C), et ce qui la rend approchee.
+    resume: Vec<String>,
     paies: TableauRendu,
 }
 
@@ -1185,7 +1201,94 @@ struct ReponseDite {
     jusqu_a: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     allocation: Option<String>,
+    /// Le chomage de l'annee qui vient, sans aucun travail (`AnneeDite`), quand l'allocation s'estime.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annee: Option<String>,
     sous: String,
+}
+
+/// L'ANNEE DE CHOMAGE, telle que l'ecran la dit (Léandre, 27/11/2026 : le chiffre principal est le chomage de l'annee
+/// sans aucun travail, avec un exemple chiffré de chaque jour travaillé, et « un exemple sur l'année avec l'année
+/// dernière » ; le 28/11/2026 : « Il faut pas ce qu'on perd en total mais ce qu'on gagne ») : son titre ; l'annee sans
+/// travail ; la case du taux de CSG (aucune : l'allocation brute ne passe pas le plancher de la CSG, qui ne joue pas) ;
+/// ce que rapporte un jour de travail (aucun : aucune paie ne dit le salaire moyen d'un exemple) ; l'annee si elle
+/// ressemble a la derniere ; et ce que le calcul suppose (`droit::annee_de_chomage`).
+#[derive(Debug, Serialize)]
+struct AnneeDite {
+    titre: &'static str,
+    sans_travail: SansTravailDit,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    case: Option<crate::fiches::CaseDeLaFiche<&'static str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rapporte: Option<CeQueRapporteUnJourDit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comme: Option<CommeLaDerniereDite>,
+    notes: Vec<String>,
+    /// Ce que le calcul suppose toujours, et le detail des formules, que la page ne montre pas (Léandre, 28/11/2026 :
+    /// « C'est beaucoup trop bavard ») : il reste dit a qui lit la route.
+    precisions: Vec<String>,
+}
+
+/// UN CALCUL EN LIGNES : chaque ligne `[quoi, valeur]`, puis le total, en gras.
+#[derive(Debug, Serialize)]
+struct CalculDit {
+    lignes: Vec<(String, String)>,
+    total: (String, String),
+}
+
+/// L'ANNEE SANS AUCUN TRAVAIL : son titre, le chiffre (« au plus » quand une franchise ne se compte pas ; une fourchette
+/// quand la CSG peut jouer et que le taux n'est pas dit), ce qu'il compte
+/// en petit, le calcul des jours payes puis celui du montant, et ce qui s'en dit (la CSG, ce qui manque).
+#[derive(Debug, Serialize)]
+struct SansTravailDit {
+    titre: &'static str,
+    chiffre: String,
+    sous: String,
+    calculs: Vec<CalculDit>,
+    aide: Vec<String>,
+}
+
+/// CE QUE RAPPORTE UN JOUR DE TRAVAIL : son titre, l'explication chiffree (art. 30, et les salaires moyens des exemples),
+/// et des exemples.
+#[derive(Debug, Serialize)]
+struct CeQueRapporteUnJourDit {
+    titre: &'static str,
+    aide: String,
+    exemples: Vec<ExempleDit>,
+}
+
+/// UN EXEMPLE CHIFFRE : son titre, ce qu'il rapporte (le salaire brut, le chomage en moins ce mois-la, ce que la personne
+/// gagne), et son detail (les heures, les jours de chomage en moins, puis le gain).
+#[derive(Debug, Serialize)]
+struct ExempleDit {
+    titre: String,
+    calcul: CalculDit,
+    detail: CalculDit,
+}
+
+/// L'ANNEE SI ELLE RESSEMBLE A LA DERNIERE : le meme travail aux memes mois ; son titre, ce qu'il est, le tableau des mois
+/// (le salaire brut et le chomage, et les totaux), les barres de chaque mois, le calcul de l'annee, son bilan (de plus
+/// que sans travailler, et que sans le chomage), et ce qui ne se dit que quand cela arrive.
+#[derive(Debug, Serialize)]
+struct CommeLaDerniereDite {
+    titre: &'static str,
+    aide: String,
+    tableau: TableauRendu,
+    barres: Vec<BarreDite>,
+    calcul: CalculDit,
+    bilan: String,
+    dit: Vec<String>,
+}
+
+/// LA BARRE D'UN MOIS : son nom court, son chomage et son salaire brut (aucun : il n'y a pas de travail, ou sa paie ne
+/// dit pas son brut), les montants tels qu'ils s'ecrivent.
+#[derive(Debug, Serialize)]
+struct BarreDite {
+    mois: String,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    chomage: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    salaire: Option<Montant>,
 }
 
 /// L'ALLOCATION VISEE, telle que l'ecran la dit : sa case (« Je voudrais »), son unite (« € par jour »), la reponse quand
@@ -1206,6 +1309,12 @@ struct ViseeDite {
 #[derive(Debug, Serialize)]
 struct DetailsDits {
     libelle: &'static str,
+    /// En bref, ce que la page montre (Léandre, 28/11/2026 : « C'est beaucoup trop bavard ») : les heures et le seuil,
+    /// l'annexe, puis le salaire de reference et l'allocation par jour (`EstimationDite::resume`) ; `lignes` y ajoute
+    /// ce qui ne se dit que quand cela arrive.
+    resume: Vec<String>,
+    /// Ce que l'estimation suppose toujours, et sa formule, que la page ne montre pas.
+    precisions: Vec<String>,
     annexes: Vec<String>,
     /// Le numero de la personne ; aucun : les lignes prevues seules, sans piece (`LIGNES_SEULES`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1232,6 +1341,7 @@ struct CalculDesDroits {
     reponse: ReponseDite,
     visee_offerte: bool,
     visee: Option<String>,
+    annee: Option<AnneeDite>,
     base: Option<AnnexeChomage>,
     paies: TableauRendu,
     embauches: Vec<crate::ouverture::Choix>,
@@ -1298,17 +1408,22 @@ impl AnnexesDesPaies {
         if !self.sans.est_nul() {
             heures.push(format!("annexe non dite : {} h ({})", dit(self.sans), self.non_dites.join(", ")));
         }
-        out.push(format!("Les heures de chaque annexe sur les 12 mois (cachets à 12 h, sans l'enseignement ni la formation) : {}.", heures.join(" ; ")));
-        out.push(match self.appliquee() {
-            AnnexeAppliquee::Une(a) => format!(
-                "L'annexe qui s'applique est celle qui a le plus d'heures, {} ; toutes vos heures et tous vos salaires comptent sous elle (annexes VIII et X, art. 65 §9).",
-                annexe_en_petit(a)
-            ),
-            AnnexeAppliquee::Egales => "Les deux annexes ont autant d'heures : le texte applique celle « ayant permis de constater l'affiliation la plus importante » (annexes VIII et X, art. 65 §9) et ne dit rien d'une égalité ; l'allocation ne s'estime pas.".to_string(),
-            AnnexeAppliquee::NonDite => "L'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), dépend des paies dont l'annexe n'est pas dite.".to_string(),
-        });
+        out.push(format!("{}.", majuscule(&heures.join(" ; "))));
+        out.push(self.pourquoi());
         out.extend(self.sources.iter().cloned());
         out
+    }
+
+    /// Celle qui s'applique, et pourquoi.
+    fn pourquoi(&self) -> String {
+        match self.appliquee() {
+            AnnexeAppliquee::Une(a) => format!("C'est l'{} qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9).", annexe_en_petit(a)),
+            AnnexeAppliquee::Egales => "Les deux annexes ont autant d'heures : le texte applique celle « ayant permis de constater l'affiliation la plus importante » (annexes VIII et X, art. 65 §9) et ne dit rien d'une égalité ; l'allocation ne s'estime pas.".to_string(),
+            AnnexeAppliquee::NonDite => format!(
+                "L'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), dépend des paies dont l'annexe n'est pas dite : {}.",
+                self.non_dites.join(", ")
+            ),
+        }
     }
 }
 
@@ -1328,6 +1443,7 @@ enum BlocDesDroits {
     Case(crate::fiches::CaseDeLaFiche<&'static str>),
     Reponse(ReponseDite),
     Visee(ViseeDite),
+    Annee(Box<AnneeDite>),
     Paies(PaiesDites),
     Depot(DepotDit),
     Pieces(PiecesDites),
@@ -1438,7 +1554,7 @@ fn droits_des_pieces(inst: &Path, c: ChargeDroitsDesPieces) -> R<DroitsDesPieces
             let r = &x.reponse;
             let heures: Vec<&str> = [Some(r.heures.as_str()), r.jusqu_a.as_deref()].into_iter().flatten().collect();
             let heures = heures.join(" ");
-            let dite: Vec<&str> = [Some(heures.as_str()), r.allocation.as_deref()].into_iter().flatten().collect();
+            let dite: Vec<&str> = [Some(heures.as_str()), r.allocation.as_deref(), r.annee.as_deref()].into_iter().flatten().collect();
             match &r.nom {
                 Some(nom) => socle::phrase!("{} : {}.", nom, dite.join(". ")),
                 None => socle::phrase!("{}.", dite.join(". ")),
@@ -1586,9 +1702,24 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     // L'ALLOCATION, quand les heures sont la : sous l'annexe qui s'applique, le chiffre exact (Léandre, 27/11/2026 : « il
     // n'y a pas de environ, c'est un calcul exact ») ; sans elle, la reponse dit ce qu'elle attend.
     let mut supposees: BTreeMap<String, (Option<Montant>, bool)> = BTreeMap::new();
+    let mut precisions = Vec::new();
     let estimee = match (atteintes, appliquee) {
-        (true, AnnexeAppliquee::Une(a)) => estimer(&t, &aff, &dans_la_fenetre, a, annexes.base, c.allocation_visee, fin, &debuts, &mut supposees, &mut notes)?,
+        (true, AnnexeAppliquee::Une(a)) => estimer(&t, &aff, &dans_la_fenetre, a, annexes.base, c.allocation_visee, fin, &debuts, &mut supposees, &mut notes, &mut precisions)?,
         (true, AnnexeAppliquee::Egales | AnnexeAppliquee::NonDite) | (false, _) => None,
+    };
+    // L'ANNEE DE CHOMAGE QUI VIENT, quand l'allocation s'estime (`droit::annee_de_chomage`).
+    let annee = match (appliquee, &estimee) {
+        (AnnexeAppliquee::Une(a), Some((e, _))) => {
+            let annee = annee_dite(&t, a, annexes.base, e, &aff, &dans_la_fenetre, c)?;
+            if annee.is_none() {
+                notes.push(format!(
+                    "L'année de chômage ne se compte pas : votre date anniversaire tombe au terme des douze mois qui suivent la dernière fin de contrat, le {}, ou après.",
+                    fin.jj_mm_aaaa()
+                ));
+            }
+            annee
+        }
+        _ => None,
     };
     // LA REPONSE : les heures d'abord, puis l'allocation (la maquette de Léandre, 27/11/2026).
     let exigees = dit(a_partir.heures_exigees);
@@ -1635,6 +1766,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
                 heures: format!("Vous avez vos heures : {} h sur {}", dit(aff.position.heures_ouverture()?), exigees),
                 jusqu_a: None,
                 allocation: Some(allocation),
+                annee: annee.as_ref().map(|(_, phrase)| phrase.clone()),
                 sous,
             }
         }
@@ -1650,6 +1782,7 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
                 heures: format!("Il vous manque {} h", dit(a_partir.manque)),
                 jusqu_a,
                 allocation: None,
+                annee: None,
                 sous: format!("{} h sur {} {}", dit(a_partir.position.heures_ouverture()?), exigees, fenetre),
             }
         }
@@ -1690,16 +1823,47 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     let comptent = |i: usize| declarees.iter().any(|(d, j)| *j == i && a_partir.position.engagements.contains(d));
     let du_tableau: Vec<&PaieComptee> = comptees.iter().enumerate().filter(|(i, p)| p.prevue.is_some() || comptent(*i)).map(|(_, p)| p).collect();
     let paies = tableau_des_paies(&du_tableau, lignes_prevues, annexes.base, c.allocation_visee.zip(par_paie));
+    // EN BREF : les heures (« 60 cachets × 12 h = 720 h »), le seuil, et l'annexe ou ce qui manque ; puis le salaire de
+    // reference et l'allocation par jour, quand elle s'estime.
+    let pos = &a_partir.position;
+    // Le travail sans l'enseignement (`heures_montant`), puis, s'il y en a, avec l'enseignement et la formation retenus
+    // (`heures_ouverture`, plafonnes).
+    let (cachets, heures) = (pos.cachets_retenus(), pos.heures() - pos.heures_enseignement());
+    let des_cachets = format!("{} cachet{} × {} h", dit(cachets), if socle::texte::au_pluriel(cachets) { "s" } else { "" }, dit(pos.constantes.heures_par_cachet));
+    let somme = match (cachets.est_nul(), heures.est_nul()) {
+        (false, false) => format!("{} + {} h = {} h", des_cachets, dit(heures), dit(pos.heures_montant())),
+        (false, true) => format!("{} = {} h", des_cachets, dit(pos.heures_montant())),
+        (true, _) => format!("{} h", dit(pos.heures_montant())),
+    };
+    let ouverture = pos.heures_ouverture()?;
+    let somme = match ouverture == pos.heures_montant() {
+        true => somme,
+        false => format!("{}, et {} h avec l'enseignement et la formation retenus", somme, dit(ouverture)),
+    };
+    let mut resume = vec![match (atteintes, appliquee) {
+        (true, AnnexeAppliquee::Une(a)) => format!("{}. Il en faut {} : vos droits s'ouvrent à l'{}.", somme, exigees, annexe_en_petit(a)),
+        (true, AnnexeAppliquee::Egales | AnnexeAppliquee::NonDite) => format!("{}. Il en faut {}.", somme, exigees),
+        (false, _) => format!("{}. Il en faut {} : il en manque {}.", somme, exigees, dit(a_partir.manque)),
+    }];
+    if atteintes && !matches!(appliquee, AnnexeAppliquee::Une(_)) {
+        resume.push(annexes.pourquoi());
+    }
+    if let Some(e) = &estimation {
+        resume.extend(e.resume.iter().cloned());
+    }
     Ok(CalculDesDroits {
         reponse,
         visee_offerte: estimation.is_some(),
         visee: visee.map(|v| v.reponse),
+        annee: annee.map(|(a, _)| a),
         base: annexes.base,
         paies,
         embauches,
         demande,
         details: DetailsDits {
             libelle: DETAILS,
+            resume,
+            precisions,
             annexes: annexes.dites(),
             nir: nir.cloned(),
             fenetre: aff.position.libelle_fenetre.clone(),
@@ -1757,6 +1921,11 @@ fn annexes_des_paies(comptees: &[PaieComptee], fenetre: &[(&Declare, &PaieCompte
             Some(a) => annexe_en_petit(a),
             None => "annexe non dite",
         };
+        // Une ligne prevue dont la personne a choisi la nature n'apprend rien que le tableau des paies ne montre deja
+        // (Leandre, 28/11/2026 : « beaucoup de redites ») : seule se dit l'annexe que le moteur a lue ou deduite.
+        if p.prevue.is_some() && p.annexe.is_some() {
+            continue;
+        }
         out.sources.push(format!("{}, {} h : {} ({}).", majuscule(&p.en_mots()), dit(heures), annexe, d_ou));
     }
     out
@@ -1834,6 +2003,7 @@ fn estimer(
     debuts: &BTreeMap<String, Jour>,
     supposees: &mut BTreeMap<String, (Option<Montant>, bool)>,
     notes: &mut Vec<String>,
+    precisions: &mut Vec<String>,
 ) -> R<Option<(EstimationDite, Option<ViseeCalculee>)>> {
     let p = &aff.position;
     if let Some(m) = paies.iter().find(|x| x.melee()) {
@@ -1861,7 +2031,7 @@ fn estimer(
     };
     let plafond = t.plafond(pss_annuel);
     let nht = p.heures_montant();
-    notes.push("Estimation : sans maternité, adoption ou ALD dans la fenêtre, sans la participation retraite de 0,93 % (art. 19), ni franchises.".to_string());
+    precisions.push("Estimation : sans maternité, adoption ou ALD dans la fenêtre ; l'allocation par jour est avant la participation retraite de 0,93 % (art. 19) et les franchises, que l'année de chômage déduit.".to_string());
     // D'ou vient le plafond de chaque paie, avec le debut de son contrat quand la charge le dit (`debuts`).
     let mut sources = Vec::new();
     for x in &du_salaire {
@@ -1891,6 +2061,7 @@ fn estimer(
     let mut bruts: Vec<(Montant, Option<Montant>)> = Vec::new();
     let mut a_viser: Vec<(&PaieComptee, Montant, Option<Montant>)> = Vec::new();
     let mut inconnues: Vec<PlafondSuppose> = Vec::new();
+    let mut approchees: Vec<bool> = Vec::new();
     for (x, source) in du_salaire.iter().zip(&sources) {
         let Some(brut) = x.brut else { continue };
         // Le plafond d'une paie est celui de son emploi : artiste quand son annexe est la X. Une paie dont l'annexe ne se
@@ -1917,8 +2088,11 @@ fn estimer(
                     }
                     Err(bas) => (None, format!("son plafond ne se connaît pas ({}), ni le plus bas qu'il puisse être ({}) : il compte entier, comme s'il ne passait pas sa limite", inconnu.raison, bas.raison)),
                 };
-                if x.prevue.is_none() && au_plus_bas.is_none_or(|l| brut > l) {
-                    supposer(supposees, x, au_plus_bas, inconnu.le_debut_le_dit);
+                if au_plus_bas.is_none_or(|l| brut > l) {
+                    approchees.push(x.prevue.is_some());
+                    if x.prevue.is_none() {
+                        supposer(supposees, x, au_plus_bas, inconnu.le_debut_le_dit);
+                    }
                 }
                 // Une ligne prevue aussi : la visee dit ce qu'elle suppose d'elle (`viser`), sans rien demander.
                 inconnues.push(PlafondSuppose { rang: bruts.len(), limite: au_plus_bas, le_debut_le_dit: inconnu.le_debut_le_dit, paie: x });
@@ -1939,7 +2113,7 @@ fn estimer(
         None => String::new(),
     };
     let limitee = if sr < total { format!(" ; les paies ne comptent qu'à quatre fois leur plafond (art. 11 §3) : {} de salaire, {} retenus", euros(total), euros(sr)) } else { String::new() };
-    notes.push(format!(
+    precisions.push(format!(
         "{} : A {} pour {} de salaire de référence, B {} pour {} h, C {}{}{}.",
         annexe_dite(annexe),
         euros(e.a),
@@ -1950,7 +2124,42 @@ fn estimer(
         borne,
         limitee
     ));
-    let estimation = EstimationDite { annexe: annexe_dite(annexe), a: e.a, b: e.b, c: e.c, calculee: e.calculee, salaire_de_reference: sr, retenue: e.retenue, paies: tableau_du_salaire(lignes) };
+    // EN BREF (Léandre, 28/11/2026 : « C'est beaucoup trop bavard ») : le salaire de reference, l'allocation par jour,
+    // et ce qui la rend approchee.
+    let n = lignes.len();
+    let mut resume = vec![match (n, sr < total) {
+        (0, _) => format!("Salaire de référence : {}, aucune paie ne dit son brut.", euros(sr)),
+        (1, true) => format!("Salaire de référence : {}, votre paie ({}), comptée à quatre fois son plafond au plus.", euros(sr), euros(total)),
+        (1, false) => format!("Salaire de référence : {}, votre paie.", euros(sr)),
+        (_, true) => format!("Salaire de référence : {}, vos {} paies ({}), chacune comptée à quatre fois son plafond au plus.", euros(sr), n, euros(total)),
+        (_, false) => format!("Salaire de référence : {}, vos {} paies.", euros(sr), n),
+    }];
+    let par_jour = format!("Par jour : {} + {} + {} = {}", euros(e.a), euros(e.b), euros(e.c), euros(e.calculee));
+    resume.push(match e.borne {
+        Some(Borne::Plancher) => format!("{}, relevés au plancher de {}.", par_jour, euros(e.plancher)),
+        Some(Borne::Plafond) => format!("{}, ramenés au plafond de {}.", par_jour, euros(e.plafond)),
+        None => format!("{}.", par_jour),
+    });
+    // Approchee : une paie au plafond inconnu dont le brut pourrait passer sa limite, et que l'estimation compte entiere.
+    if !approchees.is_empty() {
+        let toutes_prevues = approchees.iter().all(|prevue| *prevue);
+        resume.push(match (toutes_prevues, approchees.len()) {
+            (true, _) => "Environ : sans bulletin, le plafond de chaque paie ne se connaît pas.".to_string(),
+            (false, 1) => "Environ : le plafond d'une paie ne se connaît pas.".to_string(),
+            (false, k) => format!("Environ : le plafond de {} paies ne se connaît pas.", k),
+        });
+    }
+    let estimation = EstimationDite {
+        annexe: annexe_dite(annexe),
+        a: e.a,
+        b: e.b,
+        c: e.c,
+        calculee: e.calculee,
+        salaire_de_reference: sr,
+        retenue: e.retenue,
+        resume,
+        paies: tableau_du_salaire(lignes),
+    };
     let visee = match visee {
         Some(v) => Some(viser(t, annexe, v, sr, nht, plafond, &bruts, &a_viser, &inconnues, supposees)?),
         None => None,
@@ -2086,4 +2295,553 @@ fn viser(
         arret
     );
     Ok(ViseeCalculee { reponse, arret, par_paie })
+}
+
+// ------------------------------------------------------------------ l'annee de chomage qui vient
+
+/// Le titre du bloc, et de ses parties (la maquette de Léandre, 27/11/2026).
+const L_ANNEE: &str = "Votre année de chômage";
+const SANS_TRAVAIL: &str = "Sans aucun travail";
+const UN_JOUR_DE_TRAVAIL: &str = "Ce que vous rapporte un jour de travail";
+const COMME_LA_DERNIERE: &str = "Si l'année qui vient ressemble à la dernière";
+
+/// Un montant « environ », a l'euro : « 21 081 € ».
+fn environ(m: Montant) -> String {
+    format!("{}\u{a0}€", socle::texte::par_milliers(m.a_l_euro()))
+}
+
+/// Des jours tels qu'on les lit (« 19,56 »).
+fn jours_dits(j: Jours) -> String {
+    socle::texte::virgule(j.a_deux_decimales())
+}
+
+/// Des jours qu'un calcul retire : « − 7 », ou « 0 ».
+fn moins(j: Jours) -> String {
+    match j.est_nul() {
+        true => "0".to_string(),
+        false => format!("−\u{a0}{}", jours_dits(j)),
+    }
+}
+
+/// Un taux en points tel qu'on le lit : « 6,2 % ».
+fn taux_dit(t: socle::grandeurs::Taux) -> String {
+    format!("{}\u{a0}%", socle::texte::virgule(t))
+}
+
+/// CE QUI MANQUE A L'ANNEE, en une phrase (`droit::annee_de_chomage::ManqueDeLAnnee`) : le calcul dit ce qu'il ne peut
+/// pas dire, et son chomage est « au plus ».
+fn manque_dit(m: &ManqueDeLAnnee, fin: Jour) -> String {
+    match m {
+        ManqueDeLAnnee::JoursTravailles => "La franchise de congés payés ne se compte pas : une paie des pièces ne dit pas ses jours de travail (ceux de l'attestation employeur), ou une ligne prévue ne dit pas sa nature ; le chômage dit est au plus.".to_string(),
+        ManqueDeLAnnee::DelaiDAttente => "Le délai d'attente ne se compte pas : il ne s'applique pas plus de sept jours sur douze mois (art. 22), et votre date anniversaire ne dit pas s'il vous en a été appliqué un dans les douze mois ; le chômage dit est au plus.".to_string(),
+        ManqueDeLAnnee::SalairesDeLaPeriode => "La franchise de salaires ne se compte pas : une paie ou une ligne prévue des 12 mois ne dit pas son brut ; le chômage dit est au plus.".to_string(),
+        ManqueDeLAnnee::Smic => format!("La franchise de salaires ne se compte pas : le logiciel n'a pas le SMIC du {} ; le chômage dit est au plus.", fin.jj_mm_aaaa()),
+        ManqueDeLAnnee::SalaireDuMois(mois) => format!(
+            "En {}, une paie ne dit pas son brut : le plafond du cumul ne se compte pas, et le chômage du mois est au plus.",
+            mois.libelle(socle::mois::Graphie::Accentuee)
+        ),
+        ManqueDeLAnnee::PlafondDeLAnnee(an) => format!(
+            "Le logiciel n'a aucun plafond de la Sécurité sociale jusqu'à {} : le plafond du cumul ne se compte pas en {}, et le chômage d'un mois travaillé est au plus.",
+            an, an
+        ),
+    }
+}
+
+/// LE PLAFOND DE LA SECURITE SOCIALE QU'UNE ANNEE `an` PREND A L'ANNEE `de` (`droit::annee_de_chomage::plafond_mensuel_livre`),
+/// en une phrase.
+fn plafond_repris_dit(an: Annee, de: Annee) -> String {
+    format!("Le plafond de la Sécurité sociale de {} n'est pas encore paru : le plafond du cumul prend celui de {}.", an, de)
+}
+
+/// CE QUE LA DATE ANNIVERSAIRE DITE FAIT AU DEBUT DE L'ANNEE ET A SON DELAI D'ATTENTE (`droit::annee_de_chomage`) ; rien
+/// sans date anniversaire, ni quand le delai ne se compte pas (`manque_dit` le dit).
+fn delai_dit(t: &Allocation, o: &OuvertureDesDroits, a: &droit::annee_de_chomage::AnneeDeChomage) -> Option<String> {
+    let da = o.anniversaire?;
+    match a.delai? {
+        d if d.est_nul() => Some(format!(
+            "Avec votre date anniversaire du {}, l'année commence le {}, sans délai d'attente (guide de France Travail, exemple 9 : à la réadmission à la date anniversaire, « pas d'application du délai d'attente ») ; il ne s'applique pas plus de sept jours sur douze mois (art. 22) : si aucun ne vous a été appliqué dans les douze mois, il en vient un de {} jours.",
+            da.jj_mm_aaaa(),
+            a.periode.debut().jj_mm_aaaa(),
+            jours_dits(t.delai_d_attente.jours)
+        )),
+        d => Some(format!(
+            "Votre date anniversaire du {} précède de plus de douze mois l'année qui vient : aucun délai d'attente ne tombe dans ces douze mois, et celui de {} jours s'applique (art. 22).",
+            da.jj_mm_aaaa(),
+            jours_dits(d)
+        )),
+    }
+}
+
+/// UN EXEMPLE DE TRAVAIL (art. 30), payé `salaire` brut : `quoi` (son titre), ce qu'il rapporte (le salaire, le chomage
+/// en moins ce mois-la, la difference), et son detail (ses heures `heures`, decrites par `detail`, ses jours de chomage
+/// en moins, ce qu'ils valent, et la difference).
+fn exemple_de_jours(t: &Allocation, annexe: AnnexeChomage, (bas, haut): (&AllocationDuJour, &AllocationDuJour), quoi: String, detail: String, heures: Heures, salaire: Montant) -> R<ExempleDit> {
+    let a = t.activite(annexe);
+    let activite = droit::annee_de_chomage::activite_du_mois(t, annexe, Jours::ZERO, heures)?;
+    let (jt, en_moins) = (activite.jours_de_travail, activite.retires);
+    let (chomage_bas, chomage_haut) = (bas.pour_les_jours(en_moins), haut.pour_les_jours(en_moins));
+    let chomage = format!("−\u{a0}{}", bouts(chomage_bas, chomage_haut, euros::<Montant>));
+    // Ce que la personne y gagne ; quand le chomage en moins passe le salaire, ce qu'elle y perd, sans signe (Leandre,
+    // 28/11/2026 : « Vous perdez il faut écrire »).
+    let (g_bas, g_haut) = (salaire - chomage_bas, salaire - chomage_haut);
+    // Une fourchette du taux de CSG qui passe par zero : gagne ou perdu selon le taux.
+    let (bilan, gain) = match (g_bas.max(g_haut) < Montant::ZERO, g_bas.min(g_haut) < Montant::ZERO) {
+        (true, _) => ("Vous perdez", bouts(g_bas.abs(), g_haut.abs(), euros::<Montant>)),
+        (false, true) => ("Selon votre taux de CSG", signes(g_bas, g_haut)),
+        (false, false) => ("Vous gagnez", signes(g_bas, g_haut)),
+    };
+    Ok(ExempleDit {
+        titre: quoi,
+        calcul: CalculDit {
+            lignes: vec![("Salaire brut".to_string(), format!("+\u{a0}{}", euros(salaire))), ("Chômage en moins ce mois-là".to_string(), chomage.clone())],
+            total: (bilan.to_string(), gain.clone()),
+        },
+        detail: CalculDit {
+            lignes: vec![
+                (detail, socle::texte::heures(heures)),
+                (format!("Jours de travail ({} ÷ {})", socle::texte::virgule(heures), socle::texte::virgule(a.heures_par_jour)), jours_dits(jt)),
+                (format!("Jours de chômage en moins ({} × {})", jours_dits(jt), socle::texte::virgule(a.coefficient)), jours_dits(en_moins)),
+                (format!("Chômage en moins ({} jours à {})", jours_dits(en_moins), bouts(bas.nette, haut.nette, euros::<Montant>)), chomage),
+            ],
+            total: (bilan.to_string(), gain),
+        },
+    })
+}
+
+/// Un montant signe (« + 106,57 € », « − 12,00 € »), ou les deux bouts de la fourchette du taux de CSG quand ils
+/// different.
+fn signes(a: Montant, b: Montant) -> String {
+    let signe = |m: Montant| match m < Montant::ZERO {
+        true => format!("−\u{a0}{}", euros(m.abs())),
+        false => format!("+\u{a0}{}", euros(m)),
+    };
+    match (a == b, a.min(b) >= Montant::ZERO) {
+        (true, _) => signe(a),
+        (false, true) => format!("+\u{a0}{} à {}", euros(a.min(b)), euros(a.max(b))),
+        (false, false) => format!("{} à {}", signe(a.min(b)), signe(a.max(b))),
+    }
+}
+
+/// CE QUE L'ANNEE AVEC CE TRAVAIL DONNE DE PLUS, en une phrase, aux deux bouts de la fourchette du taux de CSG : de plus
+/// que sans travailler (`ecart`, `ecart_haut` : le salaire brut et le chomage avec ce travail, moins le chomage sans
+/// travail `sans` ; « de moins » quand il donne moins), et de plus que sans le chomage (`avec` : le chomage avec ce
+/// travail, face au salaire brut de l'annee `brut` ; Léandre, 28/11/2026 : « je trouve ça bien d'écrire aussi sans le
+/// chômage vu qu'on écrit sans le travail »).
+fn de_plus_dit((ecart, ecart_haut): (Montant, Montant), sans: String, (avec, avec_haut): (Montant, Montant), brut: Montant) -> String {
+    let travail = match ecart.min(ecart_haut) >= Montant::ZERO {
+        true => format!("{} de plus que sans travailler ({})", bouts(ecart, ecart_haut, environ), sans),
+        false if ecart.max(ecart_haut) <= Montant::ZERO => format!("{} de moins que sans travailler ({})", bouts(ecart.abs(), ecart_haut.abs(), environ), sans),
+        false => {
+            let signe = |m: Montant| match m < Montant::ZERO {
+                true => format!("−\u{a0}{}", environ(m.abs())),
+                false => format!("+\u{a0}{}", environ(m)),
+            };
+            format!("de {} à {} par rapport à sans travailler ({})", signe(ecart.min(ecart_haut)), signe(ecart.max(ecart_haut)), sans)
+        }
+    };
+    format!("Soit {}, et {} de plus que sans le chômage ({}).", travail, bouts(avec, avec_haut, environ), environ(brut))
+}
+
+/// LE SALAIRE BRUT MOYEN DE LA PERSONNE, lu sur ses paies `paies` qui disent leur brut (comme `viser`) : par cachet (le
+/// brut des paies faites de cachets seuls sur leurs cachets) et de l'heure (le brut des paies faites d'heures seules sur
+/// leurs heures) ; aucun quand aucune paie de cette sorte ne dit son brut. Chacun avec le brut et ce qu'il divise.
+#[allow(clippy::type_complexity)]
+fn salaires_moyens(paies: &[&PaieComptee]) -> (Option<(Montant, Montant, Cachets)>, Option<(socle::grandeurs::MontantUnitaire, Montant, Heures)>) {
+    let (mut en_cachets, mut cachets) = (Montant::ZERO, Cachets::ZERO);
+    let (mut en_heures, mut heures) = (Montant::ZERO, Heures::ZERO);
+    // L'enseignement sort du salaire de reference, comme dans `estimer` : son prix n'est pas celui d'une repetition.
+    for p in paies.iter().filter(|p| !p.d_enseignement()) {
+        let Some(brut) = p.brut else { continue };
+        let (c, h) = (p.cachets.into_iter().sum::<Cachets>(), p.heures.into_iter().sum::<Heures>());
+        if h.est_nul() && !c.est_nul() {
+            (en_cachets, cachets) = (en_cachets + brut, cachets + c);
+        } else if c.est_nul() && !h.est_nul() {
+            (en_heures, heures) = (en_heures + brut, heures + h);
+        }
+    }
+    (
+        (!cachets.est_nul()).then(|| (en_cachets.prorata(Cachets::UN, cachets).au_centime(), en_cachets, cachets)),
+        en_heures.par_heure(heures).map(|u| (u.au_centime(), en_heures, heures)),
+    )
+}
+
+/// Un montant, ou les deux bouts de la fourchette du taux de CSG quand ils different (« 80,12 € à 85,90 € »).
+fn bouts(a: Montant, b: Montant, dire: fn(Montant) -> String) -> String {
+    match a == b {
+        true => dire(a),
+        false => format!("{} à {}", dire(a.min(b)), dire(a.max(b))),
+    }
+}
+
+/// L'ANNEE DE CHOMAGE QUI VIENT, de l'annexe `annexe` et de son estimation `e` sur la fenetre de `aff` et ses paies `paies`
+/// (`droit::annee_de_chomage`), telle que l'ecran la dit (`AnneeDite`), et la phrase de la reponse ; aucune : la date
+/// anniversaire dite tombe au terme des douze mois qui suivent la derniere fin de contrat, ou apres. L'ouverture : les
+/// salaires de toute la periode (art. 21 §1 b : toutes ses paies, quel que soit le regime ; aucune quand une paie ne dit pas
+/// son brut), ses jours de travail (art. 21 §1 a : ceux de l'AEM, que dit la piece ; aucun quand une paie des pieces ne les
+/// dit pas ; une ligne prevue, qui ne les dit jamais, les compte environ, `droit::annee_de_chomage::jours_travailles_environ`,
+/// par mois et par annexe, hors enseignement : le guide ne retient que les « périodes d'emploi relevant exclusivement des
+/// annexes 8 et 10 », p. 14), le SMIC de son dernier jour (`smic_horaire` du bareme livre), la date anniversaire que la
+/// charge dit. Le meme travail aux memes mois : chaque paie de la fenetre au mois ou son contrat finit, douze mois plus
+/// tard ; ses heures, ses cachets aux heures du catalogue des rubriques (`Constantes::heures_par_cachet`) et
+/// l'enseignement compris ; la formation, qu'on suit, n'est pas un travail et ne retire rien (art. 30 : « les heures de
+/// travail effectuées » ; INFERENCE).
+fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>, e: &EstimationDite, aff: &Affiliation, paies: &[&PaieComptee], c: &ChargeDroitsDesPieces) -> R<Option<(AnneeDite, String)>> {
+    use socle::ecriture::ValeurDeCase;
+    use socle::liste::ListeFermee;
+    let fin = aff.position.periode.fin();
+    let ar = &t.activite_reprise;
+    let hpc = aff.position.constantes.heures_par_cachet;
+    let a = t.activite(annexe);
+    let salaires = paies.iter().try_fold(Montant::ZERO, |s, p| p.brut.map(|b| s + b));
+    // Les jours de travail : ceux des pieces, exacts ; ceux des lignes prevues, environ, par mois et par annexe.
+    let mut des_pieces = Some(Jours::ZERO);
+    let mut des_lignes: Vec<(socle::mois::Mois, Option<AnnexeChomage>, Heures)> = Vec::new();
+    for p in paies {
+        match p.prevue {
+            None => des_pieces = des_pieces.and_then(|s| p.jours.map(|j| s + j)),
+            Some(_) => {
+                let h = p.cachets.into_iter().sum::<Cachets>() * hpc + p.heures.into_iter().sum::<Heures>() - p.enseignement.into_iter().sum::<Heures>();
+                // Une ligne d'enseignement ou de formation n'a pas d'heures des annexes : elle n'a pas de jours.
+                if h.est_nul() {
+                    continue;
+                }
+                let cle = (p.fin.mois_civil(), p.annexe_ou(base));
+                match des_lignes.iter_mut().find(|(m, x, _)| (*m, *x) == cle) {
+                    Some((_, _, total)) => *total += h,
+                    None => des_lignes.push((cle.0, cle.1, h)),
+                }
+            }
+        }
+    }
+    // Une ligne prevue dont l'annexe n'est pas dite ne compte pas ses jours.
+    let mut des_lignes_environ = Some(Jours::ZERO);
+    for (_, x, h) in &des_lignes {
+        des_lignes_environ = match (des_lignes_environ, x) {
+            (Some(s), Some(x)) => Some(s + droit::annee_de_chomage::jours_travailles_environ(t, *x, *h)?),
+            _ => None,
+        };
+    }
+    let jours_travailles = match (des_pieces, des_lignes_environ) {
+        (Some(p), Some(l)) => Some(p + l),
+        _ => None,
+    };
+    let jours_environ = !des_lignes.is_empty();
+    let smic = match droit::contexte::socle_livre_lu(fin.annee())? {
+        Some(p) => droit::contexte::smic_en_vigueur(&p.smic_horaire, &fin)?.map(|(_, v)| v),
+        None => None,
+    };
+    let o = OuvertureDesDroits {
+        annexe,
+        allocation: e.retenue,
+        salaire_de_reference: e.salaire_de_reference,
+        heures: aff.position.heures_montant(),
+        fin,
+        anniversaire: c.anniversaire,
+        salaires_de_la_periode: salaires,
+        jours_travailles,
+        smic_horaire: smic,
+        csg: None,
+    };
+    // LE TAUX DE CSG ne joue que quand l'allocation brute passe le plancher (circulaire Unedic 2026-06, exemple 20) :
+    // dessous, sa case n'existe pas, et un taux envoye ne change rien ; dessus, le taux dit donne le chiffre exact, et sans
+    // lui l'annee se compte aux deux bouts de la fourchette (Léandre, 28/11/2026 : « Mais donne quand même un chiffre »).
+    let k = &t.contributions;
+    let joue = k.jouent(e.retenue);
+    let [plein, exonere] = TauxDeCsg::FOURCHETTE;
+    let (taux_bas, taux_haut) = match (joue, c.csg) {
+        (false, _) => (None, None),
+        (true, Some(x)) => (Some(x), Some(x)),
+        (true, None) => (Some(plein), Some(exonere)),
+    };
+    let fourchette = taux_bas != taux_haut;
+    let (o_bas, o_haut) = (OuvertureDesDroits { csg: taux_bas, ..o.clone() }, OuvertureDesDroits { csg: taux_haut, ..o });
+    let o = &o_bas;
+    let pmss = droit::annee_de_chomage::plafond_mensuel_livre;
+    // L'annee aux deux bouts (le meme, quand le taux est dit ou ne joue pas) : ses jours ne dependent pas du taux.
+    let aux_bouts = |travail: &[TravailDuMois]| -> R<Option<(droit::annee_de_chomage::AnneeDeChomage, droit::annee_de_chomage::AnneeDeChomage)>> {
+        let Some(bas) = droit::annee_de_chomage::annee(t, &o_bas, travail, &pmss)? else { return Ok(None) };
+        let haut = match fourchette {
+            true => droit::annee_de_chomage::annee(t, &o_haut, travail, &pmss)?.ok_or_else(|| socle::fichiers::absent("l'année au taux exonéré"))?,
+            false => bas.clone(),
+        };
+        Ok(Some((bas, haut)))
+    };
+    let Some((sans, sans_haut)) = aux_bouts(&[])? else { return Ok(None) };
+    let mut travail = Vec::new();
+    let (mut cachets, mut heures) = (Cachets::ZERO, Heures::ZERO);
+    for p in paies {
+        let (cs, hs) = (p.cachets.into_iter().sum::<Cachets>(), p.heures.into_iter().sum::<Heures>());
+        let h = cs * hpc + hs;
+        if h.est_nul() {
+            continue;
+        }
+        (cachets, heures) = (cachets + cs, heures + hs);
+        travail.push(TravailDuMois { mois: p.fin.apres(Duree::mois(12))?.mois_civil(), heures: h, salaire: p.brut });
+    }
+    let comme = match travail.is_empty() {
+        true => None,
+        false => aux_bouts(&travail)?,
+    };
+    let (jour, jour_haut) = (&sans.jour, &sans_haut.jour);
+    let au_plus = !sans.manques.is_empty();
+    let chiffre = match fourchette {
+        true => format!("entre {} (taux plein) et {} (exonéré)", environ(sans.versee), environ(sans_haut.versee)),
+        false => environ(sans.versee),
+    };
+    let phrase = format!("Sans travailler, {} {} sur l'année qui vient", if au_plus { "au plus" } else { "environ" }, chiffre);
+    let chiffre = match au_plus {
+        true => format!("au plus {}", chiffre),
+        false => chiffre,
+    };
+    // SANS AUCUN TRAVAIL : les jours payes, puis le montant.
+    let somme = |f: fn(&droit::annee_de_chomage::MoisDeChomage) -> Jours| -> Jours { sans.mois.iter().map(f).sum() };
+    let mut precisions = Vec::new();
+    let conges = match (&sans.conges, jours_travailles) {
+        (Some(f), Some(jt)) => {
+            precisions.push(format!("Franchise congés payés : vos {}{} jours de travail ont acquis {} jours de congés.", if jours_environ { "environ " } else { "" }, jours_dits(jt), jours_dits(f.jours)));
+            (format!("Franchise congés payés ({}{} jours de travail)", if jours_environ { "environ " } else { "" }, jours_dits(jt)), moins(somme(|m| m.conges)))
+        }
+        _ => ("Franchise congés payés".to_string(), "non comptée".to_string()),
+    };
+    let delai = match sans.delai {
+        Some(_) => ("Délai d'attente".to_string(), moins(somme(|m| m.delai))),
+        None => ("Délai d'attente".to_string(), "non compté".to_string()),
+    };
+    let franchise_salaires = match &sans.salaires {
+        Some(f) => {
+            precisions.push(format!(
+                "Franchise salaires : {} jours, de vos salaires sur le SMIC mensuel de {}, et de votre salaire journalier moyen sur trois SMIC journaliers de {}.",
+                jours_dits(f.franchise.jours),
+                euros(f.smic_mensuel),
+                euros(f.smic_journalier)
+            ));
+            ("Franchise salaires".to_string(), moins(somme(|m| m.franchise_salaires)))
+        }
+        None => ("Franchise salaires".to_string(), "non comptée".to_string()),
+    };
+    let jours = CalculDit {
+        lignes: vec![
+            (format!("Jours de l'année, du {} au {}", sans.periode.debut().jj_mm_aaaa(), sans.periode.fin().jj_mm_aaaa()), jours_dits(sans.jours())),
+            delai,
+            conges,
+            franchise_salaires,
+        ],
+        total: ("Jours payés".to_string(), jours_dits(sans.jours_payes)),
+    };
+    precisions.push(format!(
+        "Participation retraite : {} par jour, {} de votre salaire journalier moyen de {} (art. 19).",
+        euros(jour.participation),
+        taux_dit(t.participation.taux),
+        euros(jour.salaire_journalier_moyen)
+    ));
+    let mut lignes = vec![
+        (format!("Allocation : {} jours à {}", jours_dits(sans.jours_payes), euros(jour.brute)), euros(sans.brute)),
+        (format!("Participation retraite ({})", taux_dit(t.participation.taux)), format!("−\u{a0}{}", euros(sans.participation))),
+    ];
+    match fourchette {
+        true => lignes.push((
+            format!("CSG et CRDS : de 0 à {} par jour, selon votre taux", euros(jour.contributions)),
+            format!("−\u{a0}{}", bouts(sans_haut.contributions, sans.contributions, euros::<Montant>)),
+        )),
+        false if !sans.contributions.est_nul() => lignes.push((format!("CSG et CRDS : {} par jour", euros(jour.contributions)), format!("−\u{a0}{}", euros(sans.contributions)))),
+        false => {}
+    }
+    let montant = CalculDit { lignes, total: ("Sur l'année".to_string(), bouts(sans.versee, sans_haut.versee, euros::<Montant>)) };
+    // Sous le plancher, la CSG ne joue pas : aucune phrase n'en parle.
+    let mut aide = Vec::new();
+    if joue {
+        aide.push(match (c.csg, fourchette) {
+            (_, true) => format!(
+                "Votre taux de CSG n'est pas dit : le chiffre va du taux plein (CSG de {} et CRDS de {}, prises sur l'allocation abattue de {}, sans faire passer l'allocation brute sous {} par jour) à l'exonération. Choisissez votre taux ci-dessous pour le chiffre exact.",
+                taux_dit(k.csg),
+                taux_dit(k.crds),
+                taux_dit(k.abattement),
+                euros(k.plancher)
+            ),
+            (Some(TauxDeCsg::ExonereDeCsgEtDeCrds), false) => "Exonéré de CSG et de CRDS : ni l'une ni l'autre.".to_string(),
+            (Some(TauxDeCsg::ExonereDeCsg), false) => format!(
+                "Exonéré de CSG : la CRDS seule, {} par jour, prise sur l'allocation abattue de {}, sans faire passer l'allocation brute sous {}.",
+                euros(jour.contributions),
+                taux_dit(k.abattement),
+                euros(k.plancher)
+            ),
+            (_, false) => format!(
+                "CSG et CRDS : {} par jour, prises sur l'allocation abattue de {}, sans faire passer l'allocation brute sous {}.",
+                euros(jour.contributions),
+                taux_dit(k.abattement),
+                euros(k.plancher)
+            ),
+        });
+        // La cotisation au regime local d'Alsace-Moselle (circulaire Unedic 2026-06, fiche 2, § 7) n'est pas comptee :
+        // elle ne touche que les affilies a ce regime, et une case de plus pour eux seuls alourdirait la case de tous ; la
+        // phrase le dit.
+        if !matches!(c.csg, Some(TauxDeCsg::ExonereDeCsg | TauxDeCsg::ExonereDeCsgEtDeCrds)) {
+            aide.push("La cotisation au régime local d'Alsace-Moselle n'est pas comptée : qui y est affilié la paie en plus, sur la même assiette que la CSG.".to_string());
+        }
+    }
+    aide.push("Avant l'impôt sur le revenu.".to_string());
+    if jours_environ && sans.conges.is_some() {
+        precisions.push(format!(
+            "La franchise de congés payés est environ : vos lignes prévues ne disent pas leurs jours de travail, comptés ici à {} heures par jour, un cachet pour {} ; les bulletins ou les attestations employeur les diraient.",
+            socle::texte::virgule(a.heures_par_jour),
+            socle::texte::heures(Cachets::UN * hpc)
+        ));
+    }
+    aide.extend(delai_dit(t, o, &sans));
+    aide.extend(sans.manques.iter().map(|m| manque_dit(m, fin)));
+    let sans_travail = SansTravailDit {
+        titre: SANS_TRAVAIL,
+        chiffre,
+        sous: format!("{} jours payés à {} par jour", jours_dits(sans.jours_payes), bouts(jour.nette, jour_haut.nette, euros::<Montant>)),
+        calculs: vec![jours, montant],
+        aide,
+    };
+    // CE QUE RAPPORTE UN JOUR DE TRAVAIL (art. 30), et ses exemples : un cachet et une journee de repetition pour un
+    // artiste ; une journee pour un technicien, qui n'a pas de cachets.
+    let huit = Heures::fixes(8);
+    let aide_du_jour = format!(
+        "{} h de travail font un jour, qui retire {} jour de chômage du mois.",
+        socle::texte::virgule(a.heures_par_jour),
+        socle::texte::virgule(a.coefficient)
+    );
+    let mut regle_du_jour = format!(
+        "Le chômage se compte en heures : toutes celles du mois, cachets et répétitions ensemble ; {} heures font un jour de travail, et chaque jour de travail fait {} jour de chômage en moins le même mois (annexe {}, art. 30). À {} jours de travail dans le mois, rien n'est versé.",
+        socle::texte::virgule(a.heures_par_jour),
+        socle::texte::virgule(a.coefficient),
+        annexe.numero(),
+        jours_dits(a.jours_sans_allocation)
+    );
+    // Le salaire de chaque exemple : la moyenne de la personne, lue sur ses paies (Léandre, 28/11/2026 : « Pour un jour
+    // travaillé : vous touchez 200 € du travail moins les 62 en moins du chômage ») ; un exemple dont le prix ne se lit
+    // pas ne se montre pas.
+    let (cachet_moyen, heure_moyenne) = salaires_moyens(paies);
+    let mut exemples = Vec::new();
+    let mut moyennes = Vec::new();
+    if let (AnnexeChomage::X, Some((prix, brut, n))) = (annexe, cachet_moyen) {
+        let cachet = Cachets::UN * hpc;
+        exemples.push(exemple_de_jours(t, annexe, (jour, jour_haut), format!("Un cachet à {} (votre cachet moyen)", euros(prix)), "Heures : un cachet".to_string(), cachet, prix)?);
+        moyennes.push(format!("{} par cachet ({} de brut pour {} cachet{})", euros(prix), euros(brut), socle::texte::virgule(n), if socle::texte::au_pluriel(n) { "s" } else { "" }));
+    }
+    if let Some((prix, brut, h)) = heure_moyenne {
+        let titre = match annexe {
+            AnnexeChomage::X => "Une journée de répétition de 8 heures",
+            AnnexeChomage::Viii => "Une journée de 8 heures",
+        };
+        exemples.push(exemple_de_jours(t, annexe, (jour, jour_haut), format!("{} (votre salaire moyen de l'heure, {})", titre, euros(prix)), "Heures : une journée".to_string(), huit, huit * prix)?);
+        moyennes.push(format!("{} de l'heure ({} de brut pour {})", euros(prix), euros(brut), socle::texte::heures(h)));
+    }
+    let rapporte = match exemples.is_empty() {
+        true => None,
+        false => {
+            regle_du_jour.push_str(&format!(" Le salaire de chaque exemple est votre moyenne sur vos paies des 12 mois : {}.", moyennes.join(", et ")));
+            precisions.push(regle_du_jour);
+            Some(CeQueRapporteUnJourDit { titre: UN_JOUR_DE_TRAVAIL, aide: aide_du_jour, exemples })
+        }
+    };
+    // L'ANNEE SI ELLE RESSEMBLE A LA DERNIERE.
+    let mut notes = Vec::new();
+    precisions.push("Le travail d'un mois compte au mois où le contrat finit ; la formation qu'on suit n'est pas un travail et ne compte pas.".to_string());
+    precisions.push("La franchise de congés payés compte les jours de travail de l'attestation employeur, pas les heures.".to_string());
+    let comme = match comme {
+        None => None,
+        Some((cm, cm_haut)) => {
+            let mot =|n: Cachets, h: Heures| -> String {
+                let c = (!n.est_nul()).then(|| format!("{} cachet{}", socle::texte::virgule(n), if socle::texte::au_pluriel(n) { "s" } else { "" }));
+                let h = (!h.est_nul()).then(|| socle::texte::heures(h));
+                c.into_iter().chain(h).collect::<Vec<_>>().join(" et ")
+            };
+            // Trois colonnes, qui tiennent sur un téléphone : le mois, son salaire brut, son chômage.
+            let colonnes = vec![ColonneRendue::de_texte("Mois"), ColonneRendue::de_nombres("Salaire brut"), ColonneRendue::de_nombres("Chômage")];
+            let mut rangees: Vec<RangeeRendue> = cm
+                .mois
+                .iter()
+                .zip(&cm_haut.mois)
+                .map(|(m, h)| {
+                    RangeeRendue::de(
+                        SorteDeRangee::Ligne,
+                        vec![Some(m.mois.libelle(socle::mois::Graphie::Abregee)), m.salaire.map(euros), Some(bouts(m.versee, h.versee, euros::<Montant>))],
+                    )
+                })
+                .collect();
+            let brut = cm.salaires();
+            rangees.push(RangeeRendue::de(SorteDeRangee::TotalGeneral, vec![Some("Sur l'année".to_string()), brut.map(euros), Some(bouts(cm.versee, cm_haut.versee, euros::<Montant>))]));
+            // Les barres disent le chomage du bas de la fourchette (le taux plein, quand le taux n'est pas dit).
+            let barres = cm.mois.iter().map(|m| BarreDite { mois: m.mois.nom(socle::mois::Graphie::Abregee).to_string(), chomage: m.versee, salaire: m.salaire }).collect();
+            // Le bilan : le salaire brut et le chomage avec ce travail, face au chomage sans travail (Léandre, 28/11/2026 :
+            // « Il faut pas ce qu'on perd en total mais ce qu'on gagne »).
+            let avec = bouts(cm.versee, cm_haut.versee, euros::<Montant>);
+            let (calcul, bilan) = match brut {
+                Some(b) => (
+                    CalculDit {
+                        lignes: vec![("Salaire brut de l'année".to_string(), euros(b)), ("Chômage avec ce travail".to_string(), avec)],
+                        total: ("Vous touchez".to_string(), bouts(b + cm.versee, b + cm_haut.versee, euros::<Montant>)),
+                    },
+                    de_plus_dit(
+                        (b + cm.versee - sans.versee, b + cm_haut.versee - sans_haut.versee),
+                        bouts(sans.versee, sans_haut.versee, environ),
+                        (cm.versee, cm_haut.versee),
+                        b,
+                    ),
+                ),
+                None => (
+                    CalculDit { lignes: vec![("Chômage sans travailler".to_string(), bouts(sans.versee, sans_haut.versee, euros::<Montant>))], total: ("Chômage avec ce travail".to_string(), avec) },
+                    "Une paie ne dit pas son brut : le salaire de l'année ne se dit pas, ni ce que vous touchez en tout.".to_string(),
+                ),
+            };
+            let mut dit = Vec::new();
+            if fourchette {
+                dit.push("Votre taux de CSG n'est pas dit : chaque chômage va du taux plein à l'exonération, et les barres le montrent au taux plein.".to_string());
+            }
+            precisions.push("Le salaire net et les congés de la Caisse des Congés Spectacles ne se disent pas ici : il y faudrait les bulletins d'une compagnie.".to_string());
+            for m in &cm.manques {
+                let phrase = manque_dit(m, fin);
+                if !sans.manques.contains(m) && !dit.contains(&phrase) {
+                    dit.push(phrase);
+                }
+            }
+            precisions.extend(cm.plafonds_repris.iter().map(|(an, de)| plafond_repris_dit(*an, *de)));
+            // Le plafond du cumul (art. 30) : les mois ou il ramene le chomage, ou qu'il ne joue pas.
+            let plafonnes: Vec<String> = cm.mois.iter().filter(|m| matches!(m.cumul, PlafondDuCumul::Plafonne(_))).map(|m| m.mois.libelle(socle::mois::Graphie::Accentuee)).collect();
+            let un_plafond = cm.mois.iter().find_map(|m| match m.cumul {
+                PlafondDuCumul::Plafonne(p) | PlafondDuCumul::SousLePlafond(p) => Some(p),
+                PlafondDuCumul::NeJouePas | PlafondDuCumul::Inconnu => None,
+            });
+            if let Some(p) = un_plafond {
+                // Le plafond qui ne joue pas se precise ; celui qui ramene le chomage se dit.
+                let (ou, phrase) = match plafonnes.is_empty() {
+                    true => (&mut precisions, format!(
+                        "Le plafond du cumul : le salaire brut et le chômage d'un mois ne dépassent pas {} ({} fois le plafond mensuel de la Sécurité sociale, art. 30) ; il ne joue pas ici.",
+                        euros(p),
+                        socle::texte::virgule(ar.plafond_du_cumul)
+                    )),
+                    false => (&mut notes, format!(
+                        "Le plafond du cumul : le salaire brut et le chômage d'un mois ne dépassent pas {} ({} fois le plafond mensuel de la Sécurité sociale, art. 30) ; il ramène le chômage en {}.",
+                        euros(p),
+                        socle::texte::virgule(ar.plafond_du_cumul),
+                        plafonnes.join(", ")
+                    )),
+                };
+                ou.push(phrase);
+            }
+            Some(CommeLaDerniereDite {
+                titre: COMME_LA_DERNIERE,
+                aide: format!("Le même travail, aux mêmes mois : {}.", mot(cachets, heures)),
+                tableau: TableauRendu::de(colonnes, rangees),
+                barres,
+                calcul,
+                bilan,
+                dit,
+            })
+        }
+    };
+    precisions.push("Estimation : sans maternité, adoption ou maladie de longue durée, sans différé d'indemnisation ; l'année va du lendemain de la dernière fin de contrat, ou de votre date anniversaire quand elle vient après, au terme des douze mois qui suivent cette fin.".to_string());
+    // La case du taux, seulement quand il joue (« un champ n'apparaît que si un fait l'exige »).
+    let case = match joue {
+        true => {
+            let choix = TauxDeCsg::TOUTES.iter().map(|x| Ok(crate::ouverture::Choix::de(x.code()?, x.libelle()?))).collect::<R<Vec<_>>>()?;
+            Some(case_simple(cle!(ChargeDroitsDesPieces, csg), c.csg.as_ref().and_then(ValeurDeCase::de))?.offrant(choix))
+        }
+        false => None,
+    };
+    Ok(Some((AnneeDite { titre: L_ANNEE, sans_travail, case, rapporte, comme, notes, precisions }, phrase)))
 }

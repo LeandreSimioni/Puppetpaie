@@ -114,6 +114,13 @@ toujours fondé par aucun texte déposé.
   régularisation), `valeur_ctp` (`CTP_CHOMAGE_PERMANENT` : un fichier des organismes composé avant le lot, qui met 772 et
   937 sur `brut_permanent`, refuse dès que ce brut diffère de la base 07).
 - `logiciel/donnees/organismes-base.json` : les CTP 772 et 937 sur `chomage_permanent`.
+- `logiciel/donnees/allocation-intermittents.json` (`contributions`) et `droit::annee_de_chomage` : la circulaire
+  2026-06, fiche 2, § 7 (l. 4290-4335), dit la CSG (6,2 % ou 3,8 %) et la CRDS (0,5 %) sur l'allocation abattue de
+  1,75 %, leurs exonérations (celle de la CSG et celle de la CRDS, dites à part), et le plancher de 62 € (au 1er juin
+  2026) ; l'exemple 20 (l. 4357) dit l'ordre et les arrondis : le plancher se compare à l'allocation brute, puis à la
+  brute moins la CSG, l'assiette abattue et chaque contribution s'arrondissent au centime. L'année de chômage d'un
+  intermittent dans `droits-des-pieces`. La cotisation au régime local d'Alsace-Moselle (1,30 %, même fiche) n'est pas
+  comptée : la route le dit.
 
 ## Ce qui est une inférence
 

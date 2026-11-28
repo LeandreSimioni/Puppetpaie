@@ -541,11 +541,11 @@ var dire = null;
 
   // ---------------------------------------------------------------- ce que la route dit
 
-  // UN TABLEAU QUE LA ROUTE REND (`socle::ecran::TableauRendu`) : ses colonnes (à droite, discrète), ses rangées de
-  // cellules déjà dites (vide : rien), les totaux en gras. Son titre se pose à part.
+  // UN TABLEAU QUE LA ROUTE REND (`socle::ecran::TableauRendu`) : ses colonnes (à droite), ses rangées de cellules déjà
+  // dites (vide : rien), les totaux en gras.
   function tableau(t) {
     var table = el("table");
-    var classe = function (c) { return c.a_droite ? "n" : c.discrete ? "discret" : null; };
+    var classe = function (c) { return c.a_droite ? "n" : null; };
     var tr = el("tr");
     t.colonnes.forEach(function (c) { tr.append(el("th", classe(c), c.libelle)); });
     var tete = el("thead");
@@ -555,21 +555,6 @@ var dire = null;
     t.rangees.forEach(function (g) {
       var r = el("tr", g.sorte === "ligne" ? null : "total");
       g.cellules.forEach(function (v, i) { r.append(el("td", classe(t.colonnes[i]), v)); });
-      corps.append(r);
-    });
-    table.append(corps);
-    var d = el("div", "tableau");
-    d.append(table);
-    return d;
-  }
-
-  // Les lignes [quoi, valeur] que la route rend (le compte des heures) : deux colonnes, sans en-tête.
-  function paires(lignes) {
-    var table = el("table");
-    var corps = el("tbody");
-    lignes.forEach(function (l) {
-      var r = el("tr");
-      r.append(el("td", null, l[0]), el("td", "n", l[1]));
       corps.append(r);
     });
     table.append(corps);
@@ -592,6 +577,7 @@ var dire = null;
     r.append(el("p", "heures", p.heures));
     if (p.jusqu_a) r.append(el("p", "jusqu", p.jusqu_a));
     if (p.allocation) r.append(el("p", "allocation", p.allocation));
+    if (p.annee) r.append(el("p", "annee", p.annee));
     r.append(el("p", "sous", p.sous));
     return r;
   }
@@ -614,25 +600,119 @@ var dire = null;
     return s;
   }
 
+  // UN CALCUL EN LIGNES que la route rend : chaque ligne [quoi, valeur], puis le total, en gras.
+  function calcul(c) {
+    var g = el("div", "calcul");
+    c.lignes.forEach(function (l) { g.append(el("span", null, l[0]), el("span", "n", l[1])); });
+    g.append(el("span", "tot", c.total[0]), el("span", "n tot", c.total[1]));
+    return g;
+  }
+
+  // LES BARRES DES MOIS : le salaire brut (vert) sous le chômage (bleu), chaque mois. L'échelle est celle du dessin :
+  // la plus haute barre touche le haut.
+  function barres(liste) {
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 640 250");
+    svg.setAttribute("class", "barres");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Chômage et salaire brut, mois par mois");
+    var n = function (nom, a, t) {
+      var x = document.createElementNS(NS, nom);
+      Object.keys(a).forEach(function (k) { x.setAttribute(k, a[k]); });
+      if (t !== undefined) x.textContent = t;
+      svg.append(x);
+    };
+    var nombre = function (v) { return v === null || v === undefined ? 0 : parseFloat(v); };
+    var haut = 1;
+    liste.forEach(function (m) { haut = Math.max(haut, nombre(m.chomage) + nombre(m.salaire)); });
+    var G = { g: 10, d: 630, h: 10, b: 220 }, w = (G.d - G.g) / Math.max(liste.length, 1);
+    var Y = function (v) { return G.b - (G.b - G.h) * v / haut; };
+    n("line", { x1: G.g, x2: G.d, y1: G.b, y2: G.b, stroke: "#E6E5E2" });
+    liste.forEach(function (m, i) {
+      var x = G.g + i * w + w * 0.15, l = w * 0.7, s = nombre(m.salaire), c = nombre(m.chomage);
+      n("rect", { x: x, y: Y(s), width: l, height: G.b - Y(s), fill: "#1E7A46" });
+      n("rect", { x: x, y: Y(s + c), width: l, height: Y(s) - Y(s + c), fill: "#2350C4" });
+      n("text", { x: x + l / 2, y: G.b + 20, "text-anchor": "middle", "font-size": 13, fill: "#6E6B66" }, m.mois);
+    });
+    return svg;
+  }
+
+  // UN DÉTAIL REPLIÉ (Léandre, 28/11/2026 : « Replie le détail, simple pour les simples mais on doit voir les chiffres
+  // importants pour avoir envie de cliquer détails ») : ouvert, il le reste d'un calcul à l'autre (le confort de la main).
+  var replisOuverts = {};
+  function replie(nom, enfants) {
+    var d = el("details", "replie");
+    d.open = replisOuverts[nom] === true;
+    d.addEventListener("toggle", function () { replisOuverts[nom] = d.open; });
+    d.append(el("summary", null, "Le détail"));
+    enfants.forEach(function (x) { d.append(x); });
+    return d;
+  }
+
+  // L'ANNÉE DE CHÔMAGE. Se voient : le chiffre sans aucun travail, la case du taux de CSG quand la route la rend, ce que
+  // rapporte chaque exemple de travail (quand la route en rend), et, quand la fenêtre a du travail, les barres de
+  // l'année comme la dernière et son bilan. Se replie : le compte des jours, les phrases d'aide, le détail de chaque
+  // exemple, le tableau des mois et les notes. Tout est dit par la route ; la page ne choisit que ce qu'elle replie.
+  function annee(b) {
+    var s = el("section", "bloc annee");
+    s.append(el("h2", null, b.titre));
+    var st = b.sans_travail;
+    s.append(el("h3", null, st.titre));
+    var ch = el("div", "chiffre");
+    ch.append(el("b", null, st.chiffre), el("span", null, st.sous));
+    s.append(ch);
+    s.append(replie("sans-travail", st.calculs.map(calcul).concat(st.aide.map(function (a) { return el("p", "aide", a); }))));
+    if (b.case) s.append(dessinerCase(b.case));
+    if (b.rapporte) {
+      var ra = b.rapporte;
+      s.append(el("h3", null, ra.titre));
+      ra.exemples.forEach(function (x) {
+        var e = el("div", "exemple");
+        e.append(el("p", null, x.titre), calcul(x.calcul));
+        s.append(e);
+      });
+      s.append(replie("rapporte", [el("p", "aide", ra.aide)].concat(ra.exemples.map(function (x) {
+        var e = el("div", "exemple");
+        e.append(el("p", null, x.titre), calcul(x.detail));
+        return e;
+      }))));
+    }
+    if (b.comme) {
+      var cm = b.comme;
+      s.append(el("h3", null, cm.titre));
+      s.append(barres(cm.barres));
+      var lg = el("div", "legende");
+      var p1 = el("span"), p2 = el("span");
+      p1.append(el("i", "pastille salaire"), "salaire brut");
+      p2.append(el("i", "pastille chomage"), "chômage");
+      lg.append(p1, p2);
+      s.append(lg);
+      var e = el("div", "exemple");
+      e.append(calcul(cm.calcul));
+      e.append(el("p", "aide", cm.bilan));
+      s.append(e);
+      var dedans = [el("p", "aide", cm.aide), tableau(cm.tableau)].concat(cm.dit.map(function (d) { return el("p", "aide", d); }));
+      if (b.notes.length) dedans.push(liste(b.notes));
+      s.append(replie("comme", dedans));
+    } else if (b.notes.length) {
+      s.append(replie("notes", [liste(b.notes)]));
+    }
+    return s;
+  }
+
   var detailOuvert = false;
 
-  // LE DÉTAIL DU CALCUL, replié en bas : la fenêtre, le compte des heures, ce qui manque, l'estimation (son tableau,
-  // paie par paie) et les phrases.
+  // LE DÉTAIL DU CALCUL, replié en bas : en bref (les heures, l'annexe, le salaire de référence, l'allocation par jour),
+  // puis ce qui ne se dit que quand cela arrive. Le compte, les annexes et le tableau des paies restent dans la réponse
+  // de la route (Léandre, 28/11/2026 : « C'est beaucoup trop bavard »).
   function details(d) {
     var det = el("details", "details");
     // Ouvert, il le reste d'un calcul à l'autre (le confort de la main).
     det.open = detailOuvert;
     det.addEventListener("toggle", function () { detailOuvert = det.open; });
     det.append(el("summary", null, d.libelle));
-    // En tête, les heures de chaque annexe, celle qui s'applique, et l'annexe de chaque paie.
-    if (d.annexes.length) det.append(liste(d.annexes));
-    det.append(el("p", "aide", d.fenetre));
-    det.append(paires(d.compte));
-    if (d.estimation && d.estimation.paies.rangees.length) {
-      if (d.estimation.paies.titre) det.append(el("h3", null, d.estimation.paies.titre));
-      det.append(tableau(d.estimation.paies));
-    }
-    if (d.lignes.length) det.append(liste(d.lignes));
+    det.append(liste(d.resume.concat(d.lignes)));
     return det;
   }
 
@@ -820,6 +900,7 @@ var dire = null;
     d.ecran.forEach(function (b) {
       if (b.est === "case") cases.push(b);
       if (b.est === "visee") cases.push(b.case);
+      if (b.est === "annee" && b.case) cases.push(b.case);
       if (b.est === "paies") cases.push(b.lignes);
     });
     var avant = rendues;
@@ -847,6 +928,7 @@ var dire = null;
       if (b.est === "case") ecran.append(dessinerCase(b));
       else if (b.est === "reponse") ecran.append(reponse(b));
       else if (b.est === "visee") ecran.append(visee(b));
+      else if (b.est === "annee") ecran.append(annee(b));
       else if (b.est === "paies") ecran.append(paies(b));
       else if (b.est === "depot") ecran.append(depot(b));
       else if (b.est === "pieces") ecran.append(pieces(b));

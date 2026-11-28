@@ -61,6 +61,7 @@ macro_rules! cle_opaque {
 
 pub mod adhesions;
 pub mod allocation;
+pub mod annee_de_chomage;
 pub mod apprentissage;
 pub mod arrets;
 pub mod assiette;

@@ -1503,6 +1503,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | plafond de l'allocation (art. 16 : une part de 1/365e de quatre plafonds annuels) | `PlafondDeLAllocation` | `droit/src/allocation.rs` |
 | réadmission : les heures de plus par période de jours au-delà de la fenêtre (art. 9 §1 b) | `Readmission` | `droit/src/allocation.rs` |
 | limite du salaire de référence : les plafonds d'une paie qu'il compte au plus (art. 11 §3, art. 49) | `LimiteDuSalaire` | `droit/src/allocation.rs` |
+| activité reprise pendant l'indemnisation (art. 30) : les heures d'un cachet, le plafond du cumul, et par annexe les heures d'un jour de travail (aussi celles du salaire journalier moyen, art. 19), le coefficient, le seuil ; la participation de 0,93 % (art. 19) ; le délai d'attente (art. 22) ; la franchise de congés payés et celle de salaires (art. 21, 23 §2) ; la CSG et la CRDS sur l'allocation (circulaire Unédic 2026-06) : des formes de `allocation-intermittents.json`, que lisent l'année de chômage et les conseils | `ActivitesReprises`, `ActiviteReprise` ; `Participation` ; `DelaiDAttente` ; `FranchiseDeConges`, `FranchiseDeSalaires` ; `ContributionsSurLAllocation` | `droit/src/allocation.rs` |
+| année d'indemnisation d'un intermittent, estimée mois par mois, du lendemain de la fin de contrat à sa date anniversaire (`annee`) : ce que l'ouverture lui donne, le travail d'un mois, l'allocation d'un jour payé (participation, CSG et CRDS), les franchises comptées, un mois (son activité, art. 30, et le plafond du cumul), l'année, et ce qui lui manque pour se compter entière ; le taux de CSG de la personne, une liste fermée | `OuvertureDesDroits` ; `TravailDuMois` ; `AllocationDuJour` ; `FranchiseComptee`, `FranchiseDeSalairesComptee` ; `ActiviteIndemnisee`, `PlafondDuCumul`, `MoisDeChomage` ; `AnneeDeChomage` ; `ManqueDeLAnnee` ; `TauxDeCsg` | `droit/src/annee_de_chomage.rs` |
+| l'année de chômage telle que l'écran de `droits-des-pieces` la dit : sans aucun travail, ce que rapporte un jour de travail et ses exemples (chacun ce qu'il rapporte et son détail), l'année comme la dernière et ses barres, un calcul en lignes | `AnneeDite` ; `SansTravailDit` ; `CeQueRapporteUnJourDit`, `ExempleDit` ; `CommeLaDerniereDite`, `BarreDite` ; `CalculDit` | `routes/src/accueil/droits_des_pieces.rs` |
+| heures retenues par mois d'un technicien pour ses 507 heures (la banque des conseils) | `HeuresRetenuesDesTechniciens` | `routes/src/gestes/conseils.rs` |
 | contrat prévu d'un intermittent, saisi pour un prévisionnel (la charge de `droits-des-pieces`) ; sa nature, une liste fermée (artiste, technicien, enseignement, formation) | `LignePrevue` ; `NatureDUneLigne` | `routes/src/accueil/droits_des_pieces.rs` |
 | date de début du contrat d'une paie des pièces, que `droits-des-pieces` demande quand le plafond de la paie ne se connaît pas (une ligne prévue ne dit que sa fin) | `DebutDUnContrat` | `routes/src/accueil/droits_des_pieces.rs` |
 | les annexes des paies d'un intermittent (l'annexe de base, les heures de chaque annexe dans les 12 mois, celles qui ne se disent pas, d'où chacune se lit) ; l'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), l'égalité, ou ce qui ne se dit pas | `AnnexesDesPaies` ; `AnnexeAppliquee` | `routes/src/accueil/droits_des_pieces.rs` |
@@ -2953,6 +2957,27 @@ de chacune (chaque paie de la fenêtre augmentée dans la même proportion) ; ce
 DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'enseignement sort du salaire de référence,
 et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui porte une personne, les
 lignes prévues se comptent seules.
+Quand l'allocation s'estime, la route dit aussi l'année de chômage qui vient (`droit::annee_de_chomage`, Léandre,
+27/11/2026 : le chiffre principal est l'année sans aucun travail) : du lendemain de la dernière fin de contrat (ou de la
+date anniversaire dite, quand elle vient après : art. 23 §1) au terme des douze mois qui suivent cette fin, mois par
+mois dans l'ordre du guide de France Travail (p. 16-17) : l'activité du mois (art. 30), le plafond du cumul, puis le
+délai d'attente (art. 22 ; aucun à la réadmission à la date anniversaire, exemple 9), la franchise de congés payés du
+mois, celle de salaires du mois, et leurs reliquats ; la participation de 0,93 % (art. 19), la CSG et la CRDS. Celles-ci
+ne jouent que si l'allocation brute passe le plancher de 62 € (exemple 20) : dessous, la route n'a ni case ni phrase
+de CSG ; dessus, elle rend la case du taux (une liste fermée, où l'exonération de la CSG se choisit avec ou sans la
+CRDS), et tant qu'elle est vide, une fourchette, du taux plein à l'exonération (Léandre, 28/11/2026). Les jours de
+travail d'une paie des pièces sont ceux de son AEM ; ceux d'une ligne prévue se comptent environ, à 8 ou 10 heures par
+jour (Léandre, 28/11/2026). Ce qui ne se compte pas (une paie sans ses jours ou sans son brut, un délai que la date
+anniversaire ne tranche pas) ne devient pas zéro : le chômage est « au plus ». Puis ce que rapporte un jour de travail
+(Léandre, 28/11/2026 : « Il faut pas ce qu'on perd en total mais ce qu'on gagne ») : un cachet au cachet moyen de la
+personne, une journée de 8 heures à son salaire moyen de l'heure, lus sur ses paies faites de cachets seuls ou
+d'heures seules qui disent leur brut (un exemple sans prix ne se montre pas) ; chacun dit le salaire brut, le chômage
+en moins ce mois-là (art. 30 : les heures du mois, cachets aux heures du catalogue des rubriques, font des jours de
+travail, chacun ôtant 1,3 ou 1,4 jour de chômage) et la différence. Enfin l'année si elle ressemble à la dernière : le
+même travail aux mêmes mois, sous le plafond du cumul (1,18 fois le plafond mensuel de la Sécurité sociale de l'année
+du mois ; une année que le barème ne porte pas encore prend le dernier qu'il porte, Léandre, 28/11/2026), et son
+bilan : le salaire brut de l'année plus le chômage avec ce travail, et ce total de plus que sans travailler, puis de plus que sans le chômage. L'article 30 n'est que dans `allocation-intermittents.json` : les
+conseils de saisie le lisent là.
 La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : la réponse,
 l'allocation visée, les cases de sa charge, chacune tirée de la déclaration de son champ, le tableau des paies où les
 lignes prévues se saisissent, le dépôt, les pièces, le détail du calcul, replié) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,
