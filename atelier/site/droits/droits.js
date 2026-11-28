@@ -653,9 +653,22 @@ var dire = null;
     return svg;
   }
 
-  // L'ANNÉE DE CHÔMAGE : sans aucun travail (le chiffre, ses calculs, ce qui s'en dit, la case du taux de CSG quand la route la rend), ce que
-  // coûte un jour de travail et ses exemples, l'année comme la dernière (ses barres, le tableau des mois, le calcul), et
-  // les notes. Tout est dit par la route.
+  // UN DÉTAIL REPLIÉ (Léandre, 28/11/2026 : « Replie le détail, simple pour les simples mais on doit voir les chiffres
+  // importants pour avoir envie de cliquer détails ») : ouvert, il le reste d'un calcul à l'autre (le confort de la main).
+  var replisOuverts = {};
+  function replie(nom, enfants) {
+    var d = el("details", "replie");
+    d.open = replisOuverts[nom] === true;
+    d.addEventListener("toggle", function () { replisOuverts[nom] = d.open; });
+    d.append(el("summary", null, "Le détail"));
+    enfants.forEach(function (x) { d.append(x); });
+    return d;
+  }
+
+  // L'ANNÉE DE CHÔMAGE. Se voient : le chiffre sans aucun travail, la case du taux de CSG quand la route la rend, ce que
+  // retire chaque exemple de travail, et, quand la fenêtre a du travail, les barres de l'année comme la dernière et son
+  // bilan. Se replie : le compte des jours, les phrases d'aide, le calcul de chaque exemple, le tableau des mois et les
+  // notes. Tout est dit par la route ; la page ne choisit que ce qu'elle replie.
   function annee(b) {
     var s = el("section", "bloc annee");
     s.append(el("h2", null, b.titre));
@@ -664,22 +677,25 @@ var dire = null;
     var ch = el("div", "chiffre");
     ch.append(el("b", null, st.chiffre), el("span", null, st.sous));
     s.append(ch);
-    st.calculs.forEach(function (c) { s.append(calcul(c)); });
-    st.aide.forEach(function (a) { s.append(el("p", "aide", a)); });
+    s.append(replie("sans-travail", st.calculs.map(calcul).concat(st.aide.map(function (a) { return el("p", "aide", a); }))));
     if (b.case) s.append(dessinerCase(b.case));
     var co = b.cout;
     s.append(el("h3", null, co.titre));
-    s.append(el("p", "aide", co.aide));
+    var ul = el("ul", "en-bref");
     co.exemples.forEach(function (x) {
+      var li = el("li");
+      li.append(el("span", null, x.titre), el("b", null, x.aide || x.calcul.total[1]));
+      ul.append(li);
+    });
+    s.append(ul);
+    s.append(replie("cout", [el("p", "aide", co.aide)].concat(co.exemples.map(function (x) {
       var e = el("div", "exemple");
       e.append(el("p", null, x.titre), calcul(x.calcul));
-      if (x.aide) e.append(el("p", "aide", x.aide));
-      s.append(e);
-    });
+      return e;
+    }))));
     if (b.comme) {
       var cm = b.comme;
       s.append(el("h3", null, cm.titre));
-      s.append(el("p", "aide", cm.aide));
       s.append(barres(cm.barres));
       var lg = el("div", "legende");
       var p1 = el("span"), p2 = el("span");
@@ -687,13 +703,16 @@ var dire = null;
       p2.append(el("i", "pastille chomage"), "chômage");
       lg.append(p1, p2);
       s.append(lg);
-      s.append(tableau(cm.tableau));
       var e = el("div", "exemple");
       e.append(calcul(cm.calcul));
-      cm.dit.forEach(function (d) { e.append(el("p", "aide", d)); });
+      if (cm.dit.length) e.append(el("p", "aide", cm.dit[0]));
       s.append(e);
+      var dedans = [el("p", "aide", cm.aide), tableau(cm.tableau)].concat(cm.dit.slice(1).map(function (d) { return el("p", "aide", d); }));
+      if (b.notes.length) dedans.push(liste(b.notes));
+      s.append(replie("comme", dedans));
+    } else if (b.notes.length) {
+      s.append(replie("notes", [liste(b.notes)]));
     }
-    if (b.notes.length) s.append(liste(b.notes));
     return s;
   }
 
