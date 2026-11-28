@@ -1562,13 +1562,13 @@ le contrôle, c'est un détail dans le rapport d'ouverture, jamais un
 incident — une compagnie hors ligne fait sa paie. Une version prête
 s'installe au lancement suivant (ou au clic *« Redémarrer pour mettre à
 jour »*) ; rien ne la retient. Quand elle **change un calcul** de paie, sa
-phrase (`--calcul` au moment de publier) se lit dans la bulle de
+phrase (`--calcul` au moment de signer ; le flux « Publier » la laisse vide) se lit dans la bulle de
 l'indicateur, à côté de la version prête, dans la route `maj-etat`, et une fois au lancement qui suit son installation (« PuppetPaie … est en place. Elle change un calcul de paie : … »). Un taux
 qui change n'en est pas une : la déclaration est mensuelle, le mois suivant
 rattrape.
 
 Deux sortes de versions. La plupart sont silencieuses. Quelques-unes sont
-**exigées** (`--exigee "pourquoi"` à la publication : une norme DSN qui
+**exigées** (`--exigee "pourquoi"` à la signature, que le flux « Publier » laisse vide : une norme DSN qui
 change, une déclaration que l'ancienne version ferait fausse) : une fois
 téléchargée, **aucun dépôt réel ne part** tant qu'elle n'est pas appliquée.
 

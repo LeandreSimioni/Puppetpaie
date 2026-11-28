@@ -79,8 +79,13 @@ sociale, texte `artistes-1975`), et déposés à côté.
   (312/921, 334/921, 100/921, 332/921) ; `assiette_declaree` pour une régularisation.
 - `logiciel/donnees/conseils.json` et `paie/src/conseils.rs` (ticket 224) : les articles 3 §1 (507 heures, 12 heures par
   cachet, 28 cachets par mois, l'enseignement plafonné), 3 §2 (5 heures par jour de suspension), 12 §2 et 30 (jours de
-  travail, coefficient, seuil sans allocation, plafond de cumul) fondent les conseils de saisie et d'historique, et
-  `conseils.json` (`annexes`) en garde les constantes de l'article 30.
+  travail, coefficient, seuil sans allocation, plafond de cumul) fondent les conseils de saisie et d'historique ; les
+  constantes de l'article 30 sont dans `allocation-intermittents.json` (`activite_reprise`), que les conseils lisent.
+- `logiciel/donnees/allocation-intermittents.json` et `droit::annee_de_chomage` (la route `droits-des-pieces`, l'année
+  de chômage qui vient) : art. 19 (participation de 0,93 % du salaire journalier moyen, à dix ou huit heures par jour),
+  art. 21 et 23 (franchises de congés payés et de salaires, leur ordre et leur répartition), art. 22 (délai d'attente
+  de sept jours), art. 30 (jours de travail du mois, coefficient, seuil, plafond du cumul de 1,18 fois le plafond
+  mensuel, jours arrondis à l'entier supérieur sous ce plafond).
 
 ## Ce qui est une inférence, et ce qui manque
 

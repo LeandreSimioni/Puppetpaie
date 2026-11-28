@@ -11,8 +11,9 @@
 //! - LA LIMITE DU SALAIRE DE REFERENCE (art. 11 §3) : chaque paie n'y compte qu'a quatre fois son plafond
 //!   (`salaire_limite`, `facteur_vise`).
 //!
-//! Les valeurs et leurs textes sont dans `allocation-intermittents.json` ; ce module n'a que les formules. Ni le salaire
-//! annuel de reference (art. 11 §2), ni la participation de 0,93 % (art. 19), ni la clause de rattrapage. Chaque partie
+//! Les valeurs et leurs textes sont dans `allocation-intermittents.json` ; ce module n'a que les formules, et les formes
+//! de ce que l'annee d'indemnisation lit (art. 19 a 30 : `droit::annee_de_chomage`). Ni le salaire annuel de reference
+//! (art. 11 §2), ni la clause de rattrapage. Chaque partie
 //! se tronque au centime, puis s'ajoute : c'est ce qu'ecrit l'exemple 6 du guide de France Travail
 //! (`chomage-intermittents/francetravail-guide-intermittents-20261020.txt` : un technicien, 800 heures, 18 000 € ; la
 //! partie A, 31,96 x 6 228 / 5 000 = 39,809…, s'y ecrit 39,80 € ; « 39,80 + 12,20 + 12,78 = 64,78 € ») ; aucun article
@@ -28,7 +29,7 @@ use crate::source::forme_notee;
 use socle::date::{Duree, Jour};
 use socle::echec::R;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
-use socle::grandeurs::{Coefficient, Heures, Montant, Taux};
+use socle::grandeurs::{Coefficient, Heures, HeuresParUnite, Jours, Montant, Taux};
 
 forme_notee! {
     /// `allocation-intermittents.json`, entier.
@@ -41,6 +42,98 @@ forme_notee! {
         pub readmission: Readmission,
         pub limite_du_salaire: LimiteDuSalaire,
         pub plafond: PlafondDeLAllocation,
+        pub activite_reprise: ActivitesReprises,
+        pub participation: Participation,
+        pub delai_d_attente: DelaiDAttente,
+        pub franchise_conges: FranchiseDeConges,
+        pub franchise_salaires: FranchiseDeSalaires,
+        pub contributions: ContributionsSurLAllocation,
+    }
+}
+
+forme_notee! {
+    /// Un mois travaille pendant l'indemnisation (art. 30) : le plafond du cumul du salaire et de l'allocation (en
+    /// plafonds mensuels de la Securite sociale), et ce que dit chaque annexe. Les heures d'un cachet sont celles du
+    /// catalogue des rubriques (`droit::cumul::Constantes::heures_par_cachet`).
+    pub struct ActivitesReprises {
+        pub plafond_du_cumul: Coefficient,
+        #[serde(rename = "VIII")]
+        pub viii: ActiviteReprise,
+        #[serde(rename = "X")]
+        pub x: ActiviteReprise,
+    }
+}
+
+forme_notee! {
+    /// L'activite reprise sous une annexe (art. 30, et art. 19 pour les heures d'un jour) : les heures qui font un jour de
+    /// travail, les jours indemnisables qu'un jour de travail retire, et les jours de travail a partir desquels rien n'est
+    /// verse dans le mois.
+    pub struct ActiviteReprise {
+        pub heures_par_jour: HeuresParUnite,
+        pub coefficient: Coefficient,
+        pub jours_sans_allocation: Jours,
+    }
+}
+
+forme_notee! {
+    /// La participation au financement des retraites complementaires (art. 19), en points du salaire journalier moyen.
+    pub struct Participation {
+        pub taux: Taux,
+    }
+}
+
+forme_notee! {
+    /// Le delai d'attente (art. 22).
+    pub struct DelaiDAttente {
+        pub jours: Jours,
+    }
+}
+
+forme_notee! {
+    /// La franchise de conges payes (art. 21 §1 a, art. 23 §2) : `jours_de_conges` par `par_jours_travailles`, au plus
+    /// `plafond` ; `forfait` jours par mois jusqu'a `seuil_du_forfait` jours de franchise, `forfait_au_dela` au-dessus.
+    pub struct FranchiseDeConges {
+        pub jours_de_conges: Jours,
+        pub par_jours_travailles: Jours,
+        pub plafond: Jours,
+        pub forfait: Jours,
+        pub forfait_au_dela: Jours,
+        pub seuil_du_forfait: Jours,
+    }
+}
+
+forme_notee! {
+    /// La franchise de salaires (art. 21 §1 b, art. 23 §2) : les jours deduits, le SMIC mensuel et journalier sur
+    /// `heures_par_semaine` (mensuel : x `semaines_par_an` / `mois_par_an` ; journalier : / `jours_par_semaine`), les
+    /// SMIC journaliers du diviseur, et les premiers mois sur lesquels elle se repartit.
+    pub struct FranchiseDeSalaires {
+        pub jours_deduits: Jours,
+        pub heures_par_semaine: Heures,
+        pub semaines_par_an: u32,
+        pub mois_par_an: u32,
+        pub jours_par_semaine: u32,
+        pub smic_journaliers: Coefficient,
+        pub mois_de_repartition: u32,
+    }
+}
+
+forme_notee! {
+    /// La CSG et la CRDS sur l'allocation (circulaire Unedic 2026-06, fiche 2, § 7) : l'abattement de l'assiette, les
+    /// taux, en points, et l'allocation brute sous laquelle elles ne la font pas passer.
+    pub struct ContributionsSurLAllocation {
+        pub abattement: Taux,
+        pub csg: Taux,
+        pub csg_reduite: Taux,
+        pub crds: Taux,
+        pub plancher: Montant,
+    }
+}
+
+impl ContributionsSurLAllocation {
+    /// Si la CSG et la CRDS peuvent prendre quelque chose a l'allocation brute `brute` d'un jour : seulement quand elle
+    /// passe le plancher (circulaire Unedic 2026-06, fiche 2, § 7, exemple 20).
+    pub fn jouent(&self, brute: Montant) -> bool {
+        brute > self.plancher
     }
 }
 
@@ -103,6 +196,14 @@ impl Allocation {
         match annexe {
             AnnexeChomage::Viii => &self.viii,
             AnnexeChomage::X => &self.x,
+        }
+    }
+
+    /// L'activite reprise sous l'annexe `annexe` (art. 30).
+    pub fn activite(&self, annexe: AnnexeChomage) -> &ActiviteReprise {
+        match annexe {
+            AnnexeChomage::Viii => &self.activite_reprise.viii,
+            AnnexeChomage::X => &self.activite_reprise.x,
         }
     }
 

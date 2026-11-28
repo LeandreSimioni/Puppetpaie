@@ -113,6 +113,16 @@ Ce qu'on en lit (le détail est dans le rapport de la séance) :
   qu'une même somme couvre au minimum horaire de la convention (`minima::minimum_de_la_ligne`), et les 507 heures
   assurées par nos seuls contrats (`cumul::position_droits`). Le coût d'une heure de plus pendant l'indemnisation se dit en
   jours (art. 30 : heures ÷ 10 × 1,3 en X, ÷ 8 × 1,4 en VIII), jamais en euros.
+- `logiciel/donnees/allocation-intermittents.json` et `droit::annee_de_chomage` (la route `droits-des-pieces`, l'année
+  de chômage qui vient, 27/11/2026) citent le guide France Travail pour l'arrondi de la franchise de congés payés au
+  nombre entier obtenu, les jours de l'AEM qu'elle compte et son forfait de 2 jours à 24 jours tout juste (p. 13), le
+  report d'un mois sur l'autre, et la franchise de salaires du mois, le total sur les mois civils limités à huit, à
+  l'entier supérieur (p. 14-15). `droit::annee_de_chomage` suit aussi l'ordre du calcul d'un mois (p. 16-17, étapes 2
+  à 6 : l'activité, le plafond du cumul, puis le délai d'attente, la franchise de congés du mois, celle de salaires du
+  mois, et leurs reliquats), l'exemple 9 (p. 13 : à la réadmission à la date anniversaire, l'année court du lendemain
+  de cette date, sans délai d'attente), et compte environ les jours de travail d'une ligne prévue comme le guide compte
+  ceux d'une période sans AEM (p. 14, légendes : heures mensuelles ÷ 8 ou ÷ 10, au nombre entier obtenu ;
+  `jours_travailles_environ`).
 
 ## Empreintes
 
