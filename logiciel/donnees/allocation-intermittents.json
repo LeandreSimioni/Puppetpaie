@@ -95,17 +95,14 @@
     }
   },
   "activite_reprise": {
-    "heures_par_cachet": 12,
     "plafond_du_cumul": 1.18,
-    "quoi": "Un mois travaillé pendant l'indemnisation (art. 30) : ses heures, un cachet comptant 12 heures, font des jours de travail ; chaque jour de travail retire un coefficient de jours indemnisables ; au-delà d'un seuil de jours de travail, rien n'est versé ; le salaire et l'allocation du mois ne passent pas 1,18 fois le plafond mensuel de la Sécurité sociale : au-delà, l'allocation est la différence, et ses jours s'arrondissent à l'entier supérieur. Lue par `droit::allocation::ActivitesReprises` ; `droit::annee_de_chomage` en tire l'année qui vient.",
+    "quoi": "Un mois travaillé pendant l'indemnisation (art. 30) : ses heures, un cachet comptant les heures que lui donne le catalogue des rubriques (`rubriques-base.json`, `cachet.heures_forfait`), font des jours de travail ; chaque jour de travail retire un coefficient de jours indemnisables ; au-delà d'un seuil de jours de travail, rien n'est versé ; le salaire et l'allocation du mois ne passent pas 1,18 fois le plafond mensuel de la Sécurité sociale : au-delà, l'allocation est la différence, et ses jours s'arrondissent à l'entier supérieur. Lue par `droit::allocation::ActivitesReprises` ; `droit::annee_de_chomage` en tire l'année qui vient.",
     "source": {
       "sources": [
         {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "sont cumulables avec les allocations journalières à servir au titre du nombre de jours indemnisables déterminé à l'alinéa précédent au cours du même mois, dans la limite de 1,18 fois le plafond mensuel de la sécurité sociale"},
         {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "VIII", "citation": "sont cumulables avec les allocations journalières à servir au titre du nombre de jours indemnisables déterminé à l'alinéa précédent au cours du même mois, dans la limite de 1,18 fois le plafond mensuel de la sécurité sociale"},
-        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "l'allocataire est indemnisé de la différence entre le plafond de cumul et la somme des rémunérations perçues pour le mois civil considéré. En cas d'application de ce plafond, le nombre de jours indemnisables, arrondi à l'entier supérieur, correspond au quotient de la différence mentionnée à l'alinéa ci-dessus par le montant de l'allocation journalière"},
-        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "Le cachet est valorisé/comptabilisé à hauteur […] de 12 heures quelle que soit la qualification"}
-      ],
-      "raisonnement": "Les annexes (art. 30) comptent les jours de travail du mois en heures et bornent le cumul du salaire et de l'allocation à 1,18 fois le plafond mensuel ; le guide de France Travail, qui décrit le même calcul mois par mois (p. 16), y compte un cachet pour 12 heures, quelle que soit la qualification que l'employeur lui donne."
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "30", "annexe": "X", "citation": "l'allocataire est indemnisé de la différence entre le plafond de cumul et la somme des rémunérations perçues pour le mois civil considéré. En cas d'application de ce plafond, le nombre de jours indemnisables, arrondi à l'entier supérieur, correspond au quotient de la différence mentionnée à l'alinéa ci-dessus par le montant de l'allocation journalière"}
+      ]
     },
     "VIII": {
       "heures_par_jour": 8,
@@ -149,12 +146,15 @@
   },
   "delai_d_attente": {
     "jours": 7,
-    "quoi": "Le délai d'attente (art. 22) : sept jours, à l'ouverture des droits, sur les premiers jours indemnisables ; il vient avant les franchises (art. 23 §1).",
+    "quoi": "Le délai d'attente (art. 22) : sept jours, sur les premiers jours indemnisables après l'activité du mois (art. 23 §1, art. 30) ; il vient avant les franchises (art. 23 §1). Il ne s'applique pas plus de sept jours sur douze mois : pas à la réadmission à la date anniversaire (guide de France Travail, exemple 9).",
     "source": {
       "sources": [
         {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "22", "annexe": "X", "citation": "La prise en charge est reportée au terme d'un délai d'attente de sept jours."},
+        {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe10-convention-20241115.txt", "emetteur": "unedic", "article": "22", "annexe": "X", "citation": "Le délai d'attente s'applique à chaque ouverture de droits ou réadmission, dès lors qu'il n'excède pas sept jours sur une même période de douze mois."},
+        {"fichier": "atelier/reference/sources/chomage-intermittents/francetravail-guide-intermittents-20261020.txt", "emetteur": "france_travail", "citation": "Pas d'application du délai d'attente"},
         {"fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt", "emetteur": "unedic", "article": "23", "annexe": "VIII", "citation": "L'application des dispositions des articles 21 et 22 s'effectue dans l'ordre suivant : différé d'indemnisation, délai d'attente, franchise de congés payés, franchise."}
-      ]
+      ],
+      "raisonnement": "Les annexes fixent le délai d'attente à sept jours, sa limite de sept jours sur douze mois et son rang avant les franchises ; le guide de France Travail, qui décrit la même règle, ne l'applique pas à la réadmission à la date anniversaire (exemple 9), le délai de l'ouverture précédente tombant dans les douze mois."
     }
   },
   "franchise_conges": {
@@ -206,15 +206,17 @@
     "csg_reduite": 3.8,
     "crds": 0.5,
     "plancher": 62,
-    "quoi": "La CSG et la CRDS sur l'allocation (circulaire Unédic 2026-06, fiche 2, § 7) : sur l'allocation brute abattue de 1,75 %, la CSG à 6,2 % ou au taux réduit de 3,8 %, et la CRDS à 0,5 % ; exonérées l'une et l'autre selon le revenu fiscal de référence ; elles ne font pas passer l'allocation versée sous 62 € (au 1er juin 2026). Le taux dépend de la personne : la case qu'elle choisit (`droit::annee_de_chomage::TauxDeCsg`).",
-    "note": "INFÉRENCE : l'allocation « versée » sous laquelle elles ne la font pas passer est celle qui reste après la participation de 0,93 % (art. 19).",
+    "quoi": "La CSG et la CRDS sur l'allocation (circulaire Unédic 2026-06, fiche 2, § 7) : sur l'allocation brute abattue de 1,75 % (l'assiette, au centime), la CSG à 6,2 % ou au taux réduit de 3,8 %, et la CRDS à 0,5 %, chacune au centime ; l'exonération de la CSG et celle de la CRDS, selon le revenu fiscal de référence, dites chacune à part ; elles ne font pas passer sous 62 € (au 1er juin 2026) l'allocation brute, puis la brute moins la CSG, comme le compte l'exemple 20. Le taux dépend de la personne : la case qu'elle choisit (`droit::annee_de_chomage::TauxDeCsg`). La cotisation au régime local d'Alsace-Moselle, de la même fiche, n'est pas comptée, et la route le dit.",
     "source": {
       "sources": [
         {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "La contribution sociale généralisée de 6,2 % est prélevée sur le montant brut de l'allocation d'aide au retour à l'emploi, après abattement de 1,75 % au titre des frais professionnels."},
         {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "soit d'une exonération partielle de la CSG en étant assujettis à la CSG au taux réduit de 3,8 %."},
         {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "Une contribution pour le remboursement de la dette sociale de 0,5 % est précomptée sur le montant brut de l'allocation d'aide au retour à l'emploi après abattement de 1,75 %"},
         {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "Le prélèvement de la CSG ne doit pas avoir pour conséquence de réduire le montant de l'allocation versée à un montant inférieur déterminé à partir du SMIC journalier, soit 62 €"},
-        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "certains allocataires peuvent bénéficier d'une exonération totale de la CRDS"}
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, § 7", "citation": "certains allocataires peuvent bénéficier d'une exonération totale de la CRDS"},
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, exemple 20", "citation": "Base d'exonération = 108,80 €"},
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, exemple 20", "citation": "Assiette = 106,90 € (108,80 € x 98,25 %)"},
+        {"fichier": "atelier/reference/sources/chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt", "emetteur": "unedic", "article": "fiche 2, exemple 20", "citation": "Montant CSG = 6,63 € (106,90 € x 6,2 %)"}
       ]
     }
   }

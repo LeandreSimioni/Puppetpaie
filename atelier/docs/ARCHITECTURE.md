@@ -2958,15 +2958,20 @@ DSN, un certificat Congés Spectacles ne s'y comptent pas ; une paie toute d'ens
 et l'estimation se tait quand une paie mêle l'enseignement à d'autres heures. Sans pièce qui porte une personne, les
 lignes prévues se comptent seules.
 Quand l'allocation s'estime, la route dit aussi l'année de chômage qui vient (`droit::annee_de_chomage`, Léandre,
-27/11/2026 : le chiffre principal est l'année sans aucun travail) : du lendemain de la dernière fin de contrat à sa date
-anniversaire, mois par mois, le délai d'attente (art. 22), la franchise de congés payés (les jours de travail de l'AEM)
-et celle de salaires (le SMIC du dernier jour de la période), dans l'ordre de l'art. 23, la participation de 0,93 %
-(art. 19) et, quand la personne dit son taux (une liste fermée), la CSG et la CRDS ; une franchise qui ne se compte pas
-(une paie sans ses jours ou sans son brut) ne devient pas zéro : le chômage est « au plus ». Puis ce que retire un jour
-de travail (art. 30 : les heures du mois, cachets à 12 heures, font des jours de travail, chacun retirant 1,3 ou 1,4
-jour), et l'année si elle ressemble à la dernière : le même travail aux mêmes mois, sous le plafond du cumul (1,18 fois
-le plafond mensuel de la Sécurité sociale de l'année du mois ; inconnu, il ne se compte pas). L'article 30 n'est que
-dans `allocation-intermittents.json` : les conseils de saisie le lisent là.
+27/11/2026 : le chiffre principal est l'année sans aucun travail) : du lendemain de la dernière fin de contrat (ou de la
+date anniversaire dite, quand elle vient après : art. 23 §1) au terme des douze mois qui suivent cette fin, mois par
+mois dans l'ordre du guide de France Travail (p. 16-17) : l'activité du mois (art. 30), le plafond du cumul, puis le
+délai d'attente (art. 22 ; aucun à la réadmission à la date anniversaire, exemple 9), la franchise de congés payés du
+mois, celle de salaires du mois, et leurs reliquats ; la participation de 0,93 % (art. 19) et, quand la personne dit son
+taux (une liste fermée, où l'exonération de la CSG se choisit avec ou sans la CRDS), la CSG et la CRDS. Les jours de
+travail d'une paie des pièces sont ceux de son AEM ; ceux d'une ligne prévue se comptent environ, à 8 ou 10 heures par
+jour (Léandre, 28/11/2026). Ce qui ne se compte pas (une paie sans ses jours ou sans son brut, un délai que la date
+anniversaire ne tranche pas) ne devient pas zéro : le chômage est « au plus ». Puis ce que retire un jour de travail
+(art. 30 : les heures du mois, cachets aux heures du catalogue des rubriques, font des jours de travail, chacun retirant
+1,3 ou 1,4 jour), et l'année si elle ressemble à la dernière : le même travail aux mêmes mois, sous le plafond du cumul
+(1,18 fois le plafond mensuel de la Sécurité sociale de l'année du mois ; une année que le barème ne porte pas encore
+prend le dernier qu'il porte, Léandre, 28/11/2026). L'article 30 n'est que dans `allocation-intermittents.json` : les
+conseils de saisie le lisent là.
 La route rend son écran bloc par bloc, dans l'ordre où il se lit (`ecran`, des `BlocDesDroits` : la réponse,
 l'allocation visée, les cases de sa charge, chacune tirée de la déclaration de son champ, le tableau des paies où les
 lignes prévues se saisissent, le dépôt, les pièces, le détail du calcul, replié) : la page `puppetpaie.fr/droits/` (`atelier/site/droits/`) les pose dans cet ordre,

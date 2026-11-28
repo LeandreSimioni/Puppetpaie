@@ -52,10 +52,10 @@ forme_notee! {
 }
 
 forme_notee! {
-    /// Un mois travaille pendant l'indemnisation (art. 30) : les heures d'un cachet, le plafond du cumul du salaire et de
-    /// l'allocation (en plafonds mensuels de la Securite sociale), et ce que dit chaque annexe.
+    /// Un mois travaille pendant l'indemnisation (art. 30) : le plafond du cumul du salaire et de l'allocation (en
+    /// plafonds mensuels de la Securite sociale), et ce que dit chaque annexe. Les heures d'un cachet sont celles du
+    /// catalogue des rubriques (`droit::cumul::Constantes::heures_par_cachet`).
     pub struct ActivitesReprises {
-        pub heures_par_cachet: HeuresParUnite,
         pub plafond_du_cumul: Coefficient,
         #[serde(rename = "VIII")]
         pub viii: ActiviteReprise,
