@@ -1173,6 +1173,8 @@ struct EstimationDite {
     salaire_de_reference: Montant,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     retenue: Montant,
+    /// En bref : le salaire de reference, l'allocation par jour (A + B + C), et ce qui la rend approchee.
+    resume: Vec<String>,
     paies: TableauRendu,
 }
 
@@ -1222,6 +1224,9 @@ struct AnneeDite {
     #[serde(skip_serializing_if = "Option::is_none")]
     comme: Option<CommeLaDerniereDite>,
     notes: Vec<String>,
+    /// Ce que le calcul suppose toujours, et le detail des formules, que la page ne montre pas (Léandre, 28/11/2026 :
+    /// « C'est beaucoup trop bavard ») : il reste dit a qui lit la route.
+    precisions: Vec<String>,
 }
 
 /// UN CALCUL EN LIGNES : chaque ligne `[quoi, valeur]`, puis le total, en gras.
@@ -1303,6 +1308,12 @@ struct ViseeDite {
 #[derive(Debug, Serialize)]
 struct DetailsDits {
     libelle: &'static str,
+    /// En bref, ce que la page montre (Léandre, 28/11/2026 : « C'est beaucoup trop bavard ») : les heures et le seuil,
+    /// l'annexe, puis le salaire de reference et l'allocation par jour (`EstimationDite::resume`) ; `lignes` y ajoute
+    /// ce qui ne se dit que quand cela arrive.
+    resume: Vec<String>,
+    /// Ce que l'estimation suppose toujours, et sa formule, que la page ne montre pas.
+    precisions: Vec<String>,
     annexes: Vec<String>,
     /// Le numero de la personne ; aucun : les lignes prevues seules, sans piece (`LIGNES_SEULES`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1397,13 +1408,18 @@ impl AnnexesDesPaies {
             heures.push(format!("annexe non dite : {} h ({})", dit(self.sans), self.non_dites.join(", ")));
         }
         out.push(format!("{}.", majuscule(&heures.join(" ; "))));
-        out.push(match self.appliquee() {
+        out.push(self.pourquoi());
+        out.extend(self.sources.iter().cloned());
+        out
+    }
+
+    /// Celle qui s'applique, et pourquoi.
+    fn pourquoi(&self) -> String {
+        match self.appliquee() {
             AnnexeAppliquee::Une(a) => format!("C'est l'{} qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9).", annexe_en_petit(a)),
             AnnexeAppliquee::Egales => "Les deux annexes ont autant d'heures : le texte applique celle « ayant permis de constater l'affiliation la plus importante » (annexes VIII et X, art. 65 §9) et ne dit rien d'une égalité ; l'allocation ne s'estime pas.".to_string(),
             AnnexeAppliquee::NonDite => "L'annexe qui s'applique, celle qui a le plus d'heures (annexes VIII et X, art. 65 §9), dépend des paies dont l'annexe n'est pas dite.".to_string(),
-        });
-        out.extend(self.sources.iter().cloned());
-        out
+        }
     }
 }
 
@@ -1682,8 +1698,9 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     // L'ALLOCATION, quand les heures sont la : sous l'annexe qui s'applique, le chiffre exact (Léandre, 27/11/2026 : « il
     // n'y a pas de environ, c'est un calcul exact ») ; sans elle, la reponse dit ce qu'elle attend.
     let mut supposees: BTreeMap<String, (Option<Montant>, bool)> = BTreeMap::new();
+    let mut precisions = Vec::new();
     let estimee = match (atteintes, appliquee) {
-        (true, AnnexeAppliquee::Une(a)) => estimer(&t, &aff, &dans_la_fenetre, a, annexes.base, c.allocation_visee, fin, &debuts, &mut supposees, &mut notes)?,
+        (true, AnnexeAppliquee::Une(a)) => estimer(&t, &aff, &dans_la_fenetre, a, annexes.base, c.allocation_visee, fin, &debuts, &mut supposees, &mut notes, &mut precisions)?,
         (true, AnnexeAppliquee::Egales | AnnexeAppliquee::NonDite) | (false, _) => None,
     };
     // L'ANNEE DE CHOMAGE QUI VIENT, quand l'allocation s'estime (`droit::annee_de_chomage`).
@@ -1802,6 +1819,32 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
     let comptent = |i: usize| declarees.iter().any(|(d, j)| *j == i && a_partir.position.engagements.contains(d));
     let du_tableau: Vec<&PaieComptee> = comptees.iter().enumerate().filter(|(i, p)| p.prevue.is_some() || comptent(*i)).map(|(_, p)| p).collect();
     let paies = tableau_des_paies(&du_tableau, lignes_prevues, annexes.base, c.allocation_visee.zip(par_paie));
+    // EN BREF : les heures (« 60 cachets × 12 h = 720 h »), le seuil, et l'annexe ou ce qui manque ; puis le salaire de
+    // reference et l'allocation par jour, quand elle s'estime.
+    let pos = &a_partir.position;
+    let (cachets, heures) = (pos.cachets_retenus(), pos.heures());
+    let des_cachets = format!("{} cachet{} × {} h", dit(cachets), if socle::texte::au_pluriel(cachets) { "s" } else { "" }, dit(pos.constantes.heures_par_cachet));
+    let somme = match (cachets.est_nul(), heures.est_nul()) {
+        (false, false) => format!("{} + {} h = {} h", des_cachets, dit(heures), dit(pos.heures_retenues())),
+        (false, true) => format!("{} = {} h", des_cachets, dit(pos.heures_retenues())),
+        (true, _) => format!("{} h", dit(pos.heures_retenues())),
+    };
+    let ouverture = pos.heures_ouverture()?;
+    let somme = match ouverture == pos.heures_retenues() {
+        true => somme,
+        false => format!("{} ; {} h avec l'enseignement et la formation", somme, dit(ouverture)),
+    };
+    let mut resume = vec![match (atteintes, appliquee) {
+        (true, AnnexeAppliquee::Une(a)) => format!("{}. Il en faut {} : vos droits s'ouvrent à l'{}.", somme, exigees, annexe_en_petit(a)),
+        (true, AnnexeAppliquee::Egales | AnnexeAppliquee::NonDite) => format!("{}. Il en faut {}.", somme, exigees),
+        (false, _) => format!("{}. Il en faut {} : il en manque {}.", somme, exigees, dit(a_partir.manque)),
+    }];
+    if atteintes && !matches!(appliquee, AnnexeAppliquee::Une(_)) {
+        resume.push(annexes.pourquoi());
+    }
+    if let Some(e) = &estimation {
+        resume.extend(e.resume.iter().cloned());
+    }
     Ok(CalculDesDroits {
         reponse,
         visee_offerte: estimation.is_some(),
@@ -1813,6 +1856,8 @@ fn droits_d_une_personne(inst: &Path, attestees: &[Attestee], nir: Option<&Nir>,
         demande,
         details: DetailsDits {
             libelle: DETAILS,
+            resume,
+            precisions,
             annexes: annexes.dites(),
             nir: nir.cloned(),
             fenetre: aff.position.libelle_fenetre.clone(),
@@ -1952,6 +1997,7 @@ fn estimer(
     debuts: &BTreeMap<String, Jour>,
     supposees: &mut BTreeMap<String, (Option<Montant>, bool)>,
     notes: &mut Vec<String>,
+    precisions: &mut Vec<String>,
 ) -> R<Option<(EstimationDite, Option<ViseeCalculee>)>> {
     let p = &aff.position;
     if let Some(m) = paies.iter().find(|x| x.melee()) {
@@ -1979,7 +2025,7 @@ fn estimer(
     };
     let plafond = t.plafond(pss_annuel);
     let nht = p.heures_montant();
-    notes.push("Estimation : sans maternité, adoption ou ALD dans la fenêtre ; l'allocation par jour est avant la participation retraite de 0,93 % (art. 19) et les franchises, que l'année de chômage déduit.".to_string());
+    precisions.push("Estimation : sans maternité, adoption ou ALD dans la fenêtre ; l'allocation par jour est avant la participation retraite de 0,93 % (art. 19) et les franchises, que l'année de chômage déduit.".to_string());
     // D'ou vient le plafond de chaque paie, avec le debut de son contrat quand la charge le dit (`debuts`).
     let mut sources = Vec::new();
     for x in &du_salaire {
@@ -2057,7 +2103,7 @@ fn estimer(
         None => String::new(),
     };
     let limitee = if sr < total { format!(" ; les paies ne comptent qu'à quatre fois leur plafond (art. 11 §3) : {} de salaire, {} retenus", euros(total), euros(sr)) } else { String::new() };
-    notes.push(format!(
+    precisions.push(format!(
         "{} : A {} pour {} de salaire de référence, B {} pour {} h, C {}{}{}.",
         annexe_dite(annexe),
         euros(e.a),
@@ -2068,7 +2114,42 @@ fn estimer(
         borne,
         limitee
     ));
-    let estimation = EstimationDite { annexe: annexe_dite(annexe), a: e.a, b: e.b, c: e.c, calculee: e.calculee, salaire_de_reference: sr, retenue: e.retenue, paies: tableau_du_salaire(lignes) };
+    // EN BREF (Léandre, 28/11/2026 : « C'est beaucoup trop bavard ») : le salaire de reference, l'allocation par jour,
+    // et ce qui la rend approchee.
+    let n = lignes.len();
+    let vos_paies = match n {
+        1 => "votre paie".to_string(),
+        _ => format!("vos {} paies", n),
+    };
+    let mut resume = vec![match sr < total {
+        true => format!("Salaire de référence : {}, {} ({}), chacune comptée à quatre fois son plafond au plus.", euros(sr), vos_paies, euros(total)),
+        false => format!("Salaire de référence : {}, {}.", euros(sr), vos_paies),
+    }];
+    let par_jour = format!("Par jour : {} + {} + {} = {}", euros(e.a), euros(e.b), euros(e.c), euros(e.calculee));
+    resume.push(match e.borne {
+        Some(Borne::Plancher) => format!("{}, relevés au plancher de {}.", par_jour, euros(e.plancher)),
+        Some(Borne::Plafond) => format!("{}, ramenés au plafond de {}.", par_jour, euros(e.plafond)),
+        None => format!("{}.", par_jour),
+    });
+    if !inconnues.is_empty() {
+        let toutes_prevues = inconnues.len() == n && inconnues.iter().all(|i| i.paie.prevue.is_some());
+        resume.push(match (toutes_prevues, inconnues.len()) {
+            (true, _) => "Environ : sans bulletin, le plafond de chaque paie ne se connaît pas.".to_string(),
+            (false, 1) => "Environ : le plafond d'une paie ne se connaît pas.".to_string(),
+            (false, k) => format!("Environ : le plafond de {} paies ne se connaît pas.", k),
+        });
+    }
+    let estimation = EstimationDite {
+        annexe: annexe_dite(annexe),
+        a: e.a,
+        b: e.b,
+        c: e.c,
+        calculee: e.calculee,
+        salaire_de_reference: sr,
+        retenue: e.retenue,
+        resume,
+        paies: tableau_du_salaire(lignes),
+    };
     let visee = match visee {
         Some(v) => Some(viser(t, annexe, v, sr, nht, plafond, &bruts, &a_viser, &inconnues, supposees)?),
         None => None,
@@ -2495,16 +2576,12 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
     };
     // SANS AUCUN TRAVAIL : les jours payes, puis le montant.
     let somme = |f: fn(&droit::annee_de_chomage::MoisDeChomage) -> Jours| -> Jours { sans.mois.iter().map(f).sum() };
+    let mut precisions = Vec::new();
     let conges = match (&sans.conges, jours_travailles) {
-        (Some(f), Some(jt)) => (
-            format!(
-                "Franchise congés payés (vos {}{} jours de travail ont acquis {} jours de congés)",
-                if jours_environ { "environ " } else { "" },
-                jours_dits(jt),
-                jours_dits(f.jours)
-            ),
-            moins(somme(|m| m.conges)),
-        ),
+        (Some(f), Some(jt)) => {
+            precisions.push(format!("Franchise congés payés : vos {}{} jours de travail ont acquis {} jours de congés.", if jours_environ { "environ " } else { "" }, jours_dits(jt), jours_dits(f.jours)));
+            (format!("Franchise congés payés ({}{} jours de travail)", if jours_environ { "environ " } else { "" }, jours_dits(jt)), moins(somme(|m| m.conges)))
+        }
         _ => ("Franchise congés payés".to_string(), "non comptée".to_string()),
     };
     let delai = match sans.delai {
@@ -2512,15 +2589,15 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
         None => ("Délai d'attente".to_string(), "non compté".to_string()),
     };
     let franchise_salaires = match &sans.salaires {
-        Some(f) => (
-            format!(
-                "Franchise salaires ({} jours : vos salaires sur le SMIC mensuel de {}, et votre salaire journalier moyen sur trois SMIC journaliers de {})",
+        Some(f) => {
+            precisions.push(format!(
+                "Franchise salaires : {} jours, de vos salaires sur le SMIC mensuel de {}, et de votre salaire journalier moyen sur trois SMIC journaliers de {}.",
                 jours_dits(f.franchise.jours),
                 euros(f.smic_mensuel),
                 euros(f.smic_journalier)
-            ),
-            moins(somme(|m| m.franchise_salaires)),
-        ),
+            ));
+            ("Franchise salaires".to_string(), moins(somme(|m| m.franchise_salaires)))
+        }
         None => ("Franchise salaires".to_string(), "non comptée".to_string()),
     };
     let jours = CalculDit {
@@ -2532,17 +2609,15 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
         ],
         total: ("Jours payés".to_string(), jours_dits(sans.jours_payes)),
     };
+    precisions.push(format!(
+        "Participation retraite : {} par jour, {} de votre salaire journalier moyen de {} (art. 19).",
+        euros(jour.participation),
+        taux_dit(t.participation.taux),
+        euros(jour.salaire_journalier_moyen)
+    ));
     let mut lignes = vec![
         (format!("Allocation : {} jours à {}", jours_dits(sans.jours_payes), euros(jour.brute)), euros(sans.brute)),
-        (
-            format!(
-                "Participation retraite : {} par jour, {} de votre salaire journalier moyen de {} (art. 19)",
-                euros(jour.participation),
-                taux_dit(t.participation.taux),
-                euros(jour.salaire_journalier_moyen)
-            ),
-            format!("−\u{a0}{}", euros(sans.participation)),
-        ),
+        (format!("Participation retraite ({})", taux_dit(t.participation.taux)), format!("−\u{a0}{}", euros(sans.participation))),
     ];
     match fourchette {
         true => lignes.push((
@@ -2587,7 +2662,7 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
     }
     aide.push("Avant l'impôt sur le revenu.".to_string());
     if jours_environ && sans.conges.is_some() {
-        aide.push(format!(
+        precisions.push(format!(
             "La franchise de congés payés est environ : vos lignes prévues ne disent pas leurs jours de travail, comptés ici à {} heures par jour, un cachet pour {} ; les bulletins ou les attestations employeur les diraient.",
             socle::texte::virgule(a.heures_par_jour),
             socle::texte::heures(Cachets::UN * hpc)
@@ -2605,7 +2680,12 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
     // CE QUE RAPPORTE UN JOUR DE TRAVAIL (art. 30), et ses exemples : un cachet et une journee de repetition pour un
     // artiste ; une journee pour un technicien, qui n'a pas de cachets.
     let huit = Heures::fixes(8);
-    let mut aide_du_jour = format!(
+    let aide_du_jour = format!(
+        "{} h de travail font un jour, qui retire {} jour de chômage du mois.",
+        socle::texte::virgule(a.heures_par_jour),
+        socle::texte::virgule(a.coefficient)
+    );
+    let mut regle_du_jour = format!(
         "Le chômage se compte en heures : toutes celles du mois, cachets et répétitions ensemble ; {} heures font un jour de travail, et chaque jour de travail fait {} jour de chômage en moins le même mois (annexe {}, art. 30). À {} jours de travail dans le mois, rien n'est versé.",
         socle::texte::virgule(a.heures_par_jour),
         socle::texte::virgule(a.coefficient),
@@ -2634,15 +2714,15 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
     let rapporte = match exemples.is_empty() {
         true => None,
         false => {
-            aide_du_jour.push_str(&format!(" Le salaire de chaque exemple est votre moyenne sur vos paies des 12 mois : {}.", moyennes.join(", et ")));
+            regle_du_jour.push_str(&format!(" Le salaire de chaque exemple est votre moyenne sur vos paies des 12 mois : {}.", moyennes.join(", et ")));
+            precisions.push(regle_du_jour);
             Some(CeQueRapporteUnJourDit { titre: UN_JOUR_DE_TRAVAIL, aide: aide_du_jour, exemples })
         }
     };
     // L'ANNEE SI ELLE RESSEMBLE A LA DERNIERE.
-    let mut notes = vec![
-        "Le travail d'un mois compte au mois où le contrat finit ; la formation qu'on suit n'est pas un travail et ne compte pas.".to_string(),
-        "La franchise de congés payés compte les jours de travail de l'attestation employeur, pas les heures.".to_string(),
-    ];
+    let mut notes = Vec::new();
+    precisions.push("Le travail d'un mois compte au mois où le contrat finit ; la formation qu'on suit n'est pas un travail et ne compte pas.".to_string());
+    precisions.push("La franchise de congés payés compte les jours de travail de l'attestation employeur, pas les heures.".to_string());
     let comme = match comme {
         None => None,
         Some((cm, cm_haut)) => {
@@ -2651,13 +2731,8 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
                 let h = (!h.est_nul()).then(|| socle::texte::heures(h));
                 c.into_iter().chain(h).collect::<Vec<_>>().join(" et ")
             };
-            let colonnes = vec![
-                ColonneRendue::de_texte("Mois"),
-                ColonneRendue::de_nombres("Heures"),
-                ColonneRendue::de_nombres("Jours payés"),
-                ColonneRendue::de_nombres("Chômage"),
-                ColonneRendue::de_nombres("Salaire brut"),
-            ];
+            // Trois colonnes, qui tiennent sur un téléphone : le mois, son salaire brut, son chômage.
+            let colonnes = vec![ColonneRendue::de_texte("Mois"), ColonneRendue::de_nombres("Salaire brut"), ColonneRendue::de_nombres("Chômage")];
             let mut rangees: Vec<RangeeRendue> = cm
                 .mois
                 .iter()
@@ -2665,22 +2740,12 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
                 .map(|(m, h)| {
                     RangeeRendue::de(
                         SorteDeRangee::Ligne,
-                        vec![
-                            Some(m.mois.libelle(socle::mois::Graphie::Abregee)),
-                            (!m.activite.heures.est_nul()).then(|| socle::texte::heures(m.activite.heures)),
-                            Some(jours_dits(m.jours_payes)),
-                            Some(bouts(m.versee, h.versee, euros::<Montant>)),
-                            m.salaire.map(euros),
-                        ],
+                        vec![Some(m.mois.libelle(socle::mois::Graphie::Abregee)), m.salaire.map(euros), Some(bouts(m.versee, h.versee, euros::<Montant>))],
                     )
                 })
                 .collect();
             let brut = cm.salaires();
-            let heures_annee: Heures = cm.mois.iter().map(|m| m.activite.heures).sum();
-            rangees.push(RangeeRendue::de(
-                SorteDeRangee::TotalGeneral,
-                vec![Some("Sur l'année".to_string()), Some(socle::texte::heures(heures_annee)), Some(jours_dits(cm.jours_payes)), Some(bouts(cm.versee, cm_haut.versee, euros::<Montant>)), brut.map(euros)],
-            ));
+            rangees.push(RangeeRendue::de(SorteDeRangee::TotalGeneral, vec![Some("Sur l'année".to_string()), brut.map(euros), Some(bouts(cm.versee, cm_haut.versee, euros::<Montant>))]));
             // Les barres disent le chomage du bas de la fourchette (le taux plein, quand le taux n'est pas dit).
             let barres = cm.mois.iter().map(|m| BarreDite { mois: m.mois.nom(socle::mois::Graphie::Abregee).to_string(), chomage: m.versee, salaire: m.salaire }).collect();
             // Le bilan : le salaire brut et le chomage avec ce travail, face au chomage sans travail (Léandre, 28/11/2026 :
@@ -2708,14 +2773,14 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
             if fourchette {
                 dit.push("Votre taux de CSG n'est pas dit : chaque chômage va du taux plein à l'exonération, et les barres le montrent au taux plein.".to_string());
             }
-            dit.push("Le salaire net et les congés de la Caisse des Congés Spectacles ne se disent pas ici : il y faudrait les bulletins d'une compagnie.".to_string());
+            precisions.push("Le salaire net et les congés de la Caisse des Congés Spectacles ne se disent pas ici : il y faudrait les bulletins d'une compagnie.".to_string());
             for m in &cm.manques {
                 let phrase = manque_dit(m, fin);
                 if !sans.manques.contains(m) && !dit.contains(&phrase) {
                     dit.push(phrase);
                 }
             }
-            dit.extend(cm.plafonds_repris.iter().map(|(an, de)| plafond_repris_dit(*an, *de)));
+            precisions.extend(cm.plafonds_repris.iter().map(|(an, de)| plafond_repris_dit(*an, *de)));
             // Le plafond du cumul (art. 30) : les mois ou il ramene le chomage, ou qu'il ne joue pas.
             let plafonnes: Vec<String> = cm.mois.iter().filter(|m| matches!(m.cumul, PlafondDuCumul::Plafonne(_))).map(|m| m.mois.libelle(socle::mois::Graphie::Accentuee)).collect();
             let un_plafond = cm.mois.iter().find_map(|m| match m.cumul {
@@ -2723,19 +2788,21 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
                 PlafondDuCumul::NeJouePas | PlafondDuCumul::Inconnu => None,
             });
             if let Some(p) = un_plafond {
-                notes.push(match plafonnes.is_empty() {
-                    true => format!(
+                // Le plafond qui ne joue pas se precise ; celui qui ramene le chomage se dit.
+                let (ou, phrase) = match plafonnes.is_empty() {
+                    true => (&mut precisions, format!(
                         "Le plafond du cumul : le salaire brut et le chômage d'un mois ne dépassent pas {} ({} fois le plafond mensuel de la Sécurité sociale, art. 30) ; il ne joue pas ici.",
                         euros(p),
                         socle::texte::virgule(ar.plafond_du_cumul)
-                    ),
-                    false => format!(
+                    )),
+                    false => (&mut notes, format!(
                         "Le plafond du cumul : le salaire brut et le chômage d'un mois ne dépassent pas {} ({} fois le plafond mensuel de la Sécurité sociale, art. 30) ; il ramène le chômage en {}.",
                         euros(p),
                         socle::texte::virgule(ar.plafond_du_cumul),
                         plafonnes.join(", ")
-                    ),
-                });
+                    )),
+                };
+                ou.push(phrase);
             }
             Some(CommeLaDerniereDite {
                 titre: COMME_LA_DERNIERE,
@@ -2747,7 +2814,7 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
             })
         }
     };
-    notes.push("Estimation : sans maternité, adoption ou maladie de longue durée, sans différé d'indemnisation ; l'année va du lendemain de la dernière fin de contrat, ou de votre date anniversaire quand elle vient après, au terme des douze mois qui suivent cette fin.".to_string());
+    precisions.push("Estimation : sans maternité, adoption ou maladie de longue durée, sans différé d'indemnisation ; l'année va du lendemain de la dernière fin de contrat, ou de votre date anniversaire quand elle vient après, au terme des douze mois qui suivent cette fin.".to_string());
     // La case du taux, seulement quand il joue (« un champ n'apparaît que si un fait l'exige »).
     let case = match joue {
         true => {
@@ -2756,5 +2823,5 @@ fn annee_dite(t: &Allocation, annexe: AnnexeChomage, base: Option<AnnexeChomage>
         }
         false => None,
     };
-    Ok(Some((AnneeDite { titre: L_ANNEE, sans_travail, case, rapporte, comme, notes }, phrase)))
+    Ok(Some((AnneeDite { titre: L_ANNEE, sans_travail, case, rapporte, comme, notes, precisions }, phrase)))
 }

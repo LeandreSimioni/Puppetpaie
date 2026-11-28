@@ -578,21 +578,6 @@ var dire = null;
     return d;
   }
 
-  // Les lignes [quoi, valeur] que la route rend (le compte des heures) : deux colonnes, sans en-tête.
-  function paires(lignes) {
-    var table = el("table");
-    var corps = el("tbody");
-    lignes.forEach(function (l) {
-      var r = el("tr");
-      r.append(el("td", null, l[0]), el("td", "n", l[1]));
-      corps.append(r);
-    });
-    table.append(corps);
-    var d = el("div", "tableau");
-    d.append(table);
-    return d;
-  }
-
   function liste(phrases) {
     var ul = el("ul", "phrases");
     phrases.forEach(function (p) { ul.append(el("li", null, p)); });
@@ -733,23 +718,16 @@ var dire = null;
 
   var detailOuvert = false;
 
-  // LE DÉTAIL DU CALCUL, replié en bas : la fenêtre, le compte des heures, ce qui manque, l'estimation (son tableau,
-  // paie par paie) et les phrases.
+  // LE DÉTAIL DU CALCUL, replié en bas : en bref (les heures, l'annexe, le salaire de référence, l'allocation par jour),
+  // puis ce qui ne se dit que quand cela arrive. Le compte, les annexes et le tableau des paies restent dans la réponse
+  // de la route (Léandre, 28/11/2026 : « C'est beaucoup trop bavard »).
   function details(d) {
     var det = el("details", "details");
     // Ouvert, il le reste d'un calcul à l'autre (le confort de la main).
     det.open = detailOuvert;
     det.addEventListener("toggle", function () { detailOuvert = det.open; });
     det.append(el("summary", null, d.libelle));
-    // En tête, les heures de chaque annexe, celle qui s'applique, et l'annexe de chaque paie.
-    if (d.annexes.length) det.append(liste(d.annexes));
-    det.append(el("p", "aide", d.fenetre));
-    det.append(paires(d.compte));
-    if (d.estimation && d.estimation.paies.rangees.length) {
-      if (d.estimation.paies.titre) det.append(el("h3", null, d.estimation.paies.titre));
-      det.append(tableau(d.estimation.paies));
-    }
-    if (d.lignes.length) det.append(liste(d.lignes));
+    det.append(liste(d.resume.concat(d.lignes)));
     return det;
   }
 
