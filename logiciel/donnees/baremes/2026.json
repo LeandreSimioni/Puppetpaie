@@ -20,6 +20,16 @@
         "article": "arrêté du 22 mai 2026, art. 1, 1°",
         "citation": "son montant est porté à 12,31 € l'heure"
       }
+    },
+    {
+      "depuis": "2026-12-01",
+      "valeur": 12.51,
+      "source": {
+        "fichier": "atelier/reference/sources/decret-2026-smic-20261201/legifrance-decret-20261125-smic-20261201.txt",
+        "emetteur": "loi",
+        "article": "décret n° 2026-1082 du 25 novembre 2026, art. 1, 1°",
+        "citation": "son montant est porté à 12,51 euros l'heure"
+      }
     }
   ],
   "heures_par_cachet": 7,
