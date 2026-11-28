@@ -119,13 +119,21 @@ forme_notee! {
 
 forme_notee! {
     /// La CSG et la CRDS sur l'allocation (circulaire Unedic 2026-06, fiche 2, § 7) : l'abattement de l'assiette, les
-    /// taux, en points, et l'allocation versee sous laquelle elles ne la font pas passer.
+    /// taux, en points, et l'allocation brute sous laquelle elles ne la font pas passer.
     pub struct ContributionsSurLAllocation {
         pub abattement: Taux,
         pub csg: Taux,
         pub csg_reduite: Taux,
         pub crds: Taux,
         pub plancher: Montant,
+    }
+}
+
+impl ContributionsSurLAllocation {
+    /// Si la CSG et la CRDS peuvent prendre quelque chose a l'allocation brute `brute` d'un jour : seulement quand elle
+    /// passe le plancher (circulaire Unedic 2026-06, fiche 2, § 7, exemple 20).
+    pub fn jouent(&self, brute: Montant) -> bool {
+        brute > self.plancher
     }
 }
 

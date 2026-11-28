@@ -2962,8 +2962,10 @@ Quand l'allocation s'estime, la route dit aussi l'année de chômage qui vient (
 date anniversaire dite, quand elle vient après : art. 23 §1) au terme des douze mois qui suivent cette fin, mois par
 mois dans l'ordre du guide de France Travail (p. 16-17) : l'activité du mois (art. 30), le plafond du cumul, puis le
 délai d'attente (art. 22 ; aucun à la réadmission à la date anniversaire, exemple 9), la franchise de congés payés du
-mois, celle de salaires du mois, et leurs reliquats ; la participation de 0,93 % (art. 19) et, quand la personne dit son
-taux (une liste fermée, où l'exonération de la CSG se choisit avec ou sans la CRDS), la CSG et la CRDS. Les jours de
+mois, celle de salaires du mois, et leurs reliquats ; la participation de 0,93 % (art. 19), la CSG et la CRDS. Celles-ci
+ne jouent que si l'allocation brute passe le plancher de 62 € (exemple 20) : dessous, la route n'a ni case ni phrase
+de CSG ; dessus, elle rend la case du taux (une liste fermée, où l'exonération de la CSG se choisit avec ou sans la
+CRDS), et tant qu'elle est vide, une fourchette, du taux plein à l'exonération (Léandre, 28/11/2026). Les jours de
 travail d'une paie des pièces sont ceux de son AEM ; ceux d'une ligne prévue se comptent environ, à 8 ou 10 heures par
 jour (Léandre, 28/11/2026). Ce qui ne se compte pas (une paie sans ses jours ou sans son brut, un délai que la date
 anniversaire ne tranche pas) ne devient pas zéro : le chômage est « au plus ». Puis ce que retire un jour de travail

@@ -653,7 +653,7 @@ var dire = null;
     return svg;
   }
 
-  // L'ANNÉE DE CHÔMAGE : sans aucun travail (le chiffre, ses calculs, ce qui s'en dit, la case du taux de CSG), ce que
+  // L'ANNÉE DE CHÔMAGE : sans aucun travail (le chiffre, ses calculs, ce qui s'en dit, la case du taux de CSG quand la route la rend), ce que
   // coûte un jour de travail et ses exemples, l'année comme la dernière (ses barres, le tableau des mois, le calcul), et
   // les notes. Tout est dit par la route.
   function annee(b) {
@@ -666,7 +666,7 @@ var dire = null;
     s.append(ch);
     st.calculs.forEach(function (c) { s.append(calcul(c)); });
     st.aide.forEach(function (a) { s.append(el("p", "aide", a)); });
-    s.append(dessinerCase(b.case));
+    if (b.case) s.append(dessinerCase(b.case));
     var co = b.cout;
     s.append(el("h3", null, co.titre));
     s.append(el("p", "aide", co.aide));
@@ -903,7 +903,7 @@ var dire = null;
     d.ecran.forEach(function (b) {
       if (b.est === "case") cases.push(b);
       if (b.est === "visee") cases.push(b.case);
-      if (b.est === "annee") cases.push(b.case);
+      if (b.est === "annee" && b.case) cases.push(b.case);
       if (b.est === "paies") cases.push(b.lignes);
     });
     var avant = rendues;

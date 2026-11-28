@@ -12,7 +12,8 @@
 //!   l'allocation brute abattue de 1,75 %, sans faire passer sous 62 € l'allocation brute diminuee de ce qui est deja pris
 //!   (circulaire Unedic 2026-06, fiche 2, § 7 et exemple 20 ;
 //!   `chomage-permanents/unedic-circulaire-2026-06-reglementation-20260901.txt`). Le taux est celui de la personne
-//!   (`TauxDeCsg`) : inconnu, l'allocation nette ne se dit pas. Seuls s'arrondissent, au centime, l'assiette abattue et
+//!   (`TauxDeCsg`), qui ne joue que si l'allocation brute passe le plancher ; l'appelant qui ne le connait pas compte
+//!   l'annee aux deux bouts de `TauxDeCsg::FOURCHETTE`. Seuls s'arrondissent, au centime, l'assiette abattue et
 //!   chaque contribution, comme l'ecrit l'exemple 20 (« Assiette = 106,90 € (108,80 € x 98,25 %) », « Montant CSG =
 //!   6,63 € ») ; le salaire journalier moyen et la participation restent exacts : aucun exemple depose ne les arrondit.
 //! - UN MOIS (le guide, p. 16-17, etapes 2 a 6, dans cet ordre) : ses heures font des jours de travail (art. 30), qui
@@ -63,6 +64,10 @@ pub enum TauxDeCsg {
 }
 
 impl TauxDeCsg {
+    /// Les deux bouts de ce qu'une allocation peut verser quand la personne ne dit pas son taux : le taux plein, qui
+    /// prend le plus, puis l'exoneration de l'une et de l'autre, qui ne prend rien.
+    pub const FOURCHETTE: [TauxDeCsg; 2] = [TauxDeCsg::Plein, TauxDeCsg::ExonereDeCsgEtDeCrds];
+
     /// Le taux de CSG que la personne paie (aucun : elle en est exoneree), lu dans `c`.
     fn csg(&self, c: &crate::allocation::ContributionsSurLAllocation) -> Option<Taux> {
         match self {
@@ -103,7 +108,8 @@ impl socle::liste::ListeFermee for TauxDeCsg {
 /// et les heures travaillees qui l'ont faite, la fin de la periode de reference ; la date anniversaire de la periode
 /// precedente (aucune : la personne n'en a pas dit) ; les salaires de toute la periode (aucun : une paie ne dit pas son
 /// brut), ses jours travailles (aucun : une paie ne les dit pas), le SMIC horaire de son dernier jour (aucun : le bareme
-/// livre ne le porte pas), et le taux de CSG de la personne (aucun : elle ne l'a pas dit).
+/// livre ne le porte pas), et le taux de CSG de la personne (aucun : il ne joue pas, l'allocation brute ne passant pas le
+/// plancher, `ContributionsSurLAllocation::jouent` ; au-dessus, l'annee ne se compte pas sans lui).
 #[derive(Debug, Clone)]
 pub struct OuvertureDesDroits {
     pub annexe: AnnexeChomage,
@@ -128,32 +134,22 @@ pub struct TravailDuMois {
 }
 
 /// L'ALLOCATION D'UN JOUR PAYE : la brute ; le salaire journalier moyen (art. 19) et la participation qu'il donne, exacts ;
-/// ce qui reste apres elle ; la CSG et la CRDS (aucune : le taux de la personne ne se connait pas et elles pourraient
-/// jouer) ; et la nette.
+/// ce qui reste apres elle ; la CSG et la CRDS ; et la nette, ce qu'un jour paye verse.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AllocationDuJour {
     pub brute: Montant,
     pub salaire_journalier_moyen: MontantUnitaire,
     pub participation: Montant,
     pub apres_participation: Montant,
-    pub contributions: Option<Montant>,
-    pub nette: Option<Montant>,
+    pub contributions: Montant,
+    pub nette: Montant,
 }
 
 impl AllocationDuJour {
-    /// Ce qu'un jour paye verse : la nette quand elle se connait, sinon ce qui reste apres la participation ; et si c'est
-    /// la nette.
-    pub fn versee(&self) -> (Montant, bool) {
-        match self.nette {
-            Some(n) => (n, true),
-            None => (self.apres_participation, false),
-        }
-    }
-
-    /// Ce que versent les jours payes `jours` (`versee`), au centime : ce qu'un mois de ces jours touche, ou ce que des
+    /// Ce que versent les jours payes `jours` (la nette), au centime : ce qu'un mois de ces jours touche, ou ce que des
     /// jours retires lui font perdre.
     pub fn pour_les_jours(&self, jours: Jours) -> Montant {
-        pour(jours, self.versee().0).au_centime()
+        pour(jours, self.nette).au_centime()
     }
 }
 
@@ -209,8 +205,8 @@ pub enum PlafondDuCumul {
 }
 
 /// UN MOIS DE L'ANNEE D'INDEMNISATION : son activite, le plafond du cumul, ce que le delai d'attente et les franchises y
-/// prennent, les jours payes, l'allocation brute, la participation et les contributions qu'elle retient (aucune : le taux
-/// de CSG ne se connait pas), ce qu'elle verse (`AllocationDuJour::versee`), et son salaire.
+/// prennent, les jours payes, l'allocation brute, la participation et les contributions qu'elle retient, ce
+/// qu'elle verse, et son salaire.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MoisDeChomage {
     pub mois: Mois,
@@ -221,7 +217,7 @@ pub struct MoisDeChomage {
     pub jours_payes: Jours,
     pub brute: Montant,
     pub participation: Montant,
-    pub contributions: Option<Montant>,
+    pub contributions: Montant,
     pub versee: Montant,
     pub cumul: PlafondDuCumul,
     pub salaire: Option<Montant>,
@@ -241,7 +237,7 @@ pub struct AnneeDeChomage {
     pub jours_payes: Jours,
     pub brute: Montant,
     pub participation: Montant,
-    pub contributions: Option<Montant>,
+    pub contributions: Montant,
     pub versee: Montant,
     pub manques: Vec<ManqueDeLAnnee>,
     pub plafonds_repris: Vec<(Annee, Annee)>,
@@ -307,13 +303,13 @@ pub fn allocation_du_jour(t: &Allocation, o: &OuvertureDesDroits) -> R<Allocatio
             None => Montant::ZERO,
         }
     };
-    let contributions = match (o.csg, o.allocation <= c.plancher) {
-        (_, true) => Some(Montant::ZERO),
-        (Some(taux), false) => {
+    let contributions = match (o.csg, c.jouent(o.allocation)) {
+        (_, false) => Montant::ZERO,
+        (Some(taux), true) => {
             let csg = prise(taux.csg(c), o.allocation);
-            Some(csg + prise(taux.crds(c), o.allocation - csg))
+            csg + prise(taux.crds(c), o.allocation - csg)
         }
-        (None, false) => None,
+        (None, true) => return Err(socle::fichiers::absent("le taux de CSG de la personne")),
     };
     Ok(AllocationDuJour {
         brute: o.allocation,
@@ -321,7 +317,7 @@ pub fn allocation_du_jour(t: &Allocation, o: &OuvertureDesDroits) -> R<Allocatio
         participation,
         apres_participation,
         contributions,
-        nette: contributions.map(|x| apres_participation - x),
+        nette: apres_participation - contributions,
     })
 }
 
@@ -544,11 +540,8 @@ pub fn annee(t: &Allocation, o: &OuvertureDesDroits, travail: &[TravailDuMois], 
         // Ce que chaque jour paye retient, jamais plus que ce que le mois verse.
         let participation = pour(jours_payes, jour.participation).au_centime().min(brute);
         let apres = brute - participation;
-        let contributions = jour.contributions.map(|x| pour(jours_payes, x).au_centime().min(apres));
-        let versee = match contributions {
-            Some(x) => apres - x,
-            None => apres,
-        };
+        let contributions = pour(jours_payes, jour.contributions).au_centime().min(apres);
+        let versee = apres - contributions;
         out.push(MoisDeChomage {
             mois: *m,
             activite,
