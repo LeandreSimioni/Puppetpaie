@@ -4463,9 +4463,9 @@ et de Mac dans `linux/` et `mac/` (`puppetpaie`, `moteur`), posés par le flux
 seulement (`maj::dossier_programmes_de`, `maj::systeme_du_fichier`).
 `derniere.json` porte `version`, `notes`, `calcul`, `exigee`, et sous `archives`
 une entrée par système publié (`archive`, `sha256`, `signature` ; celle de tous
-dit en plus les systèmes qu'elle porte, `systemes`). « Publier » choisit ce qu'il
-fabrique (Windows seul, Windows et Linux, ou les trois) ; une installation dont
-le système n'est pas publié ne télécharge rien et garde sa version.
+dit en plus les systèmes qu'elle porte, `systemes`). « Publier » fabrique
+toujours les trois ; une installation dont le système n'est pas publié ne
+télécharge rien et garde sa version.
 
 **La forme de l'archive de mise à jour est un contrat** avec toutes les
 installations posées : le contenu de `logiciel/` à sa racine, rien d'autre. Le
